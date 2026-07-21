@@ -1,0 +1,19 @@
+{
+  "name": "@tymra/browser-site-extractors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@tymra/browser-runtime": "workspace:*",
+    "linkedom": "0.14.26"
+  },
+  "engines": {
+    "node": ">=24.13.0 <25"
+  }
+}

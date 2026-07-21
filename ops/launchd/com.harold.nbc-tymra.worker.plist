@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.harold.nbc-tymra.worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/haroldchen/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm</string>
+    <string>--filter</string>
+    <string>@tymra/worker</string>
+    <string>start</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/haroldchen/Documents/project/nbc-tymra</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/haroldchen/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/haroldchen/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/bin:/bin</string>
+    <key>EMAIL_PROVIDER</key>
+    <string>smtp</string>
+    <key>SMTP_URL</key>
+    <string>smtp://127.0.0.1:1025</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/nbc-tymra-worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/nbc-tymra-worker.err.log</string>
+</dict>
+</plist>

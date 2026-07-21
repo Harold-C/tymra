@@ -1,0 +1,15 @@
+FROM ulixee/ulixee-cloud@sha256:42d30f9ae670668ba0d6a74eaa19cf833bd8882b4f0236d959b126d496e7a701
+
+ENV BROWSERS_DIR=/app/ulixee/.cache/ulixee-chrome
+ENV DISPLAY=:99
+WORKDIR /app/ulixee
+
+USER root
+RUN node -e "const Chrome=require('@ulixee/chrome-136-0'); new Chrome().install().then(()=>{const chrome=new Chrome(); if(!chrome.isInstalled) process.exit(1);}).catch(error=>{console.error(error); process.exit(1);})" \
+  && test -x "$BROWSERS_DIR/136.0.7103.113/chrome" \
+  && chown -R ulixee:ulixee "$BROWSERS_DIR"
+COPY --chmod=755 apps/browser-worker/start-ulixee-cloud.sh /usr/local/bin/start-ulixee-cloud
+
+USER ulixee
+
+CMD ["start-ulixee-cloud"]

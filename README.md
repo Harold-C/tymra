@@ -1,0 +1,235 @@
+# Tymra Release 1
+
+Tymra is a bilingual Price Check application with a PostgreSQL system of record, Redis coordination,
+a background Worker pipeline, Fastify Worker API, Scheduler, operational Admin and local Mailpit
+delivery. Worker Baseline v1 adds Property/SellableUnit/Listing resolution, query signatures,
+append-only observations, competitor/date/market snapshots, pricing analysis and immutable results.
+
+## Documentation
+
+- [Tymra product baseline](docs/product-baseline/README.md) is the canonical local memory and index
+  for the migrated requirements, business rules, page structure, visual interaction and core
+  strategy documents. The former `nbc/tymra` Google Docs are no longer authoritative.
+- [Release 1.5 customer funnel requirements](docs/release-1.5-customer-funnel.md) defines the
+  recommended anonymous rough result, magic-link customer account, authenticated formal report,
+  minimal email and abuse-control baseline. It is proposed, not implemented or verified.
+- [Product and technical decisions](docs/decisions.md) records completed Release 1 decisions and
+  proposed Release 1.5 decisions.
+- [Implementation plan](docs/implementation-plan.md) separates completed Release 1 work from the
+  planned Release 1.5 phases.
+- [Traceability](docs/traceability.md) lists required evidence and preserves `not_implemented` for
+  every Release 1.5 requirement until code and acceptance evidence exist.
+- [Worker Baseline v1](docs/worker-baseline-v1.md) documents the runtime, source matrix, fixture
+  boundary, API/CLI and remaining external prerequisites.
+- [Eventfinda New Zealand collection](docs/architecture/eventfinda-collection.md) documents the
+  in-progress nationwide browser collector and its remaining acceptance work.
+- [Local source collection acceptance](docs/architecture/local-source-collection-acceptance.md)
+  defines the mandatory development-only acceptance method for every data-collection channel.
+- [Ticketmaster New Zealand collection](docs/architecture/ticketmaster-collection.md) records the
+  read-only browser collector, reopened detail work and production gates; no Ticketmaster API is used.
+- [Non-OTA source status](docs/architecture/non-ota-source-status.md) is the current source-by-source
+  implementation and coverage matrix.
+- [Manual rate import collection](docs/architecture/manual-import-collection.md) records the bounded
+  development acceptance path and its genuine operator-file blocker.
+
+## Prerequisites
+
+- Docker Desktop with Docker Compose v2
+- Node.js 20.9-24 and pnpm 10-11 for host-based development
+- The shared host Traefik network named `local`; the checked-in Compose labels provide all `.test`
+  HTTPS routes
+
+## Environment
+
+Create a local `.env` from `.env.example`. Keep `.env` uncommitted. Replace every
+`replace-with-...` value and use the same database password in `POSTGRES_PASSWORD` and
+`DATABASE_URL`.
+
+Generate each 256-bit application secret independently:
+
+```sh
+openssl rand -hex 32
+```
+
+Generate the administrator bcrypt hash without storing a plaintext password in the repository:
+
+```sh
+read -s ADMIN_PASSWORD
+printf '\n'
+export ADMIN_PASSWORD
+pnpm exec node -e "import('bcryptjs').then(async ({hash}) => console.log(await hash(process.env.ADMIN_PASSWORD, 12)))"
+unset ADMIN_PASSWORD
+```
+
+Run that command with `ADMIN_PASSWORD` supplied only to the process, then put the resulting hash
+in `ADMIN_PASSWORD_HASH`. This is a bootstrap-only seed value; Web and Worker authentication read
+the stored database hash at runtime. Do not put the plaintext password in `.env`.
+
+`PROVIDER_MODE=demo` and `PROVIDER_MODE=fixture` are restricted to development and test.
+Production rejects both and never falls back to generated data after a live collection failure.
+
+## Docker Compose
+
+Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker, Scheduler
+and Mailpit:
+
+```sh
+docker compose up --build -d
+docker compose ps
+```
+
+Migration and seed services run automatically and must complete before application processes start.
+Both can be rerun safely:
+
+```sh
+docker compose run --rm migrate
+docker compose run --rm seed
+```
+
+Local endpoints:
+
+| Service | URL or port |
+| --- | --- |
+| Public Web | `https://tymra.test/en` and `https://tymra.test/zh` |
+| Direct Web fallback | `http://localhost:3000/en` |
+| Operations | `https://ops.tymra.test/admin/sign-in` |
+| Worker diagnostics | `https://worker.tymra.test/worker/health` and `/worker/readiness` |
+| Direct Worker API fallback | `http://localhost:3100` (loopback only) |
+| Mailpit | `https://mail.tymra.test` |
+| PostgreSQL | `localhost:5433` |
+| Redis | `localhost:6379` |
+
+Compose defaults local email to SMTP through Mailpit. `EMAIL_PROVIDER=log` records only redacted
+delivery metadata and never prints result tokens.
+
+Stop the application while retaining the database:
+
+```sh
+docker compose down
+```
+
+Delete and recreate all local database data:
+
+```sh
+docker compose down --volumes
+docker compose up --build -d
+docker compose run --rm web pnpm db:seed
+```
+
+## Host Development
+
+With PostgreSQL available on port 5433 and the environment exported:
+
+```sh
+pnpm install
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm dev
+```
+
+Run the Worker, API and optional Scheduler in separate terminals:
+
+```sh
+pnpm worker
+pnpm --filter @tymra/worker api
+SCHEDULER_ENABLED=true pnpm --filter @tymra/worker scheduler
+```
+
+Useful Worker CLI examples:
+
+```sh
+pnpm --filter @tymra/worker cli collect:listing 'https://www.booking.com/hotel/nz/example.html'
+pnpm --filter @tymra/worker cli analyse:listing 'https://www.booking.com/hotel/nz/example.html' --email operator@example.test
+pnpm --filter @tymra/worker cli source:health
+pnpm --filter @tymra/worker cli collect:disruptions
+pnpm --filter @tymra/worker cli retention:cleanup
+```
+
+### Browser event collection status
+
+Eventfinda and Ticketmaster use the read-only Browser Worker architecture. Eventfinda supports
+nationwide paginated discovery, a durable detail frontier and development-only bootstrap runs.
+Ticketmaster collects structured events from five verified city listing routes. Its detail pages
+show a temporary verification interstitial but a bounded passive wait has now proved that the public
+event page can load without interaction. The Worker now implements a durable detail frontier,
+bounded detail batches, exact-target persistence, refresh/backoff policy and two-pass database
+acceptance. A daily discovery schedule and six-hour detail schedule are defined but remain disabled.
+Current real-page acceptance is partial because two later captures remained challenged after the
+bounded passive wait; no Ticketmaster API key or API endpoint is used.
+
+On the configured Mac, Docker `restart: unless-stopped` policies keep every long-running service
+alive. `com.harold.nbc-tymra.healthcheck` checks the complete Compose stack and all four HTTPS hosts
+every 60 seconds, restores missing containers, and starts the shared Traefik container when needed.
+The older host-based Web and Worker LaunchAgents are retained only as an emergency fallback and must
+not run at the same time as the Compose application processes.
+
+## Production Domains
+
+`docker-compose.prod.yml` keeps the same trust boundaries with production host variables:
+
+```sh
+HOST_PUBLIC=tymra.nz
+HOST_OPS=ops.tymra.nz
+HOST_WWW=www.tymra.nz
+HOST_BASE_DOMAIN=tymra.nz
+```
+
+Production secrets and service settings use explicit `PROD_*` variables, such as
+`PROD_POSTGRES_PASSWORD`, `PROD_SESSION_SECRET`, `PROD_ADMIN_EMAIL`, `PROD_EMAIL_FROM` and
+`PROD_SMTP_URL`. This prevents Compose from silently reusing the local `.env` values.
+
+The public and Operations hosts share the Next.js deployment but are separated by Host middleware.
+Customer APIs remain same-origin under `/api/v1`; there is no public `api.tymra.nz`. PostgreSQL,
+Redis, Worker, Scheduler and the Worker API remain on the internal Docker network. Mailpit is not
+part of the production Compose file. `www.tymra.nz` permanently redirects to `tymra.nz`.
+
+## Manual Import
+
+Sign in to Admin, open **Data Sources**, and use **Manual rate import**. Download the CSV template,
+preview it, review row errors and rights metadata, then import. Only an approved source with
+storage, analysis and display rights can participate in automatic publication.
+
+The Admin API also accepts explicit `localAcceptance=true` in development while the scheduler is
+disabled. That path is fixed at 256 KB and two valid rows, retains short-lived hashed evidence and
+does not read production approval/license identity or mutate source governance. Its code and
+database regression are verified; a genuine operator export has not been supplied, so real-file
+acceptance remains `not_verified`.
+
+## Verification
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:integration
+pnpm test:e2e
+pnpm build
+pnpm verify
+```
+
+An isolated full-stack smoke environment can run alongside the normal local stack:
+
+```sh
+docker compose -p tymra-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d
+curl -fsS http://localhost:3400/worker/readiness
+curl -fsS http://localhost:3300/en
+curl -fsS http://localhost:58025/api/v1/messages
+docker compose -p tymra-smoke -f docker-compose.yml -f docker-compose.smoke.yml down --volumes
+```
+
+Integration tests require PostgreSQL and Redis. Use a dedicated database URL when preserving local
+development data. E2E expects `https://tymra.test` to be running.
+
+## Demo Boundaries
+
+Every generated fixture is marked `Development Demo Data` and `Not real market data`. Seed data
+covers published high/medium confidence, partial low confidence, insufficient data, unavailable
+source, unsupported market, property and unit confirmation, exception types, expired links,
+withdrawn links and superseded result versions. No unapproved OTA scraping or live credentials are
+used. Booking, Airbnb, Expedia, Hotels.com, Agoda, Trip.com and Google Hotels adapters are research
+and deterministic record/replay implementations only; they do not claim production collection
+rights. All configured non-OTA public source IDs now have concrete transports and parsers. Most
+remain pending source/legal review and production activation; category IDs such as venues,
+councils, universities, RTOs, airports and ports currently implement one named first provider
+rather than every New Zealand institution.

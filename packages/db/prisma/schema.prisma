@@ -1,0 +1,1823 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PriceCheckStatus {
+  DRAFT
+  VALIDATING
+  NEEDS_CONFIRMATION
+  QUEUED
+  COLLECTING
+  NORMALIZING
+  ANALYSING
+  AUTO_VALIDATING
+  EXCEPTION
+  READY
+  PUBLISHED
+  PARTIAL
+  INSUFFICIENT_DATA
+  UNSUPPORTED
+  SOURCE_UNAVAILABLE
+  FAILED
+  CANCELLED
+  EXPIRED
+  WITHDRAWN
+  ARCHIVED
+}
+
+enum MarketStatus {
+  SUPPORTED
+  PILOT_AVAILABLE
+  COMING_SOON
+  INSUFFICIENT_MARKET_DATA
+  DISABLED
+}
+
+enum DataSourceStatus {
+  APPROVED
+  PILOT
+  SUSPENDED
+  DISABLED
+  DEPRECATED
+  UNKNOWN
+}
+
+enum SourceHealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
+enum ProviderType {
+  DEMO
+  MANUAL
+  OTA
+  PUBLIC
+  FIXTURE
+}
+
+enum SourceType {
+  OTA
+  META_SEARCH
+  PUBLIC_DATA
+  MANUAL_IMPORT
+  FIXTURE
+}
+
+enum SourceLifecycle {
+  RESEARCH
+  POC
+  PILOT
+  PRODUCTION
+  SUSPENDED
+  BLOCKED
+}
+
+enum InternalApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum LegalRightsStatus {
+  ALLOWED
+  REVIEW
+  BLOCKED
+}
+
+enum OperationalStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNCONFIGURED
+  BLOCKED
+}
+
+enum SourceEnvironment {
+  DEVELOPMENT
+  TEST
+  PILOT
+  PRODUCTION
+}
+
+enum CacheHitType {
+  EXACT_FRESH
+  PARTIAL
+  STALE
+  MISS
+  NEGATIVE
+  CONFLICT
+}
+
+enum AvailabilityCohortStatus {
+  AVAILABLE
+  RESTRICTED
+  UNAVAILABLE
+  DATA_MISSING
+  SOURCE_FAILURE
+}
+
+enum SnapshotStatus {
+  BUILDING
+  READY
+  PARTIAL
+  BLOCKED
+  SUPERSEDED
+}
+
+enum QualityGateResult {
+  PASSED
+  PASSED_WITH_LIMITATIONS
+  BLOCKED
+}
+
+enum PanelMembershipType {
+  ANCHOR
+  ROTATING
+}
+
+enum RelationshipType {
+  CORE
+  EXTENDED
+  EXCLUDED
+}
+
+enum WorkerAnalysisStatus {
+  RECEIVED
+  RESOLVING_INPUT
+  NEEDS_CONFIRMATION
+  QUEUED
+  CHECKING_CACHE
+  COLLECTING_TARGET
+  COLLECTING_COMPETITORS
+  COLLECTING_MARKET_SIGNALS
+  NORMALISING
+  VALIDATING
+  BUILDING_SNAPSHOT
+  ANALYSING
+  PARTIAL
+  INSUFFICIENT_DATA
+  SOURCE_UNAVAILABLE
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CompetitorRole {
+  CORE
+  REFERENCE
+  EXCLUDED
+}
+
+enum FeeCompleteness {
+  COMPLETE
+  PARTIAL
+  UNKNOWN
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  SOLD_OUT
+  CLOSED_TO_ARRIVAL
+  MINIMUM_STAY_RESTRICTION
+  LISTING_UNAVAILABLE
+  DATA_UNAVAILABLE
+  PLATFORM_ERROR
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+  INSUFFICIENT
+}
+
+enum RiskLevel {
+  NO_CLEAR_RISK
+  WATCH
+  REVIEW
+  HIGH_PRIORITY
+}
+
+enum ExceptionType {
+  PROPERTY_MATCH
+  UNIT_MATCH
+  COMPETITOR_RELATIONSHIP
+  FEE_COMPLETENESS
+  RATE_OUTLIER
+  SOURCE_CONFLICT
+  SOURCE_FAILURE
+  HIGH_PRIORITY_REVIEW
+  RESULT_SCHEMA
+  USER_REPORT
+}
+
+enum ExceptionPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum ExceptionStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum CollectionMode {
+  ON_DEMAND
+  MARKET_COVERAGE
+}
+
+enum CollectionStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  INPUT_RESOLUTION
+  LISTING_RESOLUTION
+  PROPERTY_IDENTIFICATION
+  UNIT_IDENTIFICATION
+  CATALOG_DISCOVERY
+  RATE_COLLECTION
+  AVAILABILITY_COLLECTION
+  POLICY_COLLECTION
+  PUBLIC_DATA_COLLECTION
+  EVENT_COLLECTION
+  WEATHER_COLLECTION
+  TRANSPORT_COLLECTION
+  RATE_NORMALIZATION
+  COMPETITOR_BUILD
+  SNAPSHOT_GENERATION
+  PRICE_ANALYSIS
+  ANALYSIS
+  AUTO_VALIDATION
+  RESULT_GENERATION
+  RESULT_PUBLICATION
+  EMAIL_DELIVERY
+  RESULT_NOTIFICATION
+  LINK_EXPIRY
+  MARKET_COVERAGE_COLLECTION
+  ANCHOR_PANEL_COLLECTION
+  ROTATING_PANEL_COLLECTION
+  SOURCE_HEALTH_CHECK
+  RETENTION_CLEANUP
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+enum ResultVersionStatus {
+  DRAFT
+  PUBLISHED
+  SUPERSEDED
+  WITHDRAWN
+}
+
+enum FeedbackType {
+  COMPETITORS_RELEVANT
+  COMPETITORS_NOT_RELEVANT
+  INSIGHT_USEFUL
+  REVIEWED_PRICE
+  CHANGED_PRICE
+  NO_ACTION_NEEDED
+  REPORT_ISSUE
+}
+
+enum EmailType {
+  VERIFY_AND_SIGN_IN
+  CHECK_RECEIVED
+  CONFIRMATION_REQUIRED
+  CHECK_PROCESSING
+  RESULT_READY
+  PARTIAL_RESULT
+  INSUFFICIENT_DATA
+  CHECK_FAILED
+  LINK_REISSUED
+}
+
+enum AnonymousCheckStatus {
+  CREATED
+  VALIDATING_LISTING
+  CAPTURING_CONTEXT
+  ROUGH_ANALYSING
+  ROUGH_READY
+  INVALID_INPUT
+  UNSUPPORTED
+  NO_DEFAULT_QUOTE
+  INSUFFICIENT
+  FAILED
+  EXPIRED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum VerificationStatus {
+  PENDING
+  CONSUMED
+  EXPIRED
+  REVOKED
+  BLOCKED
+}
+
+enum AbuseOutcome {
+  ALLOW
+  CHALLENGE
+  COOLDOWN
+  REJECT
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum MarketSignalType {
+  PUBLIC_HOLIDAY
+  ANNIVERSARY_DAY
+  SCHOOL_HOLIDAY
+  MAJOR_EVENT
+  WEEKEND_PATTERN
+  PRICE_RISING
+  AVAILABILITY_TIGHTENING
+  RESTRICTION_INCREASING
+  WEATHER_OR_ACCESS_DISRUPTION
+  TOURISM_DEMAND
+  TRANSPORT_FLOW
+  FX_RATE
+}
+
+enum ImportStatus {
+  UPLOADED
+  VALIDATED
+  IMPORTED
+  PARTIAL
+  REJECTED
+}
+
+model AdminUser {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  passwordHash String
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  sessions     AdminSession[]
+  auditEvents  AuditEvent[]
+  merges       IdentityMerge[]
+}
+
+model AdminSession {
+  id          String    @id @default(cuid())
+  adminUserId String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  revokedAt   DateTime?
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId, expiresAt])
+}
+
+model CustomerUser {
+  id               String            @id @default(cuid())
+  emailHash        String            @unique
+  encryptedEmail   String
+  locale           String
+  status           CustomerStatus    @default(ACTIVE)
+  marketingConsent Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  sessions         CustomerSession[]
+  magicLinks       MagicLink[]
+  anonymousChecks  AnonymousCheck[]
+  priceChecks      PriceCheck[]
+
+  @@index([status, createdAt])
+}
+
+model CustomerSession {
+  id             String       @id @default(cuid())
+  customerUserId String
+  tokenHash      String       @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastSeenAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  customerUser   CustomerUser @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  @@index([customerUserId, expiresAt])
+  @@index([expiresAt, revokedAt])
+}
+
+model AnonymousCheck {
+  id             String               @id @default(cuid())
+  locale         String
+  platform       String
+  listingId      String
+  cacheKey       String
+  idempotencyKey String               @unique
+  status         AnonymousCheckStatus @default(CREATED)
+  pricingContext Json
+  failureReason  String?
+  propertyId     String?
+  unitId         String?
+  customerUserId String?
+  isDemo         Boolean              @default(false)
+  expiresAt      DateTime
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  property       Property?            @relation(fields: [propertyId], references: [id])
+  unit           SellableUnit?        @relation(fields: [unitId], references: [id])
+  customerUser   CustomerUser?        @relation(fields: [customerUserId], references: [id])
+  roughResult    RoughResult?
+  magicLinks     MagicLink[]
+  priceChecks    PriceCheck[]
+
+  @@index([cacheKey, status, createdAt])
+  @@index([customerUserId, createdAt])
+  @@index([expiresAt])
+}
+
+model RoughResult {
+  id                  String          @id @default(cuid())
+  anonymousCheckId    String          @unique
+  propertyName        String
+  locality            String
+  unitName            String
+  pricePosition       String
+  estimatedGapLowPct  Int?
+  estimatedGapHighPct Int?
+  observedPriceMinor  Int?
+  marketLowMinor      Int?
+  marketHighMinor     Int?
+  currency            String          @default("NZD")
+  confidence          ConfidenceLevel
+  sourceLabel         String
+  capturedAt          DateTime
+  limitations         Json
+  isDemo              Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  anonymousCheck      AnonymousCheck  @relation(fields: [anonymousCheckId], references: [id], onDelete: Cascade)
+}
+
+model MagicLink {
+  id               String             @id @default(cuid())
+  tokenHash        String             @unique
+  idempotencyKey   String             @unique
+  purpose          String             @default("VERIFY_AND_SIGN_IN")
+  status           VerificationStatus @default(PENDING)
+  emailHash        String
+  encryptedEmail   String
+  locale           String
+  anonymousCheckId String
+  customerUserId   String?
+  marketingConsent Boolean            @default(false)
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime           @default(now())
+  anonymousCheck   AnonymousCheck     @relation(fields: [anonymousCheckId], references: [id], onDelete: Cascade)
+  customerUser     CustomerUser?      @relation(fields: [customerUserId], references: [id])
+
+  @@index([emailHash, createdAt])
+  @@index([anonymousCheckId, status])
+  @@index([expiresAt, status])
+}
+
+model UsageLedger {
+  id               String   @id @default(cuid())
+  action           String
+  subjectType      String
+  subjectHash      String
+  anonymousCheckId String?
+  customerUserId   String?
+  metadata         Json
+  createdAt        DateTime @default(now())
+
+  @@index([action, subjectType, subjectHash, createdAt])
+  @@index([customerUserId, action, createdAt])
+}
+
+model AbuseDecision {
+  id               String       @id @default(cuid())
+  action           String
+  subjectHash      String
+  outcome          AbuseOutcome
+  reasonCodes      Json
+  anonymousCheckId String?
+  cooldownUntil    DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([action, subjectHash, createdAt])
+  @@index([cooldownUntil])
+}
+
+model Property {
+  id                   String                  @id @default(cuid())
+  canonicalName        String
+  legalOrBrandName     String?
+  address              String
+  city                 String
+  countryCode          String                  @default("NZ")
+  latitude             Float?
+  longitude            Float?
+  region               String?
+  territorialAuthority String?
+  rto                  String?
+  postcode             String?
+  microMarket          String?
+  timezone             String                  @default("Pacific/Auckland")
+  accommodationType    String
+  supportStatus        MarketStatus            @default(COMING_SOON)
+  identityConfidence   Float                   @default(0)
+  status               String                  @default("ACTIVE")
+  mergedIntoId         String?
+  isDemo               Boolean                 @default(false)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  mergedInto           Property?               @relation("PropertyMerge", fields: [mergedIntoId], references: [id])
+  mergedProperties     Property[]              @relation("PropertyMerge")
+  units                SellableUnit[]
+  priceChecks          PriceCheck[]
+  anonymousChecks      AnonymousCheck[]
+  listings             Listing[]
+  observations         RateObservation[]
+  workerAnalyses       WorkerAnalysisRequest[]
+
+  @@index([countryCode, city])
+  @@index([canonicalName])
+}
+
+model SellableUnit {
+  id                      String                   @id @default(cuid())
+  propertyId              String
+  canonicalName           String
+  officialName            String
+  capacity                Int
+  bedrooms                Int?
+  bathrooms               Float?
+  bedTypes                Json
+  bedConfiguration        Json?
+  amenities               Json
+  accessibilityAttributes Json?
+  unitType                String
+  entireOrShared          String?
+  status                  String                   @default("ACTIVE")
+  version                 Int                      @default(1)
+  mergedIntoId            String?
+  isDemo                  Boolean                  @default(false)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  property                Property                 @relation(fields: [propertyId], references: [id])
+  mergedInto              SellableUnit?            @relation("UnitMerge", fields: [mergedIntoId], references: [id])
+  mergedUnits             SellableUnit[]           @relation("UnitMerge")
+  listings                Listing[]
+  targetRelationships     CompetitorRelationship[] @relation("TargetUnit")
+  competitorRelationships CompetitorRelationship[] @relation("CompetitorUnit")
+  priceChecks             PriceCheck[]
+  anonymousChecks         AnonymousCheck[]
+  observations            RateObservation[]
+  collectionProfiles      CollectionProfile[]
+  panelMemberships        PanelMembership[]
+  workerAnalyses          WorkerAnalysisRequest[]
+  competitorSetTargets    CompetitorSetVersion[]   @relation("CompetitorSetTarget")
+  competitorMembers       CompetitorSetMember[]    @relation("CompetitorSetMemberUnit")
+
+  @@index([propertyId, status])
+}
+
+model Listing {
+  id                String                  @id @default(cuid())
+  propertyId        String
+  unitId            String
+  dataSourceId      String
+  platform          String
+  externalId        String
+  sourceListingId   String
+  canonicalUrl      String
+  rawUrl            String
+  url               String
+  platformUnitName  String
+  firstDiscoveredAt DateTime                @default(now())
+  lastConfirmedAt   DateTime?
+  onlineStatus      String                  @default("UNKNOWN")
+  listingStatus     String                  @default("UNKNOWN")
+  matchConfidence   Float                   @default(0)
+  legalRightsStatus LegalRightsStatus       @default(REVIEW)
+  operationalStatus OperationalStatus       @default(UNCONFIGURED)
+  metadata          Json                    @default("{}")
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  isDemo            Boolean                 @default(false)
+  property          Property                @relation(fields: [propertyId], references: [id])
+  unit              SellableUnit            @relation(fields: [unitId], references: [id])
+  dataSource        DataSource              @relation(fields: [dataSourceId], references: [id])
+  observations      RateObservation[]
+  workerAnalyses    WorkerAnalysisRequest[]
+
+  @@unique([dataSourceId, externalId])
+  @@index([unitId, onlineStatus])
+}
+
+model StayQuery {
+  id                    String            @id @default(cuid())
+  checkIn               DateTime
+  checkOut              DateTime
+  nights                Int
+  adults                Int               @default(2)
+  children              Int               @default(0)
+  childrenAges          Json              @default("[]")
+  units                 Int               @default(1)
+  unitConstraints       Json              @default("{}")
+  mealPlan              String            @default("ANY_PUBLIC")
+  currency              String            @default("NZD")
+  cancellationCategory  String
+  cancellationPolicy    String            @default("ANY_PUBLIC")
+  ratePlan              String            @default("PUBLIC")
+  taxAndFeePolicy       String            @default("MANDATORY_INCLUDED")
+  publicRateContext     String            @default("PUBLIC_ANONYMOUS")
+  querySemanticsVersion String            @default("v1")
+  querySignatureHash    String?
+  timezone              String
+  reason                String?
+  createdAt             DateTime          @default(now())
+  priceChecks           PriceCheck[]
+  observations          RateObservation[]
+  queryPlans            QueryPlan[]
+}
+
+model QueryPlan {
+  id                      String                 @id @default(cuid())
+  priceCheckId            String?
+  analysisRequestId       String?
+  stayQueryId             String
+  dataSourceId            String?
+  version                 Int                    @default(1)
+  dateBasket              Json
+  querySignatureHash      String
+  querySignaturePayload   Json
+  collectionProfileKey    String
+  generationPolicyVersion String                 @default("query-plan-v1")
+  freshnessPolicyVersion  String                 @default("freshness-v1")
+  createdAt               DateTime               @default(now())
+  priceCheck              PriceCheck?            @relation(fields: [priceCheckId], references: [id])
+  analysisRequest         WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
+  stayQuery               StayQuery              @relation(fields: [stayQueryId], references: [id])
+  dataSource              DataSource?            @relation(fields: [dataSourceId], references: [id])
+  marketSnapshots         MarketSnapshot[]
+
+  @@unique([analysisRequestId, version])
+  @@index([querySignatureHash, createdAt])
+  @@index([priceCheckId, version])
+}
+
+model CollectionProfile {
+  id                    String            @id @default(cuid())
+  key                   String            @unique
+  sellableUnitId        String?
+  dataSourceId          String?
+  ipRegion              String
+  locale                String
+  currency              String            @default("NZD")
+  deviceType            String
+  loggedInState         String
+  memberState           String
+  mobilePriceContext    String
+  publicRateContext     String
+  browserProfileVersion String
+  version               Int               @default(1)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  sellableUnit          SellableUnit?     @relation(fields: [sellableUnitId], references: [id])
+  dataSource            DataSource?       @relation(fields: [dataSourceId], references: [id])
+  observations          RateObservation[]
+  collectionRuns        CollectionRun[]
+
+  @@index([dataSourceId, publicRateContext])
+}
+
+model WorkerAnalysisRequest {
+  id                     String                 @id @default(cuid())
+  rawInput               String
+  inputType              String
+  locale                 String                 @default("en")
+  emailHash              String?
+  encryptedEmail         String?
+  priceCheckId           String?                @unique
+  serviceConsent         Boolean                @default(false)
+  marketingConsent       Boolean                @default(false)
+  propertyId             String?
+  sellableUnitId         String?
+  targetListingId        String?
+  dataSourceId           String?
+  status                 WorkerAnalysisStatus   @default(RECEIVED)
+  idempotencyKey         String                 @unique
+  correlationId          String                 @unique
+  cacheHitType           CacheHitType           @default(MISS)
+  confirmationCandidates Json                   @default("[]")
+  failureCode            String?
+  failureMessage         String?
+  isPreview              Boolean                @default(true)
+  isFixture              Boolean                @default(false)
+  cancelledAt            DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  property               Property?              @relation(fields: [propertyId], references: [id])
+  sellableUnit           SellableUnit?          @relation(fields: [sellableUnitId], references: [id])
+  targetListing          Listing?               @relation(fields: [targetListingId], references: [id])
+  dataSource             DataSource?            @relation(fields: [dataSourceId], references: [id])
+  priceCheck             PriceCheck?            @relation(fields: [priceCheckId], references: [id])
+  queryPlans             QueryPlan[]
+  collectionRuns         CollectionRun[]
+  competitorSets         CompetitorSetVersion[]
+  marketSnapshots        MarketSnapshot[]
+  dateSnapshots          DateSnapshot[]
+  priceAnalyses          PriceAnalysis[]
+  resultVersions         ResultVersion[]
+  jobs                   Job[]
+  emails                 EmailDelivery[]
+
+  @@index([status, createdAt])
+  @@index([sellableUnitId, createdAt])
+  @@index([emailHash, status])
+}
+
+model CompetitorSetVersion {
+  id                   String                @id @default(cuid())
+  analysisRequestId    String
+  targetSellableUnitId String
+  version              Int
+  algorithmVersion     String
+  marketScope          Json
+  expansionLevel       Int                   @default(0)
+  createdBy            String
+  effectiveFrom        DateTime              @default(now())
+  effectiveTo          DateTime?
+  createdAt            DateTime              @default(now())
+  analysisRequest      WorkerAnalysisRequest @relation(fields: [analysisRequestId], references: [id])
+  targetSellableUnit   SellableUnit          @relation("CompetitorSetTarget", fields: [targetSellableUnitId], references: [id])
+  members              CompetitorSetMember[]
+  marketSnapshots      MarketSnapshot[]
+
+  @@unique([analysisRequestId, version])
+  @@index([targetSellableUnitId, effectiveTo])
+}
+
+model CompetitorSetMember {
+  id                       String               @id @default(cuid())
+  competitorSetVersionId   String
+  competitorSellableUnitId String
+  relationshipType         RelationshipType
+  comparabilityScore       Float
+  geographyScore           Float
+  propertyTypeScore        Float
+  unitScore                Float
+  qualityScore             Float
+  priceTierScore           Float
+  inclusionReason          String?
+  exclusionReason          String?
+  effectiveFrom            DateTime             @default(now())
+  effectiveTo              DateTime?
+  createdBy                String
+  algorithmVersion         String
+  competitorSetVersion     CompetitorSetVersion @relation(fields: [competitorSetVersionId], references: [id], onDelete: Cascade)
+  competitorSellableUnit   SellableUnit         @relation("CompetitorSetMemberUnit", fields: [competitorSellableUnitId], references: [id])
+
+  @@unique([competitorSetVersionId, competitorSellableUnitId])
+  @@index([competitorSellableUnitId, effectiveTo])
+}
+
+model DateSnapshot {
+  id                        String                @id @default(cuid())
+  analysisRequestId         String
+  marketSnapshotId          String?
+  stayDate                  DateTime
+  targetRateMinor           Int?
+  validCompetitorCount      Int
+  availableCount            Int
+  restrictedCount           Int
+  unavailableCount          Int
+  dataMissingCount          Int
+  sourceFailureCount        Int
+  marketMedianMinor         Int?
+  lowerQuartileMinor        Int?
+  upperQuartileMinor        Int?
+  availabilityCompression   Float?
+  eventImpact               Float?
+  eventEvidence             Json                  @default("{}")
+  disruptionImpact          Json
+  newestObservationAt       DateTime?
+  oldestObservationAt       DateTime?
+  maxObservationSkewMinutes Int?
+  freshness                 Json
+  qualityGateResult         QualityGateResult
+  qualityFlags              Json
+  confidenceScore           Float
+  confidenceLevel           ConfidenceLevel
+  observationIds            Json
+  snapshotVersion           String
+  createdAt                 DateTime              @default(now())
+  analysisRequest           WorkerAnalysisRequest @relation(fields: [analysisRequestId], references: [id])
+  marketSnapshot            MarketSnapshot?       @relation(fields: [marketSnapshotId], references: [id])
+
+  @@unique([analysisRequestId, stayDate, snapshotVersion])
+  @@index([stayDate, createdAt])
+}
+
+model MarketSnapshot {
+  id                        String                @id @default(cuid())
+  analysisRequestId         String
+  priceCheckId              String?
+  targetPropertyId          String
+  targetSellableUnitId      String
+  targetListingId           String
+  queryPlanId               String
+  queryPlanVersion          Int
+  competitorSetVersionId    String
+  asOf                      DateTime
+  marketScope               Json
+  observationIds            Json
+  sourceRegistryVersions    Json
+  collectionProfileVersions Json
+  newestObservationAt       DateTime?
+  oldestObservationAt       DateTime?
+  maxObservationSkewMinutes Int?
+  sourceCoverage            Float
+  competitorCoverage        Float
+  missingRate               Float
+  conflicts                 Json
+  exclusionReasons          Json
+  qualityGateResult         QualityGateResult
+  qualityFlags              Json
+  snapshotVersion           String
+  generationPolicyVersion   String
+  freshnessPolicyVersion    String
+  qualityGateVersion        String
+  contentHash               String                @unique
+  status                    SnapshotStatus
+  createdAt                 DateTime              @default(now())
+  analysisRequest           WorkerAnalysisRequest @relation(fields: [analysisRequestId], references: [id])
+  priceCheck                PriceCheck?           @relation(fields: [priceCheckId], references: [id])
+  queryPlan                 QueryPlan             @relation(fields: [queryPlanId], references: [id])
+  competitorSetVersion      CompetitorSetVersion  @relation(fields: [competitorSetVersionId], references: [id])
+  dateSnapshots             DateSnapshot[]
+  priceAnalyses             PriceAnalysis[]
+  resultVersions            ResultVersion[]
+
+  @@index([analysisRequestId, asOf])
+  @@index([targetSellableUnitId, asOf])
+}
+
+model PriceAnalysis {
+  id                       String                @id @default(cuid())
+  analysisRequestId        String
+  marketSnapshotId         String
+  marketMedianMinor        Int?
+  weightedRange            Json
+  percentile               Float?
+  comparableCount          Int
+  marketRateIndex          Float?
+  availabilityCompression  Float?
+  demandPressure           Float?
+  eventImpact              Float?
+  eventEvidence            Json                  @default("{}")
+  accessibilityEffect      String
+  demandDisplacementEffect String
+  strandedTravellerEffect  String
+  disruptionDirection      String
+  marketReferenceRange     Json
+  reviewRange              Json
+  targetPricePosition      String
+  keyDates                 Json
+  reasonCodes              Json
+  recommendedAction        String
+  confidenceScore          Float
+  confidenceComponents     Json
+  dataGaps                 Json
+  modelVersion             String
+  ruleVersion              String
+  createdAt                DateTime              @default(now())
+  analysisRequest          WorkerAnalysisRequest @relation(fields: [analysisRequestId], references: [id])
+  marketSnapshot           MarketSnapshot        @relation(fields: [marketSnapshotId], references: [id])
+
+  @@index([analysisRequestId, createdAt])
+}
+
+model PanelMembership {
+  id                String              @id @default(cuid())
+  sellableUnitId    String
+  marketKey         String
+  membershipType    PanelMembershipType
+  weight            Float               @default(1)
+  replacementReason String?
+  rotationDueAt     DateTime?
+  coverageGap       Json                @default("{}")
+  lastSuccessfulAt  DateTime?
+  coverage24h       Float               @default(0)
+  coverage72h       Float               @default(0)
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  sellableUnit      SellableUnit        @relation(fields: [sellableUnitId], references: [id])
+
+  @@unique([sellableUnitId, marketKey])
+  @@index([marketKey, membershipType, active])
+}
+
+model QueryCacheEntry {
+  id                   String       @id @default(cuid())
+  querySignatureHash   String
+  collectionProfileKey String
+  hitType              CacheHitType
+  observationIds       Json
+  negativeReason       String?
+  validUntil           DateTime
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@unique([querySignatureHash, collectionProfileKey])
+  @@index([validUntil, hitType])
+}
+
+model RawArtifact {
+  id                    String    @id @default(cuid())
+  collectionRunId       String
+  dataSourceId          String
+  artifactType          String
+  storageRef            String
+  contentHash           String
+  payload               Json?
+  containsSensitiveData Boolean   @default(false)
+  parserFailure         Boolean   @default(false)
+  expiresAt             DateTime
+  deletedAt             DateTime?
+  createdAt             DateTime  @default(now())
+
+  @@index([expiresAt, deletedAt])
+  @@index([collectionRunId])
+}
+
+model SourceHealthCheck {
+  id           String            @id @default(cuid())
+  dataSourceId String
+  status       OperationalStatus
+  message      String
+  latencyMs    Int?
+  metadata     Json              @default("{}")
+  checkedAt    DateTime          @default(now())
+  dataSource   DataSource        @relation(fields: [dataSourceId], references: [id])
+
+  @@index([dataSourceId, checkedAt])
+}
+
+model ScheduleDefinition {
+  id             String    @id @default(cuid())
+  key            String    @unique
+  jobType        JobType
+  queueName      String
+  cronExpression String
+  enabled        Boolean   @default(false)
+  payload        Json      @default("{}")
+  lastEnqueuedAt DateTime?
+  nextRunAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model DataSource {
+  id                         String                  @id @default(cuid())
+  key                        String                  @unique
+  name                       String
+  providerType               ProviderType
+  sourceType                 SourceType              @default(PUBLIC_DATA)
+  lifecycle                  SourceLifecycle         @default(RESEARCH)
+  supportedDomains           Json                    @default("[]")
+  adapterKey                 String?
+  environments               SourceEnvironment[]     @default([DEVELOPMENT])
+  accessMethod               String?
+  allowedUsage               Json                    @default("[]")
+  displayPermission          Boolean                 @default(false)
+  derivedAnalysisPermission  Boolean                 @default(false)
+  retentionPolicy            Json                    @default("{}")
+  concurrencyLimit           Int                     @default(1)
+  dailyBudget                Int                     @default(0)
+  internalApprovalStatus     InternalApprovalStatus  @default(PENDING)
+  legalRightsStatus          LegalRightsStatus       @default(REVIEW)
+  operationalStatus          OperationalStatus       @default(UNCONFIGURED)
+  approvedBy                 String?
+  approvedAt                 DateTime?
+  lastReviewedAt             DateTime?
+  healthSummary              Json                    @default("{}")
+  metadata                   Json                    @default("{}")
+  status                     DataSourceStatus        @default(UNKNOWN)
+  healthStatus               SourceHealthStatus      @default(DOWN)
+  enabled                    Boolean                 @default(false)
+  acquisitionMethod          String
+  licenseBasis               String?
+  rightsAllowStorage         Boolean                 @default(false)
+  rightsAllowDerivedAnalysis Boolean                 @default(false)
+  rightsAllowDisplay         Boolean                 @default(false)
+  retentionDays              Int?
+  owner                      String?
+  lastSuccessAt              DateTime?
+  errorRate                  Float                   @default(0)
+  isDemo                     Boolean                 @default(false)
+  createdAt                  DateTime                @default(now())
+  updatedAt                  DateTime                @updatedAt
+  listings                   Listing[]
+  collectionRuns             CollectionRun[]
+  observations               RateObservation[]
+  marketSignals              MarketSignal[]
+  sourceMarketSignals        SourceMarketSignal[]
+  sourceEvents               SourceEvent[]
+  sourceEventOccurrences     SourceEventOccurrence[]
+  imports                    ManualImport[]
+  sourceHealthChecks         SourceHealthCheck[]
+  queryPlans                 QueryPlan[]
+  collectionProfiles         CollectionProfile[]
+  workerAnalyses             WorkerAnalysisRequest[]
+  crawlTargets               SourceCrawlTarget[]
+
+  @@index([status, enabled])
+}
+
+model SourceCrawlTarget {
+  id                   String     @id @default(cuid())
+  dataSourceId         String
+  url                  String
+  urlHash              String
+  kind                 String
+  status               String     @default("PENDING")
+  priority             Int        @default(100)
+  active               Boolean    @default(true)
+  firstSeenAt          DateTime   @default(now())
+  lastSeenAt           DateTime   @default(now())
+  lastFetchedAt        DateTime?
+  nextFetchAt          DateTime?
+  sourceUpdatedAt      DateTime?
+  contentHash          String?
+  httpStatus           Int?
+  consecutiveFailures  Int        @default(0)
+  missedDiscoveryCount Int        @default(0)
+  lastErrorCode        String?
+  lastErrorAt          DateTime?
+  metadata             Json       @default("{}")
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  dataSource           DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([dataSourceId, urlHash])
+  @@index([dataSourceId, active, nextFetchAt, priority])
+  @@index([dataSourceId, kind, lastSeenAt])
+  @@index([status, lastErrorAt])
+}
+
+model CollectionRun {
+  id                     String                  @id @default(cuid())
+  jobId                  String?
+  dataSourceId           String
+  priceCheckId           String?
+  analysisRequestId      String?
+  correlationId          String?
+  collectionProfileId    String?
+  mode                   CollectionMode
+  status                 CollectionStatus        @default(PENDING)
+  scope                  Json
+  startedAt              DateTime?
+  finishedAt             DateTime?
+  attemptCount           Int                     @default(0)
+  successCount           Int                     @default(0)
+  failureCount           Int                     @default(0)
+  errorCode              String?
+  errorSummary           String?
+  isDemo                 Boolean                 @default(false)
+  createdAt              DateTime                @default(now())
+  job                    Job?                    @relation(fields: [jobId], references: [id])
+  dataSource             DataSource              @relation(fields: [dataSourceId], references: [id])
+  priceCheck             PriceCheck?             @relation(fields: [priceCheckId], references: [id])
+  analysisRequest        WorkerAnalysisRequest?  @relation(fields: [analysisRequestId], references: [id])
+  collectionProfile      CollectionProfile?      @relation(fields: [collectionProfileId], references: [id])
+  observations           RateObservation[]
+  sourceEventOccurrences SourceEventOccurrence[]
+  sourceMarketSignals    SourceMarketSignal[]
+  incident               CollectionIncident?
+
+  @@index([dataSourceId, createdAt])
+  @@index([priceCheckId])
+  @@index([analysisRequestId, createdAt])
+}
+
+model CollectionIncident {
+  id                 String            @id @default(cuid())
+  collectionRunId    String            @unique
+  retryJobId         String?           @unique
+  status             ExceptionStatus   @default(OPEN)
+  severity           ExceptionPriority
+  category           String
+  title              String
+  summary            String
+  evidence           Json
+  resolutionAction   String?
+  resolutionReason   String?
+  acknowledgedAt     DateTime?
+  resolvedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  isDemo             Boolean           @default(false)
+  collectionRun      CollectionRun     @relation(fields: [collectionRunId], references: [id], onDelete: Restrict)
+
+  @@index([status, severity, createdAt])
+  @@index([retryJobId])
+}
+
+model RateObservation {
+  id                         String             @id @default(cuid())
+  propertyId                 String
+  sellableUnitId             String
+  listingId                  String
+  sourceListingId            String
+  stayQueryId                String
+  collectionProfileId        String
+  dataSourceId               String
+  collectionRunId            String
+  requestedAt                DateTime
+  currency                   String             @default("NZD")
+  baseAmountMinor            Int
+  mandatoryFeesMinor         Int
+  taxesMinor                 Int
+  platformFeesMinor          Int
+  optionalFeesMinor          Int                @default(0)
+  totalAmountMinor           Int
+  exchangeRate               Decimal            @default(1) @db.Decimal(18, 8)
+  nzdTotalMinor              Int
+  effectiveNightlyTotalMinor Int
+  sourceUpdatedAt            DateTime?
+  observedAt                 DateTime
+  checkIn                    DateTime
+  checkOut                   DateTime
+  nights                     Int
+  adults                     Int
+  childrenAges               Json               @default("[]")
+  units                      Int
+  localTimezone              String
+  roomTypeRaw                String
+  roomTypeNormalized         String
+  unitConstraints            Json               @default("{}")
+  occupancyCapacity          Int?
+  bedType                    String?
+  unitAttributesVersion      Int                @default(1)
+  mealPlan                   String?
+  cancellationCategory       String
+  cancellationPolicy         String?
+  paymentTerms               String?
+  rateFence                  String?
+  minimumStay                Int?
+  availabilityStatus         AvailabilityStatus
+  restrictionReason          String?
+  feeCompleteness            FeeCompleteness
+  sourceUrl                  String
+  evidenceRef                String
+  collectorVersion           String
+  parserVersion              String
+  qualityFlags               Json
+  legalRightsStatus          LegalRightsStatus
+  operationalStatus          OperationalStatus
+  collectedAt                DateTime
+  rawDataStored              Boolean            @default(false)
+  idempotencyKey             String             @unique
+  isDemo                     Boolean            @default(false)
+  createdAt                  DateTime           @default(now())
+  property                   Property           @relation(fields: [propertyId], references: [id])
+  sellableUnit               SellableUnit       @relation(fields: [sellableUnitId], references: [id])
+  listing                    Listing            @relation(fields: [listingId], references: [id])
+  stayQuery                  StayQuery          @relation(fields: [stayQueryId], references: [id])
+  collectionProfile          CollectionProfile  @relation(fields: [collectionProfileId], references: [id])
+  dataSource                 DataSource         @relation(fields: [dataSourceId], references: [id])
+  collectionRun              CollectionRun      @relation(fields: [collectionRunId], references: [id])
+
+  @@index([listingId, collectedAt])
+  @@index([sellableUnitId, checkIn, collectedAt])
+  @@index([stayQueryId, collectedAt])
+}
+
+model CompetitorRelationship {
+  id               String         @id @default(cuid())
+  targetUnitId     String
+  competitorUnitId String
+  role             CompetitorRole
+  version          Int
+  validFrom        DateTime       @default(now())
+  validTo          DateTime?
+  reasonCode       String
+  suggestedBy      String
+  manualOverride   Boolean        @default(false)
+  feedbackId       String?
+  isDemo           Boolean        @default(false)
+  targetUnit       SellableUnit   @relation("TargetUnit", fields: [targetUnitId], references: [id])
+  competitorUnit   SellableUnit   @relation("CompetitorUnit", fields: [competitorUnitId], references: [id])
+
+  @@unique([targetUnitId, competitorUnitId, version])
+  @@index([targetUnitId, validTo, role])
+}
+
+model MarketCoverage {
+  id                    String       @id @default(cuid())
+  key                   String       @unique
+  name                  String
+  status                MarketStatus
+  region                Json
+  knownPropertyCount    Int          @default(0)
+  knownUnitCount        Int          @default(0)
+  coverage24h           Float        @default(0)
+  coverage72h           Float        @default(0)
+  collectionSuccessRate Float        @default(0)
+  sourceFailureRate     Float        @default(0)
+  competitorCoverage    Float        @default(0)
+  acceptNewChecks       Boolean      @default(true)
+  lastHealthAt          DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+}
+
+model MarketSignal {
+  id                String           @id @default(cuid())
+  marketKey         String
+  type              MarketSignalType
+  region            String
+  startsAt          DateTime
+  endsAt            DateTime
+  dataSourceId      String?
+  eventOccurrenceId String?
+  status            String           @default("CONFIRMED")
+  evidence          Json
+  isDemo            Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  dataSource        DataSource?      @relation(fields: [dataSourceId], references: [id])
+  eventOccurrence   EventOccurrence? @relation(fields: [eventOccurrenceId], references: [id])
+  sourceLinks       MarketSignalSourceLink[]
+
+  @@index([marketKey, startsAt, endsAt])
+  @@index([eventOccurrenceId])
+}
+
+model SourceMarketSignal {
+  id                  String                   @id @default(cuid())
+  dataSourceId        String
+  lastCollectionRunId String
+  externalId          String
+  marketKey           String
+  type                MarketSignalType
+  title               String
+  region              String
+  startsAt            DateTime
+  endsAt              DateTime
+  direction           String
+  confidence          Float
+  evidenceRef         String
+  contentHash         String
+  metadata            Json                     @default("{}")
+  isDemo              Boolean                  @default(false)
+  firstSeenAt         DateTime                 @default(now())
+  lastSeenAt          DateTime                 @default(now())
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  dataSource          DataSource               @relation(fields: [dataSourceId], references: [id])
+  lastCollectionRun   CollectionRun            @relation(fields: [lastCollectionRunId], references: [id])
+  canonicalLink       MarketSignalSourceLink?
+
+  @@unique([dataSourceId, externalId])
+  @@index([lastCollectionRunId])
+  @@index([marketKey, startsAt, endsAt])
+}
+
+model MarketSignalSourceLink {
+  id                   String             @id @default(cuid())
+  marketSignalId       String
+  sourceMarketSignalId String             @unique
+  matchMethod          String
+  matchConfidence      Float
+  reviewStatus         String             @default("AUTO_ACCEPTED")
+  evidence             Json               @default("{}")
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  marketSignal         MarketSignal       @relation(fields: [marketSignalId], references: [id], onDelete: Cascade)
+  sourceMarketSignal   SourceMarketSignal @relation(fields: [sourceMarketSignalId], references: [id], onDelete: Cascade)
+
+  @@unique([marketSignalId, sourceMarketSignalId])
+  @@index([marketSignalId, reviewStatus])
+}
+
+model SourceEvent {
+  id              String                  @id @default(cuid())
+  dataSourceId    String
+  externalId      String
+  sourceUrl       String
+  title           String
+  category        String?
+  subcategory     String?
+  status          String                  @default("SCHEDULED")
+  sourceUpdatedAt DateTime?
+  firstSeenAt     DateTime                @default(now())
+  lastSeenAt      DateTime                @default(now())
+  contentHash     String
+  metadata        Json                    @default("{}")
+  isDemo          Boolean                 @default(false)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  dataSource      DataSource              @relation(fields: [dataSourceId], references: [id])
+  occurrences     SourceEventOccurrence[]
+  canonicalLinks  EventSourceLink[]
+
+  @@unique([dataSourceId, externalId])
+  @@index([dataSourceId, lastSeenAt])
+  @@index([status, lastSeenAt])
+}
+
+model SourceEventOccurrence {
+  id                   String                      @id @default(cuid())
+  sourceEventId        String
+  dataSourceId         String
+  lastCollectionRunId  String
+  externalId           String
+  canonicalKey         String
+  title                String
+  category             String?
+  subcategory          String?
+  sourceUrl            String
+  venueName            String?
+  address              String?
+  city                 String?
+  region               String?
+  territorialAuthority String?
+  postcode             String?
+  countryCode          String                      @default("NZ")
+  latitude             Float?
+  longitude            Float?
+  timezone             String                      @default("Pacific/Auckland")
+  startsAt             DateTime
+  endsAt               DateTime
+  status               String                      @default("SCHEDULED")
+  ticketStatus         String?
+  impactStatus         String                      @default("PENDING_EVIDENCE")
+  impactScore          Float?
+  impactConfidence     Float?
+  impactEvidence       Json                        @default("{}")
+  sourceUpdatedAt      DateTime?
+  firstSeenAt          DateTime                    @default(now())
+  lastSeenAt           DateTime                    @default(now())
+  contentHash          String
+  metadata             Json                        @default("{}")
+  isDemo               Boolean                     @default(false)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+  sourceEvent          SourceEvent                 @relation(fields: [sourceEventId], references: [id], onDelete: Cascade)
+  dataSource           DataSource                  @relation(fields: [dataSourceId], references: [id])
+  lastCollectionRun    CollectionRun               @relation(fields: [lastCollectionRunId], references: [id])
+  canonicalLinks       EventOccurrenceSourceLink[]
+
+  @@unique([dataSourceId, externalId])
+  @@index([sourceEventId, startsAt])
+  @@index([canonicalKey])
+  @@index([city, startsAt, endsAt])
+  @@index([region, startsAt, endsAt])
+  @@index([impactStatus, startsAt])
+  @@index([lastCollectionRunId])
+}
+
+model CanonicalVenue {
+  id                   String            @id @default(cuid())
+  canonicalKey         String            @unique
+  name                 String?
+  address              String?
+  city                 String?
+  region               String?
+  territorialAuthority String?
+  postcode             String?
+  countryCode          String            @default("NZ")
+  latitude             Float?
+  longitude            Float?
+  metadata             Json              @default("{}")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  occurrences          EventOccurrence[]
+
+  @@index([city, region])
+}
+
+model CanonicalEvent {
+  id           String            @id @default(cuid())
+  canonicalKey String            @unique
+  title        String
+  category     String?
+  subcategory  String?
+  description  String?
+  status       String            @default("SCHEDULED")
+  firstSeenAt  DateTime          @default(now())
+  lastSeenAt   DateTime          @default(now())
+  metadata     Json              @default("{}")
+  isDemo       Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  occurrences  EventOccurrence[]
+  sourceLinks  EventSourceLink[]
+
+  @@index([status, lastSeenAt])
+}
+
+model EventOccurrence {
+  id               String                      @id @default(cuid())
+  canonicalEventId String
+  venueId          String?
+  canonicalKey     String                      @unique
+  timezone         String                      @default("Pacific/Auckland")
+  startsAt         DateTime
+  endsAt           DateTime
+  status           String                      @default("SCHEDULED")
+  ticketStatus     String?
+  impactStatus     String                      @default("PENDING_EVIDENCE")
+  impactScore      Float?
+  impactConfidence Float?
+  impactEvidence   Json                        @default("{}")
+  firstSeenAt      DateTime                    @default(now())
+  lastSeenAt       DateTime                    @default(now())
+  metadata         Json                        @default("{}")
+  isDemo           Boolean                     @default(false)
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+  canonicalEvent   CanonicalEvent              @relation(fields: [canonicalEventId], references: [id], onDelete: Cascade)
+  venue            CanonicalVenue?             @relation(fields: [venueId], references: [id])
+  sourceLinks      EventOccurrenceSourceLink[]
+  marketSignals    MarketSignal[]
+
+  @@index([canonicalEventId, startsAt])
+  @@index([venueId, startsAt, endsAt])
+  @@index([impactStatus, startsAt])
+}
+
+model EventSourceLink {
+  id               String         @id @default(cuid())
+  canonicalEventId String
+  sourceEventId    String         @unique
+  matchMethod      String
+  matchConfidence  Float
+  reviewStatus     String         @default("AUTO_ACCEPTED")
+  evidence         Json           @default("{}")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  canonicalEvent   CanonicalEvent @relation(fields: [canonicalEventId], references: [id], onDelete: Cascade)
+  sourceEvent      SourceEvent    @relation(fields: [sourceEventId], references: [id], onDelete: Cascade)
+
+  @@unique([canonicalEventId, sourceEventId])
+  @@index([canonicalEventId, reviewStatus])
+}
+
+model EventOccurrenceSourceLink {
+  id                      String                @id @default(cuid())
+  eventOccurrenceId       String
+  sourceEventOccurrenceId String                @unique
+  matchMethod             String
+  matchConfidence         Float
+  reviewStatus            String                @default("AUTO_ACCEPTED")
+  evidence                Json                  @default("{}")
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  eventOccurrence         EventOccurrence       @relation(fields: [eventOccurrenceId], references: [id], onDelete: Cascade)
+  sourceEventOccurrence   SourceEventOccurrence @relation(fields: [sourceEventOccurrenceId], references: [id], onDelete: Cascade)
+
+  @@unique([eventOccurrenceId, sourceEventOccurrenceId])
+  @@index([eventOccurrenceId, reviewStatus])
+}
+
+model PriceCheck {
+  id                         String                 @id @default(cuid())
+  rawInput                   String
+  locale                     String
+  emailHash                  String
+  encryptedEmail             String
+  serviceConsent             Boolean
+  marketingConsent           Boolean                @default(false)
+  propertyId                 String?
+  unitId                     String?
+  stayQueryId                String?
+  marketKey                  String
+  status                     PriceCheckStatus       @default(DRAFT)
+  accessKeyHash              String                 @unique
+  idempotencyKey             String                 @unique
+  dataSnapshotVersion        String?
+  rulesVersion               String                 @default("BR-v1.1")
+  currentResultVersionNumber Int?
+  isDemo                     Boolean                @default(false)
+  customerUserId             String?
+  anonymousCheckId           String?                @unique
+  inPageDeliveredAt          DateTime?
+  notificationGraceEndsAt    DateTime?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  property                   Property?              @relation(fields: [propertyId], references: [id])
+  unit                       SellableUnit?          @relation(fields: [unitId], references: [id])
+  stayQuery                  StayQuery?             @relation(fields: [stayQueryId], references: [id])
+  collectionRuns             CollectionRun[]
+  resultVersions             ResultVersion[]
+  exceptions                 ExceptionCase[]
+  feedback                   Feedback[]
+  actions                    ActionRecord[]
+  jobs                       Job[]
+  emails                     EmailDelivery[]
+  customerUser               CustomerUser?          @relation(fields: [customerUserId], references: [id])
+  anonymousCheck             AnonymousCheck?        @relation(fields: [anonymousCheckId], references: [id])
+  queryPlans                 QueryPlan[]
+  marketSnapshots            MarketSnapshot[]
+  workerAnalysis             WorkerAnalysisRequest?
+
+  @@index([status, createdAt])
+  @@index([propertyId, unitId])
+  @@index([emailHash, status])
+  @@index([customerUserId, createdAt])
+}
+
+model ResultVersion {
+  id                String                 @id @default(cuid())
+  priceCheckId      String
+  analysisRequestId String?
+  version           Int
+  status            ResultVersionStatus    @default(DRAFT)
+  outcome           PriceCheckStatus
+  generatedAt       DateTime               @default(now())
+  publishedAt       DateTime?
+  dataLastCheckedAt DateTime?
+  analysisVersion   String
+  confidence        ConfidenceLevel
+  payload           Json
+  supersedesId      String?
+  isDemo            Boolean                @default(false)
+  marketSnapshotId  String?
+  priceCheck        PriceCheck             @relation(fields: [priceCheckId], references: [id])
+  analysisRequest   WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
+  supersedes        ResultVersion?         @relation("ResultSupersession", fields: [supersedesId], references: [id])
+  supersededBy      ResultVersion[]        @relation("ResultSupersession")
+  insights          Insight[]
+  accessTokens      ResultAccessToken[]
+  feedback          Feedback[]
+  emails            EmailDelivery[]
+  marketSnapshot    MarketSnapshot?        @relation(fields: [marketSnapshotId], references: [id])
+
+  @@unique([priceCheckId, version])
+  @@unique([analysisRequestId, version])
+  @@index([priceCheckId, status])
+  @@index([analysisRequestId, status])
+}
+
+model ResultAccessToken {
+  id              String        @id @default(cuid())
+  resultVersionId String
+  tokenHash       String        @unique
+  issuedAt        DateTime      @default(now())
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  revokeReason    String?
+  resultVersion   ResultVersion @relation(fields: [resultVersionId], references: [id])
+
+  @@index([resultVersionId, expiresAt])
+}
+
+model Insight {
+  id                    String          @id @default(cuid())
+  resultVersionId       String
+  stayDate              DateTime
+  risk                  RiskLevel
+  reasonCodes           Json
+  marketSignalIds       Json
+  targetPriceMinor      Int?
+  competitorMedianMinor Int?
+  competitorLowMinor    Int?
+  competitorHighMinor   Int?
+  recommendedAction     String
+  confidence            ConfidenceLevel
+  limitations           Json
+  explanation           Json
+  resultVersion         ResultVersion   @relation(fields: [resultVersionId], references: [id])
+  feedback              Feedback[]
+
+  @@index([resultVersionId, stayDate])
+}
+
+model ExceptionCase {
+  id               String            @id @default(cuid())
+  priceCheckId     String
+  type             ExceptionType
+  priority         ExceptionPriority
+  status           ExceptionStatus   @default(OPEN)
+  recommendation   String
+  evidence         Json
+  allowedActions   Json
+  blockingUser     Boolean           @default(false)
+  resolutionAction String?
+  resolutionReason String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  resolvedAt       DateTime?
+  isDemo           Boolean           @default(false)
+  priceCheck       PriceCheck        @relation(fields: [priceCheckId], references: [id])
+
+  @@index([status, priority, createdAt])
+  @@index([priceCheckId])
+}
+
+model Feedback {
+  id              String         @id @default(cuid())
+  priceCheckId    String
+  resultVersionId String?
+  insightId       String?
+  type            FeedbackType
+  comment         String?
+  idempotencyKey  String         @unique
+  isDemo          Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  priceCheck      PriceCheck     @relation(fields: [priceCheckId], references: [id])
+  resultVersion   ResultVersion? @relation(fields: [resultVersionId], references: [id])
+  insight         Insight?       @relation(fields: [insightId], references: [id])
+}
+
+model ActionRecord {
+  id           String     @id @default(cuid())
+  priceCheckId String
+  actorType    String
+  actorId      String?
+  action       String
+  payload      Json
+  createdAt    DateTime   @default(now())
+  priceCheck   PriceCheck @relation(fields: [priceCheckId], references: [id])
+
+  @@index([priceCheckId, createdAt])
+}
+
+model AuditEvent {
+  id           String     @id @default(cuid())
+  actorAdminId String?
+  eventType    String
+  entityType   String
+  entityId     String
+  payload      Json
+  previousHash String?
+  eventHash    String     @unique
+  isDemo       Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  actorAdmin   AdminUser? @relation(fields: [actorAdminId], references: [id])
+
+  @@index([entityType, entityId, createdAt])
+  @@index([createdAt])
+}
+
+model IdentityMerge {
+  id           String    @id @default(cuid())
+  entityType   String
+  fromId       String
+  toId         String
+  reason       String
+  actorAdminId String
+  createdAt    DateTime  @default(now())
+  actorAdmin   AdminUser @relation(fields: [actorAdminId], references: [id])
+
+  @@index([entityType, fromId])
+}
+
+model WaitlistEntry {
+  id               String   @id @default(cuid())
+  emailHash        String
+  encryptedEmail   String
+  locale           String
+  country          String
+  market           String?
+  input            String?
+  marketingConsent Boolean
+  idempotencyKey   String   @unique
+  createdAt        DateTime @default(now())
+
+  @@index([emailHash, createdAt])
+}
+
+model ContactRequest {
+  id             String   @id @default(cuid())
+  name           String
+  emailHash      String
+  encryptedEmail String
+  topic          String
+  message        String
+  checkId        String?
+  locale         String
+  referenceId    String   @unique
+  createdAt      DateTime @default(now())
+}
+
+model Job {
+  id                 String                 @id @default(cuid())
+  type               JobType
+  status             JobStatus              @default(PENDING)
+  payload            Json
+  idempotencyKey     String                 @unique
+  priceCheckId       String?
+  analysisRequestId  String?
+  queueName          String                 @default("default")
+  correlationId      String?
+  collectionRunId    String?
+  sourceId           String?
+  listingId          String?
+  sellableUnitId     String?
+  querySignatureHash String?
+  snapshotId         String?
+  resultVersionId    String?
+  priority           Int                    @default(100)
+  attemptCount       Int                    @default(0)
+  maxAttempts        Int                    @default(3)
+  runAt              DateTime               @default(now())
+  lockedAt           DateTime?
+  lockedBy           String?
+  leaseExpiresAt     DateTime?
+  lastErrorCode      String?
+  lastErrorMessage   String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  completedAt        DateTime?
+  priceCheck         PriceCheck?            @relation(fields: [priceCheckId], references: [id])
+  analysisRequest    WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
+  collectionRuns     CollectionRun[]
+
+  @@index([status, runAt, priority])
+  @@index([queueName, status, runAt, priority])
+  @@index([analysisRequestId, createdAt])
+  @@index([leaseExpiresAt])
+}
+
+model EmailDelivery {
+  id                 String                 @id @default(cuid())
+  priceCheckId       String?
+  analysisRequestId  String?
+  resultVersionId    String?
+  type               EmailType
+  locale             String
+  recipientHash      String
+  encryptedRecipient String
+  provider           String
+  status             DeliveryStatus         @default(PENDING)
+  idempotencyKey     String                 @unique
+  attemptCount       Int                    @default(0)
+  lastError          String?
+  queuedAt           DateTime               @default(now())
+  sentAt             DateTime?
+  createdAt          DateTime               @default(now())
+  priceCheck         PriceCheck?            @relation(fields: [priceCheckId], references: [id])
+  analysisRequest    WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
+  resultVersion      ResultVersion?         @relation(fields: [resultVersionId], references: [id])
+
+  @@index([status, queuedAt])
+  @@index([analysisRequestId, queuedAt])
+}
+
+model ManualImport {
+  id             String       @id @default(cuid())
+  dataSourceId   String
+  status         ImportStatus @default(UPLOADED)
+  format         String
+  filename       String
+  collectedAt    DateTime
+  rightsMetadata Json
+  rowCount       Int          @default(0)
+  validRowCount  Int          @default(0)
+  errorRowCount  Int          @default(0)
+  errors         Json
+  isDemo         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  importedAt     DateTime?
+  dataSource     DataSource   @relation(fields: [dataSourceId], references: [id])
+
+  @@index([dataSourceId, createdAt])
+}

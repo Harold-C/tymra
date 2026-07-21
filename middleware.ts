@@ -1,0 +1,53 @@
+import createMiddleware from "next-intl/middleware";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+const internationalizedMiddleware = createMiddleware({
+  locales: ["en", "zh"],
+  defaultLocale: "en",
+  localePrefix: "always",
+  localeCookie: {
+    name: "NEXT_LOCALE",
+    sameSite: "lax",
+  },
+});
+
+export default function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const isAdminPage = pathname === "/admin" || pathname.startsWith("/admin/");
+  const isAdminApi = pathname === "/api/v1/admin" || pathname.startsWith("/api/v1/admin/");
+  const publicOrigin = process.env.PUBLIC_ORIGIN ?? process.env.APP_BASE_URL ?? "https://tymra.test";
+  const adminOrigin = process.env.ADMIN_ORIGIN ?? publicOrigin;
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const requestHost = (forwardedHost || request.headers.get("host") || request.nextUrl.host).toLowerCase();
+  const isAdminHost = requestHost === new URL(adminOrigin).host.toLowerCase();
+
+  if (isAdminApi) {
+    if (!isAdminHost) {
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Not found." } }, { status: 404 });
+    }
+    return NextResponse.next();
+  }
+
+  if (isAdminPage) {
+    if (!isAdminHost) {
+      const destination = new URL(`${pathname}${request.nextUrl.search}`, adminOrigin);
+      return NextResponse.redirect(destination, 308);
+    }
+    return NextResponse.next();
+  }
+
+  if (isAdminHost) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Not found." } }, { status: 404 });
+    }
+    return NextResponse.redirect(new URL("/admin", adminOrigin), 308);
+  }
+
+  if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next();
+  return internationalizedMiddleware(request);
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|.*\\..*).*)"],
+};

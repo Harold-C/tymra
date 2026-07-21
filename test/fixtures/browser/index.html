@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tymra Browser Fixture</title>
+    <style>
+      body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #17202a; background: #f4f7f5; }
+      header { min-height: 420px; display: grid; place-content: center; padding: 48px; background: #0e6251; color: white; }
+      main { min-height: 720px; padding: 64px; background: #f9e79f; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Controlled Browser Capture</h1><p id="status">Rendering...</p></header>
+    <main><h2>Evidence target</h2><p>This page is owned by Tymra and has no external side effects.</p></main>
+    <script>
+      setTimeout(() => {
+        document.querySelector("#status").textContent = "JavaScript rendered successfully";
+        document.title = "Tymra Browser Fixture - Ready";
+      }, 150);
+    </script>
+  </body>
+</html>

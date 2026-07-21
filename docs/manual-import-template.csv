@@ -1,0 +1,2 @@
+property_external_id,property_name,property_address,unit_external_id,unit_name,listing_external_id,check_in,check_out,currency,base_amount_minor,mandatory_fees_minor,taxes_minor,platform_fees_minor,cancellation_category,minimum_stay,availability_status,fee_completeness,collected_at
+example-property,Example Property,Example New Zealand address,example-unit,Example Unit,example-listing,2026-07-20,2026-07-21,NZD,20000,1500,3225,0,STANDARD,,AVAILABLE,COMPLETE,2026-07-15T00:00:00Z

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tymra_test
+          POSTGRES_USER: tymra
+          POSTGRES_PASSWORD: test-only-database-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tymra -d tymra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://tymra:test-only-database-password@127.0.0.1:5432/tymra_test
+      APP_BASE_URL: https://tymra.test
+      SESSION_SECRET: test-only-session-secret-00000000000000000000000000000000
+      ADMIN_EMAIL: admin@tymra.test
+      ADMIN_PASSWORD_HASH: $2b$12$kM5K8YAbP6uAj5x7vq0eRe2nGAnGYrBoCiC30xGno6jylbRZy5FvK
+      RESULT_TOKEN_SECRET: test-only-result-secret-000000000000000000000000000000000
+      ACCESS_KEY_SECRET: test-only-access-secret-000000000000000000000000000000000
+      DATA_ENCRYPTION_KEY: test-only-encryption-key-00000000000000000000000000000000
+      CRON_SECRET: test-only-cron-secret-0000000000000000000000000000000000
+      PROVIDER_MODE: demo
+      DEFAULT_MARKET: christchurch
+      AUTO_PUBLISH_ENABLED: "true"
+      ACCEPT_NEW_CHECKS: "true"
+      EMAIL_PROVIDER: log
+      EMAIL_FROM: Tymra CI <no-reply@tymra.test>
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm --filter @tymra/db db:deploy
+      - run: pnpm db:seed
+      - run: pnpm verify
