@@ -7,7 +7,7 @@ import {
   canonicalEventOccurrenceKey,
   canonicalVenueKey,
   sourceEventIdentity,
-} from "../src/event-canonicalisation";
+} from "../src/collection/event-canonicalisation";
 
 const event: PublicEvent = {
   sourceId: "eventfinda",

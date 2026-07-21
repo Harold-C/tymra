@@ -108,7 +108,7 @@ services:
   web:
     <<: *app-image
     environment: *app-environment
-    command: ["./node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]
+    command: ["pnpm", "--filter", "@tymra/web", "start"]
     volumes:
       - browser_worker_evidence:/browser-evidence:ro
     depends_on:

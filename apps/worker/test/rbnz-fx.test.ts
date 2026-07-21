@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isRbnzFxExtraction, normaliseRbnzFxSignals, type RbnzFxExtraction } from "../src/rbnz-fx";
+import { isRbnzFxExtraction, normaliseRbnzFxSignals, type RbnzFxExtraction } from "../src/collection/rbnz-fx";
 
 describe("RBNZ B1 normalisation", () => {
   const extraction: RbnzFxExtraction = {

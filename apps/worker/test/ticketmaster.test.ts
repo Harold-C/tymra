@@ -12,7 +12,7 @@ import {
   ticketmasterRequestDelayMs,
   ticketmasterUrlHash,
   TICKETMASTER_LISTING_URLS,
-} from "../src/ticketmaster";
+} from "../src/collection/ticketmaster";
 
 describe("Ticketmaster normalisation", () => {
   it("normalises a public NZ event and preserves source metadata", () => {

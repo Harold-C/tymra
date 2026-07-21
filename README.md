@@ -7,30 +7,10 @@ append-only observations, competitor/date/market snapshots, pricing analysis and
 
 ## Documentation
 
-- [Tymra product baseline](docs/product-baseline/README.md) is the canonical local memory and index
-  for the migrated requirements, business rules, page structure, visual interaction and core
-  strategy documents. The former `nbc/tymra` Google Docs are no longer authoritative.
-- [Release 1.5 customer funnel requirements](docs/release-1.5-customer-funnel.md) defines the
-  recommended anonymous rough result, magic-link customer account, authenticated formal report,
-  minimal email and abuse-control baseline. It is proposed, not implemented or verified.
-- [Product and technical decisions](docs/decisions.md) records completed Release 1 decisions and
-  proposed Release 1.5 decisions.
-- [Implementation plan](docs/implementation-plan.md) separates completed Release 1 work from the
-  planned Release 1.5 phases.
-- [Traceability](docs/traceability.md) lists required evidence and preserves `not_implemented` for
-  every Release 1.5 requirement until code and acceptance evidence exist.
-- [Worker Baseline v1](docs/worker-baseline-v1.md) documents the runtime, source matrix, fixture
-  boundary, API/CLI and remaining external prerequisites.
-- [Eventfinda New Zealand collection](docs/architecture/eventfinda-collection.md) documents the
-  in-progress nationwide browser collector and its remaining acceptance work.
-- [Local source collection acceptance](docs/architecture/local-source-collection-acceptance.md)
-  defines the mandatory development-only acceptance method for every data-collection channel.
-- [Ticketmaster New Zealand collection](docs/architecture/ticketmaster-collection.md) records the
-  read-only browser collector, reopened detail work and production gates; no Ticketmaster API is used.
-- [Non-OTA source status](docs/architecture/non-ota-source-status.md) is the current source-by-source
-  implementation and coverage matrix.
-- [Manual rate import collection](docs/architecture/manual-import-collection.md) records the bounded
-  development acceptance path and its genuine operator-file blocker.
+Use the [documentation index](docs/README.md) as the single entry point. Product baselines live in
+`docs/product`, stable runtime design in `docs/architecture`, collection standards in
+`docs/collection`, historical run records in `docs/evidence`, and current implementation status in
+[`docs/traceability.md`](docs/traceability.md). The former Google Docs are no longer authoritative.
 
 ## Prerequisites
 

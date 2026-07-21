@@ -1,12 +1,12 @@
 # Tymra Release 1 And 1.5 Product And Technical Decisions
 
-Last updated: 2026-07-19
+Last updated: 2026-07-21
 
 This file records completed Release 1 implementation decisions and the recommended Release 1.5
 product decisions. D-015 onward are proposed and not implemented until their acceptance evidence is
 complete unless an individual decision explicitly records product approval.
 
-## D-001 Preserve The Existing Root Web Application
+## D-001 Preserve The Existing Root Web Application (Superseded)
 
 **Decision:** Keep the compatible Next.js App Router application at the repository root and add
 `apps/worker` plus the required shared packages.
@@ -14,6 +14,9 @@ complete unless an individual decision explicitly records product approval.
 **Reason:** The baseline says compatible existing code should be retained. Moving the current
 2,800-line visual implementation into `apps/web` would create migration churn without changing
 runtime boundaries or product behaviour. Root scripts still provide the exact required commands.
+
+**Superseded by:** D-034. The product behaviour remains unchanged, but the Web application now has
+the same explicit `apps/*` boundary as the other runnable processes.
 
 ## D-002 Use A pnpm Workspace With PostgreSQL Persistence And Redis Coordination
 
@@ -354,7 +357,7 @@ batch persisted 51 advertised occurrences with no failure. Governance and schedu
 unchanged; remaining detail hydration is deliberately paced operating work.
 
 The same separation is mandatory for every future data-collection channel through the
-[local source collection acceptance](architecture/local-source-collection-acceptance.md) standard.
+[local source collection acceptance](collection/acceptance.md) standard.
 Each source supplies its own hard bounds and evidence, while sharing the environment guards,
 read-only behaviour, two-pass persistence/idempotency proof, source-lock contention, lease recovery,
 retention, governance-preservation and full-verification gates.
@@ -479,7 +482,7 @@ request, three success artifacts and no active browser task left behind.
 **Status:** Implemented and verified.
 
 **Decision:** The five product documents formerly stored in the Google Drive folder `nbc/tymra` are
-preserved in full under `docs/product-baseline`. That directory and its manifest are the canonical
+preserved in full under `docs/product`. That directory and its manifest are the canonical
 local project memory. The four Release 1 v1.2 documents retain their own stated precedence;
 `core-strategy.md` remains the longer-term data-collection and price-analysis strategy, bounded by
 current release decisions and traceability evidence.
@@ -499,3 +502,21 @@ first connector deletion attempt returned `403 appNotAuthorizedToFile` and chang
 five verified targets were subsequently moved to trash and permanently deleted through the
 authenticated Google Drive UI. The source folder then listed no files, the five targets disappeared
 from trash, and Drive metadata lookup returned `404 Not Found` for every recorded source ID.
+
+## D-034 Use Explicit Application Boundaries And Remove Phantom Packages
+
+**Status:** Implemented and verified.
+
+**Decision:** Runnable processes live under `apps/`: `web`, `worker` and `browser-worker`. Shared
+runtime code remains under `packages/`. The unused `packages/ui` marker package is removed; the
+existing visual system remains implemented by `apps/web/app/globals.css` and Web components.
+
+**Reason:** A symmetrical top-level structure makes runtime ownership visible, avoids mixing one
+application with repository orchestration files, and prevents an empty package from implying a
+component-library boundary that does not exist. The move deliberately preserves the current homepage
+visual and interaction behaviour.
+
+**Verification:** The complete `pnpm verify` gate passed after the move. A production build generated
+all 64 static pages and all four Worker entrypoints. Real browser QA at 1440×900 and 390×844 verified
+EN/ZH rendering, search input, section navigation, mobile navigation, zero horizontal overflow, no
+framework error overlay and no relevant console warning or error.

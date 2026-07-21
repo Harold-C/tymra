@@ -1,10 +1,26 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-07-16
+Last updated: 2026-07-21
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
 Release 1.5 row may inherit `verified` from Release 1 evidence.
+
+## Current Collection Status
+
+Current status is maintained here; detailed historical run IDs and counts are preserved in the
+[2026-07-21 local acceptance snapshot](./evidence/collection-acceptance-2026-07-21.md).
+
+| Channel | Current local state | Remaining boundary |
+| --- | --- | --- |
+| Eventfinda | Bounded two-pass real collection, persistence and idempotency verified | Nationwide multi-day unattended stability requires a deployed long-running environment |
+| Ticketmaster | Implementation and automated two-pass persistence verified; live detail attempts stop and cool down on challenge | Repeat live detail acceptance when the public page permits passive access |
+| Official/public signals | Implemented channels completed bounded two-pass real local acceptance | Production source review, activation and ongoing operations remain separate |
+| Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
+| Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
+
+The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
+never requires or writes `approved-by` or `license-basis` and never changes source governance.
 
 ## Product Requirements
 
@@ -73,7 +89,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 
 | Requirement | Implementation | Automated evidence | Status |
 | --- | --- | --- | --- |
-| UI-GEN, UI-BRAND, UI-TOKEN, UI-TYPE | Shared CSS variables, typography and `packages/ui` | Component/visual tests | verified |
+| UI-GEN, UI-BRAND, UI-TOKEN, UI-TYPE | `apps/web/app/globals.css`, Web components and typography | Component tests plus post-move desktop/mobile browser QA | verified |
 | UI-LAYOUT | Public, result and admin layout primitives | 390, 1440 and 1920 browser QA plus responsive Playwright | verified |
 | UI-COMP, UI-IMPL | Shared buttons, fields, cards, states, tables and dialogs | Component interaction tests | verified |
 | UI-HOME, UI-CHECK, UI-RESULT | Product-specific feature compositions | EN/ZH desktop/mobile Playwright and browser screenshots | verified |
@@ -87,7 +103,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 
 ## Release 1.5 Customer Funnel Requirements
 
-Authoritative proposed source: [Release 1.5 customer funnel requirements](release-1.5-customer-funnel.md).
+Authoritative source: [Release 1.5 customer funnel requirements](product/customer-funnel.md).
 
 | Requirement | Planned implementation boundary | Required evidence | Status |
 | --- | --- | --- | --- |
@@ -152,7 +168,7 @@ Authoritative proposed source: [Release 1.5 customer funnel requirements](releas
 
 | Gate | Evidence | Status |
 | --- | --- | --- |
-| Product baseline/control files | Five full Google Docs migrated to the canonical local product-baseline directory with source IDs, timestamps, byte hashes and fresh-export content comparison | verified |
+| Product baseline/control files | Five full Google Docs migrated to the canonical local `docs/product` directory with source IDs, timestamps, byte hashes and fresh-export content comparison | verified |
 | Routes and bilingual UI | Next build inventory plus EN/ZH desktop/mobile Playwright | verified |
 | Database and seed | Clean Compose volume migrated; seed repeated without duplicate growth | verified |
 | Web, Worker and Admin | HTTP 200, running Worker, protected Admin sign-in and workspace E2E | verified |

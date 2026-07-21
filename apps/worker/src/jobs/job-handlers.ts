@@ -1,0 +1,731 @@
+import { getEnvironment, type Environment } from "@tymra/config";
+import {
+  decryptPersonalData,
+  enqueueJob,
+  hashPersonalIdentifier,
+  issueResultLink,
+  prisma,
+  syncCollectionIncident,
+  type EmailType,
+  type Job,
+  type Prisma,
+} from "@tymra/db";
+import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence } from "@tymra/domain";
+import {
+  buildServiceEmail,
+  DemoProvider,
+  LogEmailProvider,
+  SmtpEmailProvider,
+  type EmailProvider,
+} from "@tymra/providers";
+import { WorkerService } from "../services/worker-service";
+
+type JsonObject = Record<string, unknown>;
+
+export async function handleJob(job: Job, environment: Environment): Promise<void> {
+  const payload = asObject(job.payload);
+  const analysisRequestId = optionalString(payload, "analysisRequestId");
+  const workerService = analysisRequestId ? new WorkerService(environment) : null;
+  switch (job.type) {
+    case "RATE_COLLECTION":
+      if (analysisRequestId) return void await workerService!.collectAnalysis(analysisRequestId, job.id);
+      await collectRates(requiredString(payload, "priceCheckId"), job.id, environment);
+      return;
+    case "RATE_NORMALIZATION":
+      await normalizeRates(requiredString(payload, "priceCheckId"), job.id);
+      return;
+    case "COMPETITOR_BUILD":
+      if (analysisRequestId) return void await workerService!.buildCompetitorSet(analysisRequestId, job.id);
+      await buildCompetitors(requiredString(payload, "priceCheckId"), job.id);
+      return;
+    case "SNAPSHOT_GENERATION":
+      await new WorkerService(environment).buildSnapshots(requiredString(payload, "analysisRequestId"), job.id);
+      return;
+    case "PRICE_ANALYSIS":
+      await new WorkerService(environment).analyseSnapshot(requiredString(payload, "analysisRequestId"), job.id);
+      return;
+    case "ANALYSIS":
+      await analyse(requiredString(payload, "priceCheckId"), job.id);
+      return;
+    case "AUTO_VALIDATION":
+      await autoValidate(requiredString(payload, "priceCheckId"), job.id, environment);
+      return;
+    case "RESULT_GENERATION":
+      await generateResult(requiredString(payload, "priceCheckId"), payload, job.id);
+      return;
+    case "RESULT_PUBLICATION":
+      await publishResult(requiredString(payload, "priceCheckId"));
+      return;
+    case "EMAIL_DELIVERY":
+      await deliverEmail(requiredString(payload, "deliveryId"), environment);
+      return;
+    case "RESULT_NOTIFICATION":
+      await sendTerminalNotification(
+        requiredString(payload, "priceCheckId"),
+        requiredString(payload, "emailType") as EmailType,
+        requiredString(payload, "suffix"),
+      );
+      return;
+    case "LINK_EXPIRY":
+      await expireLinks();
+      return;
+    case "SOURCE_HEALTH_CHECK":
+      if (optionalString(payload, "sourceId")) {
+        await new WorkerService(environment).sourceHealth(optionalString(payload, "sourceId"));
+        return;
+      }
+      await checkSourceHealth(environment);
+      return;
+    case "EVENT_COLLECTION":
+      await handlePublicCollection(job, environment, payload, {
+        phase: eventCollectionPhase(payload),
+        maxPages: optionalNumber(payload, "maxPages"),
+        maxDetails: optionalNumber(payload, "maxDetails"),
+        limit: optionalNumber(payload, "limit"),
+        localAcceptance: optionalBoolean(payload, "localAcceptance"),
+        developmentBootstrap: optionalBoolean(payload, "developmentBootstrap"),
+      });
+      return;
+    case "PUBLIC_DATA_COLLECTION":
+    case "WEATHER_COLLECTION":
+    case "TRANSPORT_COLLECTION":
+      await handlePublicCollection(job, environment, payload, {
+        limit: optionalNumber(payload, "limit"),
+        localAcceptance: optionalBoolean(payload, "localAcceptance"),
+      });
+      return;
+    case "RETENTION_CLEANUP":
+      await new WorkerService(environment).retentionCleanup();
+      return;
+    case "CATALOG_DISCOVERY":
+      await new WorkerService(environment).refreshCatalog(optionalString(payload, "marketScope") ?? "new-zealand");
+      return;
+    case "ANCHOR_PANEL_COLLECTION":
+      await new WorkerService(environment).refreshPanel("ANCHOR", optionalString(payload, "marketScope") ?? "new-zealand");
+      return;
+    case "ROTATING_PANEL_COLLECTION":
+      await new WorkerService(environment).refreshPanel("ROTATING", optionalString(payload, "marketScope") ?? "new-zealand");
+      return;
+    case "PROPERTY_IDENTIFICATION":
+      await validatePropertyIdentification(requiredString(payload, "priceCheckId"));
+      return;
+    case "UNIT_IDENTIFICATION":
+      await validateUnitIdentification(requiredString(payload, "priceCheckId"));
+      return;
+    case "MARKET_COVERAGE_COLLECTION":
+      await refreshMarketCoverage();
+      return;
+  }
+}
+
+async function handlePublicCollection(
+  job: Job,
+  environment: Environment,
+  payload: JsonObject,
+  options: { phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; localAcceptance?: boolean; developmentBootstrap?: boolean },
+) {
+  try {
+    const result = await new WorkerService(environment).collectSource(
+      requiredString(payload, "sourceId"),
+      optionalString(payload, "marketScope") ?? "new-zealand",
+      undefined,
+      { ...options, jobId: job.id },
+    );
+    await syncIncidentSafely(result.runId);
+  } catch (error) {
+    const run = await prisma.collectionRun.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    if (run) await syncIncidentSafely(run.id);
+    throw error;
+  }
+}
+
+async function syncIncidentSafely(collectionRunId: string) {
+  try {
+    await syncCollectionIncident(collectionRunId);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ service: "tymra-worker", event: "collection_incident_sync_failed", collectionRunId, message: error instanceof Error ? error.message : "Unknown incident sync failure" })}\n`);
+  }
+}
+
+async function collectRates(priceCheckId: string, jobId: string, environment: Environment) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({
+    where: { id: priceCheckId },
+    include: { property: true, unit: true, stayQuery: true },
+  });
+  if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
+  const isDemo = environment.PROVIDER_MODE === "demo";
+  const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: isDemo ? "development-demo" : "manual-import" } });
+  if (!source.enabled || source.status !== "APPROVED") throw new Error("The configured data source is not approved and enabled");
+  if (!source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis || !source.rightsAllowDisplay) {
+    throw new Error("The configured data source rights do not permit analysis and display");
+  }
+  await setCheckStatus(priceCheckId, "COLLECTING", "collection_started");
+  const collectionRun = await prisma.collectionRun.create({
+    data: {
+      jobId,
+      dataSourceId: source.id,
+      priceCheckId,
+      mode: "ON_DEMAND",
+      status: "RUNNING",
+      scope: { propertyId: check.propertyId, unitId: check.unitId, label: isDemo ? "Development Demo Data" : "Manual Import" },
+      startedAt: new Date(),
+      attemptCount: 1,
+      isDemo,
+    },
+  });
+
+  const rates = isDemo
+    ? await new DemoProvider(environment.NODE_ENV).fetchRates(
+        {
+          propertyExternalId: "demo-christchurch-central-stay",
+          unitExternalId: "demo-central-entire-unit",
+          checkIn: check.stayQuery.checkIn,
+          checkOut: check.stayQuery.checkOut,
+          adults: check.stayQuery.adults,
+          children: check.stayQuery.children,
+          units: check.stayQuery.units,
+          currency: "NZD",
+        },
+        { sourceKey: source.key, locale: check.locale === "zh" ? "zh" : "en", correlationId: jobId },
+      )
+    : await loadManualRates(check.property.id, check.unit.id, check.stayQuery.checkIn, check.stayQuery.checkOut, source.id);
+
+  const collectionProfile = await prisma.collectionProfile.upsert({
+    where: { key: `${source.key}:nz:${check.locale}:nzd:desktop:public:v1` },
+    create: {
+      key: `${source.key}:nz:${check.locale}:nzd:desktop:public:v1`,
+      sellableUnitId: check.unit.id,
+      dataSourceId: source.id,
+      ipRegion: "NZ",
+      locale: check.locale === "zh" ? "zh-NZ" : "en-NZ",
+      currency: "NZD",
+      deviceType: "DESKTOP",
+      loggedInState: "LOGGED_OUT",
+      memberState: "NON_MEMBER",
+      mobilePriceContext: "STANDARD",
+      publicRateContext: isDemo ? "FIXTURE_PUBLIC" : "PUBLIC_OPERATOR_ATTESTED",
+      browserProfileVersion: isDemo ? "fixture-browser-v1" : "manual-import-v1",
+    },
+    update: {},
+  });
+
+  let successCount = 0;
+  for (const rate of rates) {
+    const listing = await prisma.listing.findUnique({
+      where: { dataSourceId_externalId: { dataSourceId: source.id, externalId: rate.listingExternalId } },
+      include: { unit: true },
+    });
+    if (!listing) continue;
+    const totalAmountMinor = rate.baseAmountMinor + rate.mandatoryFeesMinor + rate.taxesMinor + rate.platformFeesMinor;
+    await prisma.rateObservation.upsert({
+      where: { idempotencyKey: `${jobId}:${listing.id}:${check.stayQueryId}` },
+      create: {
+        propertyId: listing.propertyId,
+        sellableUnitId: listing.unitId,
+        listingId: listing.id,
+        sourceListingId: listing.sourceListingId,
+        stayQueryId: check.stayQuery.id,
+        collectionProfileId: collectionProfile.id,
+        dataSourceId: source.id,
+        collectionRunId: collectionRun.id,
+        requestedAt: new Date(),
+        currency: rate.currency,
+        baseAmountMinor: rate.baseAmountMinor,
+        mandatoryFeesMinor: rate.mandatoryFeesMinor,
+        taxesMinor: rate.taxesMinor,
+        platformFeesMinor: rate.platformFeesMinor,
+        optionalFeesMinor: 0,
+        totalAmountMinor,
+        exchangeRate: 1,
+        nzdTotalMinor: totalAmountMinor,
+        effectiveNightlyTotalMinor: calculateEffectiveNightlyTotalMinor({
+          baseAmountMinor: rate.baseAmountMinor,
+          mandatoryFeesMinor: rate.mandatoryFeesMinor,
+          taxesMinor: rate.taxesMinor,
+          platformFeesMinor: rate.platformFeesMinor,
+          nights: check.stayQuery.nights,
+        }),
+        observedAt: rate.collectedAt,
+        checkIn: check.stayQuery.checkIn,
+        checkOut: check.stayQuery.checkOut,
+        nights: check.stayQuery.nights,
+        adults: check.stayQuery.adults,
+        childrenAges: check.stayQuery.childrenAges as Prisma.InputJsonValue,
+        units: check.stayQuery.units,
+        localTimezone: check.stayQuery.timezone,
+        roomTypeRaw: listing.platformUnitName,
+        roomTypeNormalized: listing.unit.canonicalName,
+        unitConstraints: check.stayQuery.unitConstraints as Prisma.InputJsonValue,
+        occupancyCapacity: listing.unit.capacity,
+        bedType: null,
+        unitAttributesVersion: listing.unit.version,
+        mealPlan: check.stayQuery.mealPlan,
+        cancellationCategory: rate.cancellationCategory,
+        cancellationPolicy: rate.cancellationCategory,
+        paymentTerms: "UNKNOWN",
+        rateFence: check.stayQuery.ratePlan,
+        minimumStay: rate.minimumStay,
+        availabilityStatus: rate.availabilityStatus,
+        restrictionReason: rate.availabilityStatus === "MINIMUM_STAY_RESTRICTION" ? "MINIMUM_STAY_RESTRICTION" : null,
+        feeCompleteness: rate.feeCompleteness,
+        sourceUrl: listing.canonicalUrl,
+        evidenceRef: `${isDemo ? "fixture" : "manual-import"}://${collectionRun.id}/${listing.sourceListingId}`,
+        collectorVersion: isDemo ? "fixture-collector-v1" : "manual-import-v1",
+        parserVersion: isDemo ? "fixture-parser-v1" : "manual-import-parser-v1",
+        qualityFlags: [],
+        legalRightsStatus: source.legalRightsStatus,
+        operationalStatus: source.operationalStatus,
+        collectedAt: rate.collectedAt,
+        idempotencyKey: `${jobId}:${listing.id}:${check.stayQueryId}`,
+        isDemo,
+      },
+      update: {},
+    });
+    successCount += 1;
+  }
+
+  await prisma.collectionRun.update({
+    where: { id: collectionRun.id },
+    data: {
+      status: successCount > 0 ? "SUCCEEDED" : "PARTIAL",
+      successCount,
+      failureCount: successCount > 0 ? 0 : 1,
+      finishedAt: new Date(),
+      errorCode: successCount > 0 ? null : "NO_MATCHING_IMPORTED_RATES",
+      errorSummary: successCount > 0 ? null : "No imported rates match the confirmed unit and stay dates",
+    },
+  });
+  await syncIncidentSafely(collectionRun.id);
+  if (successCount === 0) {
+    await setCheckStatus(priceCheckId, "SOURCE_UNAVAILABLE", "manual_import_no_matching_rates");
+    await queueTerminalEmail(priceCheckId, "CHECK_FAILED", `source-unavailable:${jobId}`, environment);
+    return;
+  }
+  await enqueueNext(priceCheckId, "RATE_NORMALIZATION", "normalize", jobId);
+}
+
+async function loadManualRates(propertyId: string, unitId: string, checkIn: Date, checkOut: Date, dataSourceId: string) {
+  const observations = await prisma.rateObservation.findMany({
+    where: {
+      dataSourceId,
+      listing: { unitId, unit: { propertyId } },
+      stayQuery: { checkIn, checkOut },
+    },
+    orderBy: { collectedAt: "desc" },
+    distinct: ["listingId"],
+    include: { listing: { select: { externalId: true } } },
+  });
+  return observations.map((observation) => ({
+    listingExternalId: observation.listing.externalId,
+    currency: "NZD" as const,
+    baseAmountMinor: observation.baseAmountMinor,
+    mandatoryFeesMinor: observation.mandatoryFeesMinor,
+    taxesMinor: observation.taxesMinor,
+    platformFeesMinor: observation.platformFeesMinor,
+    cancellationCategory: observation.cancellationCategory,
+    minimumStay: observation.minimumStay,
+    availabilityStatus: observation.availabilityStatus,
+    feeCompleteness: observation.feeCompleteness,
+    collectedAt: observation.collectedAt,
+    isDemo: false,
+  }));
+}
+
+async function normalizeRates(priceCheckId: string, sourceJobId: string) {
+  await setCheckStatus(priceCheckId, "NORMALIZING", "rate_normalization_started");
+  await enqueueNext(priceCheckId, "COMPETITOR_BUILD", "competitors", sourceJobId);
+}
+
+async function buildCompetitors(priceCheckId: string, sourceJobId: string) {
+  await setCheckStatus(priceCheckId, "ANALYSING", "competitor_build_completed");
+  await enqueueNext(priceCheckId, "ANALYSIS", "analysis", sourceJobId);
+}
+
+async function analyse(priceCheckId: string, sourceJobId: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { collectionRuns: true } });
+  const observations = await prisma.rateObservation.findMany({
+    where: { collectionRun: { priceCheckId } },
+    orderBy: { effectiveNightlyTotalMinor: "asc" },
+  });
+  const latest = observations.reduce<Date | null>((value, item) => (!value || item.collectedAt > value ? item.collectedAt : value), null);
+  const ageHours = latest ? Math.max(0, (Date.now() - latest.getTime()) / 3_600_000) : null;
+  const confidence = determineConfidence({
+    competitorCount: observations.length,
+    freshestAgeHours: ageHours,
+    fees: observations.every((item) => item.feeCompleteness === "COMPLETE") ? "COMPLETE" : "PARTIAL",
+    unitConfirmed: Boolean(check.unitId),
+    comparable: observations.length > 0,
+    blockingFlags: observations.length < 3 ? ["COMPETITOR_COUNT_BELOW_3"] : [],
+  });
+  await setCheckStatus(priceCheckId, "AUTO_VALIDATING", "analysis_completed");
+  await enqueueJob({
+    type: "AUTO_VALIDATION",
+    payload: { priceCheckId, confidence, competitorCount: observations.length, dataAgeHours: ageHours ?? 999 },
+    idempotencyKey: `${priceCheckId}:auto-validation:${sourceJobId}`,
+    priceCheckId,
+  });
+}
+
+async function autoValidate(priceCheckId: string, sourceJobId: string, environment: Environment) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: check.isDemo ? "development-demo" : "manual-import" } });
+  const observations = await prisma.rateObservation.findMany({ where: { collectionRun: { priceCheckId } } });
+  const confidence = determineConfidence({
+    competitorCount: observations.length,
+    freshestAgeHours: observations.length ? 1 : null,
+    fees: observations.every((item) => item.feeCompleteness === "COMPLETE") ? "COMPLETE" : "PARTIAL",
+    unitConfirmed: Boolean(check.unitId),
+    comparable: observations.length > 0,
+    blockingFlags: observations.length < 3 ? ["COMPETITOR_COUNT_BELOW_3"] : [],
+  });
+  const decision = decidePublication({
+    marketStatus: check.marketKey === "christchurch" ? "SUPPORTED" : "COMING_SOON",
+    propertyConfirmed: Boolean(check.propertyId),
+    unitConfirmed: Boolean(check.unitId),
+    targetRatePresent: observations.length > 0,
+    sourceApproved: source.status === "APPROVED" && source.enabled,
+    rightsAllowPublication: source.rightsAllowDerivedAnalysis && source.rightsAllowDisplay,
+    dataAgeHours: observations.length ? 1 : null,
+    competitorCount: observations.length,
+    feeCompleteness: observations.every((item) => item.feeCompleteness === "COMPLETE") ? "COMPLETE" : "PARTIAL",
+    blockingFlags: observations.length < 3 ? ["COMPETITOR_COUNT_BELOW_3"] : [],
+    unresolvedException: false,
+    resultSchemaValid: true,
+    confidence,
+    risk: "REVIEW",
+    highPriorityEvidenceCategories: 0,
+    highPrioritySecondValidationPassed: null,
+    humanRepairableConflict: false,
+  });
+
+  if (decision === "AUTO_RETURN") {
+    const outcome = observations.length < 3 ? "INSUFFICIENT_DATA" : "SOURCE_UNAVAILABLE";
+    await setCheckStatus(priceCheckId, outcome, "auto_return");
+    await queueTerminalEmail(priceCheckId, outcome === "INSUFFICIENT_DATA" ? "INSUFFICIENT_DATA" : "CHECK_FAILED", `auto-return:${sourceJobId}`, environment);
+    return;
+  }
+  if (decision === "EXCEPTION" || !environment.AUTO_PUBLISH_ENABLED) {
+    await setCheckStatus(priceCheckId, "EXCEPTION", "auto_publish_blocked");
+    await ensureWorkerException(priceCheckId, "HIGH_PRIORITY_REVIEW", "Review the available evidence before publication", sourceJobId);
+    return;
+  }
+
+  await enqueueJob({
+    type: "RESULT_GENERATION",
+    payload: { priceCheckId, confidence, decision },
+    idempotencyKey: `${priceCheckId}:result-generation:${sourceJobId}`,
+    priceCheckId,
+  });
+}
+
+async function generateResult(priceCheckId: string, payload: JsonObject, sourceJobId: string) {
+  const confidence = requiredString(payload, "confidence") as "HIGH" | "MEDIUM" | "LOW";
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const observations = await prisma.rateObservation.findMany({
+    where: { collectionRun: { priceCheckId } },
+    orderBy: { effectiveNightlyTotalMinor: "asc" },
+  });
+  if (!observations.length) throw new Error("Cannot generate a result without observations");
+  const median = observations[Math.floor(observations.length / 2)].effectiveNightlyTotalMinor;
+  const analysisVersion = `tymra-release-1-v1.1:${sourceJobId}`;
+  const existing = await prisma.resultVersion.findFirst({ where: { priceCheckId, analysisVersion, status: "DRAFT" } });
+  const latest = await prisma.resultVersion.aggregate({ where: { priceCheckId }, _max: { version: true } });
+  const result = existing ?? await prisma.resultVersion.create({
+    data: {
+      priceCheckId,
+      version: (latest._max.version ?? 0) + 1,
+      status: "DRAFT",
+      outcome: "READY",
+      dataLastCheckedAt: observations.reduce((latest, item) => (item.collectedAt > latest ? item.collectedAt : latest), observations[0].collectedAt),
+      analysisVersion,
+      confidence,
+      payload: { comparatorCount: observations.length, decision: requiredString(payload, "decision"), generationJobId: sourceJobId, isDemo: check.isDemo },
+      isDemo: check.isDemo,
+    },
+  });
+  await prisma.insight.upsert({
+    where: { id: `${result.id}:insight:1` },
+    create: {
+      id: `${result.id}:insight:1`,
+      resultVersionId: result.id,
+      stayDate: observations[0].collectedAt,
+      risk: "REVIEW",
+      reasonCodes: ["BELOW_COMPARABLE_RANGE"],
+      marketSignalIds: [],
+      targetPriceMinor: Math.round(median * 0.82),
+      competitorMedianMinor: median,
+      competitorLowMinor: observations[0].effectiveNightlyTotalMinor,
+      competitorHighMinor: observations[observations.length - 1].effectiveNightlyTotalMinor,
+      recommendedAction: "REVIEW_RATE_UPWARD",
+      confidence,
+      limitations: confidence === "HIGH" ? [] : ["Result published with limitations"],
+      explanation: {
+        whatChanged: "The target rate may sit below the comparable range.",
+        whyItMatters: "This date may deserve a pricing review.",
+        suggestedAction: "Review the rate before making a final pricing decision.",
+      },
+    },
+    update: {},
+  });
+  await setCheckStatus(priceCheckId, "READY", "result_generated");
+  await enqueueNext(priceCheckId, "RESULT_PUBLICATION", "publication", sourceJobId);
+}
+
+async function publishResult(priceCheckId: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { resultVersions: true } });
+  const result = check.resultVersions.filter((item) => item.status === "DRAFT").sort((a, b) => b.version - a.version)[0];
+  if (!result) {
+    if (check.status === "PUBLISHED") return;
+    throw new Error("No draft Result Version is available for publication");
+  }
+  const current = check.resultVersions.filter((item) => item.status === "PUBLISHED").sort((a, b) => b.version - a.version)[0];
+  await prisma.$transaction(async (transaction) => {
+    if (current) await transaction.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
+    await transaction.resultVersion.update({ where: { id: result.id }, data: { status: "PUBLISHED", outcome: "PUBLISHED", publishedAt: new Date() } });
+    await transaction.priceCheck.update({ where: { id: priceCheckId }, data: { status: "PUBLISHED", currentResultVersionNumber: result.version } });
+  });
+  if (check.customerUserId) {
+    await queueTerminalEmail(priceCheckId, "RESULT_READY", `result-ready:${result.version}`, getEnvironment());
+    return;
+  }
+  const delivery = await prisma.emailDelivery.create({
+    data: {
+      priceCheckId,
+      resultVersionId: result.id,
+      type: "RESULT_READY",
+      locale: check.locale,
+      recipientHash: check.emailHash,
+      encryptedRecipient: check.encryptedEmail,
+      provider: "pending",
+      idempotencyKey: `${priceCheckId}:result-ready:${result.version}`,
+    },
+  });
+  await enqueueJob({
+    type: "EMAIL_DELIVERY",
+    payload: { deliveryId: delivery.id },
+    idempotencyKey: `${priceCheckId}:email-delivery:${result.version}`,
+    priceCheckId,
+  });
+}
+
+async function deliverEmail(deliveryId: string, environment: Environment) {
+  const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+  if (delivery.status === "SENT") return;
+  const recipient = decryptPersonalData(delivery.encryptedRecipient, environment.DATA_ENCRYPTION_KEY);
+  let safeActionUrl: string | undefined;
+  if (delivery.resultVersionId) {
+    const issued = await issueResultLink(delivery.resultVersionId, environment.RESULT_TOKEN_SECRET, environment.RESULT_LINK_TTL_DAYS);
+    safeActionUrl = `${environment.PUBLIC_ORIGIN}/${delivery.locale === "zh" ? "zh" : "en"}/result/${issued.token}`;
+  } else if (delivery.priceCheckId) {
+    const check = await prisma.priceCheck.findUnique({ where: { id: delivery.priceCheckId }, select: { customerUserId: true } });
+    if (check?.customerUserId) {
+      safeActionUrl = `${environment.PUBLIC_ORIGIN}/${delivery.locale === "zh" ? "zh" : "en"}/account/checks/${delivery.priceCheckId}`;
+    } else {
+      const destination = delivery.type === "CONFIRMATION_REQUIRED" ? "query" : "status";
+      safeActionUrl = `${environment.PUBLIC_ORIGIN}/${delivery.locale === "zh" ? "zh" : "en"}/check/${delivery.priceCheckId}/${destination}`;
+    }
+  }
+  const provider: EmailProvider =
+    environment.EMAIL_PROVIDER === "smtp" && environment.SMTP_URL
+      ? new SmtpEmailProvider(environment.SMTP_URL)
+      : new LogEmailProvider();
+  const message = buildServiceEmail({
+    type: delivery.type,
+    locale: delivery.locale === "zh" ? "zh" : "en",
+    recipient,
+    recipientHash: delivery.recipientHash,
+    from: environment.EMAIL_FROM,
+    safeActionUrl,
+    referenceId: delivery.priceCheckId ?? delivery.id,
+  });
+  await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENDING", attemptCount: { increment: 1 }, lastError: null } });
+  try {
+    await provider.send(message);
+    await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENT", provider: environment.EMAIL_PROVIDER, sentAt: new Date() } });
+  } catch (error) {
+    await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 1_000) : "Email delivery failed" } });
+    throw error;
+  }
+}
+
+async function expireLinks() {
+  const expired = await prisma.resultAccessToken.findMany({
+    where: { expiresAt: { lte: new Date() }, revokedAt: null },
+    select: { resultVersion: { select: { priceCheckId: true } } },
+  });
+  for (const item of expired) {
+    await prisma.priceCheck.updateMany({
+      where: { id: item.resultVersion.priceCheckId, status: "PUBLISHED" },
+      data: { status: "EXPIRED" },
+    });
+  }
+}
+
+async function checkSourceHealth(environment: Environment) {
+  if (environment.PROVIDER_MODE !== "demo") {
+    const count = await prisma.rateObservation.count({ where: { dataSource: { key: "manual-import" } } });
+    await prisma.dataSource.update({ where: { key: "manual-import" }, data: { healthStatus: count > 0 ? "HEALTHY" : "DEGRADED", lastSuccessAt: count > 0 ? new Date() : undefined } });
+    return;
+  }
+  const provider = new DemoProvider(environment.NODE_ENV);
+  const health = await provider.healthCheck({ sourceKey: "development-demo", locale: "en", correlationId: "health" });
+  await prisma.dataSource.update({
+    where: { key: "development-demo" },
+    data: { healthStatus: health.status, lastSuccessAt: health.status === "HEALTHY" ? health.checkedAt : undefined },
+  });
+}
+
+async function setCheckStatus(priceCheckId: string, status: Parameters<typeof prisma.priceCheck.update>[0]["data"]["status"], eventType: string) {
+  await prisma.$transaction([
+    prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status } }),
+    prisma.auditEvent.create({
+      data: {
+        eventType,
+        entityType: "PriceCheck",
+        entityId: priceCheckId,
+        payload: { status },
+        eventHash: hashPersonalIdentifier(`${priceCheckId}:${eventType}:${status}:${Date.now()}`, getEnvironment().ACCESS_KEY_SECRET),
+      },
+    }),
+  ]);
+}
+
+async function enqueueNext(priceCheckId: string, type: Parameters<typeof enqueueJob>[0]["type"], suffix: string, sourceJobId: string) {
+  await enqueueJob({ type, payload: { priceCheckId }, idempotencyKey: `${priceCheckId}:${suffix}:${sourceJobId}`, priceCheckId });
+}
+
+async function queueWorkerEmail(priceCheckId: string, type: EmailType, suffix: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const delivery = await prisma.emailDelivery.upsert({
+    where: { idempotencyKey: `${priceCheckId}:worker-email:${suffix}` },
+    create: {
+      priceCheckId,
+      type,
+      locale: check.locale,
+      recipientHash: check.emailHash,
+      encryptedRecipient: check.encryptedEmail,
+      provider: "pending",
+      idempotencyKey: `${priceCheckId}:worker-email:${suffix}`,
+    },
+    update: {},
+  });
+  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${priceCheckId}:worker-email-job:${suffix}`, priceCheckId });
+}
+
+async function queueTerminalEmail(priceCheckId: string, type: EmailType, suffix: string, environment: Environment) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { customerUserId: true } });
+  if (!check.customerUserId) {
+    await queueWorkerEmail(priceCheckId, type, suffix);
+    return;
+  }
+  const graceEndsAt = new Date(Date.now() + environment.RESULT_NOTIFICATION_GRACE_SECONDS * 1_000);
+  await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { notificationGraceEndsAt: graceEndsAt } });
+  await enqueueJob({
+    type: "RESULT_NOTIFICATION",
+    payload: { priceCheckId, emailType: type, suffix },
+    idempotencyKey: `${priceCheckId}:terminal-notification:${suffix}`,
+    priceCheckId,
+    runAt: graceEndsAt,
+  });
+}
+
+async function sendTerminalNotification(priceCheckId: string, type: EmailType, suffix: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { inPageDeliveredAt: true } });
+  if (check.inPageDeliveredAt) return;
+  await queueWorkerEmail(priceCheckId, type, suffix);
+}
+
+async function validatePropertyIdentification(priceCheckId: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  if (check.propertyId) {
+    await setCheckStatus(priceCheckId, "NEEDS_CONFIRMATION", "property_identification_completed");
+    return;
+  }
+  await ensureWorkerException(priceCheckId, "PROPERTY_MATCH", "Select the matching Property", "property-identification");
+  await setCheckStatus(priceCheckId, "EXCEPTION", "property_identification_conflict");
+}
+
+async function validateUnitIdentification(priceCheckId: string) {
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  if (check.unitId) {
+    await setCheckStatus(priceCheckId, "NEEDS_CONFIRMATION", "unit_identification_completed");
+    return;
+  }
+  await ensureWorkerException(priceCheckId, "UNIT_MATCH", "Select the exact Sellable Unit", "unit-identification");
+  await setCheckStatus(priceCheckId, "EXCEPTION", "unit_identification_conflict");
+}
+
+async function ensureWorkerException(priceCheckId: string, type: "PROPERTY_MATCH" | "UNIT_MATCH" | "HIGH_PRIORITY_REVIEW", recommendation: string, sourceKey: string) {
+  const id = `worker-exception:${priceCheckId}:${sourceKey}`;
+  const allowedActions = type === "PROPERTY_MATCH"
+    ? ["SELECT_PROPERTY", "MARK_INSUFFICIENT"]
+    : type === "UNIT_MATCH"
+      ? ["SELECT_UNIT", "MARK_INSUFFICIENT"]
+      : ["REANALYSE", "LOWER_CONFIDENCE", "APPROVE_AND_PUBLISH"];
+  await prisma.exceptionCase.upsert({
+    where: { id },
+    create: {
+      id,
+      priceCheckId,
+      type,
+      priority: type === "HIGH_PRIORITY_REVIEW" ? "P1" : "P2",
+      recommendation,
+      evidence: { sourceKey },
+      allowedActions,
+      blockingUser: type !== "HIGH_PRIORITY_REVIEW",
+    },
+    update: {},
+  });
+}
+
+async function refreshMarketCoverage() {
+  const [propertyCount, unitCount, recentRuns, successfulRuns] = await Promise.all([
+    prisma.property.count({ where: { city: "Christchurch", mergedIntoId: null } }),
+    prisma.sellableUnit.count({ where: { property: { city: "Christchurch" }, status: "ACTIVE", mergedIntoId: null } }),
+    prisma.collectionRun.count({ where: { createdAt: { gte: new Date(Date.now() - 72 * 3_600_000) } } }),
+    prisma.collectionRun.count({ where: { createdAt: { gte: new Date(Date.now() - 72 * 3_600_000) }, status: "SUCCEEDED" } }),
+  ]);
+  await prisma.marketCoverage.update({
+    where: { key: "christchurch" },
+    data: {
+      knownPropertyCount: propertyCount,
+      knownUnitCount: unitCount,
+      collectionSuccessRate: recentRuns > 0 ? successfulRuns / recentRuns : 0,
+      sourceFailureRate: recentRuns > 0 ? (recentRuns - successfulRuns) / recentRuns : 0,
+      lastHealthAt: new Date(),
+    },
+  });
+}
+
+function asObject(value: Prisma.JsonValue): JsonObject {
+  if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("Job payload must be an object");
+  return value as JsonObject;
+}
+
+function requiredString(value: JsonObject, key: string): string {
+  const result = value[key];
+  if (typeof result !== "string" || !result) throw new Error(`Job payload is missing ${key}`);
+  return result;
+}
+
+function optionalString(value: JsonObject, key: string): string | undefined {
+  const result = value[key];
+  return typeof result === "string" && result ? result : undefined;
+}
+
+function optionalNumber(value: JsonObject, key: string): number | undefined {
+  const result = value[key];
+  return typeof result === "number" && Number.isInteger(result) && result > 0 ? result : undefined;
+}
+
+function optionalBoolean(value: JsonObject, key: string): boolean | undefined {
+  const result = value[key];
+  return typeof result === "boolean" ? result : undefined;
+}
+
+function eventCollectionPhase(value: JsonObject): "discovery" | "details" | "full" | undefined {
+  const phase = optionalString(value, "phase");
+  if (!phase) return undefined;
+  if (["discovery", "details", "full"].includes(phase)) return phase as "discovery" | "details" | "full";
+  throw new Error(`Unsupported event collection phase: ${phase}`);
+}

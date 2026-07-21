@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/eventfinda";
+import { eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
 
 const detail: EventfindaDetailExtraction = {
   extractor: "eventfinda", kind: "event_detail", eventId: "922033", title: "Sample Event", canonicalUrl: "https://www.eventfinda.co.nz/2026/sample/auckland", category: "Theatre", description: "Description", imageUrls: ["https://cdn.eventfinda.co.nz/sample.jpg"],

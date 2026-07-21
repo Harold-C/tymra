@@ -2,8 +2,8 @@ import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma } from "@tymra/db";
 import { closeRedis } from "@tymra/queue";
 
-import { handleJob } from "./job-handlers";
-import { WorkerService } from "./worker-service";
+import { handleJob } from "./jobs/job-handlers";
+import { WorkerService } from "./services/worker-service";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);

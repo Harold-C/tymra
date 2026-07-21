@@ -5,7 +5,7 @@ import { prisma } from "@tymra/db";
 import Fastify from "fastify";
 import { z } from "zod";
 
-import { WorkerRequestError, WorkerService } from "./worker-service";
+import { WorkerRequestError, WorkerService } from "./services/worker-service";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);

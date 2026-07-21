@@ -1,6 +1,6 @@
 import { getEnvironment } from "@tymra/config";
 import { claimNextJob, markJobFailed, markJobSucceeded, prisma, recoverExpiredJobs, renewJobLease } from "@tymra/db";
-import { handleJob } from "./job-handlers";
+import { handleJob } from "./jobs/job-handlers";
 
 const environment = getEnvironment();
 let stopping = false;

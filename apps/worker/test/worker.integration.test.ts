@@ -6,9 +6,9 @@ import { prisma, Prisma } from "@tymra/db";
 import { AdapterError, type PublicDataAdapter } from "@tymra/providers";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { handleJob } from "../src/job-handlers";
-import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/eventfinda";
-import { WorkerService } from "../src/worker-service";
+import { handleJob } from "../src/jobs/job-handlers";
+import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
+import { WorkerService } from "../src/services/worker-service";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
