@@ -11,6 +11,8 @@ export type EventfindaListingEvent = {
   title: string;
   sourceUrl: string;
   startsAt: string | null;
+  timePrecision?: "DATE" | "DATETIME";
+  timezone?: "Pacific/Auckland";
   venueName: string | null;
   location: string | null;
   category: string | null;
@@ -28,6 +30,10 @@ export type EventfindaListingExtraction = {
   totalPages: number;
   nextUrl: string | null;
   events: EventfindaListingEvent[];
+  quality?: "complete" | "partial";
+  missingFields?: string[];
+  warnings?: string[];
+  fieldSources?: Record<string, string>;
 };
 
 type EventfindaAddress = {
@@ -56,6 +62,8 @@ type EventfindaOccurrence = {
   sourceUrl: string;
   startDate: string;
   endDate: string | null;
+  timePrecision?: "DATE" | "DATETIME";
+  timezone?: "Pacific/Auckland";
   previousStartDate: string | null;
   eventStatus: string | null;
   attendanceMode: string | null;
@@ -84,6 +92,10 @@ export type EventfindaDetailExtraction = {
   websites: Array<{ label: string; url: string }>;
   listedBy: Array<{ label: string; url: string }>;
   tour: Array<{ label: string; url: string }>;
+  quality?: "complete" | "partial";
+  missingFields?: string[];
+  warnings?: string[];
+  fieldSources?: Record<string, string>;
 };
 
 export type EventfindaExtraction = EventfindaListingExtraction | EventfindaDetailExtraction;
@@ -189,6 +201,8 @@ export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction
         organizer: occurrence.organizer,
         attendanceMode: occurrence.attendanceMode,
         previousStartDate: occurrence.previousStartDate,
+        timePrecision: occurrence.timePrecision ?? (occurrence.startDate.includes("T") ? "DATETIME" : "DATE"),
+        timezone: occurrence.timezone ?? "Pacific/Auckland",
         endTimeMissing,
         restrictions: extraction.restrictions,
         phoneSales: extraction.phoneSales,
@@ -197,6 +211,10 @@ export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction
         tour: extraction.tour,
         venue: place,
         listing: listingMetadata,
+        argusQuality: extraction.quality ?? null,
+        argusMissingFields: extraction.missingFields ?? [],
+        argusWarnings: extraction.warnings ?? [],
+        argusFieldSources: extraction.fieldSources ?? {},
         extractionVersion: "eventfinda-jsonld-v1",
       },
       fixture: false,

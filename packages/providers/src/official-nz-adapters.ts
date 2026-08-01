@@ -304,6 +304,7 @@ async function collectOurAuckland(reference: string, context: AdapterContext) {
 function normaliseOurAucklandEvents(records: PublicRawRecord[], context: AdapterContext) {
   return records.flatMap((record): PublicEvent[] => {
     const event = jsonRecord(jsonRecord(record.payload).event);
+    if (stringValue(event.kind) === "event_detail") return normaliseOurAucklandDetail(event);
     const startsAt = parseNzDateTime(`${stringValue(event.startsOn)}T00:00:00`);
     const advertisedEnd = parseNzDateTime(`${stringValue(event.endsOn)}T23:59:59`);
     if (!startsAt || !advertisedEnd) return [];
@@ -337,6 +338,68 @@ function normaliseOurAucklandEvents(records: PublicRawRecord[], context: Adapter
       },
     })];
   }).slice(0, maxRecords(context));
+}
+
+function normaliseOurAucklandDetail(event: JsonRecord): PublicEvent[] {
+  const sourceEventId = stringValue(event.id);
+  const sourceUrl = stringValue(event.canonicalUrl);
+  const venue = jsonRecord(event.venue);
+  const categories = stringArray(event.categories);
+  const tags = stringArray(event.tags);
+  const quality = stringValue(event.quality);
+  return arrayRecords(event.occurrences).flatMap((occurrence): PublicEvent[] => {
+    const precision = stringValue(occurrence.timePrecision) === "DATETIME" ? "DATETIME" : "DATE";
+    const startsAt = precision === "DATETIME"
+      ? parseNzDateTime(stringValue(occurrence.startsAt))
+      : parseNzDateTime(`${stringValue(occurrence.startsAt)}T00:00:00`);
+    const advertisedEnd = nullableString(occurrence.endsAt);
+    const endsAt = advertisedEnd
+      ? precision === "DATETIME" ? parseNzDateTime(advertisedEnd) : parseNzDateTime(`${advertisedEnd}T23:59:59`)
+      : startsAt;
+    if (!sourceEventId || !sourceUrl || !startsAt || !endsAt) return [];
+    return [baseEvent({
+      sourceId: "council_calendars",
+      externalId: `${sourceEventId}:${startsAt.toISOString()}`,
+      sourceEventId,
+      title: stringValue(event.title),
+      category: categories[0] ?? tags[0] ?? "Council event",
+      subcategory: categories[1] ?? tags[1] ?? null,
+      sourceUrl,
+      venueName: nullableString(venue.name),
+      address: nullableString(venue.addressText),
+      city: "Auckland",
+      region: "Auckland",
+      postcode: null,
+      latitude: null,
+      longitude: null,
+      startsAt,
+      endsAt,
+      ticketStatus: event.isFree === true ? "FREE" : null,
+      metadata: {
+        description: nullableString(event.description),
+        occurrence,
+        timePrecision: precision,
+        advertisedEnd,
+        endTimeMissing: advertisedEnd === null,
+        categories,
+        tags,
+        ward: nullableString(event.ward),
+        costText: nullableString(event.costText),
+        isFree: event.isFree === true ? true : event.isFree === false ? false : null,
+        bookingRequired: event.bookingRequired === true ? true : event.bookingRequired === false ? false : null,
+        publicContact: isRecord(event.publicContact) ? event.publicContact : null,
+        imageUrls: stringArray(event.imageUrls),
+        mapUrl: nullableString(venue.mapUrl),
+        argusQuality: quality || null,
+        argusMissingFields: stringArray(event.missingFields),
+        argusWarnings: stringArray(event.warnings),
+        argusFieldSources: isRecord(event.fieldSources) ? event.fieldSources : {},
+        sourceEventId,
+        seriesUrl: sourceUrl,
+        extractionVersion: "our-auckland-detail-v1",
+      },
+    })];
+  });
 }
 
 export function parseChristchurchNzPage(payload: unknown): { events: JsonRecord[]; currentPage: number; totalPages: number } {

@@ -527,7 +527,14 @@ export class WorkerService {
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
     const requestedFrom = options.from ?? new Date();
     const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
-    const localBounds = { maxRequests: 1, maxRecords: 2, maxWindowDays: 31, maxBytes: 2_000_000, concurrency: 1, timeoutMs: 10_000 } as const;
+    const localBounds = {
+      maxRequests: sourceId === "council_calendars" ? 3 : 1,
+      maxRecords: 2,
+      maxWindowDays: 31,
+      maxBytes: 2_000_000,
+      concurrency: 1,
+      timeoutMs: sourceId === "council_calendars" ? 120_000 : 10_000,
+    } as const;
     const from = requestedFrom;
     const to = localAcceptance
       ? new Date(Math.min(requestedTo.getTime(), from.getTime() + localBounds.maxWindowDays * 86_400_000))
@@ -1432,52 +1439,67 @@ export class WorkerService {
     parentJobId?: string,
   ): Promise<PublicRawRecord[]> {
     const connectorId = "ourauckland-public" as const;
-    const workflowId = "collect_listing" as const;
-    const traceId = parentJobId
-      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
-      : `ourauckland-${randomUUID()}`;
-    const input = { traceId, url, connectorId, workflowId, maxRecords };
-    const response = parentJobId
-      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
-      : await captureBrowserTaskWithArgus(this.environment, input);
-    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
-    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
-    const result = response.payload;
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
-      throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
-    }
-    if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, "ourauckland", url);
-    if (result.status === "manual_required") {
-      throw new AdapterError("SOURCE_UNAVAILABLE", "OurAuckland presented an access challenge; collection stopped without bypassing it", true);
-    }
-    if (result.status !== "success") {
-      throw new AdapterError(
-        result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE",
-        result.error?.message ?? "OurAuckland Argus capture failed",
-        result.error?.retryable ?? true,
-      );
-    }
-    const extraction = jsonRecord(result.extracted as Prisma.JsonValue);
+    const capture = async (targetUrl: string, workflowId: "collect_listing" | "collect_detail", boundedRecords?: number) => {
+      const traceId = parentJobId
+        ? durableArgusTraceId(parentJobId, connectorId, workflowId, targetUrl)
+        : `ourauckland-${randomUUID()}`;
+      const input = { traceId, url: targetUrl, connectorId, workflowId, ...(boundedRecords === undefined ? {} : { maxRecords: boundedRecords }) };
+      const response = parentJobId
+        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+        : await captureBrowserTaskWithArgus(this.environment, input);
+      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+      const result = response.payload;
+      if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
+        throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
+      }
+      if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, "ourauckland", targetUrl);
+      if (result.status === "manual_required") {
+        throw new AdapterError("SOURCE_UNAVAILABLE", "OurAuckland presented an access challenge; collection stopped without bypassing it", true);
+      }
+      if (result.status !== "success") {
+        throw new AdapterError(
+          result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE",
+          result.error?.message ?? "OurAuckland Argus capture failed",
+          result.error?.retryable ?? true,
+        );
+      }
+      return result;
+    };
+
+    const listingResult = await capture(url, "collect_listing", maxRecords);
+    const extraction = jsonRecord(listingResult.extracted as Prisma.JsonValue);
     const candidates = Array.isArray(extraction.events)
       ? extraction.events.filter((value): value is Prisma.JsonObject => Boolean(value) && typeof value === "object" && !Array.isArray(value))
       : [];
-    const records = candidates.slice(0, maxRecords).flatMap((event, index): PublicRawRecord[] => {
+    if (candidates.length === 0) throw new AdapterError("PARSING_ERROR", "OurAuckland Argus listing returned no event cards", false);
+    const records: PublicRawRecord[] = [];
+    for (const event of candidates.slice(0, maxRecords)) {
       const externalId = typeof event.id === "string" ? event.id : "";
-      if (!externalId) return [];
-      return [{
+      const sourceUrl = typeof event.sourceUrl === "string" ? event.sourceUrl : "";
+      if (!externalId || !sourceUrl) continue;
+      const detailResult = await capture(sourceUrl, "collect_detail");
+      const detail = jsonRecord(detailResult.extracted as Prisma.JsonValue);
+      if (detail.kind !== "event_detail" || detail.id !== externalId) {
+        if (!dryRun) await this.markBrowserEvidenceParserFailure(collectionRunId, detailResult.traceId);
+        throw new AdapterError("PARSING_ERROR", `OurAuckland detail returned an invalid payload for ${sourceUrl}`, false);
+      }
+      records.push({
         sourceId: "council_calendars",
         externalId,
         payload: {
           provider: "Auckland Council / OurAuckland",
-          event,
+          event: detail,
+          listing: event,
           page: typeof extraction.currentPage === "number" ? extraction.currentPage : 1,
         },
         fetchedAt: new Date(),
         fixture: false,
-        networkRequestCount: index === 0 ? 1 : 0,
-      }];
-    });
-    if (records.length === 0) throw new AdapterError("PARSING_ERROR", "OurAuckland Argus capture returned no event cards", false);
+        networkRequestCount: 0,
+      });
+    }
+    if (records.length === 0) throw new AdapterError("PARSING_ERROR", "OurAuckland Argus capture returned no event details", false);
+    records[0]!.networkRequestCount = 1 + records.length;
     return records;
   }
 

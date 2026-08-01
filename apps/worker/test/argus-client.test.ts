@@ -65,6 +65,49 @@ describe("Argus async Job client", () => {
     assert.equal(extraction.events[0]?.offers[0]?.price, 40);
   });
 
+  it("rejects data from the wrong connector schema version before normalisation", async () => {
+    server = jobServer(async () => ({
+      ...listingResult(),
+      data: {
+        data_schema: "eventfinda-public.collect_listing",
+        schema_version: "1.0.0",
+        extractor: "eventfinda",
+        kind: "listing",
+        events: [],
+      },
+    }));
+    const environment = await listenEnvironment();
+
+    const response = await captureTicketmasterListingWithArgus(environment, {
+      traceId: "ticketmaster-test",
+      url: "https://www.ticketmaster.co.nz/discover/christchurch",
+    });
+
+    assert.deepEqual(response, {
+      ok: false,
+      httpStatus: 502,
+      message: "Argus returned unexpected data contract; expected ticketmaster-public.collect_listing@1.0.0",
+    });
+  });
+
+  it("accepts the registered OurAuckland detail contract", async () => {
+    server = jobServer(async () => ourAucklandDetailResult());
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "ourauckland-detail-test",
+      connectorId: "ourauckland-public",
+      workflowId: "collect_detail",
+      url: "https://ourauckland.aucklandcouncil.govt.nz/events/2026/08/japanese-film-screening/",
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    const extraction = response.payload.extracted as { data_schema: string; occurrences: Array<{ timePrecision: string }> };
+    assert.equal(extraction.data_schema, "ourauckland-public.collect_detail");
+    assert.equal(extraction.occurrences[0]?.timePrecision, "DATETIME");
+  });
+
   it("uses the independent Job polling deadline", async () => {
     server = http.createServer(async (request, response) => {
       if (request.method === "POST" && request.url === "/v1/jobs") {
@@ -169,7 +212,13 @@ function listingResult(): Record<string, unknown> {
       html_bytes: 100,
       screenshot_bytes: 200,
     },
-    data: { extractor: "ticketmaster", kind: "listing", events: [] },
+    data: {
+      data_schema: "ticketmaster-public.collect_listing",
+      schema_version: "1.0.0",
+      extractor: "ticketmaster",
+      kind: "listing",
+      events: [],
+    },
     evidence: [{
       kind: "html",
       traceId: "ticketmaster-test",
@@ -193,6 +242,8 @@ function ticketmasterDetailResult(): Record<string, unknown> {
       screenshot_bytes: 200,
     },
     data: {
+      data_schema: "ticketmaster-public.collect_detail",
+      schema_version: "1.0.0",
       extractor: "ticketmaster",
       kind: "detail",
       canonicalUrl: "https://www.ticketmaster.co.nz/example/event/2400000000000001",
@@ -211,13 +262,29 @@ function ticketmasterDetailResult(): Record<string, unknown> {
   };
 }
 
-function baseResult(traceId: string, workflowId: string): Record<string, unknown> {
+function ourAucklandDetailResult(): Record<string, unknown> {
+  return {
+    ...baseResult("ourauckland-detail-test", "collect_detail", "ourauckland-public"),
+    data: {
+      data_schema: "ourauckland-public.collect_detail",
+      schema_version: "1.0.0",
+      extractor: "ourauckland",
+      kind: "event_detail",
+      id: "our-auckland:japanese-film-screening",
+      title: "Japanese Film Screening",
+      canonicalUrl: "https://ourauckland.aucklandcouncil.govt.nz/events/2026/08/japanese-film-screening/",
+      occurrences: [{ startsAt: "2026-08-28T18:00:00", endsAt: "2026-08-28T20:00:00", timePrecision: "DATETIME", timezone: "Pacific/Auckland", scheduleText: "Friday 28 August 2026 6pm-8pm" }],
+    },
+  };
+}
+
+function baseResult(traceId: string, workflowId: string, connectorId = "ticketmaster-public"): Record<string, unknown> {
   return {
     contract_version: "1.0",
     ok: true,
     status: "success",
     trace_id: traceId,
-    connector_id: "ticketmaster-public",
+    connector_id: connectorId,
     workflow_id: workflowId,
     readonly_only: true,
     external_side_effects_performed: false,

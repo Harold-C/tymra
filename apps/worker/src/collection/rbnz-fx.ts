@@ -19,6 +19,10 @@ export type RbnzFxExtraction = {
     value: number;
     previousValue: number | null;
   }>;
+  quality?: "complete" | "partial";
+  missingFields?: string[];
+  warnings?: string[];
+  fieldSources?: Record<string, string>;
 };
 
 export function isRbnzFxExtraction(value: unknown): value is RbnzFxExtraction {
@@ -63,6 +67,10 @@ export function normaliseRbnzFxSignals(extraction: RbnzFxExtraction, maxRecords 
         previousAsOf: extraction.previousAsOf,
         baseCurrency: extraction.baseCurrency,
         quoteConvention: extraction.quoteConvention,
+        argusQuality: extraction.quality ?? null,
+        argusMissingFields: extraction.missingFields ?? [],
+        argusWarnings: extraction.warnings ?? [],
+        argusFieldSources: extraction.fieldSources ?? {},
       },
       fixture: false,
     };

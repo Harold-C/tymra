@@ -30,6 +30,7 @@
 - [本地验收标准](./collection/acceptance.md)
 - [Argus 浏览器执行边界](./collection/argus.md)
 - [非 OTA 公共数据采集](./collection/public-data.md)
+- [事件房价影响数据契约](./collection/event-impact-data-contract.md)
 - [Eventfinda](./collection/eventfinda.md)
 - [Ticketmaster](./collection/ticketmaster.md)
 - [手工导入](./collection/manual-import.md)

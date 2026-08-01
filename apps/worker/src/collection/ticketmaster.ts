@@ -21,6 +21,8 @@ export type TicketmasterListingEvent = {
   category?: string;
   startsAt: string;
   endsAt?: string;
+  timePrecision?: "DATE" | "DATETIME";
+  timezone?: "Pacific/Auckland";
   eventStatus?: string;
   attendanceMode?: string;
   venue?: {
@@ -41,6 +43,10 @@ export type TicketmasterListingExtraction = {
   title: string;
   canonicalUrl: string;
   events: TicketmasterListingEvent[];
+  quality?: "complete" | "partial";
+  missingFields?: string[];
+  warnings?: string[];
+  fieldSources?: Record<string, string>;
 };
 
 export type TicketmasterDetailExtraction = Omit<TicketmasterListingExtraction, "kind"> & {
@@ -170,6 +176,8 @@ export function normaliseTicketmasterEvent(event: TicketmasterListingEvent): Pub
       seriesUrl: event.sourceUrl,
       description: event.description ?? null,
       advertisedEnd: event.endsAt ?? null,
+      timePrecision: event.timePrecision ?? (event.startsAt.includes("T") ? "DATETIME" : "DATE"),
+      timezone: event.timezone ?? "Pacific/Auckland",
       attendanceMode: event.attendanceMode ?? null,
       offers: event.offers ?? [],
       performers: event.performers ?? [],

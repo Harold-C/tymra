@@ -24,6 +24,10 @@ sources continue to run directly in Tymra.
 - `ticketmaster-public` supports listing and detail capture.
 - `eventfinda-public` supports nationwide listing pages and event details.
 - `rbnz-fx` supports the fixed RBNZ B1 exchange-rate page.
+- For successful and partial results, Tymra selects the source normalizer only when `data_schema` and
+  `schema_version` exactly match the submitted Connector/workflow. Unknown versions, missing markers
+  and another Connector's payload fail closed as an upstream contract error before business data is
+  persisted.
 - When Argus is not configured, these three sources retain the existing private Browser Worker path
   for development compatibility.
 
@@ -58,6 +62,18 @@ covers queueing plus execution and must be greater than the capture deadline.
 
 Direct CLI calls without a database Job retain the synchronous compatibility path. Scheduled and
 manually queued Eventfinda, Ticketmaster and RBNZ collections use the durable path.
+
+The accepted Argus data contracts are currently:
+
+| Connector/workflow | `data_schema` | `schema_version` |
+| --- | --- | --- |
+| `ticketmaster-public / collect_listing` | `ticketmaster-public.collect_listing` | `1.0.0` |
+| `ticketmaster-public / collect_detail` | `ticketmaster-public.collect_detail` | `1.0.0` |
+| `eventfinda-public / collect_listing` | `eventfinda-public.collect_listing` | `1.0.0` |
+| `eventfinda-public / collect_detail` | `eventfinda-public.collect_detail` | `1.0.0` |
+| `ourauckland-public / collect_listing` | `ourauckland-public.collect_listing` | `1.0.0` |
+| `ourauckland-public / collect_detail` | `ourauckland-public.collect_detail` | `1.0.0` |
+| `rbnz-fx / collect_exchange_rates` | `rbnz-fx.collect_exchange_rates` | `1.0.0` |
 
 The Worker reaches the same HTTPS API origin used by cross-network clients. Docker maps `api.argus.test`
 to the host gateway, and Node trusts only the mounted mkcert development root CA. Do not disable TLS
@@ -122,6 +138,16 @@ The 2026-08-01 ARGUS-023 acceptance verified that Tymra persists a bounded RBNZ 
 the hash ACK, Argus purges the result and evidence, repeated ACK remains idempotent, and Tymra's two
 business signals remain available. See
 [`argus-023-acceptance-2026-08-01.md`](../evidence/argus-023-acceptance-2026-08-01.md).
+
+The 2026-08-02 Connector data Schema acceptance submitted one bounded RBNZ Job through the current
+Tymra source. Argus returned `rbnz-fx.collect_exchange_rates@1.0.0`; Tymra accepted and normalised two
+records with zero failures, while dry-run persistence remained empty. See
+[`argus-connector-schema-acceptance-2026-08-02.md`](../evidence/argus-connector-schema-acceptance-2026-08-02.md).
+
+The 2026-08-02 ARGUS-025～030 acceptance used one real OurAuckland listing and two detail Jobs. Both
+detail payloads passed `ourauckland-public.collect_detail@1.0.0`, Tymra normalised two events with no
+failures, and dry-run persistence remained empty. See
+[`argus-025-030-acceptance-2026-08-02.md`](../evidence/argus-025-030-acceptance-2026-08-02.md).
 
 ## Current local runtime snapshot
 

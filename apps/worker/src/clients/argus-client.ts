@@ -14,6 +14,42 @@ export type ArgusEvidencePointer = {
 export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx";
 export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates";
 
+type ArgusDataContract = {
+  dataSchema: string;
+  schemaVersion: "1.0.0";
+};
+
+const argusDataContracts = {
+  "ticketmaster-public:collect_listing": {
+    dataSchema: "ticketmaster-public.collect_listing",
+    schemaVersion: "1.0.0",
+  },
+  "ticketmaster-public:collect_detail": {
+    dataSchema: "ticketmaster-public.collect_detail",
+    schemaVersion: "1.0.0",
+  },
+  "eventfinda-public:collect_listing": {
+    dataSchema: "eventfinda-public.collect_listing",
+    schemaVersion: "1.0.0",
+  },
+  "eventfinda-public:collect_detail": {
+    dataSchema: "eventfinda-public.collect_detail",
+    schemaVersion: "1.0.0",
+  },
+  "ourauckland-public:collect_listing": {
+    dataSchema: "ourauckland-public.collect_listing",
+    schemaVersion: "1.0.0",
+  },
+  "ourauckland-public:collect_detail": {
+    dataSchema: "ourauckland-public.collect_detail",
+    schemaVersion: "1.0.0",
+  },
+  "rbnz-fx:collect_exchange_rates": {
+    dataSchema: "rbnz-fx.collect_exchange_rates",
+    schemaVersion: "1.0.0",
+  },
+} as const satisfies Record<string, ArgusDataContract>;
+
 type ArgusCaptureResult = {
   contract_version: "1.0";
   ok: boolean;
@@ -218,11 +254,7 @@ export async function captureBrowserTaskWithArgus(
         message: job.error?.message ?? item?.error_category ?? `Argus job ended with ${job.status}`,
       };
     }
-    return {
-      ok: true,
-      httpStatus: 200,
-      payload: mapArgusResult(item.result, input.connectorId, input.workflowId),
-    };
+    return mapArgusJobResult(job, input);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const timeout = error instanceof DOMException && error.name === "TimeoutError" || /timed? ?out|timeout|aborted/i.test(message);
@@ -242,7 +274,15 @@ export function mapArgusJobResult(
       message: job.error?.message ?? item?.error_category ?? `Argus job ended with ${job.status}`,
     };
   }
-  return { ok: true, httpStatus: 200, payload: mapArgusResult(item.result, input.connectorId, input.workflowId) };
+  try {
+    return { ok: true, httpStatus: 200, payload: mapArgusResult(item.result, input.connectorId, input.workflowId) };
+  } catch (error) {
+    return {
+      ok: false,
+      httpStatus: 502,
+      message: error instanceof Error ? error.message : "Argus returned an invalid connector result",
+    };
+  }
 }
 
 export function captureTicketmasterListingWithArgus(
@@ -269,6 +309,12 @@ function mapArgusResult(
     || result.workflow_id !== workflowId
   ) {
     throw new Error("Argus violated the v1 read-only connector result contract");
+  }
+  const hasConnectorData = result.status === "success" || result.status === "partial";
+  if (hasConnectorData) {
+    assertArgusDataContract(result.data, connectorId, workflowId);
+  } else if (result.data !== null) {
+    throw new Error("Argus returned connector data for an unsuccessful capture");
   }
   const manualRequired = result.status === "challenge" || result.status === "rate_limited";
   return {
@@ -316,7 +362,12 @@ function adaptExtraction(
       sourceUrl: event.sourceUrl,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      timePrecision: event.timePrecision,
+      timezone: event.timezone,
       eventStatus: event.eventStatus,
+      attendanceMode: event.attendanceMode,
+      description: event.description,
+      category: event.category,
       venue: event.venue,
       performers: Array.isArray(event.performers)
         ? event.performers.map((performer) => typeof performer === "string" ? { name: performer } : performer)
@@ -327,9 +378,40 @@ function adaptExtraction(
         price: offers.lowPrice,
         priceCurrency: offers.priceCurrency,
       }],
-      imageUrls: [],
+      imageUrls: Array.isArray(event.imageUrls) ? event.imageUrls : [],
     }],
+    quality: detail.quality,
+    missingFields: detail.missingFields,
+    warnings: detail.warnings,
+    fieldSources: detail.fieldSources,
   };
+}
+
+function assertArgusDataContract(
+  data: unknown,
+  connectorId: ArgusConnectorId,
+  workflowId: ArgusWorkflowId,
+): asserts data is Record<string, unknown> {
+  const expected = expectedArgusDataContract(connectorId, workflowId);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(`Argus returned no ${expected.dataSchema}@${expected.schemaVersion} data object`);
+  }
+  const record = data as Record<string, unknown>;
+  if (record.data_schema !== expected.dataSchema || record.schema_version !== expected.schemaVersion) {
+    throw new Error(
+      `Argus returned unexpected data contract; expected ${expected.dataSchema}@${expected.schemaVersion}`,
+    );
+  }
+}
+
+function expectedArgusDataContract(
+  connectorId: ArgusConnectorId,
+  workflowId: ArgusWorkflowId,
+): ArgusDataContract {
+  const key = `${connectorId}:${workflowId}`;
+  const contract = argusDataContracts[key as keyof typeof argusDataContracts];
+  if (!contract) throw new Error(`Unsupported Argus connector workflow ${key}`);
+  return contract;
 }
 
 async function jsonResponse<T>(response: Response): Promise<T & { error?: string; message?: string }> {

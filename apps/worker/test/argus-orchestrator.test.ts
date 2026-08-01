@@ -235,7 +235,11 @@ function completedJob() {
         readonly_only: true,
         external_side_effects_performed: false,
         page: null,
-        data: { rates: [] },
+        data: {
+          data_schema: "rbnz-fx.collect_exchange_rates",
+          schema_version: "1.0.0",
+          rates: [],
+        },
         evidence: [],
         challenge: null,
         error: null,

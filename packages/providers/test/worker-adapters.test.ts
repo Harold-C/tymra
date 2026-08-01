@@ -156,6 +156,29 @@ describe("public data adapter contract", () => {
     expect(events[0]).toMatchObject({ city: "Auckland", startsAt: new Date("2026-07-20T12:00:00.000Z"), endsAt: new Date("2026-07-25T11:59:59.000Z"), metadata: { timePrecision: "DATE_ONLY" } });
   });
 
+  it("normalises OurAuckland detail occurrences and preserves source quality", async () => {
+    const detail = {
+      kind: "event_detail", id: "our-auckland:japanese-film-screening", title: "Japanese Film Screening",
+      canonicalUrl: "https://ourauckland.aucklandcouncil.govt.nz/events/2026/08/japanese-film-screening/",
+      description: "A free public screening.",
+      occurrences: [{ startsAt: "2026-08-28T18:00:00", endsAt: "2026-08-28T20:00:00", timePrecision: "DATETIME", timezone: "Pacific/Auckland", scheduleText: "Friday 28 August 2026 6pm-8pm" }],
+      venue: { name: "Ellen Melville Centre", addressText: "Ellen Melville Centre, 2 Freyberg Place, Auckland", mapUrl: "https://maps.google.com/?q=Ellen" },
+      costText: "Free", isFree: true, bookingRequired: false,
+      publicContact: { name: "Example Organiser", email: "events@example.test", phone: "09 303 4106" },
+      categories: ["Events"], tags: ["Cultural", "Film"], ward: "Waitematā & Gulf Ward", imageUrls: ["https://example.test/event.jpg"],
+      quality: "complete", missingFields: [], warnings: [], fieldSources: { occurrences: ".event-panel__group:When" },
+    };
+    const events = await publicDataAdapters.council_calendars.normaliseEvents!([{ sourceId: "council_calendars", externalId: detail.id, payload: { provider: "Auckland Council / OurAuckland", event: detail, page: 1 }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(events[0]).toMatchObject({
+      externalId: "our-auckland:japanese-film-screening:2026-08-28T06:00:00.000Z",
+      venueName: "Ellen Melville Centre",
+      startsAt: new Date("2026-08-28T06:00:00.000Z"),
+      endsAt: new Date("2026-08-28T08:00:00.000Z"),
+      ticketStatus: "FREE",
+      metadata: { timePrecision: "DATETIME", argusQuality: "complete", bookingRequired: false },
+    });
+  });
+
   it("parses ChristchurchNZ RTO events and exact imported sessions", async () => {
     const item = { id: 13786, slug: "monthly-spoon-club-13786", title: "Monthly Spoon Club", summary: "Crafting", content: "Full description", image: "https://example.com/image.jpg", categories: ["Arts and Crafts"], source: "ccc", created_at: "2026-07-20T14:07:16.113259+00:00", earliest_start_date: "2026-08-17T06:00:00", event_sessions: [{ id: 664800, start_date: "2026-08-17T06:00:00", end_date: "2026-08-17T09:00:00" }], data: { URLValue: "https://ccc.govt.nz/news-and-events/whats-on/event/monthly-spoon-club", PriceType: "Paid event", TicketPriceMin: "$10", BookingRequired: 1, BuildingName: "Avebury House", StreetAddress: "9 Evelyn Couzins Avenue", Coordinates: "[172.6602,-43.5197]" } };
     expect(parseChristchurchNzPage({ data: [item], pagination: { currentPage: 1, totalPages: 30 } })).toMatchObject({ currentPage: 1, totalPages: 30, events: [item] });
