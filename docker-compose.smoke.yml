@@ -1,3 +1,6 @@
+x-app-smoke-image: &app-smoke-image
+  image: tymra-app-smoke:local
+
 services:
   postgres:
     ports: !override
@@ -6,18 +9,34 @@ services:
     ports: !override
       - "127.0.0.1:56379:6379"
   web:
+    <<: *app-smoke-image
     labels:
       traefik.enable: "false"
     ports: !override
       - "127.0.0.1:3300:3000"
   api:
+    <<: *app-smoke-image
     labels:
       traefik.enable: "false"
     ports: !override
       - "127.0.0.1:3400:3100"
+  migrate:
+    <<: *app-smoke-image
+  seed:
+    <<: *app-smoke-image
+  worker:
+    <<: *app-smoke-image
   mailpit:
     labels:
       traefik.enable: "false"
     ports: !override
       - "127.0.0.1:51025:1025"
       - "127.0.0.1:58025:8025"
+  browser-worker:
+    profiles: !override ["smoke-browser"]
+    ports: !override []
+  ulixee-cloud:
+    profiles: !override ["smoke-browser"]
+    ports: !override []
+  browser-fixture:
+    profiles: !override ["smoke-browser"]

@@ -12,6 +12,10 @@ x-app-environment: &app-environment
   BROWSER_WORKER_INTERNAL_URL: http://tymra-browser-worker:18888
   BROWSER_WORKER_TOKEN: ${CRON_SECRET:?Set CRON_SECRET in .env}
   BROWSER_WORKER_TIMEOUT_MS: ${BROWSER_WORKER_TIMEOUT_MS:-60000}
+  ARGUS_API_BASE_URL: ${ARGUS_API_BASE_URL:-}
+  ARGUS_API_TOKEN: ${ARGUS_API_TOKEN:-}
+  ARGUS_TIMEOUT_MS: ${ARGUS_TIMEOUT_MS:-60000}
+  ARGUS_JOB_POLL_TIMEOUT_MS: ${ARGUS_JOB_POLL_TIMEOUT_MS:-180000}
   BROWSER_EVIDENCE_ROOT: /browser-evidence
   EVENTFINDA_MIN_DELAY_MS: ${EVENTFINDA_MIN_DELAY_MS:-4000}
   EVENTFINDA_DELAY_JITTER_MS: ${EVENTFINDA_DELAY_JITTER_MS:-3000}
@@ -59,10 +63,25 @@ x-app-environment: &app-environment
   FORMAL_EMAIL_ACTIVE_LIMIT: ${FORMAL_EMAIL_ACTIVE_LIMIT:-1}
   FORMAL_UNIT_30D_LIMIT: ${FORMAL_UNIT_30D_LIMIT:-1}
 
+x-app-dev-image: &app-dev-image
+  image: tymra-app-dev:local
+  build:
+    context: .
+    target: dev
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${TYMRA_POSTGRES_MEMORY_LIMIT:-1g}
+    pids_limit: 256
     environment:
       POSTGRES_DB: tymra_dev
       POSTGRES_USER: tymra
@@ -85,6 +104,9 @@ services:
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${TYMRA_REDIS_MEMORY_LIMIT:-256m}
+    pids_limit: 64
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:6379:6379"
@@ -101,33 +123,40 @@ services:
           - tymra-redis
 
   migrate:
-    build:
-      context: .
-      target: dev
+    <<: *app-dev-image
     environment: *app-environment
-    command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    working_dir: /app/packages/db
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+    logging: *default-logging
+    mem_limit: ${TYMRA_MIGRATE_MEMORY_LIMIT:-768m}
+    pids_limit: 128
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
   seed:
-    build:
-      context: .
-      target: dev
+    <<: *app-dev-image
     environment: *app-environment
-    command: ["./node_modules/.bin/tsx", "packages/db/prisma/seed.ts"]
+    working_dir: /app/packages/db
+    command: ["./node_modules/.bin/tsx", "prisma/seed.ts"]
+    logging: *default-logging
+    mem_limit: ${TYMRA_SEED_MEMORY_LIMIT:-768m}
+    pids_limit: 128
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: "no"
 
   web:
-    build:
-      context: .
-      target: dev
+    <<: *app-dev-image
     environment: *app-environment
-    command: ["pnpm", "--filter", "@tymra/web", "dev"]
+    working_dir: /app/apps/web
+    command: ["./node_modules/.bin/next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_WEB_MEMORY_LIMIT:-1536m}
+    pids_limit: 256
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -161,11 +190,16 @@ services:
       start_period: 30s
 
   worker:
-    build:
-      context: .
-      target: dev
-    environment: *app-environment
-    command: ["./node_modules/.bin/tsx", "apps/worker/src/index.ts"]
+    <<: *app-dev-image
+    environment:
+      <<: *app-environment
+      NODE_EXTRA_CA_CERTS: /run/certs/local-dev-rootCA.pem
+    working_dir: /app/apps/worker
+    command: ["./node_modules/.bin/tsx", "src/index.ts"]
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_WORKER_MEMORY_LIMIT:-768m}
+    pids_limit: 192
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -175,13 +209,19 @@ services:
     stop_grace_period: 30s
     volumes:
       - browser_worker_evidence:/browser-evidence:ro
+      - "${MKCERT_ROOT_CA_PATH:-/Users/haroldchen/Library/Application Support/mkcert/rootCA.pem}:/run/certs/local-dev-rootCA.pem:ro"
+    extra_hosts:
+      - "api.argus.test:host-gateway"
 
   api:
-    build:
-      context: .
-      target: dev
+    <<: *app-dev-image
     environment: *app-environment
-    command: ["./node_modules/.bin/tsx", "apps/worker/src/api.ts"]
+    working_dir: /app/apps/worker
+    command: ["./node_modules/.bin/tsx", "src/api.ts"]
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_API_MEMORY_LIMIT:-512m}
+    pids_limit: 192
     ports:
       - "127.0.0.1:3100:3100"
     networks:
@@ -211,11 +251,15 @@ services:
       start_period: 15s
 
   scheduler:
-    build:
-      context: .
-      target: dev
+    <<: *app-dev-image
     environment: *app-environment
-    command: ["./node_modules/.bin/tsx", "apps/worker/src/scheduler.ts"]
+    working_dir: /app/apps/worker
+    command: ["./node_modules/.bin/tsx", "src/scheduler.ts"]
+    profiles: ["scheduler"]
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_SCHEDULER_MEMORY_LIMIT:-384m}
+    pids_limit: 128
     depends_on:
       seed:
         condition: service_completed_successfully
@@ -226,6 +270,7 @@ services:
 
   browser-worker:
     platform: linux/amd64
+    profiles: ["browser"]
     build:
       context: .
       dockerfile: apps/browser-worker/Dockerfile
@@ -245,6 +290,10 @@ services:
       BROWSER_WORKER_PRIVATE_HOSTS: browser-fixture
       BROWSER_WORKER_ALLOW_HTTP: "true"
       ULIXEE_CLOUD_URL: ws://ulixee-cloud:1818
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_BROWSER_WORKER_MEMORY_LIMIT:-1g}
+    pids_limit: 512
     ports:
       - "127.0.0.1:18888:18888"
     volumes:
@@ -252,8 +301,6 @@ services:
       - browser_worker_profiles:/data/browser-worker/profiles
     depends_on:
       ulixee-cloud:
-        condition: service_started
-      browser-fixture:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -270,26 +317,40 @@ services:
 
   ulixee-cloud:
     platform: linux/amd64
+    profiles: ["browser"]
     build:
       context: .
       dockerfile: apps/browser-worker/Dockerfile.ulixee-cloud
     environment:
       BROWSERS_DIR: /app/ulixee/.cache/ulixee-chrome
       DISPLAY: :99
-    ipc: host
     shm_size: "2gb"
+    init: true
+    logging: *default-logging
+    mem_limit: ${TYMRA_ULIXEE_MEMORY_LIMIT:-4g}
+    pids_limit: 512
     ports:
       - "127.0.0.1:1819:1818"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const net=require('node:net');const socket=net.connect(1818,'127.0.0.1',()=>{socket.end();process.exit(0)});socket.setTimeout(2000,()=>process.exit(1));socket.on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - browser_control
       - browser_egress
 
   browser-fixture:
     image: nginx:1.27-alpine
+    profiles: ["test-fixture"]
     volumes:
       - ./test/fixtures/browser:/usr/share/nginx/html:ro
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${TYMRA_BROWSER_FIXTURE_MEMORY_LIMIT:-128m}
+    pids_limit: 64
     networks:
       - browser_control
     healthcheck:
@@ -301,6 +362,9 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${TYMRA_MAILPIT_MEMORY_LIMIT:-256m}
+    pids_limit: 64
     ports:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"

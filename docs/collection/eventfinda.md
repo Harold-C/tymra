@@ -1,5 +1,7 @@
 # Eventfinda New Zealand collection
 
+Last updated: 2026-08-01
+
 **Development status:** Collector development is complete. Local bounded acceptance, nationwide
 discovery and bounded detail persistence are verified; production activation and multi-day
 unattended evidence remain separate operating gates.
@@ -20,6 +22,10 @@ environment/scheduler guard tests, a complete workspace verification and service
 The nationwide persisted frontier and detail pipeline are now verified. Hydrating the remaining
 frontier uses deliberately paced detail batches; production still requires duplicate-rate review,
 multi-day unattended evidence and explicit activation.
+
+The latest complete real-source evidence remains dated 2026-07-30. On 2026-08-01 the current
+Eventfinda unit tests, Worker typecheck and Worker build passed, but nationwide discovery and the
+real two-pass acceptance were not rerun.
 
 All local collection work follows the project-wide
 [local source collection acceptance](./acceptance.md) standard. This document
@@ -54,19 +60,34 @@ Automatic cross-source merging is deliberately conservative. Version 1 only auto
 
 ## Crawl frontier
 
-`SourceCrawlTarget` is the durable frontier. It records the canonical URL hash, discovery timestamps, active status, priority, fetch timestamps, next due time, content hash and consecutive failures. This provides idempotency and restart recovery without rediscovering or refetching every detail during each run.
+`SourceCrawlTarget` is the durable frontier. It records the canonical URL hash, discovery timestamps, active status, priority, fetch timestamps, next due time, content hash and consecutive failures. Listing cards are grouped by canonical detail URL before the frontier is written; repeated cards retain all observed dates but create one detail target. Existing detail metadata is merged rather than overwritten by the next discovery. A changed listing fingerprint makes the target immediately due, while an unchanged listing preserves its existing refresh time.
 
 Discovery scans `/whatson/events/new-zealand` and all advertised pages, up to the configured 250-page safety cap. If a full first page temporarily loses its pagination controls, the collector probes page 2 and accepts the boundary only when page number, non-empty events and a multi-page total all agree. A URL must be absent from two complete, pagination-verified discovery scans before it is deactivated. A partial or pagination-unverified discovery never marks unseen targets inactive. Development `localAcceptance` scans are also excluded from missing-target accounting because their one-page hard bound is not evidence that the nationwide catalogue is complete.
 
-Detail refresh policy:
+One Eventfinda detail page is the authoritative series expansion because it can advertise many dates
+that do not all appear on the listing card. Every occurrence is persisted from that one response.
+The retained local evidence includes ten detail pages with 462 occurrences in total and a maximum of
+289 occurrences on one page, so separate per-date detail requests are neither needed nor allowed.
 
-| Time until next occurrence | Refresh interval | Priority |
-| --- | --- | --- |
-| 0-2 days | 3 hours | 10 |
-| 3-14 days | 6 hours | 20 |
-| 15-60 days | 24 hours | 40 |
-| More than 60 days | 7 days | 80 |
-| No future occurrence | Deactivate; recheck after 30 days only if rediscovered | 900 |
+Base detail refresh policy:
+
+| Time until next occurrence | Single-date series | Multi-date series | Priority |
+| --- | --- | --- | --- |
+| 0-2 days | 3 hours | 12 hours | 10 |
+| 3-14 days | 6 hours | 24 hours | 20 |
+| 15-60 days | 24 hours | 72 hours | 40 |
+| More than 60 days | 7 days | 7 days | 80 |
+| No future occurrence | Deactivate; recheck after 30 days only if rediscovered | Deactivate; recheck after 30 days only if rediscovered | 900 |
+
+When a detail content hash is unchanged on consecutive fetches, the base interval doubles up to four
+steps, bounded to 24 hours for events within two days, 72 hours within 14 days, seven days within 60
+days and 14 days beyond 60 days. A changed listing makes the target immediately due and the next
+changed detail resets the stable-content counter. This retains a near-event check while avoiding a
+fixed-frequency fetch of an unchanged recurring series.
+
+Within persistence, all dates returned by one detail page share one source event, canonical event and
+exact venue. Unchanged occurrences use a lightweight last-seen/run update rather than repeating the
+full canonicalisation transaction.
 
 ## Source protection
 
@@ -172,8 +193,12 @@ full-frontier hydration remains paced operating work.
 
 Database seed creates both schedules disabled:
 
-- `eventfinda-discovery-12-hour`: complete nationwide discovery every 12 hours.
+- `eventfinda-discovery-daily`: complete nationwide discovery once per day.
 - `eventfinda-details-hourly`: refresh at most 80 due detail pages each hour.
+
+The hourly detail pass does not imply that every known event is opened hourly. It only hydrates
+targets whose `nextDetailFetchAt` is due; unchanged detail pages back off progressively according to
+event proximity. This keeps near-term changes responsive without repeatedly opening stable pages.
 
 The scheduler refuses to enqueue a source job unless the source is enabled and approved for storage and derived analysis. After all remaining completion gates pass, activation uses these deliberate steps:
 

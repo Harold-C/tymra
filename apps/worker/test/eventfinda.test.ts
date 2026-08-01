@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
+import { eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, groupEventfindaListingEvents, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
 
 const detail: EventfindaDetailExtraction = {
   extractor: "eventfinda", kind: "event_detail", eventId: "922033", title: "Sample Event", canonicalUrl: "https://www.eventfinda.co.nz/2026/sample/auckland", category: "Theatre", description: "Description", imageUrls: ["https://cdn.eventfinda.co.nz/sample.jpg"],
@@ -25,6 +25,25 @@ describe("Eventfinda normalisation", () => {
     expect(eventfindaFailureBackoff(5, true, now)).toEqual(new Date("2026-08-16T00:00:00Z"));
     const ongoing = [{ ...events[0], startsAt: new Date("2026-08-14T00:00:00Z"), endsAt: new Date("2026-08-16T00:00:00Z") }];
     expect(eventfindaRefreshPolicy(ongoing, now)).toMatchObject({ active: true, priority: 10, nextFetchAt: new Date("2026-08-15T03:00:00Z") });
+  });
+
+  it("refreshes a multi-date detail page once per series interval", () => {
+    const now = new Date("2026-08-15T00:00:00Z");
+    const first = normaliseEventfindaDetail(detail)[0];
+    const repeated = [{ ...first }, { ...first, externalId: "922033:second", startsAt: new Date("2026-08-16T08:00:00Z"), endsAt: new Date("2026-08-16T10:00:00Z") }];
+    expect(eventfindaRefreshPolicy(repeated, now)).toMatchObject({ active: true, priority: 10, nextFetchAt: new Date("2026-08-15T12:00:00Z") });
+    expect(eventfindaRefreshPolicy(repeated, now, 3)).toMatchObject({ active: true, priority: 10, nextFetchAt: new Date("2026-08-16T00:00:00Z") });
+  });
+
+  it("groups duplicate listing cards into one detail target while preserving dates", () => {
+    const base = { eventId: "922033", title: "Series", sourceUrl: "https://www.eventfinda.co.nz/2026/series/auckland", venueName: "Town Hall", location: "Town Hall, Auckland", category: "Theatre", imageUrl: null, sponsored: false, ticketAction: null };
+    const groups = groupEventfindaListingEvents([
+      { ...base, startsAt: "2026-08-17T18:00:00+12:00" },
+      { ...base, startsAt: "2026-08-16T18:00:00+12:00" },
+      { ...base, startsAt: "2026-08-16T18:00:00+12:00" },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].events.map((event) => event.startsAt)).toEqual(["2026-08-16T18:00:00+12:00", "2026-08-17T18:00:00+12:00"]);
   });
 
   it("retains failed and manual-required browser evidence for the failure TTL", () => {

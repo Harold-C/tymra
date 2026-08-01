@@ -3,6 +3,7 @@ FROM node:24.14-bookworm-slim
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 ENV NODE_ENV=production
+ENV HERO_SKIP_CHROME_DOWNLOAD=1
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate

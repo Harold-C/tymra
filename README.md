@@ -50,12 +50,29 @@ Production rejects both and never falls back to generated data after a live coll
 
 ## Docker Compose
 
-Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker, Scheduler
-and Mailpit:
+Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker and Mailpit.
+The browser-collection runtime, disabled development Scheduler and browser test fixture are opt-in
+profiles, so they do not consume resources during normal local development:
 
 ```sh
-docker compose up --build -d
+pnpm compose:up
 docker compose ps
+```
+
+All Node application services reuse `tymra-app-dev:local`; Compose logs rotate at 10 MB with three
+files per container. Start the headed browser runtime only while manually collecting or testing
+browser sources:
+
+```sh
+pnpm compose:browser:up
+pnpm compose:browser:down
+```
+
+Start or stop the Scheduler explicitly only when testing schedules:
+
+```sh
+pnpm compose:scheduler:up
+pnpm compose:scheduler:down
 ```
 
 Migration and seed services run automatically and must complete before application processes start.
@@ -75,6 +92,9 @@ Local endpoints:
 | Operations | `https://ops.tymra.test/admin/sign-in` |
 | Worker diagnostics | `https://worker.tymra.test/worker/health` and `/worker/readiness` |
 | Direct Worker API fallback | `http://localhost:3100` (loopback only) |
+| Browser handoff | `https://connect.argus.test` (Argus enabled only; use the generated random URL) |
+| Argus diagnostics | `https://argus.test/health` and `/readiness` |
+| Tymra → Argus | `https://api.argus.test/v1/jobs` |
 | Mailpit | `https://mail.tymra.test` |
 | PostgreSQL | `localhost:5433` |
 | Redis | `localhost:6379` |
@@ -85,7 +105,7 @@ delivery metadata and never prints result tokens.
 Stop the application while retaining the database:
 
 ```sh
-docker compose down
+pnpm compose:down
 ```
 
 Delete and recreate all local database data:
@@ -128,19 +148,24 @@ pnpm --filter @tymra/worker cli retention:cleanup
 
 ### Browser event collection status
 
-Eventfinda and Ticketmaster use the read-only Browser Worker architecture. Eventfinda supports
-nationwide paginated discovery, a durable detail frontier and development-only bootstrap runs.
-Ticketmaster collects structured events from five verified city listing routes. Its detail pages
-show a temporary verification interstitial but a bounded passive wait has now proved that the public
-event page can load without interaction. The Worker now implements a durable detail frontier,
-bounded detail batches, exact-target persistence, refresh/backoff policy and two-pass database
-acceptance. A daily discovery schedule and six-hour detail schedule are defined but remain disabled.
+Eventfinda, Ticketmaster and RBNZ use durable Argus read-only browser Jobs when Argus is configured.
+Queued collections persist each Argus execution, release the Worker while it runs, poll through a
+separate delayed database Job and resume the same collection after completion or restart. The
+existing private Browser Worker is retained as a development fallback. Eventfinda supports
+nationwide paginated discovery, one detail target per event series, multi-date expansion and
+development-only bootstrap runs. Ticketmaster collects complete structured events directly from five
+verified city listing routes and schedules a detail page only when required identity, date, status or
+venue fields are missing. Its detail pages may show a temporary verification interstitial, so this
+listing-first path also materially reduces challenge exposure. The Worker retains a durable fallback
+detail frontier, exact-target persistence, refresh/backoff policy and database acceptance. A daily
+discovery schedule and six-hour fallback-detail schedule are defined but remain disabled.
 Current real-page acceptance is partial because two later captures remained challenged after the
 bounded passive wait; no Ticketmaster API key or API endpoint is used.
 
-On the configured Mac, Docker `restart: unless-stopped` policies keep every long-running service
-alive. `com.harold.nbc-tymra.healthcheck` checks the complete Compose stack and all four HTTPS hosts
-every 60 seconds, restores missing containers, and starts the shared Traefik container when needed.
+On the configured Mac, Docker `restart: unless-stopped` policies keep the required long-running
+services alive. `com.harold.nbc-tymra.healthcheck` checks the core Compose stack and all four HTTPS
+hosts every 60 seconds, restores missing containers, and starts the shared Traefik container when
+needed. It does not start the browser runtime, disabled Scheduler or browser test fixture.
 The older host-based Web and Worker LaunchAgents are retained only as an emergency fallback and must
 not run at the same time as the Compose application processes.
 
@@ -188,15 +213,21 @@ pnpm build
 pnpm verify
 ```
 
-An isolated full-stack smoke environment can run alongside the normal local stack:
+`pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
+builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
+behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
+[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-01), not inferred
+from an older successful run.
+
+An isolated full-stack smoke environment can run alongside the normal local stack. The command
+always removes its containers and test volumes on success, failure or interruption:
 
 ```sh
-docker compose -p tymra-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d
-curl -fsS http://localhost:3400/worker/readiness
-curl -fsS http://localhost:3300/en
-curl -fsS http://localhost:58025/api/v1/messages
-docker compose -p tymra-smoke -f docker-compose.yml -f docker-compose.smoke.yml down --volumes
+pnpm compose:smoke
 ```
+
+Smoke excludes the browser runtime and Scheduler by default. Use the `smoke-browser` profile only
+for an isolated browser-specific acceptance run.
 
 Integration tests require PostgreSQL and Redis. Use a dedicated database URL when preserving local
 development data. E2E expects `https://tymra.test` to be running.

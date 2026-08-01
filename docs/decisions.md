@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Product And Technical Decisions
 
-Last updated: 2026-07-21
+Last updated: 2026-08-01
 
 This file records completed Release 1 implementation decisions and the recommended Release 1.5
 product decisions. D-015 onward are proposed and not implemented until their acceptance evidence is
@@ -306,8 +306,9 @@ exposes Mailpit. Worker mutation and data endpoints remain available only throug
 or Docker network. Production has no public Worker or Mailpit route. PostgreSQL, Redis, Worker and
 Scheduler are always internal services. Internal Docker aliases use the project-qualified
 `tymra-postgres`, `tymra-redis`, `tymra-worker-api` and `tymra-mailpit` names to prevent collisions
-with other projects attached to the shared ingress network. A future `connect.tymra.*` may be introduced only when a
-signed, short-lived browser or human-verification handoff exists.
+with other projects attached to the shared ingress network. Browser automation is a shared Argus
+service: Tymra calls `api.argus.test`/`api.argus.nz`, while short-lived human handoffs use
+`connect.argus.test`/`connect.argus.nz`. Tymra does not expose a product-owned noVNC hostname.
 
 The shared host Traefik and external `local` network are the canonical local ingress. Compose
 restart policies and a 60-second LaunchAgent health check restore the stack without depending on a
@@ -520,3 +521,52 @@ visual and interaction behaviour.
 all 64 static pages and all four Worker entrypoints. Real browser QA at 1440×900 and 390×844 verified
 EN/ZH rendering, search input, section navigation, mobile navigation, zero horizontal overflow, no
 framework error overlay and no relevant console warning or error.
+
+## D-035 Use Argus As A Durable External Browser Execution Boundary
+
+**Status:** Implemented and locally verified; current worktree integration rerun pending.
+
+**Decision:** Tymra retains ownership of source governance, schedules, budgets, locks, collection
+runs, persistence and canonicalisation. When configured, browser execution for Eventfinda,
+Ticketmaster, OurAuckland and RBNZ is submitted to Argus through its asynchronous `/v1/jobs`
+contract. `ArgusExecution` persists the remote Job identity and result, a delayed
+`ARGUS_JOB_POLL` queue releases the parent Worker lease between polls, and the parent resumes the
+same collection run after a terminal result. Tymra acknowledges the exact persisted result hash only
+after business records are durable. The private Browser Worker remains a development fallback.
+
+**Reason:** Browser work can outlive one Worker lease and may need process-restart recovery. A
+persisted orchestration boundary prevents duplicate submissions, avoids holding a Worker during
+remote execution and keeps remote cancellation subordinate to the local parent Job.
+
+**Verification:** The 2026-07-29 and 2026-07-30 acceptance records cover submit/poll/resume,
+idempotent trace identity, restart recovery, result acknowledgement, dry-run boundaries and
+cancellation settlement. ARGUS-023 additionally verified persist-before-ACK, exact-hash ACK,
+idempotent repeated ACK, Argus result/evidence purge and retained Tymra business records. On
+2026-08-01 the migration was applied locally with 33 completed and one cancelled execution and no
+active execution; current Argus client/orchestrator unit tests, Worker typecheck and Worker build
+passed. The database integration suite was not rerun for the latest revision, so the current status
+is not upgraded to a fresh full-workspace verification.
+
+## D-036 Use Listing-First Collection, Stable Identity And One Shared Public-Source Acceptance Runner
+
+**Status:** Implemented and locally verified; live rerun remains dated evidence.
+
+**Decision:** Every public collector uses the smallest authoritative representation and does not open
+a detail page when a list, feed or dataset already contains the normaliser's required fields.
+Eventfinda groups canonical URLs and expands all advertised dates from one detail capture.
+Ticketmaster persists complete five-city listing records directly and sends only incomplete groups
+to its bounded detail frontier. Other public collectors deduplicate references, raw identities and
+normalised identities, use a lightweight touch path for unchanged records and expose avoided-request
+counters. A single development-only runner executes all 17 configured non-OTA public sources twice
+inside one fixed window and checks lineage, governance preservation, disabled schedules and zero
+second-pass source/link growth.
+
+**Reason:** Request volume, challenge exposure and duplicate canonical writes are operational risks,
+not just performance details. One bounded runner makes the same persistence and idempotency contract
+observable across transports without conflating local verification with production approval.
+
+**Verification:** The immutable 2026-07-30 report records 34/34 successful Jobs and CollectionRuns,
+zero second-pass source/link growth and no remaining active acceptance execution. On 2026-08-01 the
+current runner code, 80 root tests, 37 Worker tests, Worker typecheck and Worker build passed. The
+real 17-source runner was not repeated, so current external availability continues to rely on the
+dated record.

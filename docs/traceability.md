@@ -1,26 +1,63 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-07-21
+Last updated: 2026-08-01
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
 Release 1.5 row may inherit `verified` from Release 1 evidence.
 
+The tables below contain both current status and explicitly dated historical evidence. A historical
+`verified` result remains valid for that snapshot but does not mean the current revision was
+rerun through the same gate. The current-worktree section is authoritative for fresh verification.
+
 ## Current Collection Status
 
 Current status is maintained here; detailed historical run IDs and counts are preserved in the
-[2026-07-21 local acceptance snapshot](./evidence/collection-acceptance-2026-07-21.md).
+[2026-07-30 full public-source acceptance](./evidence/public-source-acceptance-2026-07-30.md).
 
 | Channel | Current local state | Remaining boundary |
 | --- | --- | --- |
 | Eventfinda | Bounded two-pass real collection, persistence and idempotency verified | Nationwide multi-day unattended stability requires a deployed long-running environment |
 | Ticketmaster | Implementation and automated two-pass persistence verified; live detail attempts stop and cool down on challenge | Repeat live detail acceptance when the public page permits passive access |
-| Official/public signals | Implemented channels completed bounded two-pass real local acceptance | Production source review, activation and ongoing operations remain separate |
+| Configured non-OTA public channels | All 17 configured sources completed one unified bounded two-pass real local acceptance on 2026-07-30 | Fresh live rerun, production source review, activation and ongoing operations remain separate |
+| Argus execution boundary | Async submit/poll/resume/ACK, restart recovery, cancellation and post-ACK purge have dated local evidence; current image/unit/build checks pass | Current-worktree database integration and production acceptance remain separate |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
 | Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never requires or writes `approved-by` or `license-basis` and never changes source governance.
+
+## Current Worktree Verification (2026-08-01)
+
+The current revision contains the Argus orchestration, public-source acceptance, collection
+efficiency, Compose and documentation changes described below. Git commit state is not used as
+verification evidence.
+
+| Gate | Fresh evidence from current worktree | Status |
+| --- | --- | --- |
+| Source/config assembly | Docker Node 24 base image built and Prisma Client generated from the current schema | verified |
+| Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
+| TypeScript | Web, Worker, config, db, domain, providers and queue each passed `tsc --noEmit` | verified |
+| Root unit/component suite | 14 files, 80 tests passed | verified |
+| Worker unit suite | 7 files, 37 tests passed, including Argus client/orchestrator and failure classification | verified |
+| Browser suites | Browser Runtime, extractors and Browser Worker: 37/37 tests passed | verified |
+| Worker production build | `index`, `api`, `scheduler` and `cli` entrypoints built successfully | verified |
+| Web production build | Next.js generated 64/64 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
+| Isolated Compose smoke | Fresh image, migration, seed, Web, Worker API, Worker, Redis, PostgreSQL and Mailpit passed on isolated ports/volumes; cleanup completed | verified |
+| Database/API/Worker integration | Not rerun against the current worktree; the development database was inspected read-only | not_verified |
+| Playwright/accessibility | Not rerun; no UI implementation file changed in the current diff | not_verified |
+| Aggregate `pnpm verify` | The direct constituent checks above passed except integration; the aggregate command itself did not complete | not_verified |
+| Current runtime image | Final Web/API/Worker container hashes match the current Argus client, Worker service and acceptance runner; Web, Worker and Argus HTTPS health checks return 200 | verified for runtime health; integration remains not_verified |
+
+Read-only runtime inspection found the Argus orchestration migration applied, zero enabled schedules,
+33 completed and one cancelled Argus execution, and no active Argus execution. Worker health/readiness
+were healthy. During the final rebuild an existing RBNZ Job was correctly stopped by the source
+governance guard with `RIGHTS_BLOCKED`, bringing the queue snapshot to 5 `FAILED` and 60
+`DEAD_LETTER` Jobs. The remaining failures require classification before schedule activation and
+are not treated as fresh quality-test failures without inspecting their origin.
+
+The obsolete synchronous `argus-client 2.ts` and its duplicate test were removed before delivery;
+the asynchronous Job client and its test are the only retained implementation.
 
 ## Product Requirements
 
@@ -151,18 +188,18 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 
 | Command | Intended coverage | Status |
 | --- | --- | --- |
-| `pnpm dev` | Next.js local development | verified; host LaunchAgent HTTP 200 |
-| `pnpm worker` | Persistent worker | verified; host LaunchAgent and Compose running |
-| `pnpm db:generate` | Prisma client generation | verified |
-| `pnpm db:migrate` | Development migration | verified through deploy and clean Compose migration |
-| `pnpm db:seed` | Deterministic demo seed | verified repeatedly |
-| `pnpm lint` | Workspace lint | verified; no warnings or errors |
-| `pnpm typecheck` | Workspace type checking | verified |
-| `pnpm test` | Unit/domain tests | verified |
-| `pnpm test:integration` | Database/API/worker integration | verified |
-| `pnpm test:e2e` | Playwright and accessibility | verified |
-| `pnpm build` | Production Web and Worker build | verified |
-| `pnpm verify` | Lint, typecheck, unit, integration, build | verified |
+| `pnpm dev` | Next.js local development | current worktree image running and HTTPS route returns 200 |
+| `pnpm worker` | Persistent Worker | current worktree image running; health/readiness return 200 |
+| `pnpm db:generate` | Prisma client generation | current worktree verified in Docker |
+| `pnpm db:migrate` | Development migration | latest Argus migration confirmed applied; command not rerun |
+| `pnpm db:seed` | Deterministic demo seed | historical verified; not rerun in this update |
+| `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
+| `pnpm typecheck` | Workspace type checking | equivalent direct checks current-worktree verified |
+| `pnpm test` | Unit/domain and browser suites | equivalent direct suites current-worktree verified: 117 TypeScript + 37 browser tests |
+| `pnpm test:integration` | Database/API/Worker integration | current worktree `not_verified`; historical evidence retained below |
+| `pnpm test:e2e` | Playwright and accessibility | current worktree `not_verified`; no UI implementation diff |
+| `pnpm build` | Production Web and Worker build | equivalent direct current-worktree builds verified |
+| `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree `not_verified`; integration and aggregate command not completed |
 
 ## Final Acceptance Evidence
 

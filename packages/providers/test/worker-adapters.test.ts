@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AdapterError, otaAdapters, parseAucklandLivePage, parseChristchurchNzPage, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseNztaDelays, parseOurAucklandPage, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseStatsNzInternationalTravel, parseUniversityEvents, publicDataAdapters } from "../src";
+import { AdapterError, changedMetServiceFeedItems, metServiceFeedItemVersion, otaAdapters, parseAucklandLivePage, parseChristchurchNzPage, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseNztaDelays, parseOurAucklandPage, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseStatsNzInternationalTravel, parseUniversityEvents, publicDataAdapters } from "../src";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };
@@ -123,6 +123,15 @@ describe("public data adapter contract", () => {
     const [signal] = await publicDataAdapters.metservice.normalise([{ sourceId: "metservice", externalId: `cap-alert:${alert.identifier}`, payload: { kind: "cap_alert", sourceUrl: alertUrl, feedItem: feed.items[0], alert }, fetchedAt: new Date("2026-07-21T03:00:00.000Z"), fixture: false }], fixtureContext);
     expect(signal).toMatchObject({ type: "WEATHER_OR_ACCESS_DISRUPTION", title: "Heavy Rain Warning - Canterbury", region: "Canterbury High Country", startsAt: new Date("2026-07-21T06:00:00.000Z"), endsAt: new Date("2026-07-21T21:00:00.000Z"), direction: "NEGATIVE", confidence: 0.95, metadata: { sourceFormat: "OASIS CAP 1.2", attribution: "MetService New Zealand" } });
     expect(publicDataAdapters.metservice.metadata).toMatchObject({ adapterKey: "public:metservice:cap-rss-v1", accessMethod: "OFFICIAL_PUBLIC_CAP_RSS", dailyBudget: 288 });
+  });
+
+  it("only schedules new or updated MetService CAP details", () => {
+    const unchanged = { title: "Heavy Rain", link: "https://alerts.metservice.com/cap/alert/rain", description: null, pubDate: "2026-07-21T03:00:00.000Z", guid: "warning-123" };
+    const updated = { ...unchanged, pubDate: "2026-07-21T04:00:00.000Z" };
+    const fresh = { ...unchanged, link: "https://alerts.metservice.com/cap/alert/wind", guid: "warning-456" };
+    const known = { [unchanged.link]: metServiceFeedItemVersion(unchanged) };
+    expect(changedMetServiceFeedItems([unchanged, fresh], known)).toEqual([fresh]);
+    expect(changedMetServiceFeedItems([updated], known)).toEqual([updated]);
   });
 
   it("parses University of Auckland events and preserves the official event fields", async () => {

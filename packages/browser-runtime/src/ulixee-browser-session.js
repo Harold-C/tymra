@@ -9,14 +9,17 @@ const DEFAULT_VIEWPORT = Object.freeze({
 });
 
 export class UlixeeBrowserSession {
-  constructor({ coreUrl = "ws://127.0.0.1:1818", headed = true, viewport = DEFAULT_VIEWPORT, sessionDbDirectory, userProfile = null, onProfileExport = null, hero, heroModule } = {}) {
+  constructor({ coreUrl = "ws://127.0.0.1:1818", headed = true, viewport = DEFAULT_VIEWPORT, sessionDbDirectory, userProfile = null, onProfileExport = null, blockedResourceTypes, blockedResourceUrls, hero, heroModule } = {}) {
     this.coreUrl = coreUrl;
     this.headed = headed;
     this.viewport = viewport;
     this.sessionDbDirectory = sessionDbDirectory;
     this.userProfile = userProfile;
     this.onProfileExport = onProfileExport;
+    this.blockedResourceTypes = blockedResourceTypes;
+    this.blockedResourceUrls = blockedResourceUrls;
     this.hero = hero;
+    this.connectionToCore = null;
     this.heroModule = heroModule;
     this.policy = createReadOnlyActionPolicy();
   }
@@ -25,15 +28,17 @@ export class UlixeeBrowserSession {
     if (this.hero) return this.hero;
     const module = this.heroModule ?? await import("@ulixee/hero");
     const Hero = module.default;
-    const { ConnectionToHeroCore } = module;
+    this.connectionToCore = module.ConnectionToHeroCore.remote(this.coreUrl);
     this.hero = new Hero({
-      connectionToCore: ConnectionToHeroCore.remote(this.coreUrl),
+      connectionToCore: this.connectionToCore,
       noChromeSandbox: true,
       showChrome: this.headed,
       showChromeAlive: false,
       sessionKeepAlive: false,
       viewport: this.viewport,
       userProfile: this.userProfile || undefined,
+      blockedResourceTypes: this.blockedResourceTypes,
+      blockedResourceUrls: this.blockedResourceUrls,
       sessionPersistence: true,
       sessionDbDirectory: this.sessionDbDirectory,
     });
@@ -89,6 +94,19 @@ export class UlixeeBrowserSession {
       this.hero.close().catch(() => {}),
       new Promise((resolve) => setTimeout(resolve, 5_000)),
     ]);
+    // Ulixee alpha closes the server socket while handling Core.disconnect,
+    // then attempts to send its response on that closing socket. Once the Hero
+    // session is closed, terminate the owned transport directly to avoid that
+    // server-side unhandled rejection.
+    if (this.connectionToCore?.transport?.disconnect) {
+      this.connectionToCore.transport.disconnect();
+    } else {
+      await Promise.race([
+        this.connectionToCore?.disconnect?.().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 2_000)),
+      ]);
+    }
     this.hero = null;
+    this.connectionToCore = null;
   }
 }

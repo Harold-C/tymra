@@ -34,6 +34,7 @@ import {
   type OtaAdapter,
   type PublicDataAdapter,
   type PublicEvent,
+  type PublicRawRecord,
   type PublicSignal,
   type ResolvedOtaListing,
 } from "@tymra/providers";
@@ -42,14 +43,13 @@ import {
   EVENTFINDA_ALLOWED_HOSTS,
   EVENTFINDA_EXTRACTOR,
   eventfindaEvidenceTtlHours,
-  canonicalEventfindaUrl,
   eventfindaFailureBackoff,
+  groupEventfindaListingEvents,
   eventfindaListingPageUrl,
   eventfindaPaginationNeedsProbe,
   eventfindaRefreshPolicy,
   eventfindaRequestDelayMs,
   eventfindaUrlHash,
-  isEventfindaDetailUrl,
   normaliseEventfindaDetail,
   type EventfindaDetailExtraction,
   type EventfindaExtraction,
@@ -65,15 +65,18 @@ import {
 } from "../collection/event-canonicalisation";
 import {
   canonicalTicketmasterUrl,
+  groupTicketmasterListingEvents,
   isTicketmasterDetailExtraction,
   isTicketmasterDetailUrl,
   isTicketmasterExtraction,
   isTicketmasterListingExtraction,
   normaliseTicketmasterEvent,
+  normaliseTicketmasterEvents,
   ticketmasterChallengeTransition,
   ticketmasterCircuitStatus,
   ticketmasterCircuitSuccessMetadata,
   ticketmasterFailureBackoff,
+  ticketmasterListingCoverage,
   ticketmasterRefreshPolicy,
   ticketmasterRequestDelayMs,
   ticketmasterUrlHash,
@@ -89,6 +92,13 @@ import {
   RBNZ_FX_EXTRACTOR,
   RBNZ_FX_URL,
 } from "../collection/rbnz-fx";
+import { captureBrowserTaskWithArgus } from "../clients/argus-client";
+import { DeferredJobError } from "../jobs/deferred-job";
+import {
+  captureBrowserTaskWithDurableArgus,
+  durableArgusTraceId,
+  settleCancelledCollectionRun,
+} from "./argus-orchestrator";
 
 type CreateWorkerRequest = {
   input: string;
@@ -122,6 +132,7 @@ type BrowserEvidencePointer = {
   kind: string;
   traceId: string;
   relativePath: string;
+  storageRef?: string;
   sha256: string;
   sizeBytes: number;
   containsSensitiveData: boolean;
@@ -147,6 +158,11 @@ type ActivateSourceRequest = {
   approvedBy: string;
   licenseBasis: string;
   allowDisplay?: boolean;
+};
+
+type EventPersistenceCache = {
+  series: Map<string, { sourceEventId: string; canonicalEventId: string }>;
+  venues: Map<string, string>;
 };
 
 const fixtureSourceKey = "development-demo";
@@ -520,17 +536,31 @@ export class WorkerService {
       ? localBounds.maxRecords
       : options.limit === undefined ? undefined : Math.min(5_000, Math.max(1, Math.trunc(options.limit)));
     if (to <= from || to.getTime() - from.getTime() > 366 * 86_400_000) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Collection range must be positive and no longer than 366 days", 422);
+    const productionBounds = {
+      maxRequests: Math.max(1, adapter.metadata.dailyBudget),
+      maxRecords: limit ?? defaultPublicRecordLimit(sourceId),
+      maxWindowDays: 366,
+      maxBytes: 5_000_000,
+      concurrency: Math.max(1, adapter.metadata.concurrencyLimit),
+      timeoutMs: 120_000,
+    } as const;
+    const effectiveBounds = localAcceptance ? localBounds : productionBounds;
+    const collectionState = sourceId === "metservice" ? await this.metServiceCollectionState(source.id) : undefined;
     const context: AdapterContext = {
       ...this.publicAdapterContext(),
-      ...(localAcceptance ? { signal: AbortSignal.timeout(localBounds.timeoutMs), collectionLimits: localBounds, collectionRange: { from, to } } : {}),
+      localAcceptance,
+      collectionLimits: effectiveBounds,
+      collectionRange: { from, to },
+      ...(localAcceptance ? { signal: AbortSignal.timeout(localBounds.timeoutMs) } : {}),
+      ...(collectionState ? { collectionState } : {}),
     };
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
       localAcceptance, sourceId, marketScope,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
-      effective: { from: from.toISOString(), to: to.toISOString(), limit: limit ?? null },
-      limits: localAcceptance ? localBounds : null,
+      effective: { from: from.toISOString(), to: to.toISOString(), limit: effectiveBounds.maxRecords },
+      limits: effectiveBounds,
       dryRun: options.dryRun ?? false,
       counters: emptyPublicCollectionCounters(),
       governanceBefore,
@@ -548,14 +578,29 @@ export class WorkerService {
       const result = await withRedisLock(`source:${sourceId}`, 60_000, async () => {
         const discovered = await adapter.discover({ marketScope, from, to, limit }, context);
         counters.discovered = discovered.length;
-        const references = localAcceptance ? discovered.slice(0, localBounds.maxRequests) : discovered;
+        const uniqueReferences = [...new Set(discovered)];
+        counters.duplicatesSkipped += discovered.length - uniqueReferences.length;
+        const references = localAcceptance ? uniqueReferences.slice(0, localBounds.maxRequests) : uniqueReferences;
         counters.references = references.length;
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {
-          const records = await adapter.fetch(reference, context);
+          const records = sourceId === "council_calendars"
+            && this.environment.ARGUS_API_BASE_URL
+            && this.environment.ARGUS_API_TOKEN
+            ? await this.executeOurAucklandBrowserTask(
+                source.id,
+                run.id,
+                reference,
+                effectiveBounds.maxRecords,
+                options.dryRun === true,
+                options.jobId,
+              )
+            : await adapter.fetch(reference, context);
           counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
+          counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {
-            if (!rawById.has(record.externalId)) rawById.set(record.externalId, record);
+            if (rawById.has(record.externalId)) counters.duplicatesSkipped += 1;
+            else rawById.set(record.externalId, record);
             if (limit && rawById.size >= limit) break;
           }
           if (limit && rawById.size >= limit) break;
@@ -573,8 +618,10 @@ export class WorkerService {
         let signals: PublicSignal[];
         let events: PublicEvent[];
         try {
-          signals = await adapter.normalise(raw, context);
-          events = adapter.normaliseEvents ? await adapter.normaliseEvents(raw, context) : [];
+          const normalisedSignals = await adapter.normalise(raw, context);
+          const normalisedEvents = adapter.normaliseEvents ? await adapter.normaliseEvents(raw, context) : [];
+          signals = uniqueByExternalId(normalisedSignals, counters);
+          events = uniqueByExternalId(normalisedEvents, counters);
         } catch (error) {
           if (!options.dryRun) {
             await prisma.rawArtifact.updateMany({ where: { collectionRunId: run.id }, data: { parserFailure: true, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS * 3_600_000) } });
@@ -585,14 +632,20 @@ export class WorkerService {
         counters.events = events.length;
         if (!options.dryRun) {
           const eventOccurrenceIds = new Map<string, string>();
+          const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
           for (const event of events) {
-            const persisted = await this.persistNormalisedEvent(event, source.id, run.id);
+            const persisted = persistedEvents.get(event.externalId)!;
             eventOccurrenceIds.set(event.externalId, persisted.eventOccurrence.id);
+            if (persisted.unchanged) counters.unchangedSkipped += 1;
           }
-          for (const signal of signals) await this.persistNormalisedSignal(signal, source.id, run.id, marketScope);
+          for (const signal of signals) {
+            const persisted = await this.persistNormalisedSignal(signal, source.id, run.id, marketScope);
+            if (persisted.unchanged) counters.unchangedSkipped += 1;
+          }
           for (const event of events) {
             for (const signal of eventSignal(event)) {
-              await this.persistNormalisedSignal(signal, source.id, run.id, marketScope, eventOccurrenceIds.get(event.externalId));
+              const persisted = await this.persistNormalisedSignal(signal, source.id, run.id, marketScope, eventOccurrenceIds.get(event.externalId));
+              if (persisted.unchanged) counters.unchangedSkipped += 1;
             }
           }
         }
@@ -630,6 +683,24 @@ export class WorkerService {
     if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("RIGHTS_BLOCKED", `${source.name} does not allow the DEVELOPMENT environment`, false);
   }
 
+  private async metServiceCollectionState(dataSourceId: string): Promise<NonNullable<AdapterContext["collectionState"]>> {
+    const signals = await prisma.sourceMarketSignal.findMany({
+      where: { dataSourceId },
+      select: { evidenceRef: true, metadata: true },
+    });
+    const knownReferenceVersions: Record<string, string> = {};
+    for (const signal of signals) {
+      const metadata = jsonRecord(signal.metadata);
+      const signalMetadata = jsonRecord(metadata.signal);
+      const feedItem = jsonRecord(signalMetadata.feedItem);
+      const reference = typeof signal.evidenceRef === "string" ? signal.evidenceRef : "";
+      const guid = typeof feedItem.guid === "string" ? feedItem.guid : "";
+      const pubDate = typeof feedItem.pubDate === "string" ? feedItem.pubDate : "";
+      if (reference && (guid || pubDate)) knownReferenceVersions[reference] = `${guid}|${pubDate}`;
+    }
+    return { knownReferenceVersions };
+  }
+
   private async persistNormalisedSignal(
     signal: PublicSignal,
     dataSourceId: string,
@@ -647,6 +718,18 @@ export class WorkerService {
       direction: signal.direction, confidence: signal.confidence, evidenceRef: signal.evidenceRef,
       metadata: signal.metadata ?? {},
     };
+    const contentHash = stableHash(sourceContent);
+    const existing = await prisma.sourceMarketSignal.findUnique({
+      where: { dataSourceId_externalId: { dataSourceId, externalId: signal.externalId } },
+      include: { canonicalLink: { include: { marketSignal: true } } },
+    });
+    if (existing?.contentHash === contentHash && existing.canonicalLink && existing.canonicalLink.marketSignal.eventOccurrenceId === (eventOccurrenceId ?? null)) {
+      const sourceSignal = await prisma.sourceMarketSignal.update({
+        where: { id: existing.id },
+        data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt },
+      });
+      return { sourceSignal, canonical: existing.canonicalLink.marketSignal, link: existing.canonicalLink, unchanged: true };
+    }
     const sourceSignal = await prisma.sourceMarketSignal.upsert({
         where: { dataSourceId_externalId: { dataSourceId, externalId: signal.externalId } },
         create: {
@@ -654,14 +737,14 @@ export class WorkerService {
           marketKey, type: signalType, title: signal.title, region: signal.region,
           startsAt: signal.startsAt, endsAt: signal.endsAt, direction: signal.direction,
           confidence: signal.confidence, evidenceRef: signal.evidenceRef,
-          contentHash: stableHash(sourceContent), metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata },
+          contentHash, metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata },
           isDemo: signal.fixture || this.environment.NODE_ENV === "test", lastSeenAt: seenAt,
         },
         update: {
           lastCollectionRunId: collectionRunId, marketKey, type: signalType, title: signal.title,
           region: signal.region, startsAt: signal.startsAt, endsAt: signal.endsAt,
           direction: signal.direction, confidence: signal.confidence, evidenceRef: signal.evidenceRef,
-          contentHash: stableHash(sourceContent), metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata }, lastSeenAt: seenAt,
+          contentHash, metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata }, lastSeenAt: seenAt,
         },
       });
     const existingLink = await prisma.marketSignalSourceLink.findUnique({ where: { sourceMarketSignalId: sourceSignal.id }, select: { marketSignalId: true } });
@@ -677,7 +760,37 @@ export class WorkerService {
         create: { marketSignalId: canonical.id, sourceMarketSignalId: sourceSignal.id, matchMethod: "SOURCE_ISOLATED_IDENTITY_V1", matchConfidence: 1, evidence: { sourceExternalId: signal.externalId } },
         update: { marketSignalId: canonical.id, matchMethod: "SOURCE_ISOLATED_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { sourceExternalId: signal.externalId } },
       });
-    return { sourceSignal, canonical, link };
+    return { sourceSignal, canonical, link, unchanged: false };
+  }
+
+  private async resumeOrCreateBrowserCollectionRun(
+    jobId: string | undefined,
+    dataSourceId: string,
+    analysisRequestId: string | undefined,
+    scope: Prisma.InputJsonValue,
+    startedAt: Date,
+  ) {
+    if (jobId) {
+      const running = await prisma.collectionRun.findFirst({
+        where: { jobId, status: "RUNNING" },
+        orderBy: { createdAt: "desc" },
+      });
+      if (running) return running;
+    }
+    return prisma.collectionRun.create({
+      data: {
+        jobId,
+        dataSourceId,
+        analysisRequestId,
+        correlationId: randomUUID(),
+        mode: "MARKET_COVERAGE",
+        status: "RUNNING",
+        scope,
+        startedAt,
+        attemptCount: 1,
+        isDemo: false,
+      },
+    });
   }
 
   private async collectRbnzFxSource(marketScope: string, analysisRequestId?: string, options: CollectSourceOptions = {}) {
@@ -689,23 +802,25 @@ export class WorkerService {
       throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
     }
     if (!localAcceptance && source.operationalStatus !== "HEALTHY") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
-    if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) throw new AdapterError("CONFIGURATION_ERROR", "Browser Worker is not configured", false);
+    const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
+    const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
+    if (!browserWorkerConfigured && !argusConfigured) throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for RBNZ collection", false);
     const now = new Date();
     const requestedFrom = options.from ?? new Date(now.getTime() - 86_400_000);
     const requestedTo = options.to ?? new Date(now.getTime() + 31 * 86_400_000);
     const from = requestedFrom;
     const to = localAcceptance ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
     if (to <= from) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "RBNZ B1 collection range must be positive", 422);
-    const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: Math.min(this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000), maxBytes: 2_000_000 } as const;
+    const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: Math.min(argusConfigured ? this.environment.ARGUS_TIMEOUT_MS : this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000), maxBytes: 2_000_000 } as const;
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("fx_rates");
     const initialScope = { localAcceptance, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
-    const run = await prisma.collectionRun.create({ data: { jobId: options.jobId, dataSourceId: source.id, analysisRequestId, correlationId: randomUUID(), mode: "MARKET_COVERAGE", status: "RUNNING", scope: initialScope, startedAt: now, attemptCount: 1, isDemo: false } });
-    const counters = { requests: 0, pages: 0, records: 0, signals: 0, rawArtifacts: 0, failures: 0 };
+    const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
+    const counters = { requests: 0, pages: 0, records: 0, signals: 0, unchangedSignalsSkipped: 0, rawArtifacts: 0, failures: 0 };
     try {
       const result = await withRedisLock("source:fx_rates", 60_000, async () => {
         counters.requests = 1;
-        const browserResult = await this.executeRbnzFxBrowserTask(source.id, run.id, options.dryRun === true);
+        const browserResult = await this.executeRbnzFxBrowserTask(source.id, run.id, options.dryRun === true, options.jobId);
         counters.pages = 1;
         counters.rawArtifacts = options.dryRun ? 0 : browserResult.evidence.length;
         if (!isRbnzFxExtraction(browserResult.extracted)) {
@@ -715,7 +830,12 @@ export class WorkerService {
         const signals = normaliseRbnzFxSignals(browserResult.extracted, limits.maxRecords);
         counters.records = signals.length;
         counters.signals = signals.length;
-        if (!options.dryRun) for (const signal of signals) await this.persistNormalisedSignal(signal, source.id, run.id, marketScope);
+        if (!options.dryRun) {
+          for (const signal of signals) {
+            const persisted = await this.persistNormalisedSignal(signal, source.id, run.id, marketScope);
+            if (persisted.unchanged) counters.unchangedSignalsSkipped += 1;
+          }
+        }
         return { references: 1, records: signals.length, events: 0, signals: signals.length };
       });
       const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
@@ -728,6 +848,7 @@ export class WorkerService {
       await this.syncCollectionIncidentSafely(run.id);
       return { runId: run.id, localAcceptance, dryRun: options.dryRun === true, ...result, counters };
     } catch (error) {
+      if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
       const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("fx_rates");
@@ -745,7 +866,9 @@ export class WorkerService {
     if (localAcceptance && developmentBootstrap) throw new WorkerRequestError("INVALID_COLLECTION_MODE", "Choose either local acceptance or development bootstrap", 422);
     const guardedDevelopmentRun = localAcceptance || developmentBootstrap;
     this.assertTicketmasterSourceAllowed(source, localAcceptance, developmentBootstrap);
-    if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) throw new AdapterError("CONFIGURATION_ERROR", "Browser Worker is not configured for Ticketmaster collection", false);
+    const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
+    const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
+    if (!browserWorkerConfigured && !argusConfigured) throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for Ticketmaster collection", false);
     const now = new Date();
     const requestedPhase = options.phase ?? "full";
     const metadata = jsonRecord(source.metadata);
@@ -762,12 +885,12 @@ export class WorkerService {
     const maxDetails = circuit.halfOpen ? 0 : requestedMaxDetails;
     const maxRecords = localAcceptance ? 2 : Math.min(options.limit ?? 5_000, 5_000);
     const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails : 0);
-    const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: Math.min(this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000) } as const;
+    const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: Math.min(argusConfigured ? this.environment.ARGUS_TIMEOUT_MS : this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000) } as const;
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("ticketmaster");
     const initialScope = { localAcceptance, developmentBootstrap, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
-    const run = await prisma.collectionRun.create({ data: { jobId: options.jobId, dataSourceId: source.id, analysisRequestId, correlationId: randomUUID(), mode: "MARKET_COVERAGE", status: "RUNNING", scope: initialScope, startedAt: now, attemptCount: 1, isDemo: false } });
-    const counters = { requests: 0, pages: 0, discovered: 0, records: 0, targetsUpserted: 0, detailsFetched: 0, eventsPersisted: 0, rawArtifacts: 0, failures: 0 };
+    const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
+    const counters = { requests: 0, pages: 0, discovered: 0, records: 0, targetsUpserted: 0, listingEventsAccepted: 0, listingEventsPersisted: 0, detailRequestsAvoided: 0, detailsFetched: 0, unchangedDetails: 0, eventsPersisted: 0, unchangedEventsSkipped: 0, rawArtifacts: 0, failures: 0 };
     let circuitTransitionApplied = false;
     let circuitCooldownUntil = circuit.cooldownUntil;
     try {
@@ -779,7 +902,7 @@ export class WorkerService {
         const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: startOfUtcDay(now) } } });
         let lastRequestAt = 0;
         let rateLimited = false;
-        const discovered = new Map<string, TicketmasterListingEvent>();
+        const discovered = new Map<string, { events: TicketmasterListingEvent[]; discoveredFrom: string[] }>();
         const dryRun = options.dryRun === true;
         const capture = async (url: string) => {
           if (usedToday + counters.requests >= this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET) throw new AdapterError("RATE_LIMITED", "Ticketmaster daily request budget has been reached", true);
@@ -789,7 +912,7 @@ export class WorkerService {
           }
           lastRequestAt = Date.now();
           counters.requests += 1;
-          const browserResult = await this.executeTicketmasterBrowserTask(source.id, run.id, url, dryRun);
+          const browserResult = await this.executeTicketmasterBrowserTask(source.id, run.id, url, dryRun, options.jobId);
           counters.rawArtifacts += dryRun ? 0 : browserResult.evidence.length;
           const extraction = browserResult.extracted;
           if (!isTicketmasterExtraction(extraction)) {
@@ -805,25 +928,57 @@ export class WorkerService {
             if (!isTicketmasterListingExtraction(browserResult.extracted)) throw new AdapterError("PARSING_ERROR", `Ticketmaster listing returned an unexpected page for ${listingUrl}`, false);
             counters.pages += 1;
             counters.discovered += browserResult.extracted.events.length;
-            for (const listingEvent of browserResult.extracted.events) {
-              const event = normaliseTicketmasterEvent(listingEvent);
-              if (!event || !isTicketmasterDetailUrl(event.sourceUrl) || event.endsAt < from || event.startsAt > to) continue;
-              const url = canonicalTicketmasterUrl(event.sourceUrl);
-              if (discovered.has(url) || discovered.size >= maxRecords) continue;
-              discovered.set(url, { ...listingEvent, sourceUrl: url });
-              if (!dryRun) {
-                const cancelled = event.status === "CANCELLED";
-                await prisma.sourceCrawlTarget.upsert({
-                  where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash: ticketmasterUrlHash(url) } },
-                  create: { dataSourceId: source.id, url, urlHash: ticketmasterUrlHash(url), kind: "EVENT_DETAIL", status: cancelled ? "CANCELLED" : "PENDING", priority: cancelled ? 900 : listingPriority(listingEvent.startsAt, now), active: !cancelled, lastSeenAt: now, nextFetchAt: cancelled ? null : now, metadata: { listing: listingEvent, discoveredFrom: browserResult.extracted.canonicalUrl } },
-                  update: { url, status: cancelled ? "CANCELLED" : "PENDING", priority: cancelled ? 900 : listingPriority(listingEvent.startsAt, now), active: !cancelled, lastSeenAt: now, missedDiscoveryCount: 0, nextFetchAt: cancelled ? null : localAcceptance ? now : undefined, lastErrorCode: null, ...(cancelled ? { consecutiveFailures: 0, lastErrorAt: null } : {}), metadata: { listing: listingEvent, discoveredFrom: browserResult.extracted.canonicalUrl } },
-                });
-                counters.targetsUpserted += 1;
-                if (cancelled) {
-                  await this.persistNormalisedEvent(event, source.id, run.id);
-                  counters.eventsPersisted += 1;
-                }
-              }
+            for (const group of groupTicketmasterListingEvents(browserResult.extracted.events)) {
+              const accepted = group.events.filter((listingEvent) => {
+                const event = normaliseTicketmasterEvent(listingEvent);
+                return event && event.endsAt >= from && event.startsAt <= to;
+              });
+              if (!accepted.length || (!discovered.has(group.url) && discovered.size >= maxRecords)) continue;
+              const current = discovered.get(group.url);
+              const merged = groupTicketmasterListingEvents([...(current?.events ?? []), ...accepted])[0]?.events ?? accepted;
+              discovered.set(group.url, {
+                events: merged,
+                discoveredFrom: [...new Set([...(current?.discoveredFrom ?? []), browserResult.extracted.canonicalUrl])],
+              });
+            }
+          }
+
+          const hashes = [...discovered.keys()].map(ticketmasterUrlHash);
+          const existingTargets = dryRun || !hashes.length ? [] : await prisma.sourceCrawlTarget.findMany({
+            where: { dataSourceId: source.id, urlHash: { in: hashes } },
+            select: { urlHash: true, status: true, lastFetchedAt: true, nextFetchAt: true, contentHash: true, metadata: true },
+          });
+          const existingByHash = new Map(existingTargets.map((target) => [target.urlHash, target]));
+          for (const [url, listing] of discovered) {
+            const coverage = ticketmasterListingCoverage(listing.events);
+            counters.listingEventsAccepted += coverage.events.length;
+            if (coverage.complete) counters.detailRequestsAvoided += 1;
+            const cancelled = coverage.events.length > 0 && coverage.events.every((event) => event.status === "CANCELLED");
+            if (!dryRun && coverage.complete) {
+              const persistedEvents = await this.persistNormalisedEvents(coverage.events, source.id, run.id);
+              counters.unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
+              counters.listingEventsPersisted += coverage.events.length;
+              counters.eventsPersisted += coverage.events.length;
+            }
+            if (!dryRun) {
+              const urlHash = ticketmasterUrlHash(url);
+              const existing = existingByHash.get(urlHash);
+              const detailRequired = !coverage.complete && !cancelled;
+              const targetMetadata = {
+                ...jsonRecord(existing?.metadata),
+                listing: listing.events[0],
+                listingEvents: listing.events,
+                discoveredFrom: listing.discoveredFrom,
+                listingComplete: coverage.complete,
+                detailRequired,
+                occurrenceCount: listing.events.length,
+              };
+              await prisma.sourceCrawlTarget.upsert({
+                where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash } },
+                create: { dataSourceId: source.id, url, urlHash, kind: "EVENT_DETAIL", status: cancelled ? "CANCELLED" : coverage.complete ? "LISTING_COMPLETE" : "PENDING", priority: cancelled ? 900 : listingPriority(listing.events[0]?.startsAt, now), active: !cancelled, lastSeenAt: now, lastFetchedAt: coverage.complete ? now : null, nextFetchAt: detailRequired ? now : null, contentHash: coverage.complete ? stableHash(listing.events) : null, consecutiveFailures: 0, metadata: targetMetadata },
+                update: { url, status: cancelled ? "CANCELLED" : coverage.complete ? "LISTING_COMPLETE" : "PENDING", priority: cancelled ? 900 : listingPriority(listing.events[0]?.startsAt, now), active: !cancelled, lastSeenAt: now, missedDiscoveryCount: 0, lastFetchedAt: coverage.complete ? now : existing?.lastFetchedAt, nextFetchAt: detailRequired ? (localAcceptance ? now : existing?.nextFetchAt ?? now) : null, contentHash: coverage.complete ? stableHash(listing.events) : existing?.contentHash, consecutiveFailures: cancelled || coverage.complete ? 0 : undefined, lastErrorCode: null, lastErrorAt: cancelled || coverage.complete ? null : undefined, metadata: targetMetadata },
+              });
+              counters.targetsUpserted += 1;
             }
           }
           if (!dryRun && !localAcceptance && counters.pages === TICKETMASTER_LISTING_URLS.length) {
@@ -833,14 +988,34 @@ export class WorkerService {
         }
 
         if (phase === "details" || phase === "full") {
-          const targets = dryRun && discovered.size
-            ? [...discovered.values()].filter((event) => normaliseTicketmasterEvent(event)?.status !== "CANCELLED").slice(0, maxDetails).map((event) => ({ id: null, url: event.sourceUrl, consecutiveFailures: 0, metadata: { listing: event } }))
-            : await prisma.sourceCrawlTarget.findMany({
-                where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
-                orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
-                take: maxDetails,
-                select: { id: true, url: true, consecutiveFailures: true, metadata: true },
-              });
+          const persistedUrls = detailTargetBatchUrls(run.scope);
+          const targets = persistedUrls.length
+            ? dryRun
+              ? orderPersistedDetailTargets(
+                  persistedUrls,
+                  [...discovered.entries()].map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events } })),
+                )
+              : orderPersistedDetailTargets(
+                  persistedUrls,
+                  await prisma.sourceCrawlTarget.findMany({
+                    where: { dataSourceId: source.id, url: { in: persistedUrls } },
+                    select: { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true },
+                  }),
+                )
+            : dryRun && discovered.size
+              ? [...discovered.entries()]
+                  .filter(([, listing]) => !ticketmasterListingCoverage(listing.events).complete)
+                  .slice(0, maxDetails)
+                  .map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events } }))
+              : await prisma.sourceCrawlTarget.findMany({
+                  where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, status: { in: ["PENDING", "FAILED", "RATE_LIMITED", "FETCHED"] }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
+                  orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
+                  take: maxDetails,
+                  select: { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true },
+                });
+          if (!persistedUrls.length && options.jobId) {
+            await persistDetailTargetBatch(run.id, run.scope, targets.map((target) => target.url));
+          }
 
           for (const target of targets) {
             try {
@@ -850,24 +1025,29 @@ export class WorkerService {
                 throw new AdapterError("PARSING_ERROR", `Ticketmaster detail returned no event for ${target.url}`, false);
               }
               const targetUrl = canonicalTicketmasterUrl(target.url);
-              const allEvents = browserResult.extracted.events
-                .map(normaliseTicketmasterEvent)
-                .filter((event): event is PublicEvent => event !== null)
+              const allEvents = normaliseTicketmasterEvents(browserResult.extracted.events)
                 .filter((event) => canonicalTicketmasterUrl(event.sourceUrl) === targetUrl);
               if (!allEvents.length) throw new AdapterError("PARSING_ERROR", `Ticketmaster detail could not be normalised for ${target.url}`, false);
               const events = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
               if (!dryRun) {
-                for (const event of events) await this.persistNormalisedEvent(event, source.id, run.id);
-                const refresh = ticketmasterRefreshPolicy(allEvents, now);
+                const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
+                counters.unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
+                const detailContentHash = stableHash(browserResult.extracted);
+                const previousUnchangedCount = integerMetadata(target.metadata, "unchangedDetailFetchCount");
+                const detailUnchanged = target.contentHash === detailContentHash;
+                const unchangedDetailFetchCount = detailUnchanged ? Math.min(4, previousUnchangedCount + 1) : 0;
+                if (detailUnchanged) counters.unchangedDetails += 1;
+                const refresh = ticketmasterRefreshPolicy(allEvents, now, unchangedDetailFetchCount);
                 const cancelled = allEvents.every((event) => event.status === "CANCELLED");
                 await prisma.sourceCrawlTarget.update({
                   where: { id: target.id! },
-                  data: { status: cancelled ? "CANCELLED" : "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: stableHash(browserResult.extracted), httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), ticketmasterEventIds: allEvents.map((event) => event.externalId), occurrenceCount: allEvents.length, lastTitle: allEvents[0].title, terminalStatus: cancelled ? "CANCELLED" : null } },
+                  data: { status: cancelled ? "CANCELLED" : "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: detailContentHash, httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), ticketmasterEventIds: allEvents.map((event) => event.externalId), occurrenceCount: allEvents.length, lastTitle: allEvents[0].title, terminalStatus: cancelled ? "CANCELLED" : null, detailUnchanged, unchangedDetailFetchCount } },
                 });
               }
               counters.detailsFetched += 1;
               counters.eventsPersisted += events.length;
             } catch (error) {
+              if (error instanceof DeferredJobError) throw error;
               counters.failures += 1;
               const isRateLimited = error instanceof AdapterError && error.code === "RATE_LIMITED";
               if (!dryRun && target.id) {
@@ -900,12 +1080,14 @@ export class WorkerService {
       const scope = { ...initialScope, counters, rateLimited: collectionResult.rateLimited, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       const status = counters.failures ? "PARTIAL" : "SUCCEEDED";
       await prisma.$transaction([
-        prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: counters.eventsPersisted + counters.targetsUpserted, failureCount: counters.failures, errorCode: collectionResult.rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: collectionResult.rateLimited ? "Collection stopped and entered cooldown after a rate limit or persistent access challenge" : null, scope, finishedAt: new Date() } }),
+        prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: counters.eventsPersisted + Math.max(0, counters.targetsUpserted - counters.detailRequestsAvoided), failureCount: counters.failures, errorCode: collectionResult.rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: collectionResult.rateLimited ? "Collection stopped and entered cooldown after a rate limit or persistent access challenge" : null, scope, finishedAt: new Date() } }),
         ...(guardedDevelopmentRun ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: counters.pages || counters.detailsFetched ? new Date() : source.lastSuccessAt, healthStatus: counters.failures ? "DEGRADED" : "HEALTHY", operationalStatus: counters.failures ? "DEGRADED" : "HEALTHY", errorRate: counters.requests ? counters.failures / counters.requests : 0 } })]),
       ]);
+      if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       return { runId: run.id, localAcceptance, developmentBootstrap, dryRun: options.dryRun === true, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, references: counters.pages, records: counters.records, events: counters.eventsPersisted, signals: 0, counters };
     } catch (error) {
+      if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
       if (!options.dryRun) counters.rawArtifacts = await prisma.rawArtifact.count({ where: { collectionRunId: run.id } });
       if (!options.dryRun && error instanceof AdapterError && error.code === "RATE_LIMITED" && !circuit.blocked && !circuitTransitionApplied) {
@@ -918,6 +1100,7 @@ export class WorkerService {
       const schedulesAfter = await sourceScheduleSnapshot("ticketmaster");
       const retryable = error instanceof AdapterError && (error.code === "RATE_LIMITED" || error.retryable);
       await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Ticketmaster collection failure", scope: { ...initialScope, counters, ...(retryable && circuitCooldownUntil ? { cooldownUntil: circuitCooldownUntil.toISOString() } : {}), governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
     }
@@ -955,20 +1138,7 @@ export class WorkerService {
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("eventfinda");
     const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, governanceBefore, schedulesBefore };
-    const run = await prisma.collectionRun.create({
-      data: {
-        jobId: options.jobId,
-        dataSourceId: source.id,
-        analysisRequestId,
-        correlationId: randomUUID(),
-        mode: "MARKET_COVERAGE",
-        status: "RUNNING",
-        scope: initialScope,
-        startedAt: now,
-        attemptCount: 1,
-        isDemo: false,
-      },
-    });
+    const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
 
     try {
       this.assertEventfindaSourceAllowed(source, localAcceptance, developmentBootstrap);
@@ -977,8 +1147,10 @@ export class WorkerService {
       if (cooldownUntil && !Number.isNaN(cooldownUntil.getTime()) && cooldownUntil > now) {
         throw new AdapterError("RATE_LIMITED", `Eventfinda collection is cooling down until ${cooldownUntil.toISOString()}`, true);
       }
-      if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) {
-        throw new AdapterError("CONFIGURATION_ERROR", "Browser Worker is not configured for Eventfinda collection", false);
+      const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
+      const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
+      if (!browserWorkerConfigured && !argusConfigured) {
+        throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for Eventfinda collection", false);
       }
 
       const result = await withRedisLock("source:eventfinda", 60 * 60_000, async () => {
@@ -988,13 +1160,17 @@ export class WorkerService {
         let rateLimited = false;
         let failureCount = 0;
         let retryCount = 0;
-        const discovered = new Map<string, EventfindaListingEvent>();
+        const discovered = new Map<string, { events: EventfindaListingEvent[]; discoveredFrom: string[] }>();
         let pagesScanned = 0;
         let totalPages = 0;
         let paginationUnverified = false;
+        let listingCards = 0;
+        let duplicateDetailTargetsAvoided = 0;
         let targetsUpserted = 0;
         let detailsFetched = 0;
+        let unchangedDetails = 0;
         let eventsPersisted = 0;
+        let unchangedEventsSkipped = 0;
 
         const capture = async (url: string): Promise<BrowserTaskResult> => {
           for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -1008,7 +1184,7 @@ export class WorkerService {
               }
               lastRequestAt = Date.now();
               requests += 1;
-              const browserResult = await this.executeEventfindaBrowserTask(source.id, run.id, url, dryRun);
+              const browserResult = await this.executeEventfindaBrowserTask(source.id, run.id, url, dryRun, options.jobId);
               if (!browserResult.extracted || typeof browserResult.extracted !== "object") {
                 if (!dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
                 throw new AdapterError("PARSING_ERROR", `Eventfinda extractor returned no data for ${url}`, false);
@@ -1045,18 +1221,47 @@ export class WorkerService {
             const extraction = page === 1 ? first : page === 2 && second ? second : (await capture(eventfindaListingPageUrl(page))).extracted as EventfindaExtraction;
             if (extraction.kind !== "listing" || extraction.currentPage !== page) throw new AdapterError("PARSING_ERROR", `Eventfinda listing page ${page} could not be verified`, false);
             pagesScanned += 1;
-            for (const event of extraction.events) {
-              if (!isEventfindaDetailUrl(event.sourceUrl)) continue;
-              const url = canonicalEventfindaUrl(event.sourceUrl);
-              discovered.set(url, { ...event, sourceUrl: url });
-              if (!dryRun) {
-                await prisma.sourceCrawlTarget.upsert({
-                  where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash: eventfindaUrlHash(url) } },
-                  create: { dataSourceId: source.id, url, urlHash: eventfindaUrlHash(url), kind: "EVENT_DETAIL", status: "PENDING", priority: listingPriority(event.startsAt, now), active: true, lastSeenAt: now, nextFetchAt: now, metadata: { listing: event, discoveredFrom: extraction.canonicalUrl } },
-                  update: { url, priority: listingPriority(event.startsAt, now), active: true, lastSeenAt: now, missedDiscoveryCount: 0, nextFetchAt: localAcceptance ? now : undefined, metadata: { listing: event, discoveredFrom: extraction.canonicalUrl } },
-                });
-                targetsUpserted += 1;
-              }
+            const listingGroups = groupEventfindaListingEvents(extraction.events);
+            listingCards += listingGroups.reduce((count, group) => count + group.events.length, 0);
+            for (const group of listingGroups) {
+              const current = discovered.get(group.url);
+              const merged = groupEventfindaListingEvents([...(current?.events ?? []), ...group.events])[0]?.events ?? group.events;
+              discovered.set(group.url, {
+                events: merged,
+                discoveredFrom: [...new Set([...(current?.discoveredFrom ?? []), extraction.canonicalUrl])],
+              });
+            }
+          }
+          duplicateDetailTargetsAvoided = Math.max(0, listingCards - discovered.size);
+          if (!dryRun && discovered.size) {
+            const hashes = [...discovered.keys()].map(eventfindaUrlHash);
+            const existingTargets = await prisma.sourceCrawlTarget.findMany({
+              where: { dataSourceId: source.id, urlHash: { in: hashes } },
+              select: { urlHash: true, status: true, lastFetchedAt: true, nextFetchAt: true, metadata: true },
+            });
+            const existingByHash = new Map(existingTargets.map((target) => [target.urlHash, target]));
+            for (const [url, listing] of discovered) {
+              const urlHash = eventfindaUrlHash(url);
+              const existing = existingByHash.get(urlHash);
+              const listingContentHash = stableHash(listing.events);
+              const previousMetadata = jsonRecord(existing?.metadata);
+              const listingChanged = typeof previousMetadata.listingContentHash === "string" && previousMetadata.listingContentHash !== listingContentHash;
+              const shouldFetchNow = localAcceptance || !existing?.lastFetchedAt || listingChanged;
+              const targetMetadata = {
+                ...previousMetadata,
+                listing: listing.events[0],
+                listingObservations: listing.events,
+                listingContentHash,
+                listingChanged,
+                discoveredFrom: listing.discoveredFrom,
+                listingOccurrenceCount: listing.events.length,
+              };
+              await prisma.sourceCrawlTarget.upsert({
+                where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash } },
+                create: { dataSourceId: source.id, url, urlHash, kind: "EVENT_DETAIL", status: "PENDING", priority: listingPriority(listing.events[0]?.startsAt, now), active: true, lastSeenAt: now, nextFetchAt: now, metadata: targetMetadata },
+                update: { url, status: listingChanged || existing?.status === "DISCOVERY_MISSING" ? "PENDING" : existing?.status ?? "PENDING", priority: listingPriority(listing.events[0]?.startsAt, now), active: true, lastSeenAt: now, missedDiscoveryCount: 0, nextFetchAt: shouldFetchNow ? now : existing?.nextFetchAt, lastErrorCode: listingChanged ? null : undefined, lastErrorAt: listingChanged ? null : undefined, consecutiveFailures: listingChanged ? 0 : undefined, metadata: targetMetadata },
+              });
+              targetsUpserted += 1;
             }
           }
           if (!dryRun && !localAcceptance && !paginationUnverified && pagesScanned === totalPages) {
@@ -1066,14 +1271,31 @@ export class WorkerService {
         }
 
         if (phase === "details" || phase === "full") {
-          const targets = dryRun && discovered.size
-            ? [...discovered.values()].slice(0, maxDetails).map((event) => ({ id: null, url: event.sourceUrl, consecutiveFailures: 0, metadata: { listing: event } }))
-            : await prisma.sourceCrawlTarget.findMany({
-                where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
-                orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
-                take: maxDetails,
-                select: { id: true, url: true, consecutiveFailures: true, metadata: true },
-              });
+          const persistedUrls = detailTargetBatchUrls(run.scope);
+          const targets = persistedUrls.length
+            ? dryRun
+              ? orderPersistedDetailTargets(
+                  persistedUrls,
+                  [...discovered.entries()].map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingObservations: listing.events } })),
+                )
+              : orderPersistedDetailTargets(
+                  persistedUrls,
+                  await prisma.sourceCrawlTarget.findMany({
+                    where: { dataSourceId: source.id, url: { in: persistedUrls } },
+                    select: { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true },
+                  }),
+                )
+            : dryRun && discovered.size
+              ? [...discovered.entries()].slice(0, maxDetails).map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingObservations: listing.events } }))
+              : await prisma.sourceCrawlTarget.findMany({
+                  where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
+                  orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
+                  take: maxDetails,
+                  select: { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true },
+                });
+          if (!persistedUrls.length && options.jobId) {
+            await persistDetailTargetBatch(run.id, run.scope, targets.map((target) => target.url));
+          }
 
           for (const target of targets) {
             try {
@@ -1087,16 +1309,23 @@ export class WorkerService {
               const allEvents = normaliseEventfindaDetail(extraction, listing);
               const events = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
               if (!dryRun) {
-                for (const event of events) await this.persistNormalisedEvent(event, source.id, run.id);
-                const refresh = eventfindaRefreshPolicy(allEvents, now);
+                const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
+                unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
+                const detailContentHash = stableHash(extraction);
+                const previousUnchangedCount = integerMetadata(target.metadata, "unchangedDetailFetchCount");
+                const detailUnchanged = target.contentHash === detailContentHash;
+                const unchangedDetailFetchCount = detailUnchanged ? Math.min(4, previousUnchangedCount + 1) : 0;
+                if (detailUnchanged) unchangedDetails += 1;
+                const refresh = eventfindaRefreshPolicy(allEvents, now, unchangedDetailFetchCount);
                 await prisma.sourceCrawlTarget.update({
                   where: { id: target.id! },
-                  data: { status: "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: stableHash(extraction), httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), eventfindaEventId: extraction.eventId, occurrenceCount: extraction.occurrences.length, lastTitle: extraction.title } },
+                  data: { status: "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: detailContentHash, httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), eventfindaEventId: extraction.eventId, occurrenceCount: extraction.occurrences.length, lastTitle: extraction.title, listingChanged: false, detailUnchanged, unchangedDetailFetchCount } },
                 });
               }
               detailsFetched += 1;
               eventsPersisted += events.length;
             } catch (error) {
+              if (error instanceof DeferredJobError) throw error;
               failureCount += 1;
               const isRateLimited = error instanceof AdapterError && error.code === "RATE_LIMITED";
               if (!dryRun && target.id) {
@@ -1113,7 +1342,7 @@ export class WorkerService {
           }
         }
 
-        return { requests, retryCount, pagesScanned, totalPages, paginationUnverified, discovered: discovered.size, targetsUpserted, detailsFetched, eventsPersisted, failureCount, rateLimited };
+        return { requests, retryCount, pagesScanned, totalPages, paginationUnverified, listingCards, discovered: discovered.size, duplicateDetailTargetsAvoided, targetsUpserted, detailsFetched, unchangedDetails, eventsPersisted, unchangedEventsSkipped, failureCount, rateLimited };
       }, this.environment.REDIS_URL);
 
       const status = result.failureCount > 0 ? "PARTIAL" : "SUCCEEDED";
@@ -1124,9 +1353,11 @@ export class WorkerService {
         prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: result.eventsPersisted + result.discovered, failureCount: result.failureCount, errorCode: result.rateLimited ? "RATE_LIMITED" : result.failureCount ? "PARTIAL_FAILURE" : null, errorSummary: result.rateLimited ? "Collection stopped and entered cooldown after a rate limit or access challenge" : null, finishedAt: new Date(), scope: finalScope } }),
         ...(guardedDevelopmentRun ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: result.pagesScanned || result.detailsFetched ? new Date() : source.lastSuccessAt, healthStatus: result.rateLimited ? "DEGRADED" : "HEALTHY", operationalStatus: result.rateLimited ? "DEGRADED" : "HEALTHY", errorRate: result.requests ? result.failureCount / result.requests : 0 } })]),
       ]);
+      if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       return { runId: run.id, dryRun, localAcceptance, developmentBootstrap, phase, references: result.pagesScanned, records: result.detailsFetched, events: result.eventsPersisted, signals: 0, ...result };
     } catch (error) {
+      if (error instanceof DeferredJobError) throw error;
       if (!dryRun && error instanceof AdapterError && error.code === "RATE_LIMITED") {
         const collectionCooldownUntil = eventfindaFailureBackoff(1, true);
         await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...jsonRecord(source.metadata), collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
@@ -1139,6 +1370,7 @@ export class WorkerService {
         prisma.sourceCrawlTarget.count({ where: { dataSourceId: source.id, lastSeenAt: { gte: now } } }),
       ]);
       await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Eventfinda collection failure", scope: { ...initialScope, failureProgress: { requestsAttempted, successfulPages, targetsTouched }, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
     }
@@ -1158,51 +1390,156 @@ export class WorkerService {
     if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
   }
 
-  private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean) {
-    const traceId = `eventfinda-${randomUUID()}`;
-    const response = await browserWorkerRequest(this.environment, {
-      taskType: "read_only_capture", traceId, url, allowedHosts: EVENTFINDA_ALLOWED_HOSTS, extractor: EVENTFINDA_EXTRACTOR, evidenceMode: "html", profileKey: "eventfinda-nz-public-v1",
-    });
-    const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-    if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-    if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-    const result = payload as BrowserTaskResult;
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser Worker violated the read-only result contract", false);
+  private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
+    const connectorId = "eventfinda-public" as const;
+    const workflowId = /^\/whatson\/events\/new-zealand(?:\/page\/\d+)?\/?$/u.test(new URL(url).pathname)
+      ? "collect_listing" as const
+      : "collect_detail" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `eventfinda-${randomUUID()}`;
+    let result: BrowserTaskResult;
+    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
+      const input = { traceId, url, connectorId, workflowId };
+      const response = parentJobId
+        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+        : await captureBrowserTaskWithArgus(this.environment, input);
+      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+      result = response.payload;
+    } else {
+      const response = await browserWorkerRequest(this.environment, {
+        taskType: "read_only_capture", traceId, url, allowedHosts: EVENTFINDA_ALLOWED_HOSTS, extractor: EVENTFINDA_EXTRACTOR, evidenceMode: "html", profileKey: "eventfinda-nz-public-v1",
+      });
+      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
+      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
+      result = payload as BrowserTaskResult;
+    }
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
     if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, EVENTFINDA_EXTRACTOR, url);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Eventfinda presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category === "timeout" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Eventfinda Browser Worker capture failed", result.error?.retryable ?? true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Eventfinda Browser Worker capture failed", result.error?.retryable ?? true);
     return result;
   }
 
-  private async executeTicketmasterBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean) {
-    const traceId = `ticketmaster-${randomUUID()}`;
-    const response = await browserWorkerRequest(this.environment, {
-      taskType: "read_only_capture", traceId, url, allowedHosts: TICKETMASTER_ALLOWED_HOSTS, extractor: TICKETMASTER_EXTRACTOR, evidenceMode: "html", challengeSettleMs: isTicketmasterDetailUrl(url) ? 20_000 : 10_000, profileKey: "ticketmaster-nz-public-v1",
+  private async executeOurAucklandBrowserTask(
+    dataSourceId: string,
+    collectionRunId: string,
+    url: string,
+    maxRecords: number,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    const connectorId = "ourauckland-public" as const;
+    const workflowId = "collect_listing" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `ourauckland-${randomUUID()}`;
+    const input = { traceId, url, connectorId, workflowId, maxRecords };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
+      throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
+    }
+    if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, "ourauckland", url);
+    if (result.status === "manual_required") {
+      throw new AdapterError("SOURCE_UNAVAILABLE", "OurAuckland presented an access challenge; collection stopped without bypassing it", true);
+    }
+    if (result.status !== "success") {
+      throw new AdapterError(
+        result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE",
+        result.error?.message ?? "OurAuckland Argus capture failed",
+        result.error?.retryable ?? true,
+      );
+    }
+    const extraction = jsonRecord(result.extracted as Prisma.JsonValue);
+    const candidates = Array.isArray(extraction.events)
+      ? extraction.events.filter((value): value is Prisma.JsonObject => Boolean(value) && typeof value === "object" && !Array.isArray(value))
+      : [];
+    const records = candidates.slice(0, maxRecords).flatMap((event, index): PublicRawRecord[] => {
+      const externalId = typeof event.id === "string" ? event.id : "";
+      if (!externalId) return [];
+      return [{
+        sourceId: "council_calendars",
+        externalId,
+        payload: {
+          provider: "Auckland Council / OurAuckland",
+          event,
+          page: typeof extraction.currentPage === "number" ? extraction.currentPage : 1,
+        },
+        fetchedAt: new Date(),
+        fixture: false,
+        networkRequestCount: index === 0 ? 1 : 0,
+      }];
     });
-    const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-    if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-    if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-    const result = payload as BrowserTaskResult;
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser Worker violated the read-only result contract", false);
+    if (records.length === 0) throw new AdapterError("PARSING_ERROR", "OurAuckland Argus capture returned no event cards", false);
+    return records;
+  }
+
+  private async executeTicketmasterBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
+    const connectorId = "ticketmaster-public" as const;
+    const workflowId = isTicketmasterDetailUrl(url) ? "collect_detail" as const : "collect_listing" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `ticketmaster-${randomUUID()}`;
+    let result: BrowserTaskResult;
+    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
+      const input = { traceId, url, connectorId, workflowId };
+      const response = parentJobId
+        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+        : await captureBrowserTaskWithArgus(this.environment, input);
+      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+      result = response.payload;
+    } else {
+      const response = await browserWorkerRequest(this.environment, {
+        taskType: "read_only_capture", traceId, url, allowedHosts: TICKETMASTER_ALLOWED_HOSTS, extractor: TICKETMASTER_EXTRACTOR, evidenceMode: "html", challengeSettleMs: isTicketmasterDetailUrl(url) ? 20_000 : 10_000, profileKey: "ticketmaster-nz-public-v1",
+      });
+      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
+      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
+      result = payload as BrowserTaskResult;
+    }
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
     if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, TICKETMASTER_EXTRACTOR, url);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Ticketmaster presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category === "timeout" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Browser Worker capture failed", result.error?.retryable ?? true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Browser Worker capture failed", result.error?.retryable ?? true);
     return result;
   }
 
-  private async executeRbnzFxBrowserTask(dataSourceId: string, collectionRunId: string, dryRun: boolean) {
-    const traceId = `rbnz-fx-${randomUUID()}`;
-    const response = await browserWorkerRequest(this.environment, {
-      taskType: "read_only_capture", traceId, url: RBNZ_FX_URL, allowedHosts: RBNZ_FX_ALLOWED_HOSTS, extractor: RBNZ_FX_EXTRACTOR, evidenceMode: "html", profileKey: "rbnz-nz-public-v1",
-    });
-    const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-    if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-    if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-    const result = payload as BrowserTaskResult;
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser Worker violated the read-only result contract", false);
+  private async executeRbnzFxBrowserTask(dataSourceId: string, collectionRunId: string, dryRun: boolean, parentJobId?: string) {
+    const connectorId = "rbnz-fx" as const;
+    const workflowId = "collect_exchange_rates" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, RBNZ_FX_URL)
+      : `rbnz-fx-${randomUUID()}`;
+    let result: BrowserTaskResult;
+    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
+      const input = { traceId, url: RBNZ_FX_URL, connectorId, workflowId };
+      const response = parentJobId
+        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+        : await captureBrowserTaskWithArgus(this.environment, input);
+      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+      result = response.payload;
+    } else {
+      const response = await browserWorkerRequest(this.environment, {
+        taskType: "read_only_capture", traceId, url: RBNZ_FX_URL, allowedHosts: RBNZ_FX_ALLOWED_HOSTS, extractor: RBNZ_FX_EXTRACTOR, evidenceMode: "html", profileKey: "rbnz-nz-public-v1",
+      });
+      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
+      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
+      result = payload as BrowserTaskResult;
+    }
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
     if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, RBNZ_FX_EXTRACTOR, RBNZ_FX_URL);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "RBNZ presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category === "timeout" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Browser Worker capture failed", result.error?.retryable ?? true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Browser Worker capture failed", result.error?.retryable ?? true);
     return result;
   }
 
@@ -1213,15 +1550,28 @@ export class WorkerService {
       this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS,
     );
     for (const artifact of result.evidence) {
-      await prisma.rawArtifact.create({ data: { collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef: `browser-evidence:${artifact.relativePath}`, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure: result.status !== "success", expiresAt: new Date(Date.now() + ttlHours * 3_600_000) } });
+      const storageRef = artifact.storageRef ?? `browser-evidence:${artifact.relativePath}`;
+      const id = stableId("browser-evidence", `${collectionRunId}:${storageRef}`);
+      await prisma.rawArtifact.upsert({
+        where: { id },
+        create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure: result.status !== "success", expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
+        update: {},
+      });
     }
   }
 
   private async markBrowserEvidenceParserFailure(collectionRunId: string, traceId: string) {
     await prisma.rawArtifact.updateMany({
-      where: { collectionRunId, storageRef: { startsWith: `browser-evidence:${traceId}/` } },
+      where: {
+        collectionRunId,
+        OR: [
+          { storageRef: { startsWith: `browser-evidence:${traceId}/` } },
+          { storageRef: { startsWith: `argus-evidence:results/argus/${traceId}/` } },
+        ],
+      },
       data: { parserFailure: true, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS * 3_600_000) },
     });
+    if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) return;
     try {
       await fetch(new URL("/internal/browser-evidence/parser-failure", this.environment.BROWSER_WORKER_INTERNAL_URL!), {
         method: "POST",
@@ -1437,9 +1787,10 @@ export class WorkerService {
   async setEventfindaSchedules(enabled: boolean) {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
     if (enabled) this.assertEventfindaSourceAllowed(source);
-    const result = await prisma.scheduleDefinition.updateMany({ where: { key: { in: ["eventfinda-discovery-12-hour", "eventfinda-details-hourly"] } }, data: { enabled, nextRunAt: enabled ? new Date() : null } });
-    if (result.count !== 2) throw new WorkerRequestError("SCHEDULES_MISSING", "Run the database seed before configuring Eventfinda schedules", 409);
-    return prisma.scheduleDefinition.findMany({ where: { key: { in: ["eventfinda-discovery-12-hour", "eventfinda-details-hourly"] } }, orderBy: { key: "asc" } });
+    const keys = ["eventfinda-discovery-daily", "eventfinda-details-hourly"];
+    const result = await prisma.scheduleDefinition.updateMany({ where: { key: { in: keys } }, data: { enabled, nextRunAt: enabled ? new Date() : null } });
+    if (result.count !== keys.length) throw new WorkerRequestError("SCHEDULES_MISSING", "Run the database seed before configuring Eventfinda schedules", 409);
+    return prisma.scheduleDefinition.findMany({ where: { key: { in: keys } }, orderBy: { key: "asc" } });
   }
 
   async setTicketmasterSchedules(enabled: boolean) {
@@ -1735,12 +2086,31 @@ export class WorkerService {
   }
 
   async persistNormalisedEvent(event: PublicEvent, dataSourceId: string, collectionRunId: string) {
+    return this.persistNormalisedEventCached(event, event, dataSourceId, collectionRunId, createEventPersistenceCache());
+  }
+
+  async persistNormalisedEvents(events: PublicEvent[], dataSourceId: string, collectionRunId: string) {
+    const cache = createEventPersistenceCache();
+    const persisted = new Map<string, Awaited<ReturnType<WorkerService["persistNormalisedEventCached"]>>>();
+    const series = new Map<string, PublicEvent[]>();
+    for (const event of events) {
+      const identity = sourceEventIdentity(event).externalId;
+      series.set(identity, [...(series.get(identity) ?? []), event]);
+    }
+    for (const occurrences of series.values()) {
+      const seriesEvent = eventSeriesRepresentative(occurrences);
+      for (const event of occurrences) persisted.set(event.externalId, await this.persistNormalisedEventCached(event, seriesEvent, dataSourceId, collectionRunId, cache));
+    }
+    return persisted;
+  }
+
+  private async persistNormalisedEventCached(event: PublicEvent, seriesEvent: PublicEvent, dataSourceId: string, collectionRunId: string, cache: EventPersistenceCache) {
     if (event.countryCode.toUpperCase() !== "NZ") throw new AdapterError("PARSING_ERROR", `Event ${event.externalId} is outside New Zealand`, false);
-    const sourceIdentity = sourceEventIdentity(event);
-    const seriesCanonicalKey = canonicalEventKey(event);
+    const sourceIdentity = sourceEventIdentity(seriesEvent);
+    const seriesCanonicalKey = canonicalEventKey(seriesEvent);
     const occurrenceCanonicalKey = canonicalEventOccurrenceKey(event);
     const venueCanonicalKey = canonicalVenueKey(event);
-    const description = eventDescription(event);
+    const description = eventDescription(seriesEvent);
     const seenAt = new Date();
     const isDemo = event.fixture || this.environment.NODE_ENV === "test";
     const contentHash = stableHash({
@@ -1795,42 +2165,78 @@ export class WorkerService {
     const sourceContentHash = stableHash({
       externalId: sourceIdentity.externalId,
       sourceUrl: sourceIdentity.sourceUrl,
-      title: event.title,
-      category: event.category,
-      subcategory: event.subcategory,
-      status: event.status,
-      metadata: event.metadata,
+      title: seriesEvent.title,
+      category: seriesEvent.category,
+      subcategory: seriesEvent.subcategory,
+      status: seriesEvent.status,
+      metadata: seriesEvent.metadata,
     });
 
-    return prisma.$transaction(async (tx) => {
-      const sourceEvent = await tx.sourceEvent.upsert({
-        where: { dataSourceId_externalId: { dataSourceId, externalId: sourceIdentity.externalId } },
-        create: { dataSourceId, externalId: sourceIdentity.externalId, sourceUrl: sourceIdentity.sourceUrl, title: event.title, category: event.category, subcategory: event.subcategory, status: event.status, sourceUpdatedAt: event.sourceUpdatedAt, lastSeenAt: seenAt, contentHash: sourceContentHash, metadata: event.metadata as Prisma.InputJsonValue, isDemo },
-        update: { sourceUrl: sourceIdentity.sourceUrl, title: event.title, category: event.category, subcategory: event.subcategory, status: event.status, sourceUpdatedAt: event.sourceUpdatedAt, lastSeenAt: seenAt, contentHash: sourceContentHash, metadata: event.metadata as Prisma.InputJsonValue, isDemo },
-      });
+    const existingOccurrence = await prisma.sourceEventOccurrence.findUnique({
+      where: { dataSourceId_externalId: { dataSourceId, externalId: event.externalId } },
+      include: {
+        sourceEvent: true,
+        canonicalLinks: {
+          include: { eventOccurrence: { include: { canonicalEvent: true } } },
+          take: 1,
+        },
+      },
+    });
+    const existingCanonicalLink = existingOccurrence?.canonicalLinks[0];
+    if (existingOccurrence?.contentHash === contentHash && existingOccurrence.sourceEvent.contentHash === sourceContentHash && existingCanonicalLink) {
+      const [sourceOccurrence, sourceEvent, eventOccurrence, canonicalEvent] = await prisma.$transaction([
+        prisma.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt } }),
+        prisma.sourceEvent.update({ where: { id: existingOccurrence.sourceEventId }, data: { lastSeenAt: seenAt } }),
+        prisma.eventOccurrence.update({ where: { id: existingCanonicalLink.eventOccurrenceId }, data: { lastSeenAt: seenAt } }),
+        prisma.canonicalEvent.update({ where: { id: existingCanonicalLink.eventOccurrence.canonicalEventId }, data: { lastSeenAt: seenAt } }),
+      ]);
+      if (venueCanonicalKey && eventOccurrence.venueId) cache.venues.set(venueCanonicalKey, eventOccurrence.venueId);
+      return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence, unchanged: true };
+    }
 
-      const existingEventLink = await tx.eventSourceLink.findUnique({ where: { sourceEventId: sourceEvent.id }, select: { canonicalEventId: true } });
-      const canonicalEvent = existingEventLink
-        ? await tx.canonicalEvent.update({ where: { id: existingEventLink.canonicalEventId }, data: { title: event.title, category: event.category, subcategory: event.subcategory, ...(description ? { description } : {}), status: event.status, lastSeenAt: seenAt, isDemo } })
-        : await tx.canonicalEvent.upsert({
-            where: { canonicalKey: seriesCanonicalKey },
-            create: { canonicalKey: seriesCanonicalKey, title: event.title, category: event.category, subcategory: event.subcategory, description, status: event.status, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-exact-v1" }, isDemo },
-            update: { title: event.title, category: event.category, subcategory: event.subcategory, ...(description ? { description } : {}), status: event.status, lastSeenAt: seenAt, isDemo },
+    return prisma.$transaction(async (tx) => {
+      const seriesCacheKey = `${dataSourceId}:${sourceIdentity.externalId}`;
+      const cachedSeries = cache.series.get(seriesCacheKey);
+      const sourceEvent = cachedSeries
+        ? { id: cachedSeries.sourceEventId }
+        : await tx.sourceEvent.upsert({
+            where: { dataSourceId_externalId: { dataSourceId, externalId: sourceIdentity.externalId } },
+            create: { dataSourceId, externalId: sourceIdentity.externalId, sourceUrl: sourceIdentity.sourceUrl, title: seriesEvent.title, category: seriesEvent.category, subcategory: seriesEvent.subcategory, status: seriesEvent.status, sourceUpdatedAt: seriesEvent.sourceUpdatedAt, lastSeenAt: seenAt, contentHash: sourceContentHash, metadata: seriesEvent.metadata as Prisma.InputJsonValue, isDemo },
+            update: { sourceUrl: sourceIdentity.sourceUrl, title: seriesEvent.title, category: seriesEvent.category, subcategory: seriesEvent.subcategory, status: seriesEvent.status, sourceUpdatedAt: seriesEvent.sourceUpdatedAt, lastSeenAt: seenAt, contentHash: sourceContentHash, metadata: seriesEvent.metadata as Prisma.InputJsonValue, isDemo },
           });
 
-      await tx.eventSourceLink.upsert({
-        where: { sourceEventId: sourceEvent.id },
-        create: { canonicalEventId: canonicalEvent.id, sourceEventId: sourceEvent.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, evidence: { canonicalKey: seriesCanonicalKey } },
-        update: { canonicalEventId: canonicalEvent.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { canonicalKey: seriesCanonicalKey } },
-      });
+      let canonicalEvent: { id: string };
+      if (cachedSeries) {
+        canonicalEvent = { id: cachedSeries.canonicalEventId };
+      } else {
+        const existingEventLink = await tx.eventSourceLink.findUnique({ where: { sourceEventId: sourceEvent.id }, select: { canonicalEventId: true } });
+        canonicalEvent = existingEventLink
+          ? await tx.canonicalEvent.update({ where: { id: existingEventLink.canonicalEventId }, data: { title: seriesEvent.title, category: seriesEvent.category, subcategory: seriesEvent.subcategory, ...(description ? { description } : {}), status: seriesEvent.status, lastSeenAt: seenAt, isDemo } })
+          : await tx.canonicalEvent.upsert({
+              where: { canonicalKey: seriesCanonicalKey },
+              create: { canonicalKey: seriesCanonicalKey, title: seriesEvent.title, category: seriesEvent.category, subcategory: seriesEvent.subcategory, description, status: seriesEvent.status, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-exact-v1" }, isDemo },
+              update: { title: seriesEvent.title, category: seriesEvent.category, subcategory: seriesEvent.subcategory, ...(description ? { description } : {}), status: seriesEvent.status, lastSeenAt: seenAt, isDemo },
+            });
 
-      const venue = venueCanonicalKey
-        ? await tx.canonicalVenue.upsert({
+        await tx.eventSourceLink.upsert({
+          where: { sourceEventId: sourceEvent.id },
+          create: { canonicalEventId: canonicalEvent.id, sourceEventId: sourceEvent.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, evidence: { canonicalKey: seriesCanonicalKey } },
+          update: { canonicalEventId: canonicalEvent.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { canonicalKey: seriesCanonicalKey } },
+        });
+        cache.series.set(seriesCacheKey, { sourceEventId: sourceEvent.id, canonicalEventId: canonicalEvent.id });
+      }
+
+      const cachedVenueId = venueCanonicalKey ? cache.venues.get(venueCanonicalKey) : undefined;
+      const venue = cachedVenueId
+        ? { id: cachedVenueId }
+        : venueCanonicalKey
+          ? await tx.canonicalVenue.upsert({
             where: { canonicalKey: venueCanonicalKey },
             create: { canonicalKey: venueCanonicalKey, name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, metadata: { canonicalisationVersion: "venue-exact-v1" } },
             update: { name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude },
-          })
-        : null;
+            })
+          : null;
+      if (venueCanonicalKey && venue) cache.venues.set(venueCanonicalKey, venue.id);
 
       const sourceOccurrence = await tx.sourceEventOccurrence.upsert({
         where: { dataSourceId_externalId: { dataSourceId, externalId: event.externalId } },
@@ -1854,7 +2260,7 @@ export class WorkerService {
         update: { eventOccurrenceId: eventOccurrence.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { canonicalKey: occurrenceCanonicalKey } },
       });
 
-      return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence };
+      return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence, unchanged: false };
     });
   }
 
@@ -1871,7 +2277,40 @@ export class WorkerRequestError extends Error {
 }
 
 function emptyPublicCollectionCounters() {
-  return { requests: 0, discovered: 0, references: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, failures: 0 };
+  return { requests: 0, requestsAvoided: 0, discovered: 0, references: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, duplicatesSkipped: 0, unchangedSkipped: 0, failures: 0 };
+}
+
+function defaultPublicRecordLimit(sourceId: string) {
+  return sourceId === "geonet" ? 100 : 5_000;
+}
+
+function createEventPersistenceCache(): EventPersistenceCache {
+  return { series: new Map(), venues: new Map() };
+}
+
+function eventSeriesRepresentative(events: PublicEvent[]) {
+  const representative = [...events].sort((left, right) => (eventDescription(right)?.length ?? 0) - (eventDescription(left)?.length ?? 0))[0]!;
+  const statuses = events.map((event) => event.status);
+  const status: PublicEvent["status"] = statuses.every((value) => value === "CANCELLED")
+    ? "CANCELLED"
+    : statuses.includes("SCHEDULED")
+      ? "SCHEDULED"
+      : statuses.includes("RESCHEDULED")
+        ? "RESCHEDULED"
+        : statuses.includes("POSTPONED")
+          ? "POSTPONED"
+          : "UNKNOWN";
+  const sourceUpdatedAt = maxDate(events.flatMap((event) => event.sourceUpdatedAt ? [event.sourceUpdatedAt] : []));
+  return { ...representative, status, sourceUpdatedAt };
+}
+
+function uniqueByExternalId<T extends { externalId: string }>(items: T[], counters: { duplicatesSkipped: number }) {
+  const unique = new Map<string, T>();
+  for (const item of items) {
+    if (unique.has(item.externalId)) counters.duplicatesSkipped += 1;
+    else unique.set(item.externalId, item);
+  }
+  return [...unique.values()];
 }
 
 async function browserWorkerRequest(
@@ -2036,6 +2475,47 @@ function inputJson(value: Prisma.JsonValue | undefined | null, fallback: Prisma.
 
 function jsonRecord(value: Prisma.JsonValue | undefined | null): Record<string, Prisma.JsonValue> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Prisma.JsonValue> : {};
+}
+
+function integerMetadata(value: Prisma.JsonValue | undefined | null, key: string) {
+  const candidate = jsonRecord(value)[key];
+  return typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 0 ? candidate : 0;
+}
+
+function detailTargetBatchUrls(scope: Prisma.JsonValue): string[] {
+  const candidate = jsonRecord(jsonRecord(scope).argusProgress).detailTargetUrls;
+  return Array.isArray(candidate)
+    ? candidate.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : [];
+}
+
+async function persistDetailTargetBatch(collectionRunId: string, scope: Prisma.JsonValue, urls: string[]) {
+  if (!urls.length) return;
+  const current = jsonRecord(scope);
+  await prisma.collectionRun.update({
+    where: { id: collectionRunId },
+    data: {
+      scope: {
+        ...current,
+        argusProgress: {
+          ...jsonRecord(current.argusProgress),
+          detailTargetUrls: urls,
+        },
+      } as Prisma.InputJsonValue,
+    },
+  });
+}
+
+function orderPersistedDetailTargets<T extends { url: string }>(urls: string[], targets: T[]): T[] {
+  const targetsByUrl = new Map(targets.map((target) => [target.url, target]));
+  const ordered = urls.flatMap((url) => {
+    const target = targetsByUrl.get(url);
+    return target ? [target] : [];
+  });
+  if (ordered.length !== urls.length) {
+    throw new AdapterError("SOURCE_UNAVAILABLE", "A persisted browser detail batch target is no longer available", true);
+  }
+  return ordered;
 }
 
 function eventSignal(event: PublicEvent) {

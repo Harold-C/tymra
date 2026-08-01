@@ -40,6 +40,7 @@ export type AdapterContext = {
   correlationId: string;
   locale: "en" | "zh";
   currency: "NZD";
+  localAcceptance?: boolean;
   signal?: AbortSignal;
   collectionLimits?: {
     maxRequests: number;
@@ -48,6 +49,9 @@ export type AdapterContext = {
     maxBytes: number;
   };
   collectionRange?: { from: Date; to: Date };
+  collectionState?: {
+    knownReferenceVersions: Readonly<Record<string, string>>;
+  };
 };
 
 export type AdapterHealth = {
@@ -157,6 +161,7 @@ export type PublicRawRecord = {
   fetchedAt: Date;
   fixture: boolean;
   networkRequestCount?: number;
+  networkRequestsAvoided?: number;
 };
 export type PublicEvent = {
   sourceId: string;

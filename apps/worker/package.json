@@ -9,6 +9,7 @@
     "api": "tsx src/api.ts",
     "scheduler": "tsx src/scheduler.ts",
     "cli": "tsx src/cli.ts",
+    "accept:public": "tsx src/accept-public-sources.ts",
     "test": "vitest run --config vitest.config.ts",
     "build": "tsup src/index.ts src/api.ts src/scheduler.ts src/cli.ts --format esm --platform node --target node22 --out-dir dist --sourcemap --clean",
     "typecheck": "tsc --noEmit"

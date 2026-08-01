@@ -88,6 +88,11 @@ export type EventfindaDetailExtraction = {
 
 export type EventfindaExtraction = EventfindaListingExtraction | EventfindaDetailExtraction;
 
+export type EventfindaListingGroup = {
+  url: string;
+  events: EventfindaListingEvent[];
+};
+
 export function eventfindaListingPageUrl(page: number) {
   if (!Number.isInteger(page) || page < 1) throw new Error("Eventfinda page must be a positive integer");
   return page === 1 ? EVENTFINDA_LISTING_URL : `${EVENTFINDA_LISTING_URL}/page/${page}`;
@@ -118,6 +123,21 @@ export function canonicalEventfindaUrl(value: string) {
 
 export function eventfindaUrlHash(value: string) {
   return createHash("sha256").update(canonicalEventfindaUrl(value)).digest("hex");
+}
+
+export function groupEventfindaListingEvents(events: EventfindaListingEvent[]): EventfindaListingGroup[] {
+  const groups = new Map<string, Map<string, EventfindaListingEvent>>();
+  for (const event of events) {
+    if (!isEventfindaDetailUrl(event.sourceUrl)) continue;
+    const url = canonicalEventfindaUrl(event.sourceUrl);
+    const observations = groups.get(url) ?? new Map<string, EventfindaListingEvent>();
+    observations.set(`${event.eventId ?? ""}\u0000${event.startsAt ?? ""}`, { ...event, sourceUrl: url });
+    groups.set(url, observations);
+  }
+  return [...groups.entries()].map(([url, observations]) => ({
+    url,
+    events: [...observations.values()].sort((left, right) => (left.startsAt ?? "").localeCompare(right.startsAt ?? "") || left.title.localeCompare(right.title)),
+  }));
 }
 
 export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction, listingMetadata: Record<string, unknown> = {}): PublicEvent[] {
@@ -184,14 +204,26 @@ export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction
   });
 }
 
-export function eventfindaRefreshPolicy(events: PublicEvent[], now = new Date()) {
+export function eventfindaRefreshPolicy(events: PublicEvent[], now = new Date(), unchangedFetchCount = 0) {
   const activeDates = events.filter((event) => event.endsAt.getTime() >= now.getTime()).map((event) => event.startsAt < now ? now : event.startsAt).sort((left, right) => left.getTime() - right.getTime());
   if (!activeDates.length) return { active: false, priority: 900, nextFetchAt: new Date(now.getTime() + 30 * 86_400_000) };
   const days = (activeDates[0].getTime() - now.getTime()) / 86_400_000;
-  if (days <= 2) return { active: true, priority: 10, nextFetchAt: new Date(now.getTime() + 3 * 3_600_000) };
-  if (days <= 14) return { active: true, priority: 20, nextFetchAt: new Date(now.getTime() + 6 * 3_600_000) };
-  if (days <= 60) return { active: true, priority: 40, nextFetchAt: new Date(now.getTime() + 24 * 3_600_000) };
-  return { active: true, priority: 80, nextFetchAt: new Date(now.getTime() + 7 * 86_400_000) };
+  if (events.length > 1) {
+    if (days <= 2) return refreshWithStableBackoff(now, 10, 12, 24, unchangedFetchCount);
+    if (days <= 14) return refreshWithStableBackoff(now, 20, 24, 72, unchangedFetchCount);
+    if (days <= 60) return refreshWithStableBackoff(now, 40, 72, 7 * 24, unchangedFetchCount);
+    return refreshWithStableBackoff(now, 80, 7 * 24, 14 * 24, unchangedFetchCount);
+  }
+  if (days <= 2) return refreshWithStableBackoff(now, 10, 3, 24, unchangedFetchCount);
+  if (days <= 14) return refreshWithStableBackoff(now, 20, 6, 72, unchangedFetchCount);
+  if (days <= 60) return refreshWithStableBackoff(now, 40, 24, 7 * 24, unchangedFetchCount);
+  return refreshWithStableBackoff(now, 80, 7 * 24, 14 * 24, unchangedFetchCount);
+}
+
+function refreshWithStableBackoff(now: Date, priority: number, baseHours: number, capHours: number, unchangedFetchCount: number) {
+  const multiplier = 2 ** Math.min(4, Math.max(0, Math.trunc(unchangedFetchCount)));
+  const hours = Math.min(capHours, baseHours * multiplier);
+  return { active: true, priority, nextFetchAt: new Date(now.getTime() + hours * 3_600_000) };
 }
 
 export function eventfindaFailureBackoff(consecutiveFailures: number, rateLimited: boolean, now = new Date()) {

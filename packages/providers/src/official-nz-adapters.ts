@@ -153,7 +153,7 @@ async function collectAucklandLive(reference: string, context: AdapterContext) {
   const entries: RawEntry[] = [];
   // Page one currently exceeds the shared 2 MB local-acceptance evidence cap.
   // Page two uses the same official contract and contains in-range events.
-  let page = context.collectionLimits ? 2 : 1;
+  let page = context.localAcceptance ? 2 : 1;
   let requestCount = 0;
   let totalPages = page;
   const requestLimit = maxRequests(context, 50);

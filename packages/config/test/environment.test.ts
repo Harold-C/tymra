@@ -61,3 +61,32 @@ describe("browser worker configuration", () => {
     expect(environment.BROWSER_WORKER_TIMEOUT_MS).toBe(60_000);
   });
 });
+
+describe("Argus configuration", () => {
+  it("requires a long token when the Argus API origin is enabled", () => {
+    expect(() => environmentSchema.parse({ ...required, ARGUS_API_BASE_URL: "https://api.argus.test" })).toThrow("ARGUS_API_TOKEN");
+    expect(() => environmentSchema.parse({
+      ...required,
+      ARGUS_API_BASE_URL: "https://api.argus.test",
+      ARGUS_API_TOKEN: "too-short",
+    })).toThrow("at least 32 characters");
+  });
+
+  it("accepts the authenticated HTTPS Argus endpoint", () => {
+    const environment = environmentSchema.parse({
+      ...required,
+      ARGUS_API_BASE_URL: "https://api.argus.test",
+      ARGUS_API_TOKEN: "argus-token-with-at-least-32-characters",
+    });
+    expect(environment.ARGUS_TIMEOUT_MS).toBe(60_000);
+    expect(environment.ARGUS_JOB_POLL_TIMEOUT_MS).toBe(180_000);
+  });
+
+  it("requires the Job polling deadline to exceed one capture deadline", () => {
+    expect(() => environmentSchema.parse({
+      ...required,
+      ARGUS_TIMEOUT_MS: 60_000,
+      ARGUS_JOB_POLL_TIMEOUT_MS: 60_000,
+    })).toThrow("must exceed ARGUS_TIMEOUT_MS");
+  });
+});

@@ -19,6 +19,11 @@ import {
   type EmailProvider,
 } from "@tymra/providers";
 import { WorkerService } from "../services/worker-service";
+import {
+  acknowledgePersistedArgusResults,
+  pollArgusExecution,
+} from "../services/argus-orchestrator";
+import { DeferredJobError } from "./deferred-job";
 
 type JsonObject = Record<string, unknown>;
 
@@ -27,6 +32,9 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
   const analysisRequestId = optionalString(payload, "analysisRequestId");
   const workerService = analysisRequestId ? new WorkerService(environment) : null;
   switch (job.type) {
+    case "ARGUS_JOB_POLL":
+      await pollArgusExecution(environment, requiredString(payload, "executionId"));
+      return;
     case "RATE_COLLECTION":
       if (analysisRequestId) return void await workerService!.collectAnalysis(analysisRequestId, job.id);
       await collectRates(requiredString(payload, "priceCheckId"), job.id, environment);
@@ -78,10 +86,13 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
       return;
     case "EVENT_COLLECTION":
       await handlePublicCollection(job, environment, payload, {
+        from: optionalDate(payload, "from"),
+        to: optionalDate(payload, "to"),
         phase: eventCollectionPhase(payload),
         maxPages: optionalNumber(payload, "maxPages"),
         maxDetails: optionalNumber(payload, "maxDetails"),
         limit: optionalNumber(payload, "limit"),
+        dryRun: optionalBoolean(payload, "dryRun"),
         localAcceptance: optionalBoolean(payload, "localAcceptance"),
         developmentBootstrap: optionalBoolean(payload, "developmentBootstrap"),
       });
@@ -90,7 +101,10 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
     case "WEATHER_COLLECTION":
     case "TRANSPORT_COLLECTION":
       await handlePublicCollection(job, environment, payload, {
+        from: optionalDate(payload, "from"),
+        to: optionalDate(payload, "to"),
         limit: optionalNumber(payload, "limit"),
+        dryRun: optionalBoolean(payload, "dryRun"),
         localAcceptance: optionalBoolean(payload, "localAcceptance"),
       });
       return;
@@ -122,7 +136,7 @@ async function handlePublicCollection(
   job: Job,
   environment: Environment,
   payload: JsonObject,
-  options: { phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; localAcceptance?: boolean; developmentBootstrap?: boolean },
+  options: { from?: Date; to?: Date; phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; dryRun?: boolean; localAcceptance?: boolean; developmentBootstrap?: boolean },
 ) {
   try {
     const result = await new WorkerService(environment).collectSource(
@@ -132,7 +146,9 @@ async function handlePublicCollection(
       { ...options, jobId: job.id },
     );
     await syncIncidentSafely(result.runId);
+    await acknowledgePersistedArgusResults(environment, job.id);
   } catch (error) {
+    if (error instanceof DeferredJobError) throw error;
     const run = await prisma.collectionRun.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
     if (run) await syncIncidentSafely(run.id);
     throw error;
@@ -721,6 +737,14 @@ function optionalNumber(value: JsonObject, key: string): number | undefined {
 function optionalBoolean(value: JsonObject, key: string): boolean | undefined {
   const result = value[key];
   return typeof result === "boolean" ? result : undefined;
+}
+
+function optionalDate(value: JsonObject, key: string): Date | undefined {
+  const candidate = optionalString(value, key);
+  if (!candidate) return undefined;
+  const date = new Date(candidate);
+  if (Number.isNaN(date.getTime())) throw new Error(`Job payload contains invalid ${key}`);
+  return date;
 }
 
 function eventCollectionPhase(value: JsonObject): "discovery" | "details" | "full" | undefined {

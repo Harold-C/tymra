@@ -680,6 +680,14 @@ type MetServiceCapFeed = {
   items: MetServiceCapFeedItem[];
 };
 
+export function metServiceFeedItemVersion(item: Pick<MetServiceCapFeedItem, "guid" | "pubDate">) {
+  return `${item.guid ?? ""}|${item.pubDate ?? ""}`;
+}
+
+export function changedMetServiceFeedItems(items: MetServiceCapFeedItem[], knownReferenceVersions: Readonly<Record<string, string>> = {}) {
+  return items.filter((item) => knownReferenceVersions[item.link] !== metServiceFeedItemVersion(item));
+}
+
 type MetServiceCapInfo = {
   language: string | null;
   category: string[];
@@ -822,7 +830,9 @@ class MetServiceCapAdapter implements PublicDataAdapter {
     }];
     const detailBudget = context.collectionLimits ? Math.max(0, context.collectionLimits.maxRequests - 1) : feed.items.length;
     const maxRecords = context.collectionLimits?.maxRecords ?? Number.POSITIVE_INFINITY;
-    for (const item of feed.items.slice(0, Math.min(detailBudget, Math.max(0, maxRecords - 1)))) {
+    const candidates = changedMetServiceFeedItems(feed.items, context.collectionState?.knownReferenceVersions);
+    records[0]!.networkRequestsAvoided = feed.items.length - candidates.length;
+    for (const item of candidates.slice(0, Math.min(detailBudget, Math.max(0, maxRecords - 1)))) {
       const detailResponse = await fetch(item.link, { headers: { accept: "application/cap+xml,application/xml,text/xml", "user-agent": "TymraMarketCollector/1.0" }, signal: context.signal });
       if (!detailResponse.ok) throw new AdapterError("SOURCE_UNAVAILABLE", `MetService CAP alert returned HTTP ${detailResponse.status}`, detailResponse.status >= 500 || detailResponse.status === 429);
       const alertXml = await readBoundedText(detailResponse, maxBytes);

@@ -185,7 +185,7 @@ describe("Worker baseline pipeline", () => {
     const externalPrefix = `${prefix}:signal`;
     const adapter: PublicDataAdapter = {
       metadata: { sourceId: "geonet", sourceName: "GeoNet", sourceType: "PUBLIC_DATA", supportedDomains: ["api.geonet.org.nz"], adapterKey: "public:geonet:integration", accessMethod: "OFFICIAL_OPEN_API", concurrencyLimit: 1, dailyBudget: 10, collectorVersion: "test", parserVersion: "test" },
-      async discover() { return ["https://api.geonet.org.nz/quake?MMI=3", "https://api.geonet.org.nz/quake?MMI=4"]; },
+      async discover() { return ["https://api.geonet.org.nz/quake?MMI=3", "https://api.geonet.org.nz/quake?MMI=3"]; },
       async fetch() { return [0, 1, 2].map((index) => ({ sourceId: "geonet", externalId: `${externalPrefix}:${index}`, payload: { publicID: `${externalPrefix}:${index}`, token: "must-redact" }, fetchedAt: new Date(), fixture: false })); },
       async normalise(records) { return records.map((record, index) => ({ sourceId: "geonet", externalId: record.externalId, marketKey: "new-zealand", type: "WEATHER_OR_ACCESS_DISRUPTION", title: `Integration quake ${index}`, region: "New Zealand", startsAt: new Date("2026-08-01T00:00:00Z"), endsAt: new Date("2026-08-02T00:00:00Z"), direction: "UNKNOWN", confidence: 0.5, evidenceRef: `https://api.geonet.org.nz/quake/${index}`, metadata: { magnitude: 4.2, sequence: index }, fixture: false })); },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "fixture transport", latencyMs: 0, mode: "live" }; },
@@ -198,7 +198,8 @@ describe("Worker baseline pipeline", () => {
       const first = await acceptanceService.collectSource("geonet", "new-zealand", undefined, { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-12-01T00:00:00Z"), limit: 999, localAcceptance: true });
       const second = await acceptanceService.collectSource("geonet", "new-zealand", undefined, { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-12-01T00:00:00Z"), limit: 999, localAcceptance: true });
       runIds.push(first.runId, second.runId);
-      expect(first).toMatchObject({ localAcceptance: true, references: 1, records: 2, signals: 2, counters: { requests: 1, discovered: 2, persisted: 2 } });
+      expect(first).toMatchObject({ localAcceptance: true, references: 1, records: 2, signals: 2, counters: { requests: 1, discovered: 2, persisted: 2, duplicatesSkipped: 1 } });
+      expect(second).toMatchObject({ counters: { unchangedSkipped: 2 } });
       const sourceSignals = await prisma.sourceMarketSignal.findMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } }, include: { canonicalLink: true } });
       expect(sourceSignals).toHaveLength(2);
       expect(sourceSignals.every((signal) => signal.lastCollectionRunId === second.runId && signal.canonicalLink !== null)).toBe(true);
@@ -256,6 +257,7 @@ describe("Worker baseline pipeline", () => {
     const externalId = `tm-${prefix.replace(/[^a-z0-9]/gi, "").slice(-12)}`;
     const sourceUrl = `https://www.ticketmaster.co.nz/integration-auckland-16-08-2026/event/${externalId}`;
     let challenge = false;
+    let listingComplete = true;
     let eventStatus = "EventScheduled";
     const requestedUrls: string[] = [];
     const browserServer = createServer(async (request, response) => {
@@ -269,7 +271,7 @@ describe("Worker baseline pipeline", () => {
       const common = { traceId: body.traceId, taskType: "read_only_capture", readonlyOnly: true, externalSideEffectsPerformed: false, evidence: [artifact("html"), artifact("manifest_json")], page: { title: listing ? "Auckland Events" : "Integration Stadium Event", finalUrl: body.url, htmlBytes: 100, screenshotBytes: 0 } };
       const payload = challenge
         ? { ...common, ok: false, status: "manual_required", extracted: null, manualRequired: { reason: "access_challenge_detected" } }
-        : { ...common, ok: true, status: "success", extracted: { extractor: "ticketmaster", kind: listing ? "listing" : "event_detail", title: listing ? "Auckland Events" : "Integration Stadium Event", canonicalUrl: body.url, events: [{ eventId: externalId, title: "Integration Stadium Event", sourceUrl, description: listing ? undefined : "Full Ticketmaster detail metadata", category: "SportsEvent", startsAt: "2026-08-16T19:30:00", endsAt: "2026-08-16T22:30:00", eventStatus, venue: { name: "Integration Stadium", address: { streetAddress: "1 Test Street", addressLocality: "Auckland", addressRegion: "NZ", postalCode: "1010", addressCountry: "NZ" }, latitude: -36.8485, longitude: 174.7633 }, offers: [{ availability: "InStock", url: sourceUrl }], performers: listing ? [] : [{ name: "Integration Performer", type: "Person", url: sourceUrl }], imageUrls: listing ? [] : ["https://s1.ticketm.net/test.jpg"] }] } };
+        : { ...common, ok: true, status: "success", extracted: { extractor: "ticketmaster", kind: listing ? "listing" : "event_detail", title: listing ? "Auckland Events" : "Integration Stadium Event", canonicalUrl: body.url, events: [{ eventId: externalId, title: "Integration Stadium Event", sourceUrl, description: listing ? undefined : "Full Ticketmaster detail metadata", category: "SportsEvent", startsAt: "2026-08-16T19:30:00", endsAt: "2026-08-16T22:30:00", eventStatus: listing && !listingComplete ? undefined : eventStatus, venue: listing && !listingComplete ? undefined : { name: "Integration Stadium", address: { streetAddress: "1 Test Street", addressLocality: "Auckland", addressRegion: "NZ", postalCode: "1010", addressCountry: "NZ" }, latitude: -36.8485, longitude: 174.7633 }, offers: [{ availability: "InStock", url: sourceUrl }], performers: listing ? [] : [{ name: "Integration Performer", type: "Person", url: sourceUrl }], imageUrls: listing ? [] : ["https://s1.ticketm.net/test.jpg"] }] } };
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(payload));
     });
@@ -292,18 +294,13 @@ describe("Worker baseline pipeline", () => {
       const range = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-01T00:00:00Z") };
       const discovery = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(discovery.runId);
-      expect(discovery).toMatchObject({ localAcceptance: true, references: 1, records: 0, events: 0, counters: { discovered: 1, targetsUpserted: 1, detailsFetched: 0 } });
+      expect(discovery).toMatchObject({ localAcceptance: true, references: 1, records: 0, events: 1, counters: { discovered: 1, targetsUpserted: 1, listingEventsPersisted: 1, detailRequestsAvoided: 1, detailsFetched: 0 } });
       const target = await prisma.sourceCrawlTarget.findFirstOrThrow({ where: { dataSourceId: source.id, url: sourceUrl } });
-      expect(target).toMatchObject({ active: true, status: "PENDING", consecutiveFailures: 0 });
-      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { priority: 0, nextFetchAt: new Date(0) } });
+      expect(target).toMatchObject({ active: true, status: "LISTING_COMPLETE", nextFetchAt: null, consecutiveFailures: 0, metadata: { detailRequired: false, listingComplete: true } });
 
-      const first = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "details", maxDetails: 1, localAcceptance: true });
-      runIds.push(first.runId);
-      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { priority: 0, nextFetchAt: new Date(0), active: true } });
-      const second = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "details", maxDetails: 1, localAcceptance: true });
+      const second = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(second.runId);
-      expect(first).toMatchObject({ localAcceptance: true, records: 1, events: 1, signals: 0, dryRun: false });
-      expect(second).toMatchObject({ localAcceptance: true, records: 1, events: 1, signals: 0, dryRun: false });
+      expect(second).toMatchObject({ localAcceptance: true, references: 1, records: 0, events: 1, signals: 0, dryRun: false, counters: { requests: 1, listingEventsPersisted: 1, detailRequestsAvoided: 1, detailsFetched: 0, unchangedEventsSkipped: 1 } });
       const sourceOccurrences = await prisma.sourceEventOccurrence.findMany({
         where: { dataSourceId: source.id, externalId },
         include: { canonicalLinks: { include: { eventOccurrence: { include: { canonicalEvent: true, venue: true } } } } },
@@ -315,7 +312,7 @@ describe("Worker baseline pipeline", () => {
         canonicalEvent: { title: "Integration Stadium Event", category: "SportsEvent" },
         venue: { name: "Integration Stadium", city: "Auckland", region: "Auckland" },
       });
-      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ active: true, status: "FETCHED", consecutiveFailures: 0, lastErrorCode: null });
+      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ active: true, status: "LISTING_COMPLETE", nextFetchAt: null, consecutiveFailures: 0, lastErrorCode: null });
       const successArtifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: second.runId } });
       expect(successArtifacts).toHaveLength(2);
       expect(successArtifacts.every((artifact) => !artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 71 * 3_600_000)).toBe(true);
@@ -325,6 +322,18 @@ describe("Worker baseline pipeline", () => {
       await expect(acceptanceService.setTicketmasterSchedules(true)).rejects.toMatchObject({ code: "RIGHTS_BLOCKED" });
       expect(await acceptanceService.setTicketmasterSchedules(false)).toMatchObject([{ key: "ticketmaster-details-six-hour", enabled: false }, { key: "ticketmaster-discovery-daily", enabled: false }]);
 
+      listingComplete = false;
+      const incompleteDiscovery = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
+      runIds.push(incompleteDiscovery.runId);
+      expect(incompleteDiscovery).toMatchObject({ events: 0, counters: { detailRequestsAvoided: 0, listingEventsPersisted: 0 } });
+      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ active: true, status: "PENDING", metadata: { detailRequired: true, listingComplete: false } });
+      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { priority: 0, nextFetchAt: new Date(0) } });
+      const hydrated = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "details", maxDetails: 1, localAcceptance: true });
+      runIds.push(hydrated.runId);
+      expect(hydrated).toMatchObject({ records: 1, events: 1, counters: { detailsFetched: 1 } });
+      expect(await prisma.sourceEventOccurrence.findFirstOrThrow({ where: { dataSourceId: source.id, externalId } })).toMatchObject({ lastCollectionRunId: hydrated.runId, metadata: { description: "Full Ticketmaster detail metadata" } });
+
+      listingComplete = true;
       eventStatus = "EventCancelled";
       const cancelledDiscovery = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(cancelledDiscovery.runId);
@@ -333,7 +342,7 @@ describe("Worker baseline pipeline", () => {
       expect(await prisma.sourceEventOccurrence.findFirstOrThrow({ where: { dataSourceId: source.id, externalId } })).toMatchObject({ status: "CANCELLED", lastCollectionRunId: cancelledDiscovery.runId });
 
       challenge = true;
-      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { priority: 0, nextFetchAt: new Date(0), active: true } });
+      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { status: "PENDING", priority: 0, nextFetchAt: new Date(0), active: true } });
       const challenged = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "details", maxDetails: 1, localAcceptance: true });
       runIds.push(challenged.runId);
       expect(challenged).toMatchObject({ records: 0, events: 0, counters: { failures: 1, rawArtifacts: 2 } });
@@ -423,6 +432,7 @@ describe("Worker baseline pipeline", () => {
       const second = await acceptanceService.collectSource("fx_rates", "new-zealand", undefined, { from: new Date("2026-07-20T00:00:00Z"), to: new Date("2026-09-20T00:00:00Z"), limit: 99, localAcceptance: true });
       runIds.push(first.runId, second.runId);
       expect(first).toMatchObject({ localAcceptance: true, references: 1, records: 2, signals: 2, counters: { requests: 1, pages: 1, records: 2, signals: 2 } });
+      expect(second).toMatchObject({ counters: { unchangedSignalsSkipped: 2 } });
       const sourceSignals = await prisma.sourceMarketSignal.findMany({ where: { dataSourceId: source.id, externalId: { startsWith: "rbnz-b1:2026-07-20:" } }, include: { canonicalLink: true }, orderBy: { externalId: "asc" } });
       expect(sourceSignals).toHaveLength(2);
       expect(sourceSignals.every((signal) => signal.type === "FX_RATE" && signal.lastCollectionRunId === second.runId)).toBe(true);
@@ -470,19 +480,23 @@ describe("Worker baseline pipeline", () => {
     let canonicalEventIds: string[] = [];
     let eventOccurrenceIds: string[] = [];
     let venueIds: string[] = [];
+    let secondPassUnchanged = 0;
     try {
       for (let pass = 1; pass <= 2; pass += 1) {
         const run = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "RUNNING", scope: { sourceId: "eventfinda", regression: true, pass }, startedAt: new Date(), attemptCount: 1, isDemo: true } });
         runIds.push(run.id);
-        for (const event of events) await service.persistNormalisedEvent(event, source.id, run.id);
+        const persisted = await service.persistNormalisedEvents(events, source.id, run.id);
+        if (pass === 2) secondPassUnchanged = [...persisted.values()].filter((item) => item.unchanged).length;
         await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: events.length, finishedAt: new Date() } });
       }
 
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: eventId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       expect(sourceEvents).toHaveLength(1);
+      expect(sourceEvents[0].status).toBe("SCHEDULED");
       expect(sourceEvents[0].occurrences).toHaveLength(2);
       expect(sourceEvents[0].canonicalLinks).toHaveLength(1);
       expect(sourceEvents[0].occurrences.every((occurrence) => occurrence.lastCollectionRunId === runIds[1])).toBe(true);
+      expect(secondPassUnchanged).toBe(2);
 
       canonicalEventIds = sourceEvents.flatMap((item) => item.canonicalLinks.map((link) => link.canonicalEventId));
       eventOccurrenceIds = sourceEvents.flatMap((item) => item.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)));
@@ -577,7 +591,8 @@ describe("Worker baseline pipeline", () => {
 
       const second = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "details", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(second.runId);
-      expect(second).toMatchObject({ detailsFetched: 1, eventsPersisted: 1, failureCount: 0 });
+      expect(second).toMatchObject({ detailsFetched: 1, unchangedDetails: 1, eventsPersisted: 1, unchangedEventsSkipped: 1, failureCount: 0 });
+      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ metadata: { detailUnchanged: true, unchangedDetailFetchCount: 1 } });
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: eventId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       expect(sourceEvents).toHaveLength(1);
       expect(sourceEvents[0].occurrences).toHaveLength(1);

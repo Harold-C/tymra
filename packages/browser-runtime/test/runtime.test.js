@@ -22,16 +22,56 @@ test("browser sessions default to headed mode", () => {
 
 test("headed sessions do not keep Chrome alive after capture", async () => {
   let options = null;
+  const connection = { disconnect: async () => {} };
   class FakeHero {
     constructor(value) { options = value; }
   }
   const session = new UlixeeBrowserSession({
-    heroModule: { default: FakeHero, ConnectionToHeroCore: { remote: () => ({}) } },
+    heroModule: { default: FakeHero, ConnectionToHeroCore: { remote: () => connection } },
   });
   await session.ensureHero();
+  assert.equal(options.connectionToCore, connection);
   assert.equal(options.showChrome, true);
   assert.equal(options.showChromeAlive, false);
   assert.equal(options.sessionKeepAlive, false);
+});
+
+test("browser sessions pass bounded resource types to Hero", async () => {
+  let options = null;
+  class FakeHero {
+    constructor(value) { options = value; }
+  }
+  const blockedResourceTypes = ["BlockImages", "BlockFonts", "BlockIcons", "BlockMedia"];
+  const blockedResourceUrls = [/doubleclick\.net/i];
+  const session = new UlixeeBrowserSession({
+    blockedResourceTypes,
+    blockedResourceUrls,
+    heroModule: { default: FakeHero, ConnectionToHeroCore: { remote: () => ({}) } },
+  });
+  await session.ensureHero();
+  assert.deepEqual(options.blockedResourceTypes, blockedResourceTypes);
+  assert.deepEqual(options.blockedResourceUrls, blockedResourceUrls);
+});
+
+test("browser sessions terminate their owned core transport after Hero closes", async () => {
+  const calls = [];
+  class FakeHero {
+    async close() { calls.push("hero"); }
+  }
+  const session = new UlixeeBrowserSession({
+    heroModule: {
+      default: FakeHero,
+      ConnectionToHeroCore: {
+        remote: () => ({
+          transport: { disconnect() { calls.push("transport"); } },
+          async disconnect() { calls.push("connection"); },
+        }),
+      },
+    },
+  });
+  await session.ensureHero();
+  await session.close();
+  assert.deepEqual(calls, ["hero", "transport"]);
 });
 
 test("successful browser sessions export their reusable profile", async () => {

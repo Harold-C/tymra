@@ -247,6 +247,7 @@ enum CollectionStatus {
 }
 
 enum JobType {
+  ARGUS_JOB_POLL
   INPUT_RESOLUTION
   LISTING_RESOLUTION
   PROPERTY_IDENTIFICATION
@@ -283,6 +284,15 @@ enum JobStatus {
   SUCCEEDED
   FAILED
   DEAD_LETTER
+  CANCELLED
+}
+
+enum ArgusExecutionStatus {
+  SUBMITTED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCEL_REQUESTED
   CANCELLED
 }
 
@@ -1775,6 +1785,34 @@ model Job {
   @@index([queueName, status, runAt, priority])
   @@index([analysisRequestId, createdAt])
   @@index([leaseExpiresAt])
+}
+
+model ArgusExecution {
+  id                String               @id @default(cuid())
+  orchestrationKey  String               @unique
+  parentJobId       String
+  collectionRunId   String
+  dataSourceId      String
+  argusJobId        String               @unique
+  traceId           String
+  connectorId       String
+  workflowId        String
+  requestedUrl      String
+  status            ArgusExecutionStatus @default(SUBMITTED)
+  result            Json?
+  errorCategory     String?
+  errorMessage      String?
+  retryable         Boolean?
+  submittedAt       DateTime             @default(now())
+  lastPolledAt      DateTime?
+  deadlineAt        DateTime
+  completedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([parentJobId, status])
+  @@index([collectionRunId, createdAt])
+  @@index([status, deadlineAt])
 }
 
 model EmailDelivery {

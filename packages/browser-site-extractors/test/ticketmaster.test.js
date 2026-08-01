@@ -41,3 +41,10 @@ test("classifies an event URL as a detail extraction", () => {
   assert.equal(result.canonicalUrl, event.url);
   assert.equal(result.events[0].eventStatus, "EventCancelled");
 });
+
+test("keeps repeated dates that share one Ticketmaster event id", () => {
+  const base = { "@type": "MusicEvent", url: "https://www.ticketmaster.co.nz/tour/event/series", name: "Tour", eventStatus: "https://schema.org/EventScheduled" };
+  const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { eventsJsonLD: [{ ...base, startDate: "2026-08-01T19:30:00" }, { ...base, startDate: "2026-08-02T19:30:00" }] } } })}</script>`;
+  const result = extractTicketmasterPage({ html, title: "Tour", finalUrl: "https://www.ticketmaster.co.nz/discover/auckland" });
+  assert.deepEqual(result.events.map((event) => event.startsAt), ["2026-08-01T19:30:00", "2026-08-02T19:30:00"]);
+});

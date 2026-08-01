@@ -15,7 +15,7 @@ export function extractTicketmasterPage({ html, title, finalUrl }) {
   for (const script of document.querySelectorAll("script[type='application/ld+json']")) {
     try { flatten(JSON.parse(script.textContent), items); } catch {}
   }
-  const events = uniqueBy(items.filter(isEvent).map(normaliseEvent).filter(Boolean), (event) => event.eventId);
+  const events = uniqueBy(items.filter(isEvent).map(normaliseEvent).filter(Boolean), (event) => `${event.eventId}\u0000${event.startsAt}`);
   if (!events.length) throw new Error("Ticketmaster page contains no supported event JSON-LD");
   return {
     extractor: "ticketmaster",

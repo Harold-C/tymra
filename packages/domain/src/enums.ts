@@ -228,6 +228,7 @@ export const exceptionActionSchema = z.enum(exceptionActions);
 export type ExceptionAction = z.infer<typeof exceptionActionSchema>;
 
 export const jobTypes = [
+  "ARGUS_JOB_POLL",
   "INPUT_RESOLUTION",
   "LISTING_RESOLUTION",
   "PROPERTY_IDENTIFICATION",

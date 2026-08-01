@@ -14,6 +14,18 @@ import { captureNeutralPage, extractEventfindaPage, extractRbnzFxPage, extractTi
 import { EncryptedProfileStore } from "./encrypted-profile-store.js";
 
 const EXTRACTORS = Object.freeze({ eventfinda: extractEventfindaPage, ticketmaster: extractTicketmasterPage, rbnz_fx: extractRbnzFxPage });
+const HTML_EVIDENCE_BLOCKED_RESOURCES = Object.freeze(["BlockImages", "BlockFonts", "BlockIcons", "BlockMedia"]);
+const HTML_EVIDENCE_BLOCKED_URLS = Object.freeze([
+  /(^|\.)doubleclick\.net(?:\/|$)/i,
+  /(^|\.)googlesyndication\.com(?:\/|$)/i,
+  /(^|\.)google-analytics\.com(?:\/|$)/i,
+  /(^|\.)googletagmanager\.com(?:\/|$)/i,
+  /(^|\.)facebook\.net(?:\/|$)/i,
+  /(^|\.)facebook\.com\/tr(?:\/|$|\?)/i,
+  /(^|\.)sentry-cdn\.com(?:\/|$)/i,
+  /(^|\.)hotjar\.com(?:\/|$)/i,
+  /(^|\.)linkedin\.com\/insight(?:\/|$)/i,
+]);
 
 export function createBrowserWorkerServer(config, dependencies = {}) {
   let activeTasks = 0;
@@ -23,7 +35,14 @@ export function createBrowserWorkerServer(config, dependencies = {}) {
     profileRoot: config.profileRoot ?? `${config.evidenceRoot}/profiles`,
     encryptionSecret: config.profileEncryptionSecret ?? config.token,
   });
-  const sessionFactory = dependencies.sessionFactory ?? ((_body, profile) => new UlixeeBrowserSession({ coreUrl: config.coreUrl, headed, userProfile: profile.userProfile, onProfileExport: profile.onProfileExport }));
+  const sessionFactory = dependencies.sessionFactory ?? ((body, profile) => new UlixeeBrowserSession({
+    coreUrl: config.coreUrl,
+    headed,
+    userProfile: profile.userProfile,
+    onProfileExport: profile.onProfileExport,
+    blockedResourceTypes: body.evidenceMode === "html" ? HTML_EVIDENCE_BLOCKED_RESOURCES : undefined,
+    blockedResourceUrls: body.evidenceMode === "html" ? HTML_EVIDENCE_BLOCKED_URLS : undefined,
+  }));
   const capture = dependencies.capture ?? captureNeutralPage;
   const server = http.createServer(async (request, response) => {
     try {

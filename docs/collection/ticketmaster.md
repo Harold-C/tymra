@@ -1,14 +1,17 @@
 # Ticketmaster New Zealand collection
 
-**Development status:** Discovery, durable detail frontier, bounded hydration and canonical
-persistence are implemented. Automated two-pass database acceptance passes. The latest bounded real
-detail runs remained challenged after passive waits and stopped safely, so reliable live access is
-not currently verified.
+Last updated: 2026-08-01
+
+**Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
+detail frontier and bounded hydration are implemented. Automated database acceptance covers both
+the direct and fallback paths. The latest bounded real detail runs remained challenged after passive
+waits and stopped safely, so reliable fallback-detail access is not currently verified.
 
 ## Decision
 
-Ticketmaster New Zealand uses Tymra's read-only Browser Worker and does not use a Ticketmaster API
-key or Discovery API. The current Worker collects public structured event data from five working New
+Ticketmaster New Zealand uses durable Argus read-only Jobs when Argus is configured and retains
+Tymra's private Browser Worker as a development fallback. It does not use a Ticketmaster API key or
+Discovery API. The current Worker collects public structured event data from five working New
 Zealand city listing routes: Auckland, Wellington, Christchurch, Hamilton and Rotorua.
 
 Event detail pages may initially present a Ticketmaster `One moment please...` interstitial containing
@@ -27,28 +30,40 @@ explicit source, storage and derived-analysis approval.
 
 1. Capture up to five fixed city listing pages with a fixed Ticketmaster extractor.
 2. Parse public `__NEXT_DATA__` and JSON-LD event IDs, titles, descriptions, dates, statuses, venues, addresses, coordinates, offers, performers and images.
-3. Canonicalise and deduplicate approved detail URLs, then upsert them into `SourceCrawlTarget` with
-   listing metadata, priority and `nextFetchAt`. A listing already marked `EventCancelled` is
-   persisted as cancelled but its target is immediately set to `CANCELLED`, `active=false` and
-   `nextFetchAt=null`, so it never enters the detail queue.
-4. Select due targets by priority, enforce one browser and source/daily limits, and require detail
-   JSON-LD to match the target URL exactly so recommended events cannot leak into persistence.
+3. Group listing records by canonical detail URL and date. When every record has a valid identity,
+   category, date, explicit status, venue and city, persist all occurrences directly and mark the
+   target `LISTING_COMPLETE` with `detailRequired=false` and `nextFetchAt=null`.
+4. Queue only incomplete listing groups as `PENDING`. Select those fallback targets by priority,
+   enforce one browser and source/daily limits, and require detail JSON-LD to match the target URL
+   exactly so recommended events cannot leak into persistence.
 5. For a detail interstitial, retain initial HTML and `challenge-initial-screenshot.png`, poll at
    one-second intervals for at most 20 seconds without interaction, then retain the resolved,
    terminal-challenge or timed-out HTML and `challenge-screenshot.png`.
 6. Persist short-lived HTML, result and manifest evidence in `RawArtifact` and source facts in
    `SourceEvent` and `SourceEventOccurrence`, then exact-link them into `CanonicalEvent`,
    `EventOccurrence` and `CanonicalVenue`.
-7. Refresh near-term events more often. A successfully hydrated cancelled detail is also set to
+7. Refresh near-term fallback details more often. Consecutive unchanged detail hashes double the
+   interval with a 24-hour cap within two days, 72-hour cap within 14 days, seven-day cap within 60
+   days and 14-day cap beyond 60 days. A listing or hydrated detail marked cancelled is
    `CANCELLED`, `active=false` and `nextFetchAt=null`; ended targets are retired, failures back off
    exponentially, and a persistent challenge or rate limit opens the adaptive source circuit.
 8. Keep impact status `PENDING_EVIDENCE` until capacity, attendance or corroborating demand evidence exists.
 
-The local acceptance bound is one listing page, at most two details and a 31-day effective window.
-The normal collector uses one concurrent browser, a 5-9 second inter-request delay, at most five city
-pages, three details per scheduled batch and a 20-request daily ceiling. Daily discovery plus four
-six-hour detail batches request at most 17 pages/day before retries; no automatic challenge retry is
-performed. Both seeded schedules are disabled.
+The local acceptance bound is one listing page, at most two fallback details and a 31-day effective
+window. The normal collector uses one concurrent browser, a 5-9 second inter-request delay, at most
+five city pages, three fallback details per scheduled batch and a 20-request daily ceiling. A normal
+complete snapshot now requests only the five listing pages; the previous 17-page/day ceiling remains
+the worst case when incomplete targets require all four fallback batches. No automatic challenge
+retry is performed. Both seeded schedules are disabled.
+
+The retained five-city snapshot from 2026-07-20 contained 89 cards and 89 unique event URLs. All 89
+had the fields required by the listing-complete rule, including three cancelled events. For that
+snapshot the listing-first pipeline reduces initial browser pages from 94 (five listings plus 89
+details) to five, while still persisting every accepted event occurrence.
+
+Repeated dates from one listing or detail group share one source event, canonical event and exact
+venue during persistence. Each date remains a distinct occurrence. A later unchanged occurrence only
+updates its run and last-seen fields instead of rebuilding the canonical graph.
 
 ## Access circuit and browser identity
 
@@ -133,6 +148,10 @@ No automatic challenge retry occurs inside a run.
 
 The implementation and automated database acceptance are complete; the remaining items are external,
 production or operational gates. All schedules stay disabled in development.
+
+On 2026-08-01 the current Ticketmaster unit tests, shared extractor tests, Worker typecheck and
+Worker build passed. Live listing/detail capture and the database integration suite were not rerun;
+the source-behaviour claims above remain tied to their recorded historical traces.
 
 After explicit source activation, production operators can use
 `schedule:ticketmaster:enable`; the command refuses to enable the schedule unless storage and

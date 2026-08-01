@@ -15,7 +15,7 @@ const pendingSource = {
 
 describe("collection control safety", () => {
   it("validates a closed action vocabulary", () => {
-    expect(collectionControlActionSchema.safeParse({ action: "enqueue", scheduleKey: "eventfinda-discovery-12-hour" }).success).toBe(true);
+    expect(collectionControlActionSchema.safeParse({ action: "enqueue", scheduleKey: "eventfinda-discovery-daily" }).success).toBe(true);
     expect(collectionControlActionSchema.safeParse({ action: "kill_running_job", jobId: "job-1" }).success).toBe(false);
     expect(collectionControlActionSchema.safeParse({ action: "set_source_enabled", sourceKey: "eventfinda", enabled: "yes" }).success).toBe(false);
   });
@@ -23,10 +23,10 @@ describe("collection control safety", () => {
   it("bounds browser workflows and uses development bootstrap for event sites", () => {
     expect(buildControlledCollectionPayload(
       { key: "eventfinda", ...pendingSource },
-      "eventfinda-discovery-12-hour",
+      "eventfinda-discovery-daily",
       { sourceId: "eventfinda", phase: "discovery", maxPages: 250 },
       { NODE_ENV: "development" },
-    )).toMatchObject({ adminScheduleKey: "eventfinda-discovery-12-hour", manualSafety: true, developmentBootstrap: true, maxPages: 1, limit: 2 });
+    )).toMatchObject({ adminScheduleKey: "eventfinda-discovery-daily", manualSafety: true, developmentBootstrap: true, maxPages: 1, limit: 2 });
 
     expect(buildControlledCollectionPayload(
       { key: "ticketmaster", ...pendingSource },

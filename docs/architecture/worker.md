@@ -1,6 +1,6 @@
 # Tymra Worker Baseline v1
 
-Last updated: 2026-07-21
+Last updated: 2026-08-01
 
 ## Runtime
 
@@ -55,16 +55,30 @@ resend, cancel, source, market, health and readiness routes. API and CLI call `W
 not duplicate pipeline logic. CLI commands follow the `collect:*`, `analyse:listing`, `source:*`,
 `retention:cleanup` and `seed:fixtures` naming documented in the build baseline.
 
-Eventfinda and Ticketmaster are browser-only event sources. Eventfinda implements nationwide
-discovery and a durable detail frontier, including a scheduler-off development bootstrap mode.
-Ticketmaster implements five-city discovery, a durable detail frontier, bounded detail batches,
-exact-target canonical persistence, refresh/backoff and challenge cooldown. Automated two-pass
-database acceptance passes. A prior public detail page resolved after a bounded passive wait, while
-the latest real runs remained challenged and correctly retained failure evidence. Scheduler flags
-and all seeded event schedules remain disabled.
+Eventfinda and Ticketmaster are browser-only event sources executed through durable Argus asynchronous Jobs
+when configured. RBNZ B1 uses the same boundary for its single rendered table page. Eventfinda implements nationwide
+discovery, canonical-URL grouping and one detail expansion for all dates in an event series, including
+a scheduler-off development bootstrap mode. Ticketmaster implements five-city listing-first
+discovery: complete listing JSON-LD is persisted directly, while only incomplete groups enter the
+durable detail frontier. Fallback details retain bounded batches, exact-target persistence,
+refresh/backoff and challenge cooldown. Automated direct and fallback database acceptance passes.
+Scheduler flags and all seeded event schedules remain disabled.
 The shared `SourceEvent` and canonical event pipeline is implemented independently of either
 channel's completion state. Only an event with explicit impact evidence is promoted to a
 `MarketSignal(MAJOR_EVENT)`.
+
+All public collectors use reference, raw-record and normalised-identity deduplication. Multi-date
+events share one source/canonical series and exact venue within a persistence batch, while retaining
+one occurrence per advertised time. Unchanged signals and occurrences take a lightweight touch path
+instead of rebuilding canonical entities and lineage. MetService reads its RSS index first and opens
+only CAP details whose URL/GUID/publication version is new or changed. Eventfinda and Ticketmaster
+detail targets additionally increase their refresh interval after consecutive unchanged content
+hashes, with near-event safety caps; a changed listing resets that stability state.
+
+The Worker marks rights, configuration, invalid-input/range and parser-contract failures terminal
+instead of consuming all job attempts. Transient failures still retry, and expired leases are
+recovered periodically during normal operation rather than only at process startup. See
+[non-OTA public collection](../collection/public-data.md) for source request shapes and counters.
 
 All new collection channels follow the canonical
 [local source collection acceptance](../collection/acceptance.md) standard.
@@ -82,13 +96,15 @@ are approved.
 
 ## Verification Baseline
 
-The current verification totals are recorded after each complete `pnpm verify` run rather than
-copied from the earlier baseline. The gate includes lint, workspace type checks, all unit and
-integration tests, the production Next.js build and all Worker runtime entrypoint builds.
-The post-restructure 2026-07-21 gate passed 94 TypeScript unit/component tests, 34 browser runtime/extractor tests and
-53 integration tests, generated all 64 Next.js static pages and built all four Worker entrypoints. The Next.js
-build emitted only LinkeDOM's non-fatal optional-`canvas` warning; the calendar parsers do not use
-canvas.
+Verification totals are dated snapshots. On 2026-08-01 the current worktree passed Web lint,
+TypeScript checks for Web, Worker and all five TypeScript shared packages, 80 root unit/component
+tests, 37 Worker unit tests, 37 Browser Runtime/Extractor/Worker tests, the four Worker entrypoint
+build and a 64-page Next.js production build. The Next.js build emitted only LinkeDOM's non-fatal
+optional-`canvas` warning; the calendar parsers do not use canvas.
+
+The current worktree did not complete `pnpm test:integration`, `pnpm test:e2e` or the aggregate
+`pnpm verify` command during that update. Those gates retain their dated historical evidence but are
+not represented as freshly verified. See [traceability](../traceability.md#current-worktree-verification-2026-08-01).
 Worker-specific integration coverage includes unique and ambiguous address
 resolution, multi-unit confirmation,
 fresh/stale cache behavior, source-rights blocking, partial public-signal failure, insufficient

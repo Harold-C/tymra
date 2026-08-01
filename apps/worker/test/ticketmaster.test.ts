@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   canonicalTicketmasterUrl,
+  groupTicketmasterListingEvents,
   isTicketmasterDetailUrl,
   normaliseTicketmasterEvent,
+  normaliseTicketmasterEvents,
   ticketmasterChallengeTransition,
   ticketmasterCircuitStatus,
   ticketmasterCircuitSuccessMetadata,
   ticketmasterFailureBackoff,
+  ticketmasterListingCoverage,
   ticketmasterRefreshPolicy,
   ticketmasterRequestDelayMs,
   ticketmasterUrlHash,
@@ -44,10 +47,41 @@ describe("Ticketmaster normalisation", () => {
     expect(ticketmasterUrlHash(`${canonical}?brand=x`)).toBe(ticketmasterUrlHash(canonical));
   });
 
+  it("groups repeated listing observations by detail URL and keeps each date", () => {
+    const base = { eventId: "series", title: "Tour", sourceUrl: "https://www.ticketmaster.co.nz/tour/event/series", category: "MusicEvent", eventStatus: "EventScheduled", venue: { name: "Town Hall", address: { addressLocality: "Auckland" } } };
+    const groups = groupTicketmasterListingEvents([
+      { ...base, startsAt: "2026-08-02T19:30:00" },
+      { ...base, startsAt: "2026-08-01T19:30:00" },
+      { ...base, startsAt: "2026-08-01T19:30:00" },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].events.map((event) => event.startsAt)).toEqual(["2026-08-01T19:30:00", "2026-08-02T19:30:00"]);
+  });
+
+  it("uses complete listing JSON-LD without requiring a detail page", () => {
+    const complete = { eventId: "1", title: "Complete", sourceUrl: "https://www.ticketmaster.co.nz/complete/event/1", category: "MusicEvent", startsAt: "2026-08-01T19:30:00", eventStatus: "EventScheduled", venue: { name: "Town Hall", address: { addressLocality: "Auckland" } } };
+    expect(ticketmasterListingCoverage([complete])).toMatchObject({ complete: true, events: [{ externalId: "1", city: "Auckland" }] });
+    expect(ticketmasterListingCoverage([{ ...complete, venue: undefined }])).toMatchObject({ complete: false });
+  });
+
+  it("keeps one source series and distinct occurrence identities for repeated dates", () => {
+    const base = { eventId: "series", title: "Tour", sourceUrl: "https://www.ticketmaster.co.nz/tour/event/series", category: "MusicEvent", eventStatus: "EventScheduled", venue: { name: "Town Hall", address: { addressLocality: "Auckland" } } };
+    const events = normaliseTicketmasterEvents([
+      { ...base, startsAt: "2026-08-01T19:30:00" },
+      { ...base, startsAt: "2026-08-02T19:30:00" },
+    ]);
+    expect(events.map((event) => event.externalId)).toEqual([
+      "series:2026-08-01T07:30:00.000Z",
+      "series:2026-08-02T07:30:00.000Z",
+    ]);
+    expect(events.map((event) => event.metadata.sourceEventId)).toEqual(["series", "series"]);
+  });
+
   it("paces refreshes by event horizon and backs failures off", () => {
     const now = new Date("2026-07-21T00:00:00.000Z");
     const event = normaliseTicketmasterEvent({ eventId: "1", title: "Future", sourceUrl: "https://www.ticketmaster.co.nz/future/event/1", startsAt: "2026-07-22T19:30:00", eventStatus: "EventScheduled" });
     expect(ticketmasterRefreshPolicy([event!], now)).toMatchObject({ active: true, priority: 10, nextFetchAt: new Date("2026-07-21T06:00:00.000Z") });
+    expect(ticketmasterRefreshPolicy([event!], now, 3)).toMatchObject({ active: true, priority: 10, nextFetchAt: new Date("2026-07-22T00:00:00.000Z") });
     expect(ticketmasterFailureBackoff(1, false, now)).toEqual(new Date("2026-07-21T00:30:00.000Z"));
     expect(ticketmasterFailureBackoff(1, true, now)).toEqual(new Date("2026-07-21T06:00:00.000Z"));
   });

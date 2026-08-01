@@ -1,5 +1,7 @@
 # Browser Collection Phase 1
 
+Last updated: 2026-08-01
+
 ## Status and scope
 
 Tymra now has a generic, read-only browser capture path for JavaScript-rendered pages. This phase proves browser execution and evidence handling; it does not yet parse OTA prices or feed browser output into pricing recommendations.
@@ -30,6 +32,16 @@ inherit the headed default.
 requirements for headed rendering, and enabling them in a long-running collection service retains
 completed Chrome sessions until the Ulixee process is restarted.
 
+HTML-only scheduled captures block images, fonts, icons and media, plus known advertising and
+analytics endpoints. Page scripts and styles remain enabled because Eventfinda pagination and card
+rendering depend on client-side execution. Full-evidence captures do not apply these resource
+blocks, so challenge screenshots and manual diagnostics retain the rendered visual state.
+
+Ulixee Cloud has a 4 GiB container memory limit and a 512-process limit in development and
+production. Browser collection remains single-concurrency. After Hero closes its session, Browser
+Worker terminates its owned client transport directly; this avoids an Ulixee alpha shutdown race
+where `Core.disconnect` closes the server socket before its response is written.
+
 The capture timeout is an end-to-end task deadline covering navigation, DOM/title/URL capture,
 challenge polling, extraction and Profile export. A hung browser operation therefore reaches the
 normal failure manifest and session close path instead of occupying the only browser slot after the
@@ -53,15 +65,16 @@ CAPTCHA solving, fingerprint spoofing and randomized user simulation are explici
 
 ## Local operation
 
-Development Compose starts `browser-worker`, `ulixee-cloud`, and a controlled `browser-fixture`. The fixture is the only HTTP/private-network exception. Development scheduling remains disabled through `SCHEDULER_ENABLED=false` and seeded schedules remain disabled.
+Development Compose keeps `browser-worker` and `ulixee-cloud` in an opt-in `browser` profile because headed Chrome remains warm between captures. The controlled `browser-fixture` is an opt-in `test-fixture` profile and is the only HTTP/private-network exception. Development scheduling remains disabled through `SCHEDULER_ENABLED=false` and the Scheduler container is an opt-in profile; seeded schedules remain disabled.
 
 Ulixee Cloud is available on host port `1819` for local diagnostics because Synix already owns host port `1818`; the Tymra container network continues to use `ulixee-cloud:1818`.
 
 ```bash
 docker compose run --rm --build seed
-docker compose up -d --build browser-fixture ulixee-cloud browser-worker worker
-docker compose exec worker ./node_modules/.bin/tsx apps/worker/src/cli.ts browser:health
-docker compose exec worker ./node_modules/.bin/tsx apps/worker/src/cli.ts browser:capture \
+pnpm compose:browser:up
+docker compose --profile browser --profile test-fixture up -d browser-fixture
+docker compose exec worker ./node_modules/.bin/tsx src/cli.ts browser:health
+docker compose exec worker ./node_modules/.bin/tsx src/cli.ts browser:capture \
   --source browser-neutral-fixture \
   --url http://browser-fixture
 ```
@@ -74,7 +87,12 @@ Production uses a dedicated `PROD_BROWSER_WORKER_TOKEN`, blocks HTTP and private
 
 Raw evidence expires after `RAW_ARTIFACT_TTL_HOURS` (72 by default). Browser files are deleted by the Browser Worker cleanup loop; database pointers are marked deleted by the existing Tymra retention job.
 
-Eventfinda is the first source-specific extractor and crawl frontier built on this runtime. See [Eventfinda New Zealand collection](../collection/eventfinda.md) for scope, rate limits, refresh policy and production activation gates. Ticketmaster uses the same runtime for five public city listing routes and a durable detail frontier. Detail tasks poll the rendered state once per second for at most 20 seconds, stop early when normal content or a terminal challenge appears, and otherwise retain evidence and enter adaptive cooldown; see [Ticketmaster New Zealand collection](../collection/ticketmaster.md).
+Eventfinda and Ticketmaster originally established their source-specific extractors and crawl
+frontiers on this runtime. They now use Argus asynchronous browser Jobs when configured; this
+private Browser Worker path remains a development fallback. See
+[Argus browser collection boundary](../collection/argus.md),
+[Eventfinda New Zealand collection](../collection/eventfinda.md), and
+[Ticketmaster New Zealand collection](../collection/ticketmaster.md).
 
 Rendered HTML is written before a source extractor runs. Full-evidence captures always include a
 screenshot; HTML-only scheduled captures add initial and settled screenshots only when challenge
@@ -88,3 +106,10 @@ before it is described as locally verified.
 ## Next phase
 
 The next phase should add one OTA-specific extractor at a time, with captured fixtures, selector/parser tests, rate normalization, source-specific usage review, throttling, and comparison against known observations. CAPTCHA bypass and authenticated operator sessions remain outside this generic phase.
+
+## Current verification
+
+The 2026-08-01 current-worktree image build passed. The combined Browser Runtime, site extractor and
+Browser Worker suite passed 37/37 tests. The running local browser containers were healthy when
+checked, and the running Browser Worker server, runtime and Ticketmaster extractor hashes matched
+the current worktree. Runtime health still does not replace a fresh live-source or E2E acceptance.

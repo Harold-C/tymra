@@ -49,6 +49,11 @@ export type TicketmasterDetailExtraction = Omit<TicketmasterListingExtraction, "
 
 export type TicketmasterExtraction = TicketmasterListingExtraction | TicketmasterDetailExtraction;
 
+export type TicketmasterListingGroup = {
+  url: string;
+  events: TicketmasterListingEvent[];
+};
+
 export function isTicketmasterExtraction(value: unknown): value is TicketmasterExtraction {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
@@ -84,6 +89,43 @@ export function canonicalTicketmasterUrl(value: string) {
 
 export function ticketmasterUrlHash(value: string) {
   return createHash("sha256").update(canonicalTicketmasterUrl(value)).digest("hex");
+}
+
+export function groupTicketmasterListingEvents(events: TicketmasterListingEvent[]): TicketmasterListingGroup[] {
+  const groups = new Map<string, Map<string, TicketmasterListingEvent>>();
+  for (const event of events) {
+    if (!isTicketmasterDetailUrl(event.sourceUrl)) continue;
+    const url = canonicalTicketmasterUrl(event.sourceUrl);
+    const occurrences = groups.get(url) ?? new Map<string, TicketmasterListingEvent>();
+    occurrences.set(`${event.eventId}\u0000${event.startsAt}`, { ...event, sourceUrl: url });
+    groups.set(url, occurrences);
+  }
+  return [...groups.entries()].map(([url, occurrences]) => ({
+    url,
+    events: [...occurrences.values()].sort((left, right) => left.startsAt.localeCompare(right.startsAt) || left.eventId.localeCompare(right.eventId)),
+  }));
+}
+
+export function ticketmasterListingCoverage(events: TicketmasterListingEvent[]) {
+  const normalised = normaliseTicketmasterEvents(events);
+  const complete = normalised.length === events.length && normalised.every((event) => (
+    Boolean(event.category)
+    && Boolean(event.venueName)
+    && Boolean(event.city)
+    && event.status !== "UNKNOWN"
+  ));
+  return { complete, events: normalised };
+}
+
+export function normaliseTicketmasterEvents(events: TicketmasterListingEvent[]): PublicEvent[] {
+  const eventIdCounts = new Map<string, number>();
+  for (const event of events) eventIdCounts.set(event.eventId, (eventIdCounts.get(event.eventId) ?? 0) + 1);
+  return events.flatMap((sourceEvent) => {
+    const event = normaliseTicketmasterEvent(sourceEvent);
+    if (!event) return [];
+    if ((eventIdCounts.get(sourceEvent.eventId) ?? 0) <= 1) return [event];
+    return [{ ...event, externalId: `${event.externalId}:${event.startsAt.toISOString()}` }];
+  });
 }
 
 export function normaliseTicketmasterEvent(event: TicketmasterListingEvent): PublicEvent | null {
@@ -133,6 +175,7 @@ export function normaliseTicketmasterEvent(event: TicketmasterListingEvent): Pub
       performers: event.performers ?? [],
       imageUrls: event.imageUrls ?? [],
       canonicalisationNote: hasExactEnd ? "exact-source-end" : "missing-exact-end-collapsed-to-start",
+      extractionVersion: "ticketmaster-jsonld-v1",
     },
     fixture: false,
   };
@@ -142,17 +185,23 @@ export function ticketmasterRequestDelayMs(minimumMs: number, jitterMs: number, 
   return minimumMs + Math.floor(random() * (jitterMs + 1));
 }
 
-export function ticketmasterRefreshPolicy(events: PublicEvent[], now = new Date()) {
+export function ticketmasterRefreshPolicy(events: PublicEvent[], now = new Date(), unchangedFetchCount = 0) {
   const activeDates = events
     .filter((event) => !["CANCELLED"].includes(event.status) && event.endsAt.getTime() >= now.getTime())
     .map((event) => event.startsAt < now ? now : event.startsAt)
     .sort((left, right) => left.getTime() - right.getTime());
   if (!activeDates.length) return { active: false, priority: 900, nextFetchAt: null };
   const days = (activeDates[0].getTime() - now.getTime()) / 86_400_000;
-  if (days <= 2) return { active: true, priority: 10, nextFetchAt: new Date(now.getTime() + 6 * 3_600_000) };
-  if (days <= 14) return { active: true, priority: 20, nextFetchAt: new Date(now.getTime() + 12 * 3_600_000) };
-  if (days <= 60) return { active: true, priority: 40, nextFetchAt: new Date(now.getTime() + 48 * 3_600_000) };
-  return { active: true, priority: 80, nextFetchAt: new Date(now.getTime() + 7 * 86_400_000) };
+  if (days <= 2) return refreshWithStableBackoff(now, 10, 6, 24, unchangedFetchCount);
+  if (days <= 14) return refreshWithStableBackoff(now, 20, 12, 72, unchangedFetchCount);
+  if (days <= 60) return refreshWithStableBackoff(now, 40, 48, 7 * 24, unchangedFetchCount);
+  return refreshWithStableBackoff(now, 80, 7 * 24, 14 * 24, unchangedFetchCount);
+}
+
+function refreshWithStableBackoff(now: Date, priority: number, baseHours: number, capHours: number, unchangedFetchCount: number) {
+  const multiplier = 2 ** Math.min(4, Math.max(0, Math.trunc(unchangedFetchCount)));
+  const hours = Math.min(capHours, baseHours * multiplier);
+  return { active: true, priority, nextFetchAt: new Date(now.getTime() + hours * 3_600_000) };
 }
 
 export function ticketmasterFailureBackoff(consecutiveFailures: number, rateLimited: boolean, now = new Date()) {

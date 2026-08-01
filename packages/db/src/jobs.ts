@@ -107,6 +107,30 @@ export async function markJobSucceeded(jobId: string, workerId: string, now: Dat
   });
 }
 
+export async function deferClaimedJob(
+  jobId: string,
+  workerId: string,
+  runAt: Date,
+  reason: string,
+): Promise<Job> {
+  const current = await prisma.job.findFirst({ where: { id: jobId, status: "RUNNING", lockedBy: workerId } });
+  if (!current) throw new Error(`Job ${jobId} is not held by worker ${workerId}`);
+  return prisma.job.update({
+    where: { id: jobId },
+    data: {
+      status: "PENDING",
+      runAt,
+      attemptCount: { decrement: 1 },
+      completedAt: null,
+      lockedAt: null,
+      lockedBy: null,
+      leaseExpiresAt: null,
+      lastErrorCode: "WAITING_EXTERNAL",
+      lastErrorMessage: reason.slice(0, 1_000),
+    },
+  });
+}
+
 export async function renewJobLease(jobId: string, workerId: string, leaseSeconds: number, now: Date = new Date()): Promise<void> {
   const result = await prisma.job.updateMany({
     where: { id: jobId, status: "RUNNING", lockedBy: workerId },
@@ -152,6 +176,7 @@ export function isTerminalJobStatus(status: JobStatus): boolean {
 
 export function queueNameForJobType(type: JobType): string {
   switch (type) {
+    case "ARGUS_JOB_POLL": return "argus-job-poll";
     case "INPUT_RESOLUTION": return "input-resolution";
     case "LISTING_RESOLUTION":
     case "PROPERTY_IDENTIFICATION":

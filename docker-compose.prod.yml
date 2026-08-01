@@ -59,10 +59,17 @@ x-app-environment: &app-environment
   PUBLIC_COLLECTION_MODE: live
   FIXTURE_COLLECTION_ENABLED: "false"
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: tymra
       POSTGRES_USER: tymra
@@ -83,6 +90,7 @@ services:
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
@@ -99,7 +107,9 @@ services:
   migrate:
     <<: *app-image
     environment: *app-environment
-    command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "packages/db/prisma/schema.prisma"]
+    working_dir: /app/packages/db
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,7 +118,10 @@ services:
   web:
     <<: *app-image
     environment: *app-environment
-    command: ["pnpm", "--filter", "@tymra/web", "start"]
+    working_dir: /app/apps/web
+    command: ["./node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]
+    init: true
+    logging: *default-logging
     volumes:
       - browser_worker_evidence:/browser-evidence:ro
     depends_on:
@@ -150,7 +163,10 @@ services:
   worker:
     <<: *app-image
     environment: *app-environment
-    command: ["node", "apps/worker/dist/index.js"]
+    working_dir: /app/apps/worker
+    command: ["node", "dist/index.js"]
+    init: true
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -164,7 +180,10 @@ services:
   api:
     <<: *app-image
     environment: *app-environment
-    command: ["node", "apps/worker/dist/api.js"]
+    working_dir: /app/apps/worker
+    command: ["node", "dist/api.js"]
+    init: true
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -185,7 +204,10 @@ services:
   scheduler:
     <<: *app-image
     environment: *app-environment
-    command: ["node", "apps/worker/dist/scheduler.js"]
+    working_dir: /app/apps/worker
+    command: ["node", "dist/scheduler.js"]
+    init: true
+    logging: *default-logging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -214,11 +236,14 @@ services:
       BROWSER_WORKER_ALLOW_PRIVATE_NETWORK: "false"
       BROWSER_WORKER_ALLOW_HTTP: "false"
       ULIXEE_CLOUD_URL: ws://ulixee-cloud:1818
+    init: true
+    logging: *default-logging
     volumes:
       - browser_worker_evidence:/data/browser-worker/evidence
       - browser_worker_profiles:/data/browser-worker/profiles
     depends_on:
-      - ulixee-cloud
+      ulixee-cloud:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:18888/internal/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -239,9 +264,18 @@ services:
       dockerfile: apps/browser-worker/Dockerfile.ulixee-cloud
     environment:
       BROWSERS_DIR: /app/ulixee/.cache/ulixee-chrome
-    ipc: host
     shm_size: "2gb"
+    init: true
+    logging: *default-logging
+    mem_limit: ${PROD_TYMRA_ULIXEE_MEMORY_LIMIT:-4g}
+    pids_limit: 512
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const net=require('node:net');const socket=net.connect(1818,'127.0.0.1',()=>{socket.end();process.exit(0)});socket.setTimeout(2000,()=>process.exit(1));socket.on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - browser_control
       - browser_egress

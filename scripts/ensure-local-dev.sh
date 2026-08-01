@@ -8,7 +8,7 @@ readonly PUBLIC_URL="https://tymra.test/en"
 readonly ADMIN_URL="https://ops.tymra.test/admin/sign-in"
 readonly WORKER_URL="https://worker.tymra.test/worker/readiness"
 readonly MAILPIT_URL="https://mail.tymra.test/"
-readonly REQUIRED_SERVICES=(postgres redis web worker api scheduler mailpit)
+readonly REQUIRED_SERVICES=(postgres redis web worker api mailpit)
 
 find_docker() {
   for candidate in /usr/local/bin/docker /opt/homebrew/bin/docker; do

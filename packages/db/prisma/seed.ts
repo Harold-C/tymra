@@ -418,8 +418,8 @@ async function seedSchedules() {
   const schedules = [
     { key: "source-health-hourly", jobType: JobType.SOURCE_HEALTH_CHECK, queueName: "source-health", cronExpression: "every-1-hours", payload: {} },
     { key: "catalog-weekly", jobType: JobType.CATALOG_DISCOVERY, queueName: "catalog-discovery", cronExpression: "weekly", payload: { marketScope: "new-zealand" } },
-    { key: "public-holidays-daily", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "daily", payload: { sourceId: "public_holidays_nz", marketScope: "new-zealand" } },
-    { key: "school-holidays-daily", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "daily", payload: { sourceId: "school_holidays_nz", marketScope: "new-zealand" } },
+    { key: "public-holidays-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "public_holidays_nz", marketScope: "new-zealand" } },
+    { key: "school-holidays-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "school_holidays_nz", marketScope: "new-zealand" } },
     { key: "geonet-high-frequency-hourly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "every-1-hours", payload: { sourceId: "geonet", marketScope: "new-zealand" } },
     { key: "mbie-adp-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "mbie", marketScope: "new-zealand" } },
     { key: "stats-nz-international-travel-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "stats_nz", marketScope: "new-zealand" } },
@@ -433,7 +433,7 @@ async function seedSchedules() {
     { key: "poal-cruise-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "port_and_cruise", marketScope: "auckland" } },
     { key: "future-rates-regular", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-12-hours", payload: { marketScope: "new-zealand", horizon: "regular" } },
     { key: "future-rates-high-frequency", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-3-hours", payload: { marketScope: "new-zealand", horizon: "near-term-or-event" } },
-    { key: "eventfinda-discovery-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "eventfinda", marketScope: "new-zealand", phase: "discovery", maxPages: 250 } },
+    { key: "eventfinda-discovery-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "eventfinda", marketScope: "new-zealand", phase: "discovery", maxPages: 250 } },
     { key: "eventfinda-details-hourly", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-1-hours", payload: { sourceId: "eventfinda", marketScope: "new-zealand", phase: "details", maxDetails: 80 } },
     { key: "ticketmaster-discovery-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "ticketmaster", marketScope: "new-zealand", phase: "discovery", maxPages: 5 } },
     { key: "ticketmaster-details-six-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-6-hours", payload: { sourceId: "ticketmaster", marketScope: "new-zealand", phase: "details", maxDetails: 3 } },
@@ -451,7 +451,21 @@ async function seedSchedules() {
       update: { jobType: schedule.jobType, queueName: schedule.queueName, cronExpression: schedule.cronExpression, payload: schedule.payload },
     });
   }
-  await prisma.scheduleDefinition.deleteMany({ where: { key: { in: ["events-near-term", "events-high-frequency", "weather-and-roads", "ticketmaster-details-two-hour"] } } });
+  await prisma.scheduleDefinition.deleteMany({
+    where: {
+      key: {
+        in: [
+          "events-near-term",
+          "events-high-frequency",
+          "weather-and-roads",
+          "ticketmaster-details-two-hour",
+          "public-holidays-daily",
+          "school-holidays-daily",
+          "eventfinda-discovery-12-hour",
+        ],
+      },
+    },
+  });
 }
 
 async function seedInventory(dataSourceId: string) {
