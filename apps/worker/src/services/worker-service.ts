@@ -27,6 +27,8 @@ import {
 } from "@tymra/domain";
 import {
   AdapterError,
+  extractEventfindaHttpPage,
+  extractTicketmasterHttpPage,
   getOtaAdapterForInput,
   otaAdapters,
   publicDataAdapters,
@@ -40,8 +42,6 @@ import {
 } from "@tymra/providers";
 import { redisHealth, withRedisLock } from "@tymra/queue";
 import {
-  EVENTFINDA_ALLOWED_HOSTS,
-  EVENTFINDA_EXTRACTOR,
   eventfindaEvidenceTtlHours,
   eventfindaFailureBackoff,
   groupEventfindaListingEvents,
@@ -80,19 +80,20 @@ import {
   ticketmasterRefreshPolicy,
   ticketmasterRequestDelayMs,
   ticketmasterUrlHash,
-  TICKETMASTER_ALLOWED_HOSTS,
-  TICKETMASTER_EXTRACTOR,
   TICKETMASTER_LISTING_URLS,
   type TicketmasterListingEvent,
 } from "../collection/ticketmaster";
 import {
   isRbnzFxExtraction,
   normaliseRbnzFxSignals,
-  RBNZ_FX_ALLOWED_HOSTS,
-  RBNZ_FX_EXTRACTOR,
   RBNZ_FX_URL,
 } from "../collection/rbnz-fx";
-import { captureBrowserTaskWithArgus } from "../clients/argus-client";
+import {
+  LINCOLN_KEY_DATES_URL,
+  lincolnKeyDatesExtractionSchema,
+  normaliseLincolnKeyDateSignals,
+} from "../collection/lincoln-university-key-dates";
+import { captureBrowserTaskWithArgus, getArgusHealth, type ArgusBrowserTaskResult } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import {
   captureBrowserTaskWithDurableArgus,
@@ -128,32 +129,6 @@ type CollectSourceOptions = {
   developmentBootstrap?: boolean;
 };
 
-type BrowserEvidencePointer = {
-  kind: string;
-  traceId: string;
-  relativePath: string;
-  storageRef?: string;
-  sha256: string;
-  sizeBytes: number;
-  containsSensitiveData: boolean;
-  createdAt: string;
-};
-
-type BrowserTaskResult = {
-  ok: boolean;
-  status: "success" | "manual_required" | "failed";
-  traceId: string;
-  taskType: "read_only_capture";
-  page: { title: string; finalUrl: string; htmlBytes: number; screenshotBytes: number } | null;
-  evidence: BrowserEvidencePointer[];
-  error?: { category: string; message: string; retryable: boolean } | null;
-  manualRequired?: { reason: string } | null;
-  profilePersistence?: { attempted: boolean; saved: boolean; error?: string };
-  readonlyOnly: true;
-  externalSideEffectsPerformed: false;
-  extracted?: unknown;
-};
-
 type ActivateSourceRequest = {
   approvedBy: string;
   licenseBasis: string;
@@ -165,6 +140,8 @@ type EventPersistenceCache = {
   venues: Map<string, string>;
 };
 
+type DirectEventPageLoader = (input: { source: "eventfinda" | "ticketmaster"; url: string }) => Promise<{ html: string; finalUrl?: string }>;
+
 const fixtureSourceKey = "development-demo";
 const collectionProfileKey = "worker-fixture:nz:en:nzd:desktop:anonymous:v1";
 
@@ -172,6 +149,7 @@ export class WorkerService {
   constructor(
     private readonly environment: Environment = getEnvironment(),
     private readonly publicAdapters: Record<string, PublicDataAdapter> = publicDataAdapters,
+    private readonly directEventPageLoader?: DirectEventPageLoader,
   ) {}
 
   async createPreview(input: CreateWorkerRequest) {
@@ -528,7 +506,7 @@ export class WorkerService {
     const requestedFrom = options.from ?? new Date();
     const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
     const localBounds = {
-      maxRequests: sourceId === "council_calendars" ? 3 : 1,
+      maxRequests: sourceId === "christchurch_airport" ? 4 : ["council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events"].includes(sourceId) ? 3 : ["christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
       maxRecords: 2,
       maxWindowDays: 31,
       maxBytes: 2_000_000,
@@ -573,7 +551,15 @@ export class WorkerService {
       governanceBefore,
       schedulesBefore,
     };
-    const run = await prisma.collectionRun.create({ data: { jobId: options.jobId, dataSourceId: source.id, analysisRequestId, correlationId: context.correlationId, mode: "MARKET_COVERAGE", status: "RUNNING", scope: initialScope, startedAt: new Date(), attemptCount: 1, isDemo: this.environment.NODE_ENV === "test" } });
+    const run = await this.resumeOrCreateBrowserCollectionRun(
+      options.jobId,
+      source.id,
+      analysisRequestId,
+      initialScope,
+      new Date(),
+      context.correlationId,
+      this.environment.NODE_ENV === "test",
+    );
     const counters = emptyPublicCollectionCounters();
     try {
       if (!localAcceptance && (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis)) {
@@ -583,7 +569,10 @@ export class WorkerService {
         throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
       }
       const result = await withRedisLock(`source:${sourceId}`, 60_000, async () => {
-        const discovered = await adapter.discover({ marketScope, from, to, limit }, context);
+        const adapterReferences = await adapter.discover({ marketScope, from, to, limit }, context);
+        const discovered = sourceId === "christchurch_university_dates"
+          ? [LINCOLN_KEY_DATES_URL, ...adapterReferences]
+          : adapterReferences;
         counters.discovered = discovered.length;
         const uniqueReferences = [...new Set(discovered)];
         counters.duplicatesSkipped += discovered.length - uniqueReferences.length;
@@ -592,8 +581,6 @@ export class WorkerService {
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {
           const records = sourceId === "council_calendars"
-            && this.environment.ARGUS_API_BASE_URL
-            && this.environment.ARGUS_API_TOKEN
             ? await this.executeOurAucklandBrowserTask(
                 source.id,
                 run.id,
@@ -602,7 +589,9 @@ export class WorkerService {
                 options.dryRun === true,
                 options.jobId,
               )
-            : await adapter.fetch(reference, context);
+            : sourceId === "christchurch_university_dates" && reference === LINCOLN_KEY_DATES_URL
+              ? await this.executeLincolnKeyDatesBrowserTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+              : await adapter.fetch(reference, context);
           counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {
@@ -670,6 +659,7 @@ export class WorkerService {
       await this.syncCollectionIncidentSafely(run.id);
       return { runId: run.id, localAcceptance, dryRun: options.dryRun ?? false, ...result, counters };
     } catch (error) {
+      if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
       const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
@@ -776,6 +766,8 @@ export class WorkerService {
     analysisRequestId: string | undefined,
     scope: Prisma.InputJsonValue,
     startedAt: Date,
+    correlationId: string = randomUUID(),
+    isDemo = false,
   ) {
     if (jobId) {
       const running = await prisma.collectionRun.findFirst({
@@ -789,13 +781,13 @@ export class WorkerService {
         jobId,
         dataSourceId,
         analysisRequestId,
-        correlationId: randomUUID(),
+        correlationId,
         mode: "MARKET_COVERAGE",
         status: "RUNNING",
         scope,
         startedAt,
         attemptCount: 1,
-        isDemo: false,
+        isDemo,
       },
     });
   }
@@ -809,16 +801,13 @@ export class WorkerService {
       throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
     }
     if (!localAcceptance && source.operationalStatus !== "HEALTHY") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
-    const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
-    const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
-    if (!browserWorkerConfigured && !argusConfigured) throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for RBNZ collection", false);
     const now = new Date();
     const requestedFrom = options.from ?? new Date(now.getTime() - 86_400_000);
     const requestedTo = options.to ?? new Date(now.getTime() + 31 * 86_400_000);
     const from = requestedFrom;
     const to = localAcceptance ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
     if (to <= from) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "RBNZ B1 collection range must be positive", 422);
-    const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: Math.min(argusConfigured ? this.environment.ARGUS_TIMEOUT_MS : this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000), maxBytes: 2_000_000 } as const;
+    const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS, maxBytes: 2_000_000 } as const;
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("fx_rates");
     const initialScope = { localAcceptance, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
@@ -831,7 +820,7 @@ export class WorkerService {
         counters.pages = 1;
         counters.rawArtifacts = options.dryRun ? 0 : browserResult.evidence.length;
         if (!isRbnzFxExtraction(browserResult.extracted)) {
-          if (!options.dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
+          if (!options.dryRun) await this.markArgusEvidenceParserFailure(run.id, browserResult.traceId);
           throw new AdapterError("PARSING_ERROR", "RBNZ B1 extractor returned an invalid payload", false);
         }
         const signals = normaliseRbnzFxSignals(browserResult.extracted, limits.maxRecords);
@@ -873,9 +862,6 @@ export class WorkerService {
     if (localAcceptance && developmentBootstrap) throw new WorkerRequestError("INVALID_COLLECTION_MODE", "Choose either local acceptance or development bootstrap", 422);
     const guardedDevelopmentRun = localAcceptance || developmentBootstrap;
     this.assertTicketmasterSourceAllowed(source, localAcceptance, developmentBootstrap);
-    const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
-    const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
-    if (!browserWorkerConfigured && !argusConfigured) throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for Ticketmaster collection", false);
     const now = new Date();
     const requestedPhase = options.phase ?? "full";
     const metadata = jsonRecord(source.metadata);
@@ -891,8 +877,8 @@ export class WorkerService {
     const maxPages = circuit.halfOpen ? 1 : requestedMaxPages;
     const maxDetails = circuit.halfOpen ? 0 : requestedMaxDetails;
     const maxRecords = localAcceptance ? 2 : Math.min(options.limit ?? 5_000, 5_000);
-    const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails : 0);
-    const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: Math.min(argusConfigured ? this.environment.ARGUS_TIMEOUT_MS : this.environment.BROWSER_WORKER_TIMEOUT_MS, 60_000) } as const;
+    const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails * 2 : 0);
+    const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
     const governanceBefore = sourceGovernanceSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("ticketmaster");
     const initialScope = { localAcceptance, developmentBootstrap, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
@@ -911,19 +897,20 @@ export class WorkerService {
         let rateLimited = false;
         const discovered = new Map<string, { events: TicketmasterListingEvent[]; discoveredFrom: string[] }>();
         const dryRun = options.dryRun === true;
-        const capture = async (url: string) => {
-          if (usedToday + counters.requests >= this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET) throw new AdapterError("RATE_LIMITED", "Ticketmaster daily request budget has been reached", true);
+        const capture = async (url: string, entryUrl?: string) => {
+          const sourceRequests = entryUrl ? 2 : 1;
+          if (usedToday + counters.requests + sourceRequests > this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET) throw new AdapterError("RATE_LIMITED", "Ticketmaster daily request budget has been reached", true);
           if (lastRequestAt) {
             const delay = ticketmasterRequestDelayMs(this.environment.TICKETMASTER_MIN_DELAY_MS, this.environment.TICKETMASTER_DELAY_JITTER_MS);
             await wait(Math.max(0, delay - (Date.now() - lastRequestAt)));
           }
           lastRequestAt = Date.now();
-          counters.requests += 1;
-          const browserResult = await this.executeTicketmasterBrowserTask(source.id, run.id, url, dryRun, options.jobId);
+          counters.requests += sourceRequests;
+          const browserResult = await this.executeTicketmasterBrowserTask(source.id, run.id, url, dryRun, options.jobId, entryUrl);
           counters.rawArtifacts += dryRun ? 0 : browserResult.evidence.length;
           const extraction = browserResult.extracted;
           if (!isTicketmasterExtraction(extraction)) {
-            if (!dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
+            if (!dryRun) await this.markArgusEvidenceParserFailure(run.id, browserResult.traceId);
             throw new AdapterError("PARSING_ERROR", `Ticketmaster extractor returned an invalid payload for ${url}`, false);
           }
           return { ...browserResult, extracted: extraction };
@@ -1000,7 +987,7 @@ export class WorkerService {
             ? dryRun
               ? orderPersistedDetailTargets(
                   persistedUrls,
-                  [...discovered.entries()].map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events } })),
+                  [...discovered.entries()].map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events, discoveredFrom: listing.discoveredFrom } })),
                 )
               : orderPersistedDetailTargets(
                   persistedUrls,
@@ -1013,7 +1000,7 @@ export class WorkerService {
               ? [...discovered.entries()]
                   .filter(([, listing]) => !ticketmasterListingCoverage(listing.events).complete)
                   .slice(0, maxDetails)
-                  .map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events } }))
+                  .map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingEvents: listing.events, discoveredFrom: listing.discoveredFrom } }))
               : await prisma.sourceCrawlTarget.findMany({
                   where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, status: { in: ["PENDING", "FAILED", "RATE_LIMITED", "FETCHED"] }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
                   orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
@@ -1026,9 +1013,11 @@ export class WorkerService {
 
           for (const target of targets) {
             try {
-              const browserResult = await capture(target.url);
+              const entryUrl = jsonStringArray(jsonRecord(target.metadata).discoveredFrom)[0];
+              if (!entryUrl) throw new AdapterError("PARSING_ERROR", `Ticketmaster detail target has no discovery entry URL for ${target.url}`, false);
+              const browserResult = await capture(target.url, entryUrl);
               if (!isTicketmasterDetailExtraction(browserResult.extracted) || browserResult.extracted.events.length === 0) {
-                if (!dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
+                if (!dryRun) await this.markArgusEvidenceParserFailure(run.id, browserResult.traceId);
                 throw new AdapterError("PARSING_ERROR", `Ticketmaster detail returned no event for ${target.url}`, false);
               }
               const targetUrl = canonicalTicketmasterUrl(target.url);
@@ -1154,12 +1143,6 @@ export class WorkerService {
       if (cooldownUntil && !Number.isNaN(cooldownUntil.getTime()) && cooldownUntil > now) {
         throw new AdapterError("RATE_LIMITED", `Eventfinda collection is cooling down until ${cooldownUntil.toISOString()}`, true);
       }
-      const browserWorkerConfigured = Boolean(this.environment.BROWSER_WORKER_INTERNAL_URL && this.environment.BROWSER_WORKER_TOKEN);
-      const argusConfigured = Boolean(this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN);
-      if (!browserWorkerConfigured && !argusConfigured) {
-        throw new AdapterError("CONFIGURATION_ERROR", "Neither Argus nor Browser Worker is configured for Eventfinda collection", false);
-      }
-
       const result = await withRedisLock("source:eventfinda", 60 * 60_000, async () => {
         const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: startOfUtcDay(now) } } });
         let requests = 0;
@@ -1179,7 +1162,7 @@ export class WorkerService {
         let eventsPersisted = 0;
         let unchangedEventsSkipped = 0;
 
-        const capture = async (url: string): Promise<BrowserTaskResult> => {
+        const capture = async (url: string): Promise<ArgusBrowserTaskResult> => {
           for (let attempt = 1; attempt <= 3; attempt += 1) {
             try {
               if (usedToday + requests >= this.environment.EVENTFINDA_DAILY_REQUEST_BUDGET) {
@@ -1193,7 +1176,7 @@ export class WorkerService {
               requests += 1;
               const browserResult = await this.executeEventfindaBrowserTask(source.id, run.id, url, dryRun, options.jobId);
               if (!browserResult.extracted || typeof browserResult.extracted !== "object") {
-                if (!dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
+                if (!dryRun) await this.markArgusEvidenceParserFailure(run.id, browserResult.traceId);
                 throw new AdapterError("PARSING_ERROR", `Eventfinda extractor returned no data for ${url}`, false);
               }
               return browserResult;
@@ -1309,7 +1292,7 @@ export class WorkerService {
               const browserResult = await capture(target.url);
               const extraction = browserResult.extracted as EventfindaExtraction;
               if (extraction.kind !== "event_detail" || extraction.occurrences.length === 0) {
-                if (!dryRun) await this.markBrowserEvidenceParserFailure(run.id, browserResult.traceId);
+                if (!dryRun) await this.markArgusEvidenceParserFailure(run.id, browserResult.traceId);
                 throw new AdapterError("PARSING_ERROR", `Eventfinda detail returned no occurrences for ${target.url}`, false);
               }
               const listing = jsonRecord(jsonRecord(target.metadata).listing);
@@ -1398,36 +1381,7 @@ export class WorkerService {
   }
 
   private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
-    const connectorId = "eventfinda-public" as const;
-    const workflowId = /^\/whatson\/events\/new-zealand(?:\/page\/\d+)?\/?$/u.test(new URL(url).pathname)
-      ? "collect_listing" as const
-      : "collect_detail" as const;
-    const traceId = parentJobId
-      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
-      : `eventfinda-${randomUUID()}`;
-    let result: BrowserTaskResult;
-    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
-      const input = { traceId, url, connectorId, workflowId };
-      const response = parentJobId
-        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
-        : await captureBrowserTaskWithArgus(this.environment, input);
-      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
-      result = response.payload;
-    } else {
-      const response = await browserWorkerRequest(this.environment, {
-        taskType: "read_only_capture", traceId, url, allowedHosts: EVENTFINDA_ALLOWED_HOSTS, extractor: EVENTFINDA_EXTRACTOR, evidenceMode: "html", profileKey: "eventfinda-nz-public-v1",
-      });
-      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-      result = payload as BrowserTaskResult;
-    }
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
-    if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, EVENTFINDA_EXTRACTOR, url);
-    if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Eventfinda presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Eventfinda Browser Worker capture failed", result.error?.retryable ?? true);
-    return result;
+    return this.executeDirectHttpEventTask(dataSourceId, collectionRunId, url, dryRun, "eventfinda", extractEventfindaHttpPage);
   }
 
   private async executeOurAucklandBrowserTask(
@@ -1451,9 +1405,9 @@ export class WorkerService {
       if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
       const result = response.payload;
       if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
-        throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
+        throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
       }
-      if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, "ourauckland", targetUrl);
+      if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ourauckland", targetUrl);
       if (result.status === "manual_required") {
         throw new AdapterError("SOURCE_UNAVAILABLE", "OurAuckland presented an access challenge; collection stopped without bypassing it", true);
       }
@@ -1481,7 +1435,7 @@ export class WorkerService {
       const detailResult = await capture(sourceUrl, "collect_detail");
       const detail = jsonRecord(detailResult.extracted as Prisma.JsonValue);
       if (detail.kind !== "event_detail" || detail.id !== externalId) {
-        if (!dryRun) await this.markBrowserEvidenceParserFailure(collectionRunId, detailResult.traceId);
+        if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, detailResult.traceId);
         throw new AdapterError("PARSING_ERROR", `OurAuckland detail returned an invalid payload for ${sourceUrl}`, false);
       }
       records.push({
@@ -1503,35 +1457,112 @@ export class WorkerService {
     return records;
   }
 
-  private async executeTicketmasterBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
+  private async executeTicketmasterBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string, entryUrl?: string) {
+    if (!isTicketmasterDetailUrl(url)) {
+      return this.executeDirectHttpEventTask(dataSourceId, collectionRunId, url, dryRun, "ticketmaster", extractTicketmasterHttpPage);
+    }
     const connectorId = "ticketmaster-public" as const;
-    const workflowId = isTicketmasterDetailUrl(url) ? "collect_detail" as const : "collect_listing" as const;
+    const workflowId = "collect_detail" as const;
+    if (!entryUrl) throw new AdapterError("PARSING_ERROR", "Ticketmaster detail capture requires its discovery entry URL", false);
     const traceId = parentJobId
       ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
       : `ticketmaster-${randomUUID()}`;
-    let result: BrowserTaskResult;
-    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
-      const input = { traceId, url, connectorId, workflowId };
-      const response = parentJobId
-        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
-        : await captureBrowserTaskWithArgus(this.environment, input);
-      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
-      result = response.payload;
-    } else {
-      const response = await browserWorkerRequest(this.environment, {
-        taskType: "read_only_capture", traceId, url, allowedHosts: TICKETMASTER_ALLOWED_HOSTS, extractor: TICKETMASTER_EXTRACTOR, evidenceMode: "html", challengeSettleMs: isTicketmasterDetailUrl(url) ? 20_000 : 10_000, profileKey: "ticketmaster-nz-public-v1",
-      });
-      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-      result = payload as BrowserTaskResult;
-    }
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
-    if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, TICKETMASTER_EXTRACTOR, url);
+    const input = { traceId, url, entryUrl, connectorId, workflowId };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ticketmaster", url);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Ticketmaster presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Browser Worker capture failed", result.error?.retryable ?? true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Argus capture failed", result.error?.retryable ?? true);
     return result;
+  }
+
+  private async executeDirectHttpEventTask(
+    dataSourceId: string,
+    collectionRunId: string,
+    url: string,
+    dryRun: boolean,
+    extractor: "eventfinda" | "ticketmaster",
+    parse: (input: { html: string; title: string; finalUrl: string }) => unknown,
+  ): Promise<ArgusBrowserTaskResult> {
+    const traceId = `http-${extractor}-${randomUUID()}`;
+    const loaded = await this.loadDirectEventPage(extractor, url);
+    const html = loaded.html;
+    const finalUrl = loaded.finalUrl ?? url;
+    if (Buffer.byteLength(html) > 5_000_000) throw new AdapterError("PARSING_ERROR", `${extractor} response exceeds the 5 MB limit`, false);
+    let extracted: unknown;
+    try {
+      extracted = parse({ html, title: html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, " ").trim() ?? "", finalUrl });
+    } catch (error) {
+      if (!dryRun) await this.persistDirectHttpEvidence(dataSourceId, collectionRunId, traceId, extractor, url, finalUrl, html, true);
+      throw new AdapterError("PARSING_ERROR", `${extractor} parser failed: ${error instanceof Error ? error.message : "unknown error"}`, false);
+    }
+    if (!dryRun) await this.persistDirectHttpEvidence(dataSourceId, collectionRunId, traceId, extractor, url, finalUrl, html, false);
+    return {
+      ok: true,
+      status: "success",
+      traceId,
+      taskType: "read_only_capture",
+      page: { title: "", finalUrl, htmlBytes: Buffer.byteLength(html), screenshotBytes: 0 },
+      evidence: [],
+      error: null,
+      manualRequired: null,
+      readonlyOnly: true,
+      externalSideEffectsPerformed: false,
+      extracted,
+    };
+  }
+
+  private async loadDirectEventPage(source: "eventfinda" | "ticketmaster", url: string) {
+    if (this.directEventPageLoader) return this.directEventPageLoader({ source, url });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        redirect: "follow",
+        headers: { accept: "text/html,application/xhtml+xml", "accept-language": "en-NZ,en;q=0.9", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      throw new AdapterError(error instanceof DOMException && error.name === "TimeoutError" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", `${source} HTTP request failed: ${error instanceof Error ? error.message : "unknown error"}`, true);
+    }
+    if (response.status === 429) throw new AdapterError("RATE_LIMITED", `${source} returned HTTP 429`, true);
+    if (!response.ok) throw new AdapterError(response.status >= 500 ? "SOURCE_UNAVAILABLE" : "PARSING_ERROR", `${source} returned HTTP ${response.status}`, response.status >= 500);
+    const length = Number(response.headers.get("content-length") ?? 0);
+    if (length > 5_000_000) throw new AdapterError("PARSING_ERROR", `${source} response exceeds the 5 MB limit`, false);
+    return { html: await response.text(), finalUrl: response.url };
+  }
+
+  private async persistDirectHttpEvidence(
+    dataSourceId: string,
+    collectionRunId: string,
+    traceId: string,
+    extractor: string,
+    requestedUrl: string,
+    finalUrl: string,
+    html: string,
+    parserFailure: boolean,
+  ) {
+    const id = stableId("http-evidence", `${collectionRunId}:${requestedUrl}`);
+    await prisma.rawArtifact.upsert({
+      where: { id },
+      create: {
+        id,
+        collectionRunId,
+        dataSourceId,
+        artifactType: "HTML",
+        storageRef: `postgres:RawArtifact:${id}`,
+        contentHash: stableHash(html),
+        payload: { traceId, extractor, requestedUrl, finalUrl, html } as Prisma.InputJsonValue,
+        containsSensitiveData: false,
+        parserFailure,
+        expiresAt: new Date(Date.now() + (parserFailure ? this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS : this.environment.RAW_ARTIFACT_TTL_HOURS) * 3_600_000),
+      },
+      update: {},
+    });
   }
 
   private async executeRbnzFxBrowserTask(dataSourceId: string, collectionRunId: string, dryRun: boolean, parentJobId?: string) {
@@ -1540,40 +1571,83 @@ export class WorkerService {
     const traceId = parentJobId
       ? durableArgusTraceId(parentJobId, connectorId, workflowId, RBNZ_FX_URL)
       : `rbnz-fx-${randomUUID()}`;
-    let result: BrowserTaskResult;
-    if (this.environment.ARGUS_API_BASE_URL && this.environment.ARGUS_API_TOKEN) {
-      const input = { traceId, url: RBNZ_FX_URL, connectorId, workflowId };
-      const response = parentJobId
-        ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
-        : await captureBrowserTaskWithArgus(this.environment, input);
-      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
-      result = response.payload;
-    } else {
-      const response = await browserWorkerRequest(this.environment, {
-        taskType: "read_only_capture", traceId, url: RBNZ_FX_URL, allowedHosts: RBNZ_FX_ALLOWED_HOSTS, extractor: RBNZ_FX_EXTRACTOR, evidenceMode: "html", profileKey: "rbnz-nz-public-v1",
-      });
-      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-      if (response.status === 429) throw new AdapterError("RATE_LIMITED", "Browser Worker concurrency limit was reached", true);
-      if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", "message" in payload && payload.message ? payload.message : `Browser Worker returned HTTP ${response.status}`, response.status >= 500);
-      result = payload as BrowserTaskResult;
-    }
-    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Browser capture violated the read-only result contract", false);
-    if (!dryRun) await this.persistBrowserEvidence(dataSourceId, collectionRunId, result, RBNZ_FX_EXTRACTOR, RBNZ_FX_URL);
+    const input = { traceId, url: RBNZ_FX_URL, connectorId, workflowId };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "rbnz-fx", RBNZ_FX_URL);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "RBNZ presented an access challenge; collection stopped without bypassing it", true);
-    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Browser Worker capture failed", result.error?.retryable ?? true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Argus capture failed", result.error?.retryable ?? true);
     return result;
   }
 
-  private async persistBrowserEvidence(dataSourceId: string, collectionRunId: string, result: BrowserTaskResult, extractor = "neutral", requestedUrl?: string) {
+  private async executeLincolnKeyDatesBrowserTask(
+    dataSourceId: string,
+    collectionRunId: string,
+    url: string,
+    context: AdapterContext,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    const connectorId = "lincoln-university-key-dates" as const;
+    const workflowId = "collect_key_dates" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `lincoln-key-dates-${randomUUID()}`;
+    const input = { traceId, url, connectorId, workflowId };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "lincoln-university-key-dates", url);
+    if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Lincoln University presented an access challenge; collection stopped without bypassing it", true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Lincoln University Argus capture failed", result.error?.retryable ?? true);
+    const parsed = lincolnKeyDatesExtractionSchema.safeParse(result.extracted);
+    if (!parsed.success) {
+      if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, result.traceId);
+      throw new AdapterError("PARSING_ERROR", `Lincoln University extractor returned an invalid payload: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+    }
+    const range = context.collectionRange ?? { from: new Date(0), to: new Date(8_640_000_000_000_000) };
+    const signals = normaliseLincolnKeyDateSignals(parsed.data, range, context.collectionLimits?.maxRecords);
+    return signals.map((signal, index) => ({
+      sourceId: "christchurch_university_dates",
+      externalId: signal.externalId,
+      payload: {
+        kind: "signal",
+        value: signal,
+        sourceUrl: url,
+        connectorData: {
+          data_schema: parsed.data.data_schema,
+          schema_version: parsed.data.schema_version,
+          institution: parsed.data.institution,
+          academicYear: parsed.data.academicYear,
+          canonicalUrl: parsed.data.canonicalUrl,
+          quality: parsed.data.quality,
+          keyDate: parsed.data.keyDates.find((keyDate) => keyDate.id === signal.externalId),
+        },
+      },
+      fetchedAt: new Date(),
+      fixture: false,
+      networkRequestCount: index === 0 ? 1 : 0,
+    }));
+  }
+
+  private async persistArgusEvidence(dataSourceId: string, collectionRunId: string, result: ArgusBrowserTaskResult, extractor: string, requestedUrl: string) {
     const ttlHours = eventfindaEvidenceTtlHours(
       result.status,
       this.environment.RAW_ARTIFACT_TTL_HOURS,
       this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS,
     );
     for (const artifact of result.evidence) {
-      const storageRef = artifact.storageRef ?? `browser-evidence:${artifact.relativePath}`;
-      const id = stableId("browser-evidence", `${collectionRunId}:${storageRef}`);
+      const storageRef = artifact.storageRef;
+      const id = stableId("argus-evidence", `${collectionRunId}:${storageRef}`);
       await prisma.rawArtifact.upsert({
         where: { id },
         create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure: result.status !== "success", expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
@@ -1582,124 +1656,21 @@ export class WorkerService {
     }
   }
 
-  private async markBrowserEvidenceParserFailure(collectionRunId: string, traceId: string) {
+  private async markArgusEvidenceParserFailure(collectionRunId: string, traceId: string) {
     await prisma.rawArtifact.updateMany({
       where: {
         collectionRunId,
         OR: [
-          { storageRef: { startsWith: `browser-evidence:${traceId}/` } },
           { storageRef: { startsWith: `argus-evidence:results/argus/${traceId}/` } },
+          { storageRef: { startsWith: `tymra-evidence:${traceId}/` } },
         ],
       },
       data: { parserFailure: true, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS * 3_600_000) },
     });
-    if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) return;
-    try {
-      await fetch(new URL("/internal/browser-evidence/parser-failure", this.environment.BROWSER_WORKER_INTERNAL_URL!), {
-        method: "POST",
-        headers: { authorization: `Bearer ${this.environment.BROWSER_WORKER_TOKEN}`, "content-type": "application/json" },
-        body: JSON.stringify({ traceId }),
-        signal: AbortSignal.timeout(5_000),
-      });
-    } catch {}
   }
 
-  async browserHealth() {
-    if (!this.environment.BROWSER_WORKER_INTERNAL_URL) {
-      return { healthy: false, mode: "unconfigured", message: "Browser worker URL is not configured" };
-    }
-    const startedAt = Date.now();
-    try {
-      const response = await fetch(new URL("/internal/health", this.environment.BROWSER_WORKER_INTERNAL_URL), {
-        signal: AbortSignal.timeout(Math.min(this.environment.BROWSER_WORKER_TIMEOUT_MS, 5_000)),
-      });
-      if (!response.ok) throw new Error(`Browser worker health returned HTTP ${response.status}`);
-      return { healthy: true, mode: "ulixee", latencyMs: Date.now() - startedAt, ...(await response.json() as Record<string, unknown>) };
-    } catch (error) {
-      return { healthy: false, mode: "ulixee", latencyMs: Date.now() - startedAt, message: error instanceof Error ? error.message : "Browser worker health failed" };
-    }
-  }
-
-  async captureBrowserPage(sourceKey: string, url: string, options: { dryRun?: boolean } = {}) {
-    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
-    const allowedHosts = jsonStringArray(source.supportedDomains);
-    if (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage) {
-      throw new WorkerRequestError("RIGHTS_BLOCKED", `${source.name} is not approved for browser evidence collection`, 403);
-    }
-    if (source.operationalStatus !== "HEALTHY") throw new WorkerRequestError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, 503);
-    if (!allowedHosts.length) throw new WorkerRequestError("SOURCE_DOMAIN_MISSING", `${source.name} has no approved browser domains`, 422);
-    if (source.dailyBudget > 0) {
-      const usedToday = await prisma.collectionRun.count({ where: { dataSourceId: source.id, createdAt: { gte: startOfUtcDay(new Date()) }, status: { not: "CANCELLED" } } });
-      if (usedToday >= source.dailyBudget) throw new WorkerRequestError("SOURCE_DAILY_BUDGET_EXCEEDED", `${source.name} reached its daily browser collection budget`, 429);
-    }
-    if (!this.environment.BROWSER_WORKER_INTERNAL_URL || !this.environment.BROWSER_WORKER_TOKEN) {
-      throw new WorkerRequestError("BROWSER_WORKER_UNCONFIGURED", "Browser worker is not configured", 503);
-    }
-
-    const traceId = `capture-${randomUUID()}`;
-    const run = await prisma.collectionRun.create({
-      data: {
-        dataSourceId: source.id,
-        mode: "ON_DEMAND",
-        status: "RUNNING",
-        scope: { sourceKey, url: redactUrlForStorage(url), taskType: "read_only_capture", dryRun: options.dryRun === true },
-        startedAt: new Date(),
-        attemptCount: 1,
-        correlationId: traceId,
-        isDemo: source.isDemo,
-      },
-    });
-
-    try {
-      const response = await fetch(new URL("/internal/browser-tasks", this.environment.BROWSER_WORKER_INTERNAL_URL), {
-        method: "POST",
-        headers: { authorization: `Bearer ${this.environment.BROWSER_WORKER_TOKEN}`, "content-type": "application/json" },
-        body: JSON.stringify({ taskType: "read_only_capture", traceId, url, allowedHosts, profileKey: browserProfileKey(sourceKey) }),
-        signal: AbortSignal.timeout(this.environment.BROWSER_WORKER_TIMEOUT_MS + 15_000),
-      });
-      const payload = await response.json() as BrowserTaskResult | { error?: string; message?: string };
-      if (!response.ok) throw new WorkerRequestError("BROWSER_TASK_REJECTED", "message" in payload && payload.message ? payload.message : `Browser worker returned HTTP ${response.status}`, response.status);
-      const result = payload as BrowserTaskResult;
-      if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new Error("Browser worker violated the read-only result contract");
-      if (!options.dryRun) {
-        for (const artifact of result.evidence) {
-          await prisma.rawArtifact.create({
-            data: {
-              collectionRunId: run.id,
-              dataSourceId: source.id,
-              artifactType: artifact.kind.toUpperCase(),
-              storageRef: `browser-evidence:${artifact.relativePath}`,
-              contentHash: artifact.sha256,
-              payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page } as Prisma.InputJsonValue,
-              containsSensitiveData: artifact.containsSensitiveData,
-              parserFailure: result.status !== "success",
-              expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_TTL_HOURS * 3_600_000),
-            },
-          });
-        }
-      }
-      const succeeded = result.status === "success";
-      await prisma.collectionRun.update({
-        where: { id: run.id },
-        data: {
-          status: succeeded ? "SUCCEEDED" : result.status === "manual_required" ? "PARTIAL" : "FAILED",
-          successCount: succeeded ? 1 : 0,
-          failureCount: succeeded ? 0 : 1,
-          errorCode: succeeded ? null : result.status === "manual_required" ? "MANUAL_REQUIRED" : result.error?.category ?? "BROWSER_CAPTURE_FAILED",
-          errorSummary: succeeded ? null : result.manualRequired?.reason ?? result.error?.message?.slice(0, 1_000) ?? "Browser capture failed",
-          finishedAt: new Date(),
-        },
-      });
-      await this.syncCollectionIncidentSafely(run.id);
-      return { runId: run.id, dryRun: options.dryRun === true, ...result };
-    } catch (error) {
-      await prisma.collectionRun.update({
-        where: { id: run.id },
-        data: { status: "FAILED", failureCount: 1, errorCode: error instanceof WorkerRequestError ? error.code : "BROWSER_CAPTURE_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown browser capture failure", finishedAt: new Date() },
-      });
-      await this.syncCollectionIncidentSafely(run.id);
-      throw error;
-    }
+  async argusHealth() {
+    return getArgusHealth(this.environment);
   }
 
   private async syncCollectionIncidentSafely(collectionRunId: string) {
@@ -1829,7 +1800,7 @@ export class WorkerService {
   }
 
   async health() {
-    const [database, redis, queueDepth, failedJobs, sources, jobMetrics, cacheMetrics, emailMetrics, coverage, browser] = await Promise.all([
+    const [database, redis, queueDepth, failedJobs, sources, jobMetrics, cacheMetrics, emailMetrics, coverage, argus] = await Promise.all([
       prisma.$queryRaw<Array<{ ok: number }>>`SELECT 1 AS ok`.then(() => ({ healthy: true, message: "connected" })).catch((error: unknown) => ({ healthy: false, message: error instanceof Error ? error.message : "database failed" })),
       redisHealth(this.environment.REDIS_URL),
       prisma.job.count({ where: { status: "PENDING" } }),
@@ -1839,14 +1810,14 @@ export class WorkerService {
       prisma.workerAnalysisRequest.groupBy({ by: ["cacheHitType"], _count: { _all: true } }),
       prisma.emailDelivery.groupBy({ by: ["status"], _count: { _all: true } }),
       prisma.marketCoverage.findMany({ select: { key: true, coverage24h: true, coverage72h: true, competitorCoverage: true, collectionSuccessRate: true, sourceFailureRate: true } }),
-      this.browserHealth(),
+      this.argusHealth(),
     ]);
     return {
       process: { healthy: true, pid: process.pid, uptimeSeconds: process.uptime() },
       database,
       redis,
       queue: { healthy: database.healthy, depth: queueDepth, failed: failedJobs },
-      browser,
+      argus,
       sources,
       scheduler: { healthy: true, enabled: this.environment.SCHEDULER_ENABLED },
       retention: { healthy: true, rawArtifactTtlHours: this.environment.RAW_ARTIFACT_TTL_HOURS },
@@ -2333,29 +2304,6 @@ function uniqueByExternalId<T extends { externalId: string }>(items: T[], counte
     else unique.set(item.externalId, item);
   }
   return [...unique.values()];
-}
-
-async function browserWorkerRequest(
-  environment: Environment,
-  body: { taskType: "read_only_capture"; traceId: string; url: string; allowedHosts: readonly string[]; extractor: string; evidenceMode: "html"; challengeSettleMs?: number; profileKey?: string },
-) {
-  try {
-    return await fetch(new URL("/internal/browser-tasks", environment.BROWSER_WORKER_INTERNAL_URL!), {
-      method: "POST",
-      headers: { authorization: `Bearer ${environment.BROWSER_WORKER_TOKEN}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(environment.BROWSER_WORKER_TIMEOUT_MS + 15_000),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const timeout = error instanceof DOMException && error.name === "TimeoutError" || /timed? ?out|timeout|aborted/i.test(message);
-    throw new AdapterError(timeout ? "TIMEOUT" : "SOURCE_UNAVAILABLE", `Browser Worker request failed for ${body.url}: ${message}`, true);
-  }
-}
-
-function browserProfileKey(sourceKey: string) {
-  const normalised = sourceKey.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 53);
-  return `${normalised || "source"}-public-v1`;
 }
 
 function sourceGovernanceSnapshot(source: {

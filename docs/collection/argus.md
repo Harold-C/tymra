@@ -1,10 +1,10 @@
 # Argus browser collection boundary
 
-Last updated: 2026-08-01
+Last updated: 2026-08-03
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
-Job API for Ticketmaster, Eventfinda and RBNZ B1; stable JSON, CSV, RSS, GeoJSON and ordinary HTTP
-sources continue to run directly in Tymra.
+Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, and future Ticketek NZ;
+stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
 
 ## Responsibility split
 
@@ -17,19 +17,20 @@ sources continue to run directly in Tymra.
   the result and wakes the parent collection Job.
 - The parent resumes the same `CollectionRun`. A stable trace ID prevents duplicate Argus submission,
   and evidence upserts prevent duplicate artifacts when earlier collection steps are replayed.
-- After the parent has persisted its business records and completed the `CollectionRun`, Tymra submits
-  the exact `result_sha256` returned by Argus to `POST /v1/jobs/{jobId}/ack`. Argus may then purge its
-  copy immediately. ACK is idempotent; an ACK failure retries the parent without acknowledging before
-  persistence.
-- `ticketmaster-public` supports listing and detail capture.
-- `eventfinda-public` supports nationwide listing pages and event details.
+- After the parent has persisted its business records and completed the `CollectionRun`, Tymra downloads
+  every referenced HTML/screenshot through Argus's authenticated evidence API. It verifies the response
+  byte count, pointer SHA-256 and `X-Argus-Content-Sha256`, writes the file atomically to the Tymra evidence
+  volume, and changes the artifact reference to `tymra-evidence:`. Only then does it submit the exact
+  `result_sha256` to `POST /v1/jobs/{jobId}/ack`. A copy, integrity or database update failure prevents ACK.
+- `ticketmaster-public` supports selectively required detail capture; listings are direct HTTP in Tymra.
+- Eventfinda listing and detail collection are direct HTTP in Tymra; its legacy connector is outside the current responsibility boundary.
 - `rbnz-fx` supports the fixed RBNZ B1 exchange-rate page.
 - For successful and partial results, Tymra selects the source normalizer only when `data_schema` and
   `schema_version` exactly match the submitted Connector/workflow. Unknown versions, missing markers
   and another Connector's payload fail closed as an upstream contract error before business data is
   persisted.
-- When Argus is not configured, these three sources retain the existing private Browser Worker path
-  for development compatibility.
+- Argus is required in development and production. Tymra has no in-process or private Browser Worker
+  fallback.
 
 ## Local configuration
 
@@ -40,10 +41,12 @@ ARGUS_API_BASE_URL=https://api.argus.test
 ARGUS_API_TOKEN=<the same independent random token configured in Argus>
 ARGUS_TIMEOUT_MS=60000
 ARGUS_JOB_POLL_TIMEOUT_MS=180000
+ARGUS_EVIDENCE_ROOT=./data/argus-evidence
 MKCERT_ROOT_CA_PATH=<the rootCA.pem below `mkcert -CAROOT`>
 ```
 
-The token must contain at least 32 characters. Do not reuse `CRON_SECRET`, `BROWSER_WORKER_TOKEN` or another application secret outside a temporary local acceptance run.
+The token must contain at least 32 characters and include the Argus Job and `evidence:read` scopes.
+Do not reuse `CRON_SECRET` or another application secret.
 `ARGUS_TIMEOUT_MS` is the deadline for one browser capture. `ARGUS_JOB_POLL_TIMEOUT_MS` separately
 covers queueing plus execution and must be greater than the capture deadline.
 
@@ -126,7 +129,7 @@ batches and cancellation settlement:
 
 - Dry-run Job `cms635pas0000qw88e4763e75` completed with one Argus listing execution, 20 discoveries,
   zero persisted targets/events and zero `RawArtifact` rows.
-- Full Eventfinda Job `cms636ii30000qwcr2en9lh12` completed with exactly three Argus executions:
+- Historical pre-cutover Eventfinda Job `cms636ii30000qwcr2en9lh12` completed with exactly three Argus executions:
   one listing and the two detail URLs persisted in `CollectionRun.scope.argusProgress`. Repeated parent
   resumes did not select another detail batch; the final scope reported `requests=3` and
   `detailsFetched=2`.

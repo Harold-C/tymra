@@ -252,7 +252,7 @@ describe("Worker baseline pipeline", () => {
     expect(await prisma.rawArtifact.findUnique({ where: { id: artifact.id } })).toMatchObject({ storageRef: "DELETED", payload: null });
   });
 
-  it("idempotently persists bounded Ticketmaster browser events without changing governance", async () => {
+  it("idempotently persists direct Ticketmaster listings and Argus details without changing governance", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "ticketmaster" } });
     const externalId = `tm-${prefix.replace(/[^a-z0-9]/gi, "").slice(-12)}`;
     const sourceUrl = `https://www.ticketmaster.co.nz/integration-auckland-16-08-2026/event/${externalId}`;
@@ -260,28 +260,34 @@ describe("Worker baseline pipeline", () => {
     let listingComplete = true;
     let eventStatus = "EventScheduled";
     const requestedUrls: string[] = [];
-    const browserServer = createServer(async (request, response) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { traceId: string; extractor: string; url: string; profileKey: string };
-      requestedUrls.push(body.url);
-      expect(body.profileKey).toBe("ticketmaster-nz-public-v1");
-      const artifact = (kind: string) => ({ kind, traceId: body.traceId, relativePath: `${body.traceId}/${kind}.json`, sha256: "b".repeat(64), sizeBytes: 100, containsSensitiveData: false });
-      const listing = body.url.includes("/discover/");
-      const common = { traceId: body.traceId, taskType: "read_only_capture", readonlyOnly: true, externalSideEffectsPerformed: false, evidence: [artifact("html"), artifact("manifest_json")], page: { title: listing ? "Auckland Events" : "Integration Stadium Event", finalUrl: body.url, htmlBytes: 100, screenshotBytes: 0 } };
-      const payload = challenge
-        ? { ...common, ok: false, status: "manual_required", extracted: null, manualRequired: { reason: "access_challenge_detected" } }
-        : { ...common, ok: true, status: "success", extracted: { extractor: "ticketmaster", kind: listing ? "listing" : "event_detail", title: listing ? "Auckland Events" : "Integration Stadium Event", canonicalUrl: body.url, events: [{ eventId: externalId, title: "Integration Stadium Event", sourceUrl, description: listing ? undefined : "Full Ticketmaster detail metadata", category: "SportsEvent", startsAt: "2026-08-16T19:30:00", endsAt: "2026-08-16T22:30:00", eventStatus: listing && !listingComplete ? undefined : eventStatus, venue: listing && !listingComplete ? undefined : { name: "Integration Stadium", address: { streetAddress: "1 Test Street", addressLocality: "Auckland", addressRegion: "NZ", postalCode: "1010", addressCountry: "NZ" }, latitude: -36.8485, longitude: 174.7633 }, offers: [{ availability: "InStock", url: sourceUrl }], performers: listing ? [] : [{ name: "Integration Performer", type: "Person", url: sourceUrl }], imageUrls: listing ? [] : ["https://s1.ticketm.net/test.jpg"] }] } };
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(payload));
+    const argusServer = createArgusServer((capture) => {
+      requestedUrls.push(capture.url);
+      const listing = capture.workflow_id === "collect_listing";
+      if (!listing) expect(capture.entry_url).toBe("https://www.ticketmaster.co.nz/discover/auckland");
+      if (challenge) return argusChallenge(capture, listing ? "Auckland Events" : "Integration Stadium Event", "b");
+      const venue = listing && !listingComplete ? undefined : { name: "Integration Stadium", address: { streetAddress: "1 Test Street", addressLocality: "Auckland", addressRegion: "NZ", postalCode: "1010", addressCountry: "NZ" }, latitude: -36.8485, longitude: 174.7633 };
+      const event = { eventId: externalId, title: "Integration Stadium Event", sourceUrl, description: listing ? undefined : "Full Ticketmaster detail metadata", category: "SportsEvent", startsAt: "2026-08-16T19:30:00", endsAt: "2026-08-16T22:30:00", eventStatus: listing && !listingComplete ? undefined : eventStatus, venue, offers: listing ? [{ availability: "InStock", url: sourceUrl }] : { availability: "InStock", url: sourceUrl }, performers: listing ? [] : ["Integration Performer"], imageUrls: listing ? [] : ["https://s1.ticketm.net/test.jpg"] };
+      const data = listing
+        ? { data_schema: "ticketmaster-public.collect_listing", schema_version: "1.0.0", extractor: "ticketmaster", kind: "listing", title: "Auckland Events", canonicalUrl: capture.url, events: [event] }
+        : { data_schema: "ticketmaster-public.collect_detail", schema_version: "1.0.0", extractor: "ticketmaster", kind: "detail", canonicalUrl: capture.url, event };
+      return argusSuccess(capture, data, listing ? "Auckland Events" : "Integration Stadium Event", "b");
     });
-    await new Promise<void>((resolve) => browserServer.listen(0, "127.0.0.1", resolve));
-    const address = browserServer.address();
-    if (!address || typeof address === "string") throw new Error("Ticketmaster browser server did not bind");
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Ticketmaster Argus server did not bind");
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const existingTicketmasterHtml = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: today } } });
-    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, BROWSER_WORKER_INTERNAL_URL: `http://127.0.0.1:${address.port}`, BROWSER_WORKER_TOKEN: "integration-browser-token-with-thirty-two-characters", TICKETMASTER_MIN_DELAY_MS: 0, TICKETMASTER_DELAY_JITTER_MS: 0, TICKETMASTER_DAILY_REQUEST_BUDGET: existingTicketmasterHtml + 20, TICKETMASTER_DISCOVERY_MAX_PAGES: 1, TICKETMASTER_DETAIL_BATCH_SIZE: 1, RAW_ARTIFACT_TTL_HOURS: 72, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 });
+    const acceptanceService = new WorkerService(
+      { ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters", TICKETMASTER_MIN_DELAY_MS: 0, TICKETMASTER_DELAY_JITTER_MS: 0, TICKETMASTER_DAILY_REQUEST_BUDGET: existingTicketmasterHtml + 20, TICKETMASTER_DISCOVERY_MAX_PAGES: 1, TICKETMASTER_DETAIL_BATCH_SIZE: 1, RAW_ARTIFACT_TTL_HOURS: 72, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 },
+      undefined,
+      async ({ url }) => {
+        requestedUrls.push(url);
+        const venue = listingComplete ? { "@type": "Place", name: "Integration Stadium", address: { "@type": "PostalAddress", streetAddress: "1 Test Street", addressLocality: "Auckland", addressRegion: "NZ", postalCode: "1010", addressCountry: "NZ" }, geo: { "@type": "GeoCoordinates", latitude: -36.8485, longitude: 174.7633 } } : undefined;
+        const event = { "@type": "SportsEvent", name: "Integration Stadium Event", url: sourceUrl, startDate: "2026-08-16T19:30:00", endDate: "2026-08-16T22:30:00", ...(listingComplete ? { eventStatus, location: venue } : {}) };
+        return { html: `<title>Auckland Events</title><script type="application/ld+json">${JSON.stringify(event)}</script>`, finalUrl: url };
+      },
+    );
     const runIds: string[] = [];
     const acceptanceMetadata = { ...(source.metadata as Prisma.JsonObject) };
     delete acceptanceMetadata.ticketmasterCooldownUntil;
@@ -314,7 +320,7 @@ describe("Worker baseline pipeline", () => {
       });
       expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ active: true, status: "LISTING_COMPLETE", nextFetchAt: null, consecutiveFailures: 0, lastErrorCode: null });
       const successArtifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: second.runId } });
-      expect(successArtifacts).toHaveLength(2);
+      expect(successArtifacts).toHaveLength(1);
       expect(successArtifacts.every((artifact) => !artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 71 * 3_600_000)).toBe(true);
       const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
       expect(secondRun.scope).toMatchObject({ localAcceptance: true, governanceUnchanged: true, schedulesUnchanged: true, limits: { maxRequests: 1, maxPages: 1, maxDetails: 1, maxRecords: 2, maxWindowDays: 31 } });
@@ -368,7 +374,7 @@ describe("Worker baseline pipeline", () => {
       expect(recoveredSource.metadata).toMatchObject({ ticketmasterChallengeCount: 0, ticketmasterCircuitState: "CLOSED" });
       expect(recoveredSource.metadata).not.toHaveProperty("ticketmasterCooldownUntil");
     } finally {
-      await new Promise<void>((resolve, reject) => browserServer.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       const canonicalEventIds = sourceEvents.flatMap((item) => item.canonicalLinks.map((link) => link.canonicalEventId));
       const eventOccurrenceIds = sourceEvents.flatMap((item) => item.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)));
@@ -386,25 +392,11 @@ describe("Worker baseline pipeline", () => {
     }
   });
 
-  it("idempotently persists bounded RBNZ values and browser evidence", async () => {
+  it("idempotently persists bounded RBNZ values and Argus evidence", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "fx_rates" } });
-    const browserServer = createServer(async (request, response) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { traceId: string; extractor: string };
-      expect(body.extractor).toBe("rbnz_fx");
-      const artifact = (kind: string) => ({ kind, traceId: body.traceId, relativePath: `${body.traceId}/${kind}.json`, sha256: "c".repeat(64), sizeBytes: 100, containsSensitiveData: false });
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        ok: true,
-        status: "success",
-        traceId: body.traceId,
-        taskType: "read_only_capture",
-        readonlyOnly: true,
-        externalSideEffectsPerformed: false,
-        evidence: [artifact("html"), artifact("manifest_json")],
-        page: { title: "Exchange rates and TWI", finalUrl: "https://www.rbnz.govt.nz/statistics/series/exchange-and-interest-rates/exchange-rates-and-the-trade-weighted-index", htmlBytes: 100, screenshotBytes: 0 },
-        extracted: {
+    const argusServer = createArgusServer((capture) => argusSuccess(capture, {
+          data_schema: "rbnz-fx.collect_exchange_rates",
+          schema_version: "1.0.0",
           extractor: "rbnz_fx",
           kind: "exchange_rates",
           title: "Exchange rates and TWI",
@@ -418,13 +410,11 @@ describe("Worker baseline pipeline", () => {
             { series: "USD", label: "United States dollar", value: 0.58435, previousValue: 0.58375 },
             { series: "EUR", label: "European euro", value: 0.51095, previousValue: 0.5103 },
           ],
-        },
-      }));
-    });
-    await new Promise<void>((resolve) => browserServer.listen(0, "127.0.0.1", resolve));
-    const address = browserServer.address();
-    if (!address || typeof address === "string") throw new Error("RBNZ browser server did not bind");
-    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, BROWSER_WORKER_INTERNAL_URL: `http://127.0.0.1:${address.port}`, BROWSER_WORKER_TOKEN: "integration-browser-token-with-thirty-two-characters" });
+        }, "Exchange rates and TWI", "c"));
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("RBNZ Argus server did not bind");
+    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters" });
     const runIds: string[] = [];
     let canonicalIds: string[] = [];
     try {
@@ -442,7 +432,7 @@ describe("Worker baseline pipeline", () => {
       const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
       expect(secondRun.scope).toMatchObject({ localAcceptance: true, governanceUnchanged: true, schedulesUnchanged: true, effective: { limit: 2 }, limits: { maxRequests: 1, maxPages: 1, maxRecords: 2, maxWindowDays: 31 } });
     } finally {
-      await new Promise<void>((resolve, reject) => browserServer.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
       await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: "rbnz-b1:2026-07-20:" } } });
       await prisma.marketSignal.deleteMany({ where: { id: { in: canonicalIds } } });
       await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });
@@ -521,7 +511,7 @@ describe("Worker baseline pipeline", () => {
     }
   });
 
-  it("persists a bounded Eventfinda discovery twice through the browser collection path", async () => {
+  it("persists bounded Eventfinda discovery and details through direct HTTP", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
     const suffix = prefix.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase();
     const eventId = `acceptance-${suffix}`;
@@ -530,26 +520,16 @@ describe("Worker baseline pipeline", () => {
     const protectedUrl = `https://www.eventfinda.co.nz/2026/nationwide-${suffix}/auckland`;
     let challenge = false;
     let listingTotalPages = 1;
-    const browserServer = createServer(async (request, response) => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { traceId: string; url: string };
-      const artifact = (kind: string) => ({ kind, traceId: body.traceId, relativePath: `${body.traceId}/${kind}.json`, sha256: "a".repeat(64), sizeBytes: 100, containsSensitiveData: false });
-      const common = { traceId: body.traceId, taskType: "read_only_capture", readonlyOnly: true, externalSideEffectsPerformed: false };
-      let payload: Record<string, unknown>;
-      if (challenge) {
-        payload = { ...common, ok: false, status: "manual_required", page: { title: "Security check", finalUrl: body.url, htmlBytes: 100, screenshotBytes: 0 }, extracted: null, evidence: [artifact("html"), artifact("manifest_json")], manualRequired: { reason: "access_challenge_detected" } };
-      } else if (body.url.includes("/whatson/events/new-zealand")) {
-        payload = { ...common, ok: true, status: "success", page: { title: "Events", finalUrl: body.url, htmlBytes: 100, screenshotBytes: 0 }, evidence: [artifact("html"), artifact("manifest_json")], extracted: { extractor: "eventfinda", kind: "listing", title: "Events", canonicalUrl: body.url, currentPage: 1, totalPages: listingTotalPages, nextUrl: listingTotalPages > 1 ? `${body.url}/page/2` : null, events: [{ eventId, title: "Acceptance Theatre", sourceUrl, startsAt: "2026-08-16T18:00:00+12:00", venueName: "Acceptance Venue", location: "Acceptance Venue, Christchurch", category: "Theatre", imageUrl: null, sponsored: false, ticketAction: "Buy Tickets" }] } };
-      } else {
-        payload = { ...common, ok: true, status: "success", page: { title: "Acceptance Theatre", finalUrl: body.url, htmlBytes: 100, screenshotBytes: 0 }, evidence: [artifact("html"), artifact("manifest_json")], extracted: { extractor: "eventfinda", kind: "event_detail", eventId, title: "Acceptance Theatre", canonicalUrl: sourceUrl, category: "Theatre", description: "Bounded browser persistence acceptance.", imageUrls: [], venue: { name: "Acceptance Venue", address: { streetAddress: "1 Acceptance Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011", addressCountry: "New Zealand" }, latitude: -43.53, longitude: 172.63 }, offers: [{ name: "Adult", price: "20.00", priceCurrency: "NZD", availability: "InStock", url: `${sourceUrl}/tickets` }], performers: [], restrictions: null, phoneSales: null, websites: [], listedBy: [], tour: [], occurrences: [{ name: "Acceptance Theatre", description: null, sourceUrl, startDate: "2026-08-16T18:00:00+12:00", endDate: "2026-08-16T20:00:00+12:00", previousStartDate: null, eventStatus: "EventScheduled", attendanceMode: "OfflineEventAttendanceMode", imageUrls: [], location: null, offers: [], performers: [], organizer: null }] } };
+    const argusServer = createArgusServer((capture) => {
+      if (challenge) return argusChallenge(capture, "Security check", "a");
+      if (capture.workflow_id === "collect_listing") {
+        return argusSuccess(capture, { data_schema: "eventfinda-public.collect_listing", schema_version: "1.0.0", extractor: "eventfinda", kind: "listing", title: "Events", canonicalUrl: capture.url, currentPage: 1, totalPages: listingTotalPages, nextUrl: listingTotalPages > 1 ? `${capture.url}/page/2` : null, events: [{ eventId, title: "Acceptance Theatre", sourceUrl, startsAt: "2026-08-16T18:00:00+12:00", venueName: "Acceptance Venue", location: "Acceptance Venue, Christchurch", category: "Theatre", imageUrl: null, sponsored: false, ticketAction: "Buy Tickets" }] }, "Events", "a");
       }
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(payload));
+      return argusSuccess(capture, { data_schema: "eventfinda-public.collect_detail", schema_version: "1.0.0", extractor: "eventfinda", kind: "event_detail", eventId, title: "Acceptance Theatre", canonicalUrl: sourceUrl, category: "Theatre", description: "Bounded Argus persistence acceptance.", imageUrls: [], venue: { name: "Acceptance Venue", address: { streetAddress: "1 Acceptance Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011", addressCountry: "New Zealand" }, latitude: -43.53, longitude: 172.63 }, offers: [{ name: "Adult", price: "20.00", priceCurrency: "NZD", availability: "InStock", url: `${sourceUrl}/tickets` }], performers: [], restrictions: null, phoneSales: null, websites: [], listedBy: [], tour: [], occurrences: [{ name: "Acceptance Theatre", description: null, sourceUrl, startDate: "2026-08-16T18:00:00+12:00", endDate: "2026-08-16T20:00:00+12:00", previousStartDate: null, eventStatus: "EventScheduled", attendanceMode: "OfflineEventAttendanceMode", imageUrls: [], location: null, offers: [], performers: [], organizer: null }] }, "Acceptance Theatre", "a");
     });
-    await new Promise<void>((resolve) => browserServer.listen(0, "127.0.0.1", resolve));
-    const address = browserServer.address();
-    if (!address || typeof address === "string") throw new Error("Acceptance browser server did not bind to a TCP port");
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Acceptance Argus server did not bind to a TCP port");
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const existingEventfindaHtml = await prisma.rawArtifact.count({
@@ -559,8 +539,8 @@ describe("Worker baseline pipeline", () => {
       ...environment,
       NODE_ENV: "development",
       SCHEDULER_ENABLED: false,
-      BROWSER_WORKER_INTERNAL_URL: `http://127.0.0.1:${address.port}`,
-      BROWSER_WORKER_TOKEN: "integration-browser-token-with-thirty-two-characters",
+      ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`,
+      ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters",
       EVENTFINDA_MIN_DELAY_MS: 0,
       EVENTFINDA_DELAY_JITTER_MS: 0,
       EVENTFINDA_DAILY_REQUEST_BUDGET: existingEventfindaHtml + 100,
@@ -568,6 +548,13 @@ describe("Worker baseline pipeline", () => {
       EVENTFINDA_DETAIL_BATCH_SIZE: 1,
       RAW_ARTIFACT_TTL_HOURS: 72,
       RAW_ARTIFACT_FAILURE_TTL_HOURS: 168,
+    }, undefined, async ({ url }) => {
+      if (challenge) throw new AdapterError("RATE_LIMITED", "Synthetic direct HTTP 429", true);
+      if (url.includes("/whatson/events/")) {
+        return { html: `<title>Events</title><div class="listings-events"><article class="card h-event"><h2 class="p-name"><a href="${sourceUrl}">Acceptance Theatre</a></h2><div class="dtstart"><span class="value-title" title="2026-08-16T18:00:00+12:00"></span></div><div class="p-location"><a class="location">Acceptance Venue</a> Christchurch</div><div class="meta-date"><span class="category">Theatre</span></div><script>_efC(3, ${JSON.stringify(eventId)})</script></article></div>${listingTotalPages > 1 ? `<nav class="pagination"><a href="/whatson/events/new-zealand/page/${listingTotalPages}">${listingTotalPages}</a></nav>` : ""}`, finalUrl: url };
+      }
+      const jsonLd = [{ "@type": "Place", "@id": "place:acceptance", name: "Acceptance Venue", address: { streetAddress: "1 Acceptance Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011", addressCountry: "New Zealand" }, geo: { latitude: -43.53, longitude: 172.63 } }, { "@type": "Event", name: "Acceptance Theatre", url: sourceUrl, startDate: "2026-08-16T18:00:00+12:00", endDate: "2026-08-16T20:00:00+12:00", eventStatus: "https://schema.org/EventScheduled", location: { "@id": "place:acceptance" } }];
+      return { html: `<title>Acceptance Theatre</title><h1 class="p-name">Acceptance Theatre</h1><span class="p-category">Theatre</span><div id="eventDescription">Bounded direct HTTP persistence acceptance.</div><div data-watchable-type="event" data-watchable-id="${eventId}"></div><script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`, finalUrl: url };
     });
     const runIds: string[] = [];
     let canonicalEventIds: string[] = [];
@@ -603,7 +590,7 @@ describe("Worker baseline pipeline", () => {
       eventOccurrenceIds = sourceEvents.flatMap((item) => item.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)));
       venueIds = (await prisma.eventOccurrence.findMany({ where: { id: { in: eventOccurrenceIds } }, select: { venueId: true } })).flatMap((item) => item.venueId ? [item.venueId] : []);
       const successArtifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: second.runId } });
-      expect(successArtifacts).toHaveLength(2);
+      expect(successArtifacts).toHaveLength(1);
       expect(successArtifacts.every((artifact) => !artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 71 * 3_600_000)).toBe(true);
 
       const unseenTarget = await prisma.sourceCrawlTarget.create({ data: { dataSourceId: source.id, url: unseenUrl, urlHash: `unseen-${suffix}`, kind: "EVENT_DETAIL", active: true, status: "PENDING", missedDiscoveryCount: 1, lastSeenAt: new Date(0) } });
@@ -619,12 +606,11 @@ describe("Worker baseline pipeline", () => {
       runIds.push(challenged.runId);
       expect(challenged).toMatchObject({ failureCount: 1, rateLimited: true });
       const failureArtifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: challenged.runId } });
-      expect(failureArtifacts).toHaveLength(2);
-      expect(failureArtifacts.every((artifact) => artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 167 * 3_600_000)).toBe(true);
+      expect(failureArtifacts).toHaveLength(0);
       expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ status: "RATE_LIMITED", consecutiveFailures: 1 });
       expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus, rightsAllowStorage: source.rightsAllowStorage, rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis, metadata: { collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } });
     } finally {
-      await new Promise<void>((resolve, reject) => browserServer.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: eventId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       canonicalEventIds = [...new Set([...canonicalEventIds, ...sourceEvents.flatMap((item) => item.canonicalLinks.map((link) => link.canonicalEventId))])];
       eventOccurrenceIds = [...new Set([...eventOccurrenceIds, ...sourceEvents.flatMap((item) => item.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)))])];
@@ -638,6 +624,87 @@ describe("Worker baseline pipeline", () => {
     }
   });
 });
+
+type TestArgusCapture = {
+  trace_id: string;
+  connector_id: "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx";
+  workflow_id: "collect_listing" | "collect_detail" | "collect_exchange_rates";
+  url: string;
+  entry_url?: string;
+};
+
+function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>) {
+  const results = new Map<string, { capture: TestArgusCapture; result: Record<string, unknown> }>();
+  return createServer(async (request, response) => {
+    expect(request.headers.authorization).toBe("Bearer integration-argus-token-with-thirty-two-characters");
+    if (request.method === "POST" && request.url === "/v1/jobs") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { captures: TestArgusCapture[] };
+      const capture = body.captures[0];
+      if (!capture) throw new Error("Argus integration request contained no capture");
+      const jobId = `job_${randomUUID().replaceAll("-", "")}`;
+      results.set(jobId, { capture, result: captureResult(capture) });
+      return sendJson(response, 202, { contract_version: "1.0", job_id: jobId, status: "COMPLETED" });
+    }
+    const match = request.url?.match(/^\/v1\/jobs\/([^/]+)(\/result)?$/u);
+    if (request.method === "GET" && match) {
+      const stored = results.get(match[1]!);
+      if (!stored) return sendJson(response, 404, { error: "NOT_FOUND" });
+      if (!match[2]) return sendJson(response, 200, { contract_version: "1.0", job_id: match[1], status: "COMPLETED" });
+      return sendJson(response, 200, {
+        contract_version: "1.0",
+        job_id: match[1],
+        status: "COMPLETED",
+        result_sha256: "f".repeat(64),
+        items: [{ trace_id: stored.capture.trace_id, status: "COMPLETED", result: stored.result, error_category: null }],
+        error: null,
+      });
+    }
+    return sendJson(response, 404, { error: "NOT_FOUND" });
+  });
+}
+
+function argusSuccess(capture: TestArgusCapture, data: Record<string, unknown>, title: string, hashCharacter: string) {
+  return argusResult(capture, true, "success", data, title, hashCharacter, null);
+}
+
+function argusChallenge(capture: TestArgusCapture, title: string, hashCharacter: string) {
+  return argusResult(capture, false, "challenge", null, title, hashCharacter, { kind: "access_challenge_detected", signals: ["integration"] });
+}
+
+function argusResult(capture: TestArgusCapture, ok: boolean, status: "success" | "challenge", data: Record<string, unknown> | null, title: string, hashCharacter: string, challenge: Record<string, unknown> | null) {
+  const evidence = (["html", "screenshot"] as const).map((kind) => ({
+    kind,
+    traceId: capture.trace_id,
+    relativePath: `results/argus/${capture.trace_id}/${kind === "html" ? "page.html" : "screenshot.png"}`,
+    storageRef: `argus-evidence:results/argus/${capture.trace_id}/${kind === "html" ? "page.html" : "screenshot.png"}`,
+    sha256: hashCharacter.repeat(64),
+    sizeBytes: 100,
+    containsSensitiveData: false,
+    createdAt: "2026-08-02T00:00:00.000Z",
+  }));
+  return {
+    contract_version: "1.0",
+    ok,
+    status,
+    trace_id: capture.trace_id,
+    connector_id: capture.connector_id,
+    workflow_id: capture.workflow_id,
+    readonly_only: true,
+    external_side_effects_performed: false,
+    page: { title, final_url: capture.url, html_bytes: 100, screenshot_bytes: 100 },
+    data,
+    evidence,
+    challenge,
+    error: null,
+  };
+}
+
+function sendJson(response: import("node:http").ServerResponse, status: number, body: unknown) {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
 
 async function drainRequest(analysisRequestId: string) {
   const terminalStatuses = new Set(["COMPLETED", "PARTIAL", "INSUFFICIENT_DATA", "SOURCE_UNAVAILABLE", "CANCELLED"]);

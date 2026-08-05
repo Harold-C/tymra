@@ -310,14 +310,28 @@ function registrySourceSeedRecords() {
     ["school_holidays_nz", "Ministry of Education school holidays", ["education.govt.nz"], LegalRightsStatus.ALLOWED],
     ["eventfinda", "Eventfinda New Zealand", ["www.eventfinda.co.nz", "eventfinda.co.nz"], LegalRightsStatus.REVIEW],
     ["ticketmaster", "Ticketmaster New Zealand", ["www.ticketmaster.co.nz", "ticketmaster.co.nz"], LegalRightsStatus.REVIEW],
+    ["eventbrite_events", "Eventbrite New Zealand Events", ["www.eventbrite.co.nz", "eventbrite.co.nz"], LegalRightsStatus.REVIEW],
+    ["humanitix_events", "Humanitix New Zealand Events", ["humanitix.com", "events.humanitix.com"], LegalRightsStatus.REVIEW],
     ["venue_calendars", "Auckland Live Events", ["www.aucklandlive.co.nz"], LegalRightsStatus.REVIEW],
     ["council_calendars", "Auckland Council OurAuckland Events", ["ourauckland.aucklandcouncil.govt.nz"], LegalRightsStatus.REVIEW],
     ["university_calendars", "University of Auckland Events", ["apis.auckland.ac.nz"], LegalRightsStatus.REVIEW],
     ["rto_calendars", "ChristchurchNZ Events", ["www.christchurchnz.com"], LegalRightsStatus.REVIEW],
+    ["te_pae_events", "Te Pae Christchurch Events", ["www.tepae.co.nz"], LegalRightsStatus.REVIEW],
+    ["venues_otautahi_events", "Venues Otautahi Events", ["venuesotautahi.co.nz", "api.storyblok.com"], LegalRightsStatus.REVIEW],
+    ["isaac_theatre_royal_events", "Isaac Theatre Royal Events", ["isaactheatreroyal.co.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_council_events", "Christchurch City Council What's On", ["www.ccc.govt.nz"], LegalRightsStatus.REVIEW],
+    ["ara_academic_dates", "Ara Academic Calendar", ["www.ara.ac.nz"], LegalRightsStatus.REVIEW],
+    ["canterbury_major_annual_events", "Canterbury Independent Major Annual Events", ["www.theshow.co.nz", "www.christchurchmarathon.co.nz"], LegalRightsStatus.REVIEW],
     ["metservice", "MetService CAP weather warnings", ["alerts.metservice.com", "www.metservice.com", "metservice.com"], LegalRightsStatus.REVIEW],
     ["nzta", "NZTA Journey Planner", ["nzta.govt.nz"], LegalRightsStatus.REVIEW],
     ["geonet", "GeoNet", ["api.geonet.org.nz"], LegalRightsStatus.ALLOWED],
     ["airport_data", "Queenstown Airport Flights", ["www.queenstownairport.co.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_airport", "Christchurch Airport Flights", ["www.christchurchairport.co.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_sports", "Christchurch Official Sports Fixtures", ["www.crusaders.co.nz", "www.tactixnetball.co.nz", "www.canterburycricket.org.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_university_dates", "Christchurch University Demand Dates", ["www.canterbury.ac.nz", "www.lincoln.ac.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_racing", "Christchurch Racing and Cup Week", ["www.addington.co.nz", "racing.riccartonpark.nz"], LegalRightsStatus.REVIEW],
+    ["christchurch_cruise", "Christchurch Cruise Schedule", ["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"], LegalRightsStatus.REVIEW],
+    ["christchurch_airport_monthly", "Christchurch Airport Monthly Passengers", ["www.christchurchairport.co.nz"], LegalRightsStatus.REVIEW],
     ["port_and_cruise", "Port and Cruise Schedules", ["poal.co.nz"], LegalRightsStatus.REVIEW],
     ["fx_rates", "Reserve Bank of New Zealand Exchange Rates", ["rbnz.govt.nz"], LegalRightsStatus.REVIEW],
   ] as const;
@@ -333,11 +347,13 @@ function registrySourceSeedRecords() {
       allowedUsage: ["URL_IDENTIFICATION", "PARSER_TEST", "RECORD_REPLAY_RESEARCH"], concurrencyLimit: 1, dailyBudget: 100,
     })),
     ...publicSources.map(([key, name, supportedDomains, legalRightsStatus]) => {
-      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "geonet", "eventfinda", "ticketmaster", "mbie", "stats_nz", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "airport_data", "port_and_cruise"].includes(key);
+      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "geonet", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "mbie", "stats_nz", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
       const locallyVerified = ["public_holidays_nz", "school_holidays_nz", "geonet"].includes(key);
-      const browserSource = ["eventfinda", "ticketmaster", "fx_rates"].includes(key);
-      const adapterKey = key === "ticketmaster" ? "public:ticketmaster:browser-v1"
-        : key === "eventfinda" ? "public:eventfinda:browser-v1"
+      const browserSource = ["fx_rates"].includes(key);
+      const adapterKey = key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
+        : key === "eventfinda" ? "public:eventfinda:http-v1"
+          : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v1"
+            : key === "humanitix_events" ? "public:humanitix:jsonld-listing-v1"
           : key === "fx_rates" ? "public:fx_rates:rbnz-browser-v1"
             : key === "mbie" ? "public:mbie:adp-csv-v1"
               : key === "stats_nz" ? "public:stats_nz:international-travel-v1"
@@ -348,10 +364,25 @@ function registrySourceSeedRecords() {
                         : key === "council_calendars" ? "public:council-calendars:our-auckland-v1"
                           : key === "university_calendars" ? "public:university-calendars:uoa-events-v1"
                             : key === "rto_calendars" ? "public:rto-calendars:christchurchnz-v1"
+                              : key === "te_pae_events" ? "public:te-pae-events:html-v1"
+                                : key === "venues_otautahi_events" ? "public:venues-otautahi:storyblok-v1"
+                              : key === "isaac_theatre_royal_events" ? "public:isaac-theatre-royal-events:html-v1"
+                                : key === "christchurch_council_events" ? "public:christchurch_council_events:official-html-pagination-v1"
+                                  : key === "ara_academic_dates" ? "public:ara_academic_dates:academic-calendar-html-v1"
+                                    : key === "canterbury_major_annual_events" ? "public:canterbury_major_annual_events:official-event-page-html-v1"
+                                : key === "christchurch_airport" ? "public:christchurch-airport:flights-json-v1"
+                                  : key === "christchurch_sports" ? "public:christchurch_sports:events-v1"
+                                    : key === "christchurch_university_dates" ? "public:christchurch_university_dates:key-dates-v2"
+                                      : key === "christchurch_racing" ? "public:christchurch_racing:racing-v1"
+                                        : key === "christchurch_cruise" ? "public:christchurch_cruise:powerbi-v1"
+                                          : key === "christchurch_airport_monthly" ? "public:christchurch_airport_monthly:passenger-table-v1"
                               : key === "airport_data" ? "public:airport-data:queenstown-flights-v1"
                                 : key === "port_and_cruise" ? "public:port-and-cruise:poal-csv-v1"
               : `public:${key}:v1`;
-      const accessMethod = key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
+      const accessMethod = key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
+        : key === "eventfinda" ? "PUBLIC_HTTP_HTML_JSONLD"
+          : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD"
+      : key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
         : key === "mbie" ? "OFFICIAL_PUBLIC_CSV_RANGE"
           : key === "stats_nz" ? "OFFICIAL_PUBLIC_HTML_EMBEDDED_JSON"
             : key === "nzta" ? "OFFICIAL_PUBLIC_GEOJSON"
@@ -359,6 +390,13 @@ function registrySourceSeedRecords() {
                 : key === "linz" ? "OFFICIAL_PUBLIC_JSON"
                   : key === "venue_calendars" || key === "rto_calendars" ? "OFFICIAL_PUBLIC_JSON_PAGINATED"
                     : key === "council_calendars" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
+                      : key === "venues_otautahi_events" ? "PUBLIC_HTML_DISCOVERED_JSON"
+                        : key === "christchurch_council_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
+                        : key === "christchurch_airport" ? "PUBLIC_JSON"
+                          : key === "christchurch_cruise" ? "OFFICIAL_PUBLIC_HTML_DISCOVERED_JSON"
+                            : key === "christchurch_university_dates" ? "OFFICIAL_PUBLIC_HTML_AND_ARGUS"
+                            : ["christchurch_sports", "christchurch_racing", "christchurch_airport_monthly"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
+                        : ["te_pae_events", "isaac_theatre_royal_events", "ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
                       : key === "university_calendars" || key === "airport_data" ? "OFFICIAL_PUBLIC_JSON"
                         : key === "port_and_cruise" ? "OFFICIAL_PUBLIC_CSV"
           : browserSource ? "PUBLIC_WEB_BROWSER_READ_ONLY"
@@ -373,14 +411,22 @@ function registrySourceSeedRecords() {
         legalRightsStatus, operationalStatus: locallyVerified ? OperationalStatus.HEALTHY : liveTransportImplemented ? OperationalStatus.DEGRADED : OperationalStatus.UNCONFIGURED,
         environments: ["DEVELOPMENT", "TEST", "PILOT"] as const, adapterKey, accessMethod,
         allowedUsage: legalRightsStatus === LegalRightsStatus.ALLOWED ? ["COLLECTION", "DERIVED_ANALYSIS", "ATTRIBUTED_DISPLAY"] : ["HEALTH_CHECK", "FIXTURE_TEST"],
-        concurrencyLimit: browserSource || ["mbie", "stats_nz", "metservice", "nzta", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "airport_data", "port_and_cruise"].includes(key) ? 1 : 2,
+        concurrencyLimit: browserSource || ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "mbie", "stats_nz", "metservice", "nzta", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key) ? 1 : 2,
         dailyBudget: key === "ticketmaster" ? 20
           : key === "eventfinda" ? 2_500
             : key === "metservice" ? 288
-              : ["nzta", "airport_data"].includes(key) ? 96
+              : key === "christchurch_airport" ? 192
+                : key === "christchurch_sports" ? 24
+                  : key === "christchurch_racing" ? 12
+                    : ["christchurch_university_dates", "christchurch_cruise", "christchurch_airport_monthly"].includes(key) ? 4
+                : ["nzta", "airport_data"].includes(key) ? 96
                 : ["council_calendars", "rto_calendars", "linz"].includes(key) ? 100
                   : key === "venue_calendars" ? 48
-                    : ["university_calendars", "port_and_cruise"].includes(key) ? 24
+                    : ["venues_otautahi_events", "isaac_theatre_royal_events"].includes(key) ? 48
+                      : key === "christchurch_council_events" ? 48
+                        : ["ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? 4
+                      : ["eventbrite_events", "humanitix_events"].includes(key) ? 24
+                      : ["university_calendars", "te_pae_events", "port_and_cruise"].includes(key) ? 24
                       : ["mbie", "fx_rates"].includes(key) ? 4
                         : key === "stats_nz" ? 8 : 2_000,
       };
@@ -429,7 +475,21 @@ async function seedSchedules() {
     { key: "council-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "council_calendars", marketScope: "new-zealand" } },
     { key: "university-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "university_calendars", marketScope: "new-zealand" } },
     { key: "rto-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "rto_calendars", marketScope: "new-zealand" } },
+    { key: "te-pae-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "te_pae_events", marketScope: "christchurch" } },
+    { key: "venues-otautahi-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "venues_otautahi_events", marketScope: "christchurch" } },
+    { key: "isaac-theatre-royal-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "isaac_theatre_royal_events", marketScope: "christchurch" } },
+    { key: "christchurch-council-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "christchurch_council_events", marketScope: "christchurch" } },
+    { key: "ara-academic-dates-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "ara_academic_dates", marketScope: "christchurch" } },
+    { key: "canterbury-major-annual-events-weekly", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "weekly", payload: { sourceId: "canterbury_major_annual_events", marketScope: "christchurch" } },
+    { key: "eventbrite-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "eventbrite_events", marketScope: "new-zealand" } },
+    { key: "humanitix-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "humanitix_events", marketScope: "new-zealand" } },
     { key: "queenstown-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "airport_data", marketScope: "queenstown" } },
+    { key: "christchurch-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "christchurch_airport", marketScope: "christchurch" } },
+    { key: "christchurch-sports-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "christchurch_sports", marketScope: "christchurch" } },
+    { key: "christchurch-university-dates-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "christchurch_university_dates", marketScope: "christchurch" } },
+    { key: "christchurch-racing-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "christchurch_racing", marketScope: "christchurch" } },
+    { key: "christchurch-cruise-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "christchurch_cruise", marketScope: "christchurch" } },
+    { key: "christchurch-airport-monthly-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "christchurch_airport_monthly", marketScope: "christchurch" } },
     { key: "poal-cruise-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "port_and_cruise", marketScope: "auckland" } },
     { key: "future-rates-regular", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-12-hours", payload: { marketScope: "new-zealand", horizon: "regular" } },
     { key: "future-rates-high-frequency", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-3-hours", payload: { marketScope: "new-zealand", horizon: "near-term-or-event" } },

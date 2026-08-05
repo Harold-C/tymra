@@ -41,8 +41,8 @@ app.get("/worker/markets/:key/coverage", async (request, reply) => sendFound(rep
 app.get("/worker/health", async () => service.health());
 app.get("/worker/readiness", async (_request, reply) => {
   const health = await service.health();
-  const ready = health.database.healthy && health.redis.healthy;
-  return reply.code(ready ? 200 : 503).send({ ready, dependencies: { database: health.database, redis: health.redis } });
+  const ready = health.database.healthy && health.redis.healthy && health.argus.healthy && health.argus.ready;
+  return reply.code(ready ? 200 : 503).send({ ready, dependencies: { database: health.database, redis: health.redis, argus: health.argus } });
 });
 
 app.setErrorHandler((error, request, reply) => {

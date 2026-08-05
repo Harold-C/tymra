@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 
 import { apiError, apiException } from "@/lib/server/api";
 import { getAdminFromRequest } from "@/lib/server/admin-auth";
-import { artifactMediaType, canReadArtifactContent, resolveBrowserEvidencePath } from "@/lib/server/raw-artifact-content";
+import { artifactMediaType, canReadArtifactContent, resolveRetainedEvidencePath } from "@/lib/server/raw-artifact-content";
 
 const maxArtifactBytes = 10 * 1024 * 1024;
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: { artifact
     if (!artifact) return apiError(404, "NOT_FOUND", "Artifact not found.");
     if (!canReadArtifactContent(artifact)) return apiError(403, "ARTIFACT_CONTENT_BLOCKED", "Artifact content is not available for viewing.");
 
-    const target = resolveBrowserEvidencePath(process.env.BROWSER_EVIDENCE_ROOT ?? "/browser-evidence", artifact.storageRef);
+    const target = resolveRetainedEvidencePath(process.env.ARGUS_EVIDENCE_ROOT ?? "/argus-evidence", artifact.storageRef);
     const stat = await fs.stat(target);
     if (!stat.isFile() || stat.size > maxArtifactBytes) return apiError(413, "ARTIFACT_TOO_LARGE", "Artifact content cannot be displayed.");
     const content = await fs.readFile(target);

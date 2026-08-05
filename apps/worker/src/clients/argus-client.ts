@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import type { Environment } from "@tymra/config";
+import { lincolnKeyDatesExtractionSchema } from "../collection/lincoln-university-key-dates";
 
 export type ArgusEvidencePointer = {
   kind: string;
@@ -11,8 +14,8 @@ export type ArgusEvidencePointer = {
   createdAt: string;
 };
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates";
+export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates";
+export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -46,6 +49,10 @@ const argusDataContracts = {
   },
   "rbnz-fx:collect_exchange_rates": {
     dataSchema: "rbnz-fx.collect_exchange_rates",
+    schemaVersion: "1.0.0",
+  },
+  "lincoln-university-key-dates:collect_key_dates": {
+    dataSchema: "lincoln-university-key-dates.collect_key_dates",
     schemaVersion: "1.0.0",
   },
 } as const satisfies Record<string, ArgusDataContract>;
@@ -106,6 +113,7 @@ export type ArgusCaptureInput = {
   connectorId: ArgusConnectorId;
   workflowId: ArgusWorkflowId;
   url: string;
+  entryUrl?: string;
   maxRecords?: number;
 };
 
@@ -121,11 +129,60 @@ const terminalJobStatuses = new Set<ArgusJobSummary["status"]>([
 ]);
 
 function argusHeaders(environment: Environment) {
-  if (!environment.ARGUS_API_BASE_URL || !environment.ARGUS_API_TOKEN) throw new Error("Argus is not configured");
   return {
     authorization: `Bearer ${environment.ARGUS_API_TOKEN}`,
     "content-type": "application/json",
   };
+}
+
+export async function downloadArgusEvidence(
+  environment: Environment,
+  pointer: ArgusEvidencePointer,
+): Promise<Buffer> {
+  if (pointer.kind !== "html" && pointer.kind !== "screenshot") {
+    throw new Error(`Argus evidence kind ${pointer.kind} cannot be retained`);
+  }
+  const response = await fetch(
+    new URL(`/v1/event-captures/${encodeURIComponent(pointer.traceId)}/evidence/${pointer.kind}`, environment.ARGUS_API_BASE_URL),
+    {
+      headers: argusHeaders(environment),
+      signal: AbortSignal.timeout(environment.ARGUS_TIMEOUT_MS),
+    },
+  );
+  if (!response.ok) throw new Error(`Argus evidence download returned HTTP ${response.status}`);
+  const content = Buffer.from(await response.arrayBuffer());
+  const contentHash = createHash("sha256").update(content).digest("hex");
+  const responseHash = response.headers.get("x-argus-content-sha256");
+  if (content.byteLength !== pointer.sizeBytes || contentHash !== pointer.sha256 || responseHash !== pointer.sha256) {
+    throw new Error(`Argus evidence integrity check failed for ${pointer.traceId}/${pointer.kind}`);
+  }
+  return content;
+}
+
+export async function getArgusHealth(environment: Environment) {
+  const startedAt = Date.now();
+  try {
+    const [health, readiness] = await Promise.all([
+      fetch(new URL("/health", environment.ARGUS_API_BASE_URL), { signal: AbortSignal.timeout(5_000) }),
+      fetch(new URL("/readiness", environment.ARGUS_API_BASE_URL), { signal: AbortSignal.timeout(5_000) }),
+    ]);
+    return {
+      healthy: health.ok && readiness.ok,
+      ready: readiness.ok,
+      mode: "argus",
+      latencyMs: Date.now() - startedAt,
+      healthStatus: health.status,
+      readinessStatus: readiness.status,
+    };
+  } catch (error) {
+    return {
+      healthy: false,
+      ready: false,
+      mode: "argus",
+      latencyMs: Date.now() - startedAt,
+      message: error instanceof Error ? error.message : "Argus health check failed",
+    };
+  }
 }
 
 export function isTerminalArgusJobStatus(status: ArgusJobSummary["status"]): boolean {
@@ -222,10 +279,6 @@ export async function captureBrowserTaskWithArgus(
   environment: Environment,
   input: ArgusCaptureInput,
 ): Promise<CaptureResponse> {
-  if (!environment.ARGUS_API_BASE_URL || !environment.ARGUS_API_TOKEN) {
-    throw new Error("Argus is not configured");
-  }
-
   const deadline = Date.now() + environment.ARGUS_JOB_POLL_TIMEOUT_MS;
 
   try {
@@ -402,6 +455,12 @@ function assertArgusDataContract(
       `Argus returned unexpected data contract; expected ${expected.dataSchema}@${expected.schemaVersion}`,
     );
   }
+  if (connectorId === "lincoln-university-key-dates" && workflowId === "collect_key_dates") {
+    const parsed = lincolnKeyDatesExtractionSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error(`Argus returned invalid Lincoln key-dates data: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`);
+    }
+  }
 }
 
 function expectedArgusDataContract(
@@ -446,6 +505,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       connector_id: input.connectorId,
       workflow_id: input.workflowId,
       url: input.url,
+      ...(input.entryUrl === undefined ? {} : { entry_url: input.entryUrl }),
       timeout_ms: environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",
       ...(input.maxRecords === undefined ? {} : { max_records: Math.min(500, Math.max(1, input.maxRecords)) }),

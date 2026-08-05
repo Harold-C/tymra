@@ -15,10 +15,11 @@ x-app-environment: &app-environment
   PUBLIC_ORIGIN: https://${HOST_PUBLIC:?Set HOST_PUBLIC}
   ADMIN_ORIGIN: https://${HOST_OPS:?Set HOST_OPS}
   WORKER_INTERNAL_URL: http://tymra-worker-api:3100
-  BROWSER_WORKER_INTERNAL_URL: http://tymra-browser-worker:18888
-  BROWSER_WORKER_TOKEN: ${PROD_BROWSER_WORKER_TOKEN:?Set PROD_BROWSER_WORKER_TOKEN}
-  BROWSER_WORKER_TIMEOUT_MS: ${PROD_BROWSER_WORKER_TIMEOUT_MS:-60000}
-  BROWSER_EVIDENCE_ROOT: /browser-evidence
+  ARGUS_API_BASE_URL: ${PROD_ARGUS_API_BASE_URL:?Set PROD_ARGUS_API_BASE_URL}
+  ARGUS_API_TOKEN: ${PROD_ARGUS_API_TOKEN:?Set PROD_ARGUS_API_TOKEN}
+  ARGUS_TIMEOUT_MS: ${PROD_ARGUS_TIMEOUT_MS:-60000}
+  ARGUS_JOB_POLL_TIMEOUT_MS: ${PROD_ARGUS_JOB_POLL_TIMEOUT_MS:-180000}
+  ARGUS_EVIDENCE_ROOT: /argus-evidence
   EVENTFINDA_MIN_DELAY_MS: ${PROD_EVENTFINDA_MIN_DELAY_MS:-4000}
   EVENTFINDA_DELAY_JITTER_MS: ${PROD_EVENTFINDA_DELAY_JITTER_MS:-3000}
   EVENTFINDA_DAILY_REQUEST_BUDGET: ${PROD_EVENTFINDA_DAILY_REQUEST_BUDGET:-2500}
@@ -123,7 +124,7 @@ services:
     init: true
     logging: *default-logging
     volumes:
-      - browser_worker_evidence:/browser-evidence:ro
+      - argus_evidence:/argus-evidence:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -175,7 +176,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     volumes:
-      - browser_worker_evidence:/browser-evidence:ro
+      - argus_evidence:/argus-evidence
+    networks:
+      - default
+      - ingress
 
   api:
     <<: *app-image
@@ -200,6 +204,7 @@ services:
       default:
         aliases:
           - tymra-worker-api
+      ingress: {}
 
   scheduler:
     <<: *app-image
@@ -216,75 +221,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
 
-  browser-worker:
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: apps/browser-worker/Dockerfile
-    environment:
-      BROWSER_WORKER_HOST: 0.0.0.0
-      BROWSER_WORKER_PORT: 18888
-      BROWSER_WORKER_TOKEN: ${PROD_BROWSER_WORKER_TOKEN:?Set PROD_BROWSER_WORKER_TOKEN}
-      BROWSER_WORKER_EVIDENCE_ROOT: /data/browser-worker/evidence
-      BROWSER_WORKER_PROFILE_ROOT: /data/browser-worker/profiles
-      BROWSER_PROFILE_ENCRYPTION_KEY: ${PROD_BROWSER_PROFILE_ENCRYPTION_KEY:?Set PROD_BROWSER_PROFILE_ENCRYPTION_KEY}
-      BROWSER_WORKER_EVIDENCE_TTL_HOURS: ${PROD_RAW_ARTIFACT_TTL_HOURS:-72}
-      BROWSER_WORKER_FAILURE_EVIDENCE_TTL_HOURS: ${PROD_RAW_ARTIFACT_FAILURE_TTL_HOURS:-168}
-      BROWSER_WORKER_TIMEOUT_MS: ${PROD_BROWSER_WORKER_TIMEOUT_MS:-60000}
-      BROWSER_WORKER_CONCURRENCY: ${PROD_BROWSER_WORKER_CONCURRENCY:-1}
-      BROWSER_WORKER_HEADED: ${PROD_BROWSER_WORKER_HEADED:-true}
-      BROWSER_WORKER_ALLOW_PRIVATE_NETWORK: "false"
-      BROWSER_WORKER_ALLOW_HTTP: "false"
-      ULIXEE_CLOUD_URL: ws://ulixee-cloud:1818
-    init: true
-    logging: *default-logging
-    volumes:
-      - browser_worker_evidence:/data/browser-worker/evidence
-      - browser_worker_profiles:/data/browser-worker/profiles
-    depends_on:
-      ulixee-cloud:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:18888/internal/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-    networks:
-      default:
-        aliases:
-          - tymra-browser-worker
-      browser_control: {}
-
-  ulixee-cloud:
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: apps/browser-worker/Dockerfile.ulixee-cloud
-    environment:
-      BROWSERS_DIR: /app/ulixee/.cache/ulixee-chrome
-    shm_size: "2gb"
-    init: true
-    logging: *default-logging
-    mem_limit: ${PROD_TYMRA_ULIXEE_MEMORY_LIMIT:-4g}
-    pids_limit: 512
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"const net=require('node:net');const socket=net.connect(1818,'127.0.0.1',()=>{socket.end();process.exit(0)});socket.setTimeout(2000,()=>process.exit(1));socket.on('error',()=>process.exit(1))\""]
-      interval: 15s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    networks:
-      - browser_control
-      - browser_egress
-
 volumes:
   postgres_data:
   redis_data:
-  browser_worker_evidence:
-  browser_worker_profiles:
+  argus_evidence:
 
 networks:
   default:
@@ -293,8 +233,3 @@ networks:
   ingress:
     name: ${TRAEFIK_DOCKER_NETWORK:-tymra_ingress}
     external: true
-  browser_egress:
-    name: tymra_browser_egress
-  browser_control:
-    name: tymra_browser_control
-    internal: true

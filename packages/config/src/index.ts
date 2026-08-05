@@ -19,14 +19,11 @@ export const environmentSchema = z
     PUBLIC_ORIGIN: optionalUrl,
     ADMIN_ORIGIN: optionalUrl,
     WORKER_INTERNAL_URL: optionalUrl,
-    BROWSER_WORKER_INTERNAL_URL: optionalUrl,
-    BROWSER_WORKER_TOKEN: optionalString,
-    BROWSER_WORKER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(60_000),
-    ARGUS_API_BASE_URL: optionalUrl,
-    ARGUS_API_TOKEN: optionalString,
+    ARGUS_API_BASE_URL: z.string().url(),
+    ARGUS_API_TOKEN: z.string().min(32),
     ARGUS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(60_000).default(60_000),
     ARGUS_JOB_POLL_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(600_000).default(180_000),
-    BROWSER_EVIDENCE_ROOT: z.string().min(1).default("/browser-evidence"),
+    ARGUS_EVIDENCE_ROOT: z.string().min(1).default("/argus-evidence"),
     EVENTFINDA_MIN_DELAY_MS: z.coerce.number().int().min(2_000).max(30_000).default(4_000),
     EVENTFINDA_DELAY_JITTER_MS: z.coerce.number().int().min(0).max(10_000).default(3_000),
     EVENTFINDA_DAILY_REQUEST_BUDGET: z.coerce.number().int().min(1).max(20_000).default(2_500),
@@ -140,22 +137,6 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["SMTP_URL"],
         message: "SMTP_URL is required when EMAIL_PROVIDER=smtp",
-      });
-    }
-
-    if (value.BROWSER_WORKER_INTERNAL_URL && !value.BROWSER_WORKER_TOKEN) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["BROWSER_WORKER_TOKEN"],
-        message: "BROWSER_WORKER_TOKEN is required when BROWSER_WORKER_INTERNAL_URL is configured",
-      });
-    }
-
-    if (value.ARGUS_API_BASE_URL && (!value.ARGUS_API_TOKEN || value.ARGUS_API_TOKEN.length < 32)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["ARGUS_API_TOKEN"],
-        message: "ARGUS_API_TOKEN with at least 32 characters is required when ARGUS_API_BASE_URL is configured",
       });
     }
 

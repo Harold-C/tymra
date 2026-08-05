@@ -1783,7 +1783,8 @@ a {
   border-bottom: 0;
 }
 
-.overview-source-health li > a {
+.overview-source-health li > a,
+.overview-health-static {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1811,7 +1812,8 @@ a {
   font-size: 9px;
 }
 
-.overview-source-health li > a > span:last-child {
+.overview-source-health li > a > span:last-child,
+.overview-health-static > span:last-child {
   flex: none;
   text-align: right;
 }

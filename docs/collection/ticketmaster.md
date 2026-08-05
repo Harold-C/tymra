@@ -1,6 +1,6 @@
 # Ticketmaster New Zealand collection
 
-Last updated: 2026-08-01
+Last updated: 2026-08-03
 
 **Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
 detail frontier and bounded hydration are implemented. Automated database acceptance covers both
@@ -9,8 +9,8 @@ waits and stopped safely, so reliable fallback-detail access is not currently ve
 
 ## Decision
 
-Ticketmaster New Zealand uses durable Argus read-only Jobs when Argus is configured and retains
-Tymra's private Browser Worker as a development fallback. It does not use a Ticketmaster API key or
+Ticketmaster New Zealand uses ordinary HTTP for city listings and durable Argus read-only Jobs only
+for selectively required detail pages. Tymra has no local browser fallback. It does not use a Ticketmaster API key or
 Discovery API. The current Worker collects public structured event data from five working New
 Zealand city listing routes: Auckland, Wellington, Christchurch, Hamilton and Rotorua.
 
@@ -28,18 +28,19 @@ explicit source, storage and derived-analysis approval.
 
 ## Pipeline
 
-1. Capture up to five fixed city listing pages with a fixed Ticketmaster extractor.
+1. Fetch up to five fixed city listing pages by ordinary read-only HTTP with a fixed Ticketmaster extractor.
 2. Parse public `__NEXT_DATA__` and JSON-LD event IDs, titles, descriptions, dates, statuses, venues, addresses, coordinates, offers, performers and images.
 3. Group listing records by canonical detail URL and date. When every record has a valid identity,
    category, date, explicit status, venue and city, persist all occurrences directly and mark the
    target `LISTING_COMPLETE` with `detailRequired=false` and `nextFetchAt=null`.
-4. Queue only incomplete listing groups as `PENDING`. Select those fallback targets by priority,
-   enforce one browser and source/daily limits, and require detail JSON-LD to match the target URL
+4. Queue only incomplete listing groups as `PENDING`. Select those detail targets by priority,
+   enforce Argus and source/daily limits, and require detail JSON-LD to match the target URL
    exactly so recommended events cannot leak into persistence.
 5. For a detail interstitial, retain initial HTML and `challenge-initial-screenshot.png`, poll at
    one-second intervals for at most 20 seconds without interaction, then retain the resolved,
    terminal-challenge or timed-out HTML and `challenge-screenshot.png`.
-6. Persist short-lived HTML, result and manifest evidence in `RawArtifact` and source facts in
+6. Persist direct listing HTML in `RawArtifact`. For Argus details, persist HTML/screenshot pointers; before ACK, copy and integrity-check those
+   files into Tymra's evidence volume. Persist source facts in
    `SourceEvent` and `SourceEventOccurrence`, then exact-link them into `CanonicalEvent`,
    `EventOccurrence` and `CanonicalVenue`.
 7. Refresh near-term fallback details more often. Consecutive unchanged detail hashes double the
@@ -50,7 +51,7 @@ explicit source, storage and derived-analysis approval.
 8. Keep impact status `PENDING_EVIDENCE` until capacity, attendance or corroborating demand evidence exists.
 
 The local acceptance bound is one listing page, at most two fallback details and a 31-day effective
-window. The normal collector uses one concurrent browser, a 5-9 second inter-request delay, at most
+window. The normal collector uses one concurrent request, a 5-9 second inter-request delay, at most
 five city pages, three fallback details per scheduled batch and a 20-request daily ceiling. A normal
 complete snapshot now requests only the five listing pages; the previous 17-page/day ceiling remains
 the worst case when incomplete targets require all four fallback batches. No automatic challenge
@@ -58,19 +59,22 @@ retry is performed. Both seeded schedules are disabled.
 
 The retained five-city snapshot from 2026-07-20 contained 89 cards and 89 unique event URLs. All 89
 had the fields required by the listing-complete rule, including three cancelled events. For that
-snapshot the listing-first pipeline reduces initial browser pages from 94 (five listings plus 89
+snapshot the listing-first pipeline reduces initial pages from 94 (five listings plus 89
 details) to five, while still persisting every accepted event occurrence.
+
+On 2026-08-03, two real bounded listing acceptance passes each made one direct HTTP request,
+discovered 20 events, persisted one complete listing occurrence, avoided all detail requests,
+retained one HTML artifact, and created zero Argus executions. The second pass created zero new
+source or canonical rows.
 
 Repeated dates from one listing or detail group share one source event, canonical event and exact
 venue during persistence. Each date remains a distinct occurrence. A later unchanged occurrence only
 updates its run and last-seen fields instead of rebuilding the canonical graph.
 
-## Access circuit and browser identity
+## Access circuit
 
-Ticketmaster uses one encrypted anonymous Profile, `ticketmaster-nz-public-v1`, across listing and
-detail tasks. Only successful non-challenge sessions update it, and only one active task may use it.
-The browser stays headed by default and uses Ulixee's coherent Chrome identity without a custom
-user-agent override.
+Argus owns browser identity, execution mode and challenge evidence. Tymra submits only versioned,
+read-only connector jobs and never attempts to solve a challenge.
 
 Persistent challenges or source rate limits advance the source circuit as follows:
 
@@ -88,6 +92,41 @@ No automatic challenge retry occurs inside a run.
 
 ## Verification
 
+### ARGUS-TM-NAV-001 detail navigation
+
+Ticketmaster listing discovery uses Tymra ordinary HTTP. A target with incomplete listing fields keeps
+the allowlisted city listing URL in `metadata.discoveredFrom`. Detail execution sends that URL to
+Argus as `entry_url`; Argus opens the city page and follows the exact event link in the same browser
+context. Missing `discoveredFrom` is a hard parsing failure and never falls back to a cold direct
+detail navigation. Each detail hydration therefore consumes two source requests in collection limits.
+The 4 August 2026 bounded API acceptance completed Job
+`job_6f1d1348fc107c6410c1f857adec40a4`, returned a complete Christchurch event detail without a
+challenge, verified both evidence hashes and completed the result ACK.
+
+### TYMRA-TM-HYBRID-ACCEPT-001
+
+The 4 August 2026 non-dry-run acceptance exercised the complete deployed integration rather than an
+Argus-only call:
+
+1. Tymra Job `cmsdxli8x0000o877cmivo2ko` fetched the Auckland listing by ordinary HTTP, discovered
+   19 events, selected two bounded records, persisted two complete listing events and created no
+   Argus execution.
+2. One selected target was temporarily marked as listing-incomplete to exercise the required-detail
+   branch without changing its URL or `discoveredFrom`. After acceptance, this marker was removed and
+   the original `listingComplete=true`, `detailRequired=false` metadata was restored.
+3. Tymra Job `cmsdxoyir0000n3340g73654n` submitted Argus Job
+   `job_6dc98647fb91cc048a69751b55ea4340`. Argus opened the Auckland entry page, followed event
+   `240064D77F550D98` in the same Context and returned a successful detail.
+4. CollectionRun `cmsdxoymz0001n30o5ozj4l00` completed with two source requests, one detail, one
+   persisted event and two retained evidence artifacts. The copied HTML was 750,773 bytes and the
+   screenshot 126,413 bytes; both local SHA-256 values matched Tymra `RawArtifact.contentHash`.
+5. Tymra ACK completed and the Argus result endpoint returned HTTP 410 with the same result hash,
+   proving that downstream persistence happened before Argus cleanup.
+
+The first attempt exposed that the running worker still contained the pre-`entry_url` image. It made
+no Argus execution and ended its CollectionRun as `PARTIAL`. Rebuilding the worker with the current
+source removed that deployment drift; the successful acceptance above uses the rebuilt image.
+
 - Extractor and normaliser tests cover Next-data parsing, source-host enforcement, missing identity, exact/missing end time and metadata preservation.
 - Browser runtime tests distinguish a persistent challenge from a temporary interstitial, preserve
   both HTML and screenshot capture stages and extract the settled page only when challenge markers
@@ -101,7 +140,7 @@ No automatic challenge retry occurs inside a run.
 - Pre-boundary real detail runs `cmrtepevg0001lb63reffd9ou` and
   `cmrtepodq0001lb7ax0kpbva1` each made one detail request, fetched zero details and ended `PARTIAL`
   with one failure. The corresponding frontier URLs were real Ticketmaster event URLs, not fixtures.
-- Real Browser Worker trace `ticketmaster-detail-diag-1784563586504` retained an 8,446-byte HTML
+- Historical pre-Argus Browser Worker trace `ticketmaster-detail-diag-1784563586504` retained an 8,446-byte HTML
   response with SHA-256
   `821e8d11cb964ee940993bc0ad0e7d1eb9260a40ed63d00f849b9a689dba32c2`. Its page title is
   `Let's Get Your Identity Verified`; the HTML contains `Browsing Activity Has Been Paused`,

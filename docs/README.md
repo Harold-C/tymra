@@ -23,7 +23,7 @@
 ## 架构
 
 - [Worker 架构](./architecture/worker.md)
-- [Browser Worker 架构](./architecture/browser-worker.md)
+- [Argus 浏览器执行边界](./collection/argus.md)
 
 ## 数据采集
 
@@ -33,10 +33,14 @@
 - [事件房价影响数据契约](./collection/event-impact-data-contract.md)
 - [Eventfinda](./collection/eventfinda.md)
 - [Ticketmaster](./collection/ticketmaster.md)
+- [直连事件与机场来源](./collection/direct-event-sources.md)
+- [Argus 任务职责](./collection/argus-responsibilities.md)
 - [手工导入](./collection/manual-import.md)
 - [2026-07-21 本地采集验收快照](./evidence/collection-acceptance-2026-07-21.md)
 - [2026-07-30 全部非 OTA 公开来源验收](./evidence/public-source-acceptance-2026-07-30.md)
 - [2026-08-01 ARGUS-023 结果确认与清理验收](./evidence/argus-023-acceptance-2026-08-01.md)
+- [2026-08-02 Argus-only 切换验收](./evidence/argus-only-cutover-2026-08-02.md)
+- [2026-08-05 非 OTA 采集任务归档与交接](./evidence/non-ota-collection-task-archive-2026-08-05.md)
 
 ## 治理与执行
 

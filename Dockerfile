@@ -33,7 +33,8 @@ RUN cd apps/web \
 FROM build AS production
 ENV NODE_ENV=production
 ENV NEXT_DIST_DIR=.next-build
-RUN chown -R node:node /app/apps/web/.next-build
+RUN mkdir -p /argus-evidence \
+  && chown -R node:node /app/apps/web/.next-build /argus-evidence
 USER node
 WORKDIR /app/apps/web
 EXPOSE 3000

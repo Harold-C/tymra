@@ -38,8 +38,7 @@ switch (command) {
   case "collect:rotating-panel": print(await service.enqueueOperationalJob("ROTATING_PANEL_COLLECTION", { marketScope: option(args, "--market") ?? "new-zealand" })); break;
   case "collect:events": print(await service.collectSource(option(args, "--source") ?? "eventfinda", option(args, "--market") ?? "new-zealand", undefined, { ...collectionOptions(args), phase: eventCollectionPhase(args), maxPages: integerOption(args, "--max-pages"), maxDetails: integerOption(args, "--max-details") })); break;
   case "collect:disruptions": print(await service.collectSource(option(args, "--source") ?? "geonet", option(args, "--market") ?? "new-zealand", undefined, collectionOptions(args))); break;
-  case "browser:health": print(await service.browserHealth()); break;
-  case "browser:capture": print(await service.captureBrowserPage(requiredOption(args, "--source"), requiredOption(args, "--url"), { dryRun: args.includes("--dry-run") })); break;
+  case "argus:health": print(await service.argusHealth()); break;
   case "health": print(await service.health()); break;
   case "cleanup":
   case "retention:cleanup": print(await service.retentionCleanup()); break;
@@ -52,11 +51,25 @@ switch (command) {
   }
   case "enqueue-source": {
     const sourceId = requiredArg(args, 0);
-    print(await enqueueJob({ type: "PUBLIC_DATA_COLLECTION", payload: { sourceId, marketScope: option(args, "--market") ?? "new-zealand" }, idempotencyKey: `cli-source:${sourceId}:${new Date().toISOString().slice(0, 13)}`, sourceId }));
+    print(await enqueueJob({
+      type: ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_racing", "christchurch_council_events", "canterbury_major_annual_events"].includes(sourceId)
+        ? "EVENT_COLLECTION"
+        : ["christchurch_airport", "christchurch_cruise", "christchurch_airport_monthly"].includes(sourceId) ? "TRANSPORT_COLLECTION" : "PUBLIC_DATA_COLLECTION",
+      payload: {
+        sourceId,
+        marketScope: option(args, "--market") ?? "new-zealand",
+        ...collectionOptions(args),
+        phase: eventCollectionPhase(args),
+        maxPages: integerOption(args, "--max-pages"),
+        maxDetails: integerOption(args, "--max-details"),
+      },
+      idempotencyKey: option(args, "--key") ?? `cli-source:${sourceId}:${Date.now()}`,
+      sourceId,
+    }));
     break;
   }
   default:
-    process.stderr.write("Usage: cli <browser:health|browser:capture|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|seed:fixtures> ...\n");
     process.exitCode = 2;
 }
 

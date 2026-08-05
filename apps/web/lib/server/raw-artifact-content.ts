@@ -1,10 +1,10 @@
 import path from "node:path";
 
-const browserEvidencePrefix = "browser-evidence:";
+const retainedEvidencePrefix = "tymra-evidence:";
 
-export function resolveBrowserEvidencePath(root: string, storageRef: string): string {
-  if (!storageRef.startsWith(browserEvidencePrefix)) throw new Error("Artifact does not reference browser evidence");
-  const relativePath = storageRef.slice(browserEvidencePrefix.length);
+export function resolveRetainedEvidencePath(root: string, storageRef: string): string {
+  if (!storageRef.startsWith(retainedEvidencePrefix)) throw new Error("Artifact does not reference retained evidence");
+  const relativePath = storageRef.slice(retainedEvidencePrefix.length);
   if (!relativePath || path.isAbsolute(relativePath)) throw new Error("Artifact evidence path is invalid");
   const resolvedRoot = path.resolve(root);
   const resolvedPath = path.resolve(resolvedRoot, relativePath);
@@ -20,6 +20,6 @@ export function artifactMediaType(artifactType: string): string {
 export function canReadArtifactContent(input: { artifactType: string; storageRef: string; containsSensitiveData: boolean; deletedAt: Date | null }): boolean {
   return !input.containsSensitiveData
     && !input.deletedAt
-    && input.storageRef.startsWith(browserEvidencePrefix)
+    && input.storageRef.startsWith(retainedEvidencePrefix)
     && !input.artifactType.includes("PROFILE");
 }

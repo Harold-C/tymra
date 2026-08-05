@@ -55,8 +55,8 @@ resend, cancel, source, market, health and readiness routes. API and CLI call `W
 not duplicate pipeline logic. CLI commands follow the `collect:*`, `analyse:listing`, `source:*`,
 `retention:cleanup` and `seed:fixtures` naming documented in the build baseline.
 
-Eventfinda and Ticketmaster are browser-only event sources executed through durable Argus asynchronous Jobs
-when configured. RBNZ B1 uses the same boundary for its single rendered table page. Eventfinda implements nationwide
+Eventfinda uses direct HTTP for listing and detail collection. Ticketmaster uses direct HTTP listings
+and durable Argus asynchronous Jobs only for selectively required details. RBNZ B1 uses Argus for its rendered table page. Lincoln University annual key dates use Argus and join University of Canterbury direct-HTTP dates under the shared `christchurch_university_dates` standard source. Eventfinda implements nationwide
 discovery, canonical-URL grouping and one detail expansion for all dates in an event series, including
 a scheduler-off development bootstrap mode. Ticketmaster implements five-city listing-first
 discovery: complete listing JSON-LD is persisted directly, while only incomplete groups enter the

@@ -506,7 +506,7 @@ from trash, and Drive metadata lookup returned `404 Not Found` for every recorde
 
 ## D-034 Use Explicit Application Boundaries And Remove Phantom Packages
 
-**Status:** Implemented and verified.
+**Status:** Superseded in part by D-035; `apps/browser-worker` was later removed.
 
 **Decision:** Runnable processes live under `apps/`: `web`, `worker` and `browser-worker`. Shared
 runtime code remains under `packages/`. The unused `packages/ui` marker package is removed; the
@@ -524,15 +524,18 @@ framework error overlay and no relevant console warning or error.
 
 ## D-035 Use Argus As A Durable External Browser Execution Boundary
 
-**Status:** Implemented and locally verified; current worktree integration rerun pending.
+**Status:** Implemented and locally verified.
 
 **Decision:** Tymra retains ownership of source governance, schedules, budgets, locks, collection
-runs, persistence and canonicalisation. When configured, browser execution for Eventfinda,
-Ticketmaster, OurAuckland and RBNZ is submitted to Argus through its asynchronous `/v1/jobs`
+runs, persistence and canonicalisation. Browser execution for Ticketmaster selective details,
+OurAuckland, RBNZ and Lincoln University key dates is submitted to Argus through its asynchronous `/v1/jobs`
 contract. `ArgusExecution` persists the remote Job identity and result, a delayed
 `ARGUS_JOB_POLL` queue releases the parent Worker lease between polls, and the parent resumes the
-same collection run after a terminal result. Tymra acknowledges the exact persisted result hash only
-after business records are durable. The private Browser Worker remains a development fallback.
+same collection run after a terminal result. Tymra first downloads and verifies every referenced
+HTML/screenshot into its own evidence volume, updates `RawArtifact` to a local `tymra-evidence:`
+reference, and acknowledges the exact result hash only after business records and evidence are
+durable. Argus is required in development and production; the private Browser Worker, Ulixee runtime,
+fallback packages, Compose services and browser profile volumes are removed.
 
 **Reason:** Browser work can outlive one Worker lease and may need process-restart recovery. A
 persisted orchestration boundary prevents duplicate submissions, avoids holding a Worker during
@@ -544,8 +547,13 @@ cancellation settlement. ARGUS-023 additionally verified persist-before-ACK, exa
 idempotent repeated ACK, Argus result/evidence purge and retained Tymra business records. On
 2026-08-01 the migration was applied locally with 33 completed and one cancelled execution and no
 active execution; current Argus client/orchestrator unit tests, Worker typecheck and Worker build
-passed. The database integration suite was not rerun for the latest revision, so the current status
-is not upgraded to a fresh full-workspace verification.
+passed. The 2026-08-02 Argus-only acceptance then passed the database integration suite, all four
+real bounded browser sources, restart recovery, cancellation, evidence copy and remote purge after
+ACK. See [`argus-only-cutover-2026-08-02.md`](./evidence/argus-only-cutover-2026-08-02.md).
+Lincoln's 2026-08-04 acceptance additionally proved the full connector contract, standardisation,
+same-run deferred recovery, local HTML/screenshot retention, remote HTTP 410 after ACK and
+second-pass idempotency. See
+[`lincoln-key-dates-acceptance-2026-08-04.md`](./evidence/lincoln-key-dates-acceptance-2026-08-04.md).
 
 ## D-036 Use Listing-First Collection, Stable Identity And One Shared Public-Source Acceptance Runner
 

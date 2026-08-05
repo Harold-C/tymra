@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AdapterError, changedMetServiceFeedItems, metServiceFeedItemVersion, otaAdapters, parseAucklandLivePage, parseChristchurchNzPage, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseNztaDelays, parseOurAucklandPage, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseStatsNzInternationalTravel, parseUniversityEvents, publicDataAdapters } from "../src";
+import { AdapterError, changedMetServiceFeedItems, extractEventfindaHttpPage, extractTicketmasterHttpPage, metServiceFeedItemVersion, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseIsaacTheatreRoyalEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseStatsNzInternationalTravel, parseTePaeEvents, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, publicDataAdapters } from "../src";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };
@@ -59,16 +59,72 @@ describe("public data adapter contract", () => {
     expect(publicDataAdapters.school_holidays_nz.rightsMetadata().legalRightsStatus).toBe("ALLOWED");
   });
 
-  it("delegates Ticketmaster collection to the read-only Browser Worker path", async () => {
+  it("uses direct HTTP Ticketmaster listings and reserves Argus for details", async () => {
     const adapter = publicDataAdapters.ticketmaster;
     expect(adapter.metadata).toMatchObject({
       supportedDomains: ["www.ticketmaster.co.nz", "ticketmaster.co.nz"],
-      adapterKey: "public:ticketmaster:browser-v1",
-      accessMethod: "PUBLIC_WEB_BROWSER_READ_ONLY",
+      adapterKey: "public:ticketmaster:http-listing-argus-detail-v1",
+      accessMethod: "PUBLIC_HTTP_LISTING_ARGUS_DETAIL",
       concurrencyLimit: 1,
     });
     await expect(adapter.discover({ marketScope: "new-zealand", from: new Date(), to: new Date() }, fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
     await expect(adapter.fetch("https://www.ticketmaster.co.nz/", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
+  });
+
+  it("extracts Eventfinda and Ticketmaster direct HTTP listing payloads", () => {
+    const eventfinda = extractEventfindaHttpPage({
+      finalUrl: "https://www.eventfinda.co.nz/whatson/events/new-zealand",
+      title: "Events",
+      html: `<div class="listings-events"><article class="card h-event"><h2 class="p-name"><a href="/2026/sample/christchurch">Sample</a></h2><div class="dtstart"><span class="value-title" title="2026-08-20T19:00:00+12:00"></span></div><div class="p-location"><a class="location">Town Hall</a> Christchurch</div></article></div>`,
+    });
+    expect(eventfinda).toMatchObject({ kind: "listing", events: [{ title: "Sample", startsAt: "2026-08-20T19:00:00+12:00" }] });
+
+    const ticketmaster = extractTicketmasterHttpPage({
+      finalUrl: "https://www.ticketmaster.co.nz/discover/christchurch",
+      title: "Christchurch",
+      html: `<script type="application/ld+json">${JSON.stringify({ "@type": "MusicEvent", name: "Concert", startDate: "2026-09-10T19:30:00+12:00", eventStatus: "https://schema.org/EventScheduled", url: "https://www.ticketmaster.co.nz/concert/event/2400000000000001", location: { "@type": "Place", name: "Town Hall", address: { addressLocality: "Christchurch", addressCountry: "NZ" } } })}</script>`,
+    });
+    expect(ticketmaster).toMatchObject({ kind: "listing", events: [{ eventId: "2400000000000001", title: "Concert" }] });
+  });
+
+  it("normalises platform JSON-LD and Christchurch Airport local flight times", () => {
+    const events = parsePlatformJsonLdEvents(`<script type="application/ld+json">${JSON.stringify({ "@type": "Event", name: "Community Expo", startDate: "2026-08-20T10:00:00+12:00", endDate: "2026-08-20T16:00:00+12:00", url: "https://www.eventbrite.co.nz/e/community-expo-tickets-123", location: { "@type": "Place", name: "Convention Centre", address: { streetAddress: "1 Main Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011" } } })}</script>`, "https://www.eventbrite.co.nz/d/new-zealand/events/", "eventbrite_events");
+    expect(events[0]).toMatchObject({ title: "Community Expo", city: "Christchurch", countryCode: "NZ", status: "SCHEDULED" });
+    expect(parseFlightTime("Tue 7:10 AM", new Date("2026-08-03T10:00:00.000Z"))?.toISOString()).toBe("2026-08-03T19:10:00.000Z");
+  });
+
+  it("uses Christchurch-specific platform routes and bounded pagination metadata", async () => {
+    const request = { marketScope: "christchurch", from: new Date("2026-08-01"), to: new Date("2026-09-01") };
+    await expect(publicDataAdapters.eventbrite_events.discover(request, fixtureContext)).resolves.toEqual(["https://www.eventbrite.co.nz/d/new-zealand--christchurch/events/"]);
+    await expect(publicDataAdapters.humanitix_events.discover(request, fixtureContext)).resolves.toEqual(["https://humanitix.com/nz/events/nz--canterbury-region--christchurch"]);
+    expect(publicDataAdapters.eventbrite_events.metadata).toMatchObject({ adapterKey: "public:eventbrite:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED" });
+  });
+
+  it("parses Christchurch official sports fixtures", () => {
+    const crusaders = parseChristchurchSports(`<div class="c-opta-data-block__heading"><h1>2026 Super Rugby Pacific Draw</h1></div><table class="c-fixture-table"><tbody><tr><td>13</td><td>Fri 8 May | 07:05 PM</td><td>Crusaders V Blues</td><td>One NZ Stadium, Christchurch</td><td></td></tr><tr><td>14</td><td>Fri 15 May | 07:05 PM</td><td>Crusaders V Force</td><td>Perth Stadium</td><td></td></tr></tbody></table>`, "https://www.crusaders.co.nz/fixtures/draw/");
+    expect(crusaders.events).toEqual([expect.objectContaining({ title: "Crusaders V Blues", city: "Christchurch", category: "Sport", startsAt: new Date("2026-05-08T07:05:00.000Z") })]);
+
+    const tactix = parseChristchurchSports(`<h1>2026 Draw</h1><div class="match home-game"><div class="date"><div class="additional">Round 6</div><div class="day">16</div><div class="month">May</div></div><div class="details"><div class="location">Parakiore Recreation and Sports Centre <strong>Christchurch</strong><div>Home Game</div></div></div></div>`, "https://www.tactixnetball.co.nz/tactix/draw/results.html");
+    expect(tactix.events?.[0]).toMatchObject({ title: "Mainland Tactix home game - Round 6", venueName: "Parakiore Recreation and Sports Centre Christchurch" });
+  });
+
+  it("keeps only demand-relevant UC dates", () => {
+    const parsed = parseUcKeyDates(`<div id="2026"><h5>2026</h5></div><div class="cmp-timeline-ordered-item"><div class="cmp-timeline-ordered-item__title-ctn"><h3>25 - 27 August</h3></div><div class="cmp-timeline-ordered-item__content-ctn"><p>Spring graduation celebrations. Add to calendar</p></div></div><div class="cmp-timeline-ordered-item"><div class="cmp-timeline-ordered-item__title-ctn"><h3>28 August</h3></div><div class="cmp-timeline-ordered-item__content-ctn"><p>Deadline to submit an assignment.</p></div></div>`, "https://www.canterbury.ac.nz/study/study-support-info/dates-and-timetables/key-university-dates");
+    expect(parsed.signals).toEqual([expect.objectContaining({ type: "UNIVERSITY_CALENDAR", title: "Spring graduation celebrations.", startsAt: new Date("2026-08-24T12:00:00.000Z"), endsAt: new Date("2026-08-27T11:59:59.999Z") })]);
+  });
+
+  it("parses Addington meetings and Riccarton Cup Week dates", () => {
+    const addington = parseChristchurchRacing(`<a class="racing-button" href="https://www.addington.co.nz/events/cup"><span class="date">11 November 2026<br><span>Race </span></span><span class="time">5:00pm</span></a>`, "https://www.addington.co.nz/racing/");
+    expect(addington.events?.[0]).toMatchObject({ category: "Horse racing", startsAt: new Date("2026-11-11T04:00:00.000Z") });
+    const riccarton = parseChristchurchRacing(`<h1>New Zealand Cup Week 2026</h1><div class="feature-tile--icon-info">7, 11, 14 November 2026</div>`, "https://racing.riccartonpark.nz/");
+    expect(riccarton.events?.map((event) => event.externalId)).toEqual(["riccarton-cup-week:2026-7", "riccarton-cup-week:2026-11", "riccarton-cup-week:2026-14"]);
+  });
+
+  it("tracks the official cruise dashboard boundary and airport monthly passenger totals", () => {
+    const cruise = parseCruiseDashboard(`<iframe title="Christchurch Cruise schedule 2025_26" src="https://app.powerbi.com/view?r=public-token"></iframe>`, "https://www.christchurchnz.com/visit/plan-your-visit/cruise/christchurch-cruise-schedule");
+    expect(cruise.metadata).toMatchObject({ publisher: "ChristchurchNZ", underlyingSource: "New Zealand Cruise Association", extractionBoundary: "DIRECT_PUBLIC_POWERBI_JSON" });
+    const airport = parseAirportMonthlyPassengers(`<h4>2026</h4><table><tr><td>Month</td><td>Domestic</td><td>International</td><td>Total</td></tr><tr><td>June</td><td>361,510</td><td>108,278</td><td>469,788</td></tr></table>`, "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/");
+    expect(airport.signals?.[0]).toMatchObject({ type: "AIRPORT_MONTHLY_CAPACITY", startsAt: new Date("2026-05-31T12:00:00.000Z"), metadata: { domesticPassengers: 361510, internationalPassengers: 108278, totalPassengers: 469788 } });
   });
 
   it("parses and groups the latest MBIE ADP accommodation measures", async () => {
@@ -84,7 +140,7 @@ describe("public data adapter contract", () => {
     expect(publicDataAdapters.mbie.metadata).toMatchObject({ adapterKey: "public:mbie:adp-csv-v1", accessMethod: "OFFICIAL_PUBLIC_CSV_RANGE" });
   });
 
-  it("routes RBNZ B1 through the read-only Browser Worker", async () => {
+  it("routes RBNZ B1 through Argus", async () => {
     const adapter = publicDataAdapters.fx_rates;
     expect(adapter.metadata).toMatchObject({ adapterKey: "public:fx_rates:rbnz-browser-v1", accessMethod: "OFFICIAL_PUBLIC_HTML_BROWSER", concurrencyLimit: 1 });
     await expect(adapter.discover({ marketScope: "new-zealand", from: new Date(), to: new Date() }, fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
@@ -149,6 +205,103 @@ describe("public data adapter contract", () => {
     expect(events[0]).toMatchObject({ externalId: "auckland-live:4432:36433", venueName: "The Civic, Auckland", startsAt: new Date("2026-08-19T22:00:00.000Z"), endsAt: new Date("2026-08-19T22:00:00.000Z"), ticketStatus: "ONSALE", metadata: { sourceEventId: "auckland-live:4432" } });
   });
 
+  it("parses Te Pae listing cards without opening event details", async () => {
+    const parsed = parseTePaeEvents(`<div class="event-block"><div class="content-block"><div class="h6">Australasian Weeds Conference</div><div class="p3">23 Aug 2026 - 27 Aug 2026</div></div><img src="https://www.tepae.co.nz/images/weeds.jpg"><a class="link link-overlay" href="https://example-conference.test/register"></a></div>`);
+    expect(parsed[0]).toMatchObject({
+      id: "te-pae:australasian-weeds-conference:2026-08-23",
+      seriesId: "te-pae:australasian-weeds-conference",
+      title: "Australasian Weeds Conference",
+      sourceUrl: "https://example-conference.test/register",
+      startsAt: "2026-08-22T12:00:00.000Z",
+      endsAt: "2026-08-27T11:59:59.000Z",
+      venueName: "Te Pae Christchurch Convention Centre",
+      advertisedDate: "23 Aug 2026 - 27 Aug 2026",
+    });
+    const events = await publicDataAdapters.te_pae_events.normaliseEvents!([{ sourceId: "te_pae_events", externalId: parsed[0].id, payload: { event: parsed[0] }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(events[0]).toMatchObject({ city: "Christchurch", region: "Canterbury", postcode: "8011", fixture: false });
+  });
+
+  it("parses Isaac Theatre Royal cards as date-only event ranges", () => {
+    const parsed = parseIsaacTheatreRoyalEvents(`<div class="custom-visual-card" data-category="classical &amp; orchestral music" data-location="the auditorium and stage" data-start-date="1788480000000" data-end-date="1788480000000"><a href="https://isaactheatreroyal.co.nz/event-fleetwood-macs"><img src="https://isaactheatreroyal.co.nz/image.jpg"><p class="custom-visual-card__upcoming-date">Fri 4 September 2026</p><h3 class="custom-visual-card__title">Fleetwood Macs</h3></a></div>`);
+    expect(parsed[0]).toMatchObject({
+      id: "isaac-theatre-royal:fleetwood-macs:2026-09-04",
+      seriesId: "isaac-theatre-royal:fleetwood-macs",
+      title: "Fleetwood Macs",
+      category: "classical & orchestral music",
+      startsAt: "2026-09-03T12:00:00.000Z",
+      endsAt: "2026-09-04T11:59:59.000Z",
+      venueName: "Isaac Theatre Royal",
+    });
+  });
+
+  it("parses Christchurch City Council cards and follows only listing pagination", () => {
+    const parsed = parseChristchurchCouncilEventsPage(`<div class="event-card"><div class="card-event"><img src="/event.jpg"><time class="card-pre-heading">11 to 13 November 2026</time><h4 class="card-title"><a href="/search-results/searchRedirect?url=https%3A%2F%2Fwww.ccc.govt.nz%2Fnews-and-events%2Fwhats-on%2Fevent%2Fthe-show">The Show</a></h4></div></div><a class="next-prev-link" href="/news-and-events/whats-on?start_rank=16">Next</a>`);
+    expect(parsed.nextUrl).toBe("https://www.ccc.govt.nz/news-and-events/whats-on?start_rank=16");
+    expect(parsed.events[0]).toMatchObject({
+      sourceId: "christchurch_council_events",
+      externalId: "ccc-whats-on:the-show:2026-11-11",
+      title: "The Show",
+      sourceUrl: "https://www.ccc.govt.nz/news-and-events/whats-on/event/the-show",
+      startsAt: new Date("2026-11-10T11:00:00.000Z"),
+      endsAt: new Date("2026-11-13T10:59:59.000Z"),
+    });
+  });
+
+  it("keeps only accommodation-demand-relevant Ara academic dates", () => {
+    const signals = parseAraAcademicCalendar(`<section class="wysiwygBlock"><h4>2026</h4><table><tbody><tr><td>16 February</td><td><p>Semester 1 starts</p><p>Details</p></td></tr><tr><td>13 March</td><td><p>Autumn Graduation - Christchurch</p></td></tr><tr><td>30 April</td><td><p>Timaru Graduation</p></td></tr><tr><td>13 November</td><td><p>Canterbury Anniversary Day - Christchurch campuses closed</p></td></tr></tbody></table></section>`);
+    expect(signals).toHaveLength(2);
+    expect(signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ externalId: "ara:semester-1-starts:2026-02-16", type: "TOURISM_DEMAND", direction: "POSITIVE" }),
+      expect.objectContaining({ externalId: "ara:autumn-graduation-christchurch:2026-03-13", confidence: 0.9 }),
+    ]));
+  });
+
+  it("promotes the Canterbury A&P Show only when the official page publishes scale evidence", () => {
+    const [show] = parseCanterburyMajorAnnualEvent(`<main>Ravensdown Canterbury A&amp;P Show Wed 11 - Fri 13 November 2026 Canterbury Agricultural Park 70,000 Annual Visitors 400 Trade Sites 5,000 Show Events &amp; Competitions</main>`, "https://www.theshow.co.nz/");
+    expect(show).toMatchObject({
+      externalId: "canterbury-ap-show:2026",
+      impactStatus: "PROMOTED",
+      impactScore: 0.95,
+      impactEvidence: { annualVisitors: 70_000 },
+      metadata: { tradeSites: 400, showEventsAndCompetitions: 5_000 },
+    });
+    const [marathon] = parseCanterburyMajorAnnualEvent(`<main>ASICS Christchurch Marathon 18 April 2027</main>`, "https://www.christchurchmarathon.co.nz/");
+    expect(marathon).toMatchObject({ externalId: "christchurch-marathon:2027", impactStatus: "PENDING_EVIDENCE", venueName: "Hagley Park" });
+  });
+
+  it("discovers and parses the Venues Otautahi public Storyblok feed", () => {
+    const token = parseVenuesOtautahiToken(`<astro-island component-url="/_astro/EventIndexClient.js" props='{"initialData":[0,{"token":[0,"public-token-123"]}]}'></astro-island>`);
+    expect(token).toBe("public-token-123");
+    const parsed = parseVenuesOtautahiStories({ stories: [{
+      id: 123,
+      uuid: "event-uuid",
+      name: "Robbie Williams",
+      full_slug: "whats-on/robbie-williams",
+      published_at: "2026-06-01T00:00:00.000Z",
+      content: {
+        title: "Robbie Williams",
+        category: "music",
+        status: "On sale now",
+        event_start_date: "2026-11-28 19:30",
+        event_end_date: "2026-11-28 22:30",
+        event_location: ["e3979aea-e7d0-4f4d-b890-4436b7995e48"],
+        tickets_url: { url: "https://www.ticketmaster.co.nz/robbie-williams" },
+        tile_image: { filename: "https://a.storyblok.com/robbie.jpg" },
+        event_description: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Live at One NZ Stadium." }] }] },
+      },
+    }] });
+    expect(parsed[0]).toMatchObject({
+      id: "venues-otautahi:event-uuid:2026-11-28T06:30:00.000Z",
+      seriesId: "venues-otautahi:event-uuid",
+      title: "Robbie Williams",
+      venueName: "One NZ Stadium",
+      startsAt: "2026-11-28T06:30:00.000Z",
+      endsAt: "2026-11-28T09:30:00.000Z",
+      description: "Live at One NZ Stadium.",
+      ticketStatus: "AVAILABLE_OR_UNKNOWN",
+    });
+  });
+
   it("parses OurAuckland cards conservatively as date-precision council events", async () => {
     const page = parseOurAucklandPage(`<article class="article-tile"><div class="article-tile__content"><span class="article-tile__date">21 Jul 2026 - 25 Jul 2026</span><h2><a class="article-tile__link" href="/events/2026/07/sharp-teeth/">Sharp Teeth</a></h2><p>A theatre event.</p></div></article><a class="pagination__link" data-page="32" href="?page=32">32</a>`);
     expect(page).toMatchObject({ totalPages: 32, events: [{ id: "our-auckland:sharp-teeth", title: "Sharp Teeth", startsOn: "2026-07-21", endsOn: "2026-07-25" }] });
@@ -205,4 +358,77 @@ describe("public data adapter contract", () => {
     expect(await publicDataAdapters.linz.normalise([], fixtureContext)).toEqual([]);
     expect(publicDataAdapters.linz.metadata).toMatchObject({ adapterKey: "public:linz:gazetteer-search-v1", accessMethod: "OFFICIAL_PUBLIC_JSON" });
   });
+});
+
+describe.skipIf(process.env.LIVE_SOURCE_PROBE !== "1")("Christchurch live source probe", () => {
+  it("collects bounded current events from every direct HTTP source", async () => {
+    const from = new Date();
+    const to = new Date(from.getTime() + 180 * 86_400_000);
+    const context = {
+      ...liveContext,
+      collectionRange: { from, to },
+      collectionLimits: { maxRequests: 3, maxRecords: 5, maxBytes: 2_000_000 },
+    };
+    for (const sourceId of ["te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "canterbury_major_annual_events"]) {
+      const adapter = publicDataAdapters[sourceId];
+      const references = await adapter.discover({ marketScope: "christchurch", from, to }, context);
+      const records = (await Promise.all(references.map((reference) => adapter.fetch(reference, context)))).flat();
+      const events = await adapter.normaliseEvents!(records, context);
+      expect(events.length, `${sourceId} should return at least one current event`).toBeGreaterThan(0);
+      expect(events.length).toBeLessThanOrEqual(5);
+      expect(events.every((event) => event.city === "Christchurch" && event.fixture === false)).toBe(true);
+      expect(records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0)).toBeLessThanOrEqual(3);
+    }
+  }, 30_000);
+
+  it("collects Ara academic demand dates without browser execution", async () => {
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const to = new Date("2027-01-01T00:00:00.000Z");
+    const context = { ...liveContext, collectionRange: { from, to }, collectionLimits: { maxRequests: 1, maxRecords: 20, timeoutMs: 30_000, maxBytes: 2_000_000 } };
+    const adapter = publicDataAdapters.ara_academic_dates;
+    const [reference] = await adapter.discover({ marketScope: "christchurch", from, to }, context);
+    const records = await adapter.fetch(reference, context);
+    const signals = await adapter.normalise(records, context);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal.marketKey === "christchurch" && signal.type === "TOURISM_DEMAND")).toBe(true);
+  }, 30_000);
+
+  it("collects bounded Eventbrite, Humanitix and Christchurch Airport data without browser execution", async () => {
+    const from = new Date();
+    const to = new Date(from.getTime() + 180 * 86_400_000);
+    const context = { ...liveContext, collectionRange: { from, to }, collectionLimits: { maxRequests: 4, maxRecords: 5, timeoutMs: 30_000, maxBytes: 2_000_000 } };
+    for (const sourceId of ["eventbrite_events", "humanitix_events"]) {
+      const adapter = publicDataAdapters[sourceId];
+      const references = await adapter.discover({ marketScope: "new-zealand", from, to }, context);
+      const records = await adapter.fetch(references[0], context);
+      const events = await adapter.normaliseEvents!(records, context);
+      expect(events.length, `${sourceId} should return listing JSON-LD events`).toBeGreaterThan(0);
+      expect(records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0)).toBeLessThanOrEqual(4);
+      expect(records.every((record) => (record.networkRequestsAvoided ?? 0) >= 0)).toBe(true);
+    }
+    const airport = publicDataAdapters.christchurch_airport;
+    const references = await airport.discover({ marketScope: "christchurch", from, to }, context);
+    const records = (await Promise.all(references.map((reference) => airport.fetch(reference, context)))).flat();
+    const signals = await airport.normalise(records, context);
+    expect(references).toHaveLength(4);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal.marketKey === "christchurch" && signal.type === "TRANSPORT_FLOW")).toBe(true);
+  }, 30_000);
+
+  it("collects the new Christchurch demand channels through direct HTTP", async () => {
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const to = new Date("2027-06-30T00:00:00.000Z");
+    const context = { ...liveContext, collectionRange: { from, to }, collectionLimits: { maxRequests: 4, maxRecords: 100, timeoutMs: 30_000, maxBytes: 2_000_000 } };
+    for (const sourceId of ["christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_airport_monthly"]) {
+      const adapter = publicDataAdapters[sourceId];
+      const references = await adapter.discover({ marketScope: "christchurch", from, to }, context);
+      const records = (await Promise.all(references.map((reference) => adapter.fetch(reference, context)))).flat();
+      expect(records.length, `${sourceId} should return official records`).toBeGreaterThan(0);
+      expect(records.every((record) => record.fixture === false)).toBe(true);
+    }
+    const cruise = publicDataAdapters.christchurch_cruise;
+    const [reference] = await cruise.discover({ marketScope: "christchurch", from, to }, context);
+    const [record] = await cruise.fetch(reference, context);
+    expect(record.payload).toMatchObject({ kind: "event", value: { category: "Cruise ship", city: "Christchurch" } });
+  }, 60_000);
 });

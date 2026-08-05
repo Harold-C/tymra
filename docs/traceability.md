@@ -40,7 +40,7 @@ verification evidence.
 | TypeScript | Web, Worker, config, db, domain, providers and queue each passed `tsc --noEmit` | verified |
 | Root unit/component suite | 14 files, 80 tests passed | verified |
 | Worker unit suite | 7 files, 37 tests passed, including Argus client/orchestrator and failure classification | verified |
-| Browser suites | Browser Runtime, extractors and Browser Worker: 37/37 tests passed | verified |
+| Argus boundary suites | Async Job client, durable orchestration, schema validation, cancellation and evidence-before-ACK tests | verified by current Worker unit and database integration suites plus 2026-08-02 real bounded acceptance |
 | Worker production build | `index`, `api`, `scheduler` and `cli` entrypoints built successfully | verified |
 | Web production build | Next.js generated 64/64 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
 | Isolated Compose smoke | Fresh image, migration, seed, Web, Worker API, Worker, Redis, PostgreSQL and Mailpit passed on isolated ports/volumes; cleanup completed | verified |
@@ -246,7 +246,7 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | Domain persistence | Property, SellableUnit, Listing, SourceRegistry, QueryPlan/Profile, Observation, snapshots, analysis and result schema | verified by clean migration and seed |
 | OTA research adapters | Seven shared contract adapters, deterministic record/replay, stable errors and rights metadata | verified |
 | Public signal lineage | RawArtifact -> SourceMarketSignal -> MarketSignal -> MarketSignalSourceLink | locally verified across holidays, GeoNet, MBIE, Stats NZ, MetService, NZTA, RBNZ FX, airport and port/cruise adapters |
-| Public source adapters | All 17 configured public source IDs use concrete official/public transports or the read-only Browser Worker; category channels name their current first provider | implementations and bounded real local acceptance verified; production approval remains separate |
+| Public source adapters | Every configured public source ID uses a concrete official/public transport or a required Argus read-only Job; Christchurch sports, UC and Lincoln dates, racing, cruise and airport monthly sources are registered separately | implementations, live-source probes and bounded two-pass local acceptance verified; Lincoln contract, local evidence copy, ACK purge and idempotency verified on 2026-08-04; schedules remain disabled |
 | Canonical event persistence | Source-normalised series/occurrences, exact canonical matching, venue linkage, idempotent repeat writes and preserved source state | verified by Worker unit tests and local database integration regression |
 | Local source acceptance standard | Development-only guard, scheduler-off guard, bounded real collection, immutable run evidence, two-pass idempotency, retention, Redis lock, lease recovery, unchanged governance and full quality gate | verified and required for every implemented collection channel |
 | Manual import local acceptance | Bounded operator-file parser, source/canonical accommodation persistence, immutable observation identity and evidence retention | implementation and fixture/database regression verified; genuine operator file and two-pass real-file evidence remain not_verified |

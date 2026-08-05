@@ -14,6 +14,7 @@ type SourceSpec = {
   jobType: JobType;
   marketScope: string;
   payload?: Record<string, string | number | boolean>;
+  range?: { from: string; to: string };
 };
 
 type SourceCounts = {
@@ -38,6 +39,9 @@ type PassReport = {
   artifactCount: number;
   parserFailureArtifacts: number;
   argusExecutions: number;
+  retainedEvidenceCount: number;
+  remoteEvidenceCount: number;
+  lincolnSignalCount: number;
   countsBefore: SourceCounts;
   countsAfter: SourceCounts;
   newSourceRows: SourceCounts;
@@ -65,9 +69,23 @@ const sources: SourceSpec[] = [
   { key: "council_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "university_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "rto_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
+  { key: "te_pae_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
+  { key: "venues_otautahi_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
+  { key: "isaac_theatre_royal_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
+  { key: "christchurch_council_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
+  { key: "ara_academic_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: { from: "2026-02-01T00:00:00.000Z", to: "2026-03-01T00:00:00.000Z" } },
+  { key: "canterbury_major_annual_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: { from: "2026-11-01T00:00:00.000Z", to: "2026-12-01T00:00:00.000Z" } },
+  { key: "eventbrite_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
+  { key: "humanitix_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "metservice", jobType: "WEATHER_COLLECTION", marketScope: "new-zealand" },
   { key: "nzta", jobType: "TRANSPORT_COLLECTION", marketScope: "new-zealand" },
   { key: "airport_data", jobType: "TRANSPORT_COLLECTION", marketScope: "queenstown" },
+  { key: "christchurch_airport", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch" },
+  { key: "christchurch_sports", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(1, 32) },
+  { key: "christchurch_university_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: { from: "2026-08-01T00:00:00.000Z", to: "2026-09-01T00:00:00.000Z" } },
+  { key: "christchurch_racing", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
+  { key: "christchurch_cruise", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(0, 31) },
+  { key: "christchurch_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(0, 31) },
   { key: "port_and_cruise", jobType: "TRANSPORT_COLLECTION", marketScope: "auckland" },
   { key: "fx_rates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
   {
@@ -134,8 +152,8 @@ async function main() {
           localAcceptance: true,
           dryRun: false,
           limit: 2,
-          from: rangeFrom.toISOString(),
-          to: rangeTo.toISOString(),
+          from: spec.range?.from ?? rangeFrom.toISOString(),
+          to: spec.range?.to ?? rangeTo.toISOString(),
           ...spec.payload,
         },
         idempotencyKey: `acceptance:${acceptanceId}:${spec.key}:pass-${pass}`,
@@ -162,13 +180,22 @@ async function main() {
       const lineageFailures = lineageProblems(countsAfter);
       failures.push(...lineageFailures);
 
-      const [artifactCount, parserFailureArtifacts, argusExecutions] = run
+      const [artifactCount, parserFailureArtifacts, argusExecutions, retainedEvidenceCount, remoteEvidenceCount, lincolnSignalCount] = run
         ? await Promise.all([
             prisma.rawArtifact.count({ where: { collectionRunId: run.id } }),
             prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } }),
             prisma.argusExecution.count({ where: { parentJobId: job.id } }),
+            prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "tymra-evidence:" } } }),
+            prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } }),
+            prisma.sourceMarketSignal.count({ where: { dataSourceId: source.id, externalId: { startsWith: "lincoln:" } } }),
           ])
-        : [0, 0, 0];
+        : [0, 0, 0, 0, 0, 0];
+      if (spec.key === "christchurch_university_dates") {
+        if (argusExecutions !== 1) failures.push(`Expected one Lincoln Argus execution; found ${argusExecutions}`);
+        if (retainedEvidenceCount < 1) failures.push("Lincoln Argus evidence was not retained in Tymra storage");
+        if (remoteEvidenceCount !== 0) failures.push(`${remoteEvidenceCount} Lincoln artifacts still referenced remote Argus evidence after ACK`);
+        if (lincolnSignalCount < 1) failures.push("No normalised Lincoln market signal was persisted");
+      }
 
       const report: PassReport = {
         pass,
@@ -183,6 +210,9 @@ async function main() {
         artifactCount,
         parserFailureArtifacts,
         argusExecutions,
+        retainedEvidenceCount,
+        remoteEvidenceCount,
+        lincolnSignalCount,
         countsBefore,
         countsAfter,
         newSourceRows: subtractCounts(countsAfter, countsBefore),
@@ -258,6 +288,12 @@ async function main() {
   };
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   if (failures.length > 0) process.exitCode = 1;
+}
+
+function annualAcceptanceWindow(month: number, durationDays: number) {
+  const year = new Date().getFullYear();
+  const from = new Date(Date.UTC(year, month, 1));
+  return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
 }
 
 async function waitForTerminalJob(jobId: string): Promise<Job> {

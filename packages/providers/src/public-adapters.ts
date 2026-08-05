@@ -10,6 +10,10 @@ import type {
 } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 import { officialNzSourceAdapters } from "./official-nz-adapters";
+import { christchurchEventAdapters } from "./christchurch-event-adapters";
+import { christchurchDemandAdapters } from "./christchurch-demand-adapters";
+import { christchurchPriorityAdapters } from "./christchurch-priority-adapters";
+import { publicEventPlatformAdapters } from "./public-event-platform-adapters";
 import { parse } from "csv-parse/sync";
 import { DOMParser, parseHTML } from "linkedom";
 
@@ -379,11 +383,11 @@ class RbnzFxBrowserAdapter implements PublicDataAdapter {
   };
 
   async discover(): Promise<string[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "RBNZ B1 collection is orchestrated by the Browser Worker", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "RBNZ B1 collection is orchestrated by Argus", false);
   }
 
   async fetch(): Promise<PublicRawRecord[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "RBNZ B1 collection is orchestrated by the Browser Worker", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "RBNZ B1 collection is orchestrated by Argus", false);
   }
 
   async normalise(): Promise<PublicSignal[]> { return []; }
@@ -898,20 +902,20 @@ class EventfindaWebAdapter implements PublicDataAdapter {
     sourceName: "Eventfinda New Zealand",
     sourceType: "PUBLIC_DATA" as const,
     supportedDomains: ["www.eventfinda.co.nz", "eventfinda.co.nz"],
-    adapterKey: "public:eventfinda:browser-v1",
-    accessMethod: "PUBLIC_WEB_BROWSER_READ_ONLY",
+    adapterKey: "public:eventfinda:http-v1",
+    accessMethod: "PUBLIC_HTTP_HTML_JSONLD",
     concurrencyLimit: 1,
     dailyBudget: 2_500,
-    collectorVersion: "eventfinda-browser-v1",
+    collectorVersion: "eventfinda-http-v1",
     parserVersion: "eventfinda-jsonld-v1",
   };
 
   async discover(): Promise<string[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "Eventfinda discovery is orchestrated by the Browser Worker crawl frontier", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "Eventfinda discovery is orchestrated by the HTTP crawl frontier", false);
   }
 
   async fetch(): Promise<PublicRawRecord[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "Eventfinda fetch is orchestrated by the Browser Worker crawl frontier", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "Eventfinda fetch is orchestrated by the HTTP crawl frontier", false);
   }
 
   async normalise(): Promise<PublicSignal[]> { return []; }
@@ -937,20 +941,20 @@ class TicketmasterWebAdapter implements PublicDataAdapter {
     sourceName: "Ticketmaster New Zealand",
     sourceType: "PUBLIC_DATA" as const,
     supportedDomains: ["www.ticketmaster.co.nz", "ticketmaster.co.nz"],
-    adapterKey: "public:ticketmaster:browser-v1",
-    accessMethod: "PUBLIC_WEB_BROWSER_READ_ONLY",
+    adapterKey: "public:ticketmaster:http-listing-argus-detail-v1",
+    accessMethod: "PUBLIC_HTTP_LISTING_ARGUS_DETAIL",
     concurrencyLimit: 1,
     dailyBudget: 20,
-    collectorVersion: "ticketmaster-browser-v1",
-    parserVersion: "ticketmaster-browser-parser-v1",
+    collectorVersion: "ticketmaster-hybrid-v1",
+    parserVersion: "ticketmaster-jsonld-v1",
   };
 
   async discover(): Promise<string[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "Ticketmaster discovery is orchestrated by the Browser Worker crawl frontier", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "Ticketmaster discovery is orchestrated by the HTTP crawl frontier", false);
   }
 
   async fetch(): Promise<PublicRawRecord[]> {
-    throw new AdapterError("CONFIGURATION_ERROR", "Ticketmaster listing capture is orchestrated by the Browser Worker", false);
+    throw new AdapterError("CONFIGURATION_ERROR", "Ticketmaster listing capture is orchestrated by the hybrid crawl frontier", false);
   }
 
   async normalise(): Promise<PublicSignal[]> { return []; }
@@ -966,7 +970,7 @@ class TicketmasterWebAdapter implements PublicDataAdapter {
   }
 
   rightsMetadata(): SourceRights {
-    return reviewPublicRights("Read-only city-listing collection is implemented; detail pages require identity verification and are not collected; production remains gated by source review and explicit activation");
+    return reviewPublicRights("Direct HTTP city-listing collection is implemented; Argus is used only for selectively required detail pages; production remains gated by source review and explicit activation");
   }
 }
 
@@ -982,6 +986,10 @@ export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   ticketmaster: new TicketmasterWebAdapter(),
   eventfinda: new EventfindaWebAdapter(),
   ...officialNzSourceAdapters,
+  ...christchurchEventAdapters,
+  ...christchurchDemandAdapters,
+  ...christchurchPriorityAdapters,
+  ...publicEventPlatformAdapters,
 };
 
 function calendarTableRows(table: Element): string[][] {

@@ -1,6 +1,6 @@
 # Eventfinda New Zealand collection
 
-Last updated: 2026-08-01
+Last updated: 2026-08-03
 
 **Development status:** Collector development is complete. Local bounded acceptance, nationwide
 discovery and bounded detail persistence are verified; production activation and multi-day
@@ -11,9 +11,8 @@ unattended evidence remain separate operating gates.
 Tymra is intended to collect the complete set of currently published New Zealand events discoverable from Eventfinda's nationwide event listing. Historical Eventfinda archives are not bulk-crawled. A recurring event is stored as one source series with one source occurrence per advertised time, then linked into canonical event and occurrence records so accommodation analysis can match the exact affected dates.
 
 The source remains blocked from scheduled collection while production approval and stability gates
-are outstanding. Production activation uses the same read-only browser contract after Tymra's
-internal production decision and stability evidence are recorded. `robots.txt` remains a technical
-crawl control.
+are outstanding. Collection now uses ordinary read-only HTTP for both listing and detail pages;
+Eventfinda is no longer an Argus responsibility. `robots.txt` remains a technical crawl control.
 
 Completed evidence includes extractor unit tests, bounded real listing and detail captures, a two-pass
 bounded real persistence run, fixture-backed idempotent persistence, database migration regression,
@@ -31,9 +30,10 @@ All local collection work follows the project-wide
 [local source collection acceptance](./acceptance.md) standard. This document
 records only Eventfinda-specific limits, behaviour and evidence.
 
-## Read-only browser contract
+## Read-only HTTP contract
 
-The Browser Worker accepts only `read_only_capture`. Eventfinda tasks may select the fixed `eventfinda` extractor and `html` evidence mode. They cannot submit JavaScript, type, log in, solve a challenge, buy tickets, or change remote state.
+Tymra sends only bounded `GET` requests to approved Eventfinda hosts. It does not execute page
+JavaScript, type, log in, solve challenges, buy tickets, or change remote state.
 
 The extractor supports:
 
@@ -41,11 +41,10 @@ The extractor supports:
 - Event details using JSON-LD first, with DOM fallbacks for description, restrictions, phone sales, official websites, promoter and tour.
 - Every occurrence, including start and end time, event status, attendance mode, venue address and coordinates, offers, availability, performers, organizer and images.
 
-HTML, result and manifest evidence from successful captures are retained for the configured
-raw-artifact TTL, 72 hours by default. Browser or application parser failures use the failure TTL,
-168 hours by default. Scheduled collection omits screenshots for normal pages; a detected challenge
-retains initial and settled screenshots for manual diagnosis. Normalized event metadata retains useful
-business fields without retaining the whole page indefinitely.
+Direct HTML evidence is stored in `RawArtifact` and retained for the configured TTL, 72 hours by
+default. Parser-failure HTML uses the failure TTL, 168 hours by default. No screenshot is expected
+because this source does not invoke Argus. Normalized event metadata retains useful business fields
+without retaining the whole page indefinitely.
 
 ## Event data pipeline
 
@@ -91,12 +90,12 @@ full canonicalisation transaction.
 
 ## Source protection
 
-- Browser concurrency is one and a Redis source lock prevents overlapping Eventfinda runs.
+- HTTP concurrency is one and a Redis source lock prevents overlapping Eventfinda runs.
 - Requests wait 4-7 seconds by default, including random jitter.
 - The default daily ceiling is 2,500 stored HTML captures.
 - Discovery is capped at 250 pages and hourly detail work is capped at 80 targets.
 - Ordinary failures back off from 15 minutes to 24 hours per URL.
-- Retryable browser/network failures receive at most two retries after 30 and 60 seconds; every
+- Retryable HTTP/network failures receive at most two retries after 30 and 60 seconds; every
   attempt consumes the same daily budget and retains evidence.
 - Rate limits and access challenges stop the current batch immediately and set a two-hour source cooldown. No bypass is attempted.
 - Long collection jobs renew their database lease while running.
@@ -133,7 +132,7 @@ on the collection run.
 
 Unlike `--local-acceptance`, this mode may use the configured nationwide 250-page discovery bound
 and detail batches up to 500 targets. It does not relax source protection: the Redis source lock,
-one-browser concurrency, 4-7 second request spacing, 2,500-request daily ceiling, response evidence,
+single-request concurrency, 4-7 second request spacing, 2,500-request daily ceiling, response evidence,
 failure backoff, challenge stop and cooldown all remain active.
 
 ```bash
@@ -167,6 +166,17 @@ did not classify as event occurrences. The extractor now accepts schema event su
 attempt remains audited as `PARTIAL`, and its application parser-failure evidence uses the 168-hour
 failure TTL. Successful evidence uses the 72-hour TTL.
 
+### HTTP cutover verification (2026-08-03)
+
+- Bounded two-pass discovery acceptance retained one direct HTML artifact per pass, with zero parser
+  failures, zero Argus executions, unchanged governance and unchanged schedules.
+- Bounded full run `cmsd6ghl60001pp2a0jqgbwi0` made three direct HTTP requests, scanned one of 194
+  listing pages, fetched two detail pages and persisted 34 occurrences with zero failures.
+- Subsequent bounded full run `cmsd6gw9n0001pp3ucnn2if3v` also fetched two details without failure.
+  Both runs retained three HTML artifacts and created zero `ArgusExecution` rows.
+- The direct parser supports schema.org `Festival`, `Hackathon`, `CourseInstance`, and `*Event`
+  event types.
+
 ### Local verification closure (2026-07-21)
 
 All gates that can be completed in the local development environment have now passed:
@@ -183,7 +193,7 @@ All gates that can be completed in the local development environment have now pa
 - A final read-only database check reconfirmed the bounded and nationwide real runs as `SUCCEEDED`,
   all 120 bounded source occurrences, the 2,821-target nationwide frontier, disabled schedules and
   unchanged source governance.
-- Browser Worker health returned `healthy=true`, `activeTasks=0` and `concurrency=1`.
+- Historical pre-Argus Browser Worker health returned `healthy=true`, `activeTasks=0` and `concurrency=1`.
 
 Real elapsed 72/168-hour deletion and multi-day unattended stability are not local completion gates
 and remain explicitly outstanding. Nationwide discovery and bounded detail persistence have passed;

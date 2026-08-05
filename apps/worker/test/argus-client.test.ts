@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   acknowledgeArgusJobResult,
   captureBrowserTaskWithArgus,
   captureTicketmasterListingWithArgus,
+  downloadArgusEvidence,
 } from "../src/clients/argus-client";
 
 let server: http.Server | undefined;
@@ -44,7 +46,11 @@ describe("Argus async Job client", () => {
   });
 
   it("adapts Argus Ticketmaster detail data to Tymra's existing extractor contract", async () => {
-    server = jobServer(async () => ticketmasterDetailResult());
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      return ticketmasterDetailResult();
+    });
     const environment = await listenEnvironment();
 
     const response = await captureBrowserTaskWithArgus(environment, {
@@ -52,6 +58,7 @@ describe("Argus async Job client", () => {
       connectorId: "ticketmaster-public",
       workflowId: "collect_detail",
       url: "https://www.ticketmaster.co.nz/example/event/2400000000000001",
+      entryUrl: "https://www.ticketmaster.co.nz/discover/christchurch",
     });
 
     assert.equal(response.ok, true);
@@ -63,6 +70,8 @@ describe("Argus async Job client", () => {
     assert.equal(extraction.kind, "event_detail");
     assert.equal(extraction.events[0]?.performers[0]?.name, "Example Artist");
     assert.equal(extraction.events[0]?.offers[0]?.price, 40);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.entry_url, "https://www.ticketmaster.co.nz/discover/christchurch");
   });
 
   it("rejects data from the wrong connector schema version before normalisation", async () => {
@@ -106,6 +115,41 @@ describe("Argus async Job client", () => {
     const extraction = response.payload.extracted as { data_schema: string; occurrences: Array<{ timePrecision: string }> };
     assert.equal(extraction.data_schema, "ourauckland-public.collect_detail");
     assert.equal(extraction.occurrences[0]?.timePrecision, "DATETIME");
+  });
+
+  it("accepts and validates the full Lincoln key-dates contract", async () => {
+    server = jobServer(async () => lincolnKeyDatesResult());
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "lincoln-key-dates-test",
+      connectorId: "lincoln-university-key-dates",
+      workflowId: "collect_key_dates",
+      url: "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/",
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    const extraction = response.payload.extracted as { keyDates: Array<{ id: string }> };
+    assert.equal(extraction.keyDates[0]?.id, "lincoln:2026:graduation:2026-05-01:2026-05-01");
+  });
+
+  it("rejects internally inconsistent Lincoln dates before normalisation", async () => {
+    const invalid = lincolnKeyDatesResult();
+    const data = invalid.data as { keyDates: Array<Record<string, unknown>> };
+    data.keyDates[0]!.demandRelevant = false;
+    server = jobServer(async () => invalid);
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "lincoln-key-dates-test",
+      connectorId: "lincoln-university-key-dates",
+      workflowId: "collect_key_dates",
+      url: "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/",
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid Lincoln key-dates data/u);
   });
 
   it("uses the independent Job polling deadline", async () => {
@@ -156,6 +200,33 @@ describe("Argus async Job client", () => {
       contract_version: "1.0",
       result_sha256: resultSha256,
     });
+  });
+
+  it("downloads evidence only when its size and hashes match", async () => {
+    const evidence = Buffer.from("retained Argus evidence", "utf8");
+    const sha256 = createHash("sha256").update(evidence).digest("hex");
+    server = http.createServer((request, response) => {
+      assert.equal(request.headers.authorization, "Bearer argus-test-token-with-at-least-32-characters");
+      if (request.method === "GET" && request.url === "/v1/event-captures/trace-1/evidence/html") {
+        response.writeHead(200, { "content-type": "text/html", "x-argus-content-sha256": sha256 });
+        return response.end(evidence);
+      }
+      json(response, 404, { error: "NOT_FOUND" });
+    });
+    const environment = await listenEnvironment();
+
+    const content = await downloadArgusEvidence(environment, {
+      kind: "html",
+      traceId: "trace-1",
+      relativePath: "trace-1/page.html",
+      storageRef: "argus-evidence:trace-1/page.html",
+      sha256,
+      sizeBytes: evidence.byteLength,
+      containsSensitiveData: false,
+      createdAt: "2026-08-02T00:00:00.000Z",
+    });
+
+    assert.deepEqual(content, evidence);
   });
 });
 
@@ -274,6 +345,47 @@ function ourAucklandDetailResult(): Record<string, unknown> {
       title: "Japanese Film Screening",
       canonicalUrl: "https://ourauckland.aucklandcouncil.govt.nz/events/2026/08/japanese-film-screening/",
       occurrences: [{ startsAt: "2026-08-28T18:00:00", endsAt: "2026-08-28T20:00:00", timePrecision: "DATETIME", timezone: "Pacific/Auckland", scheduleText: "Friday 28 August 2026 6pm-8pm" }],
+    },
+  };
+}
+
+function lincolnKeyDatesResult(): Record<string, unknown> {
+  const sourceUrl = "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/";
+  return {
+    ...baseResult("lincoln-key-dates-test", "collect_key_dates", "lincoln-university-key-dates"),
+    data: {
+      data_schema: "lincoln-university-key-dates.collect_key_dates",
+      schema_version: "1.0.0",
+      extractor: "lincoln_university_key_dates",
+      kind: "academic_key_dates",
+      institution: "Lincoln University",
+      academicYear: 2026,
+      title: "2026 academic key dates",
+      canonicalUrl: sourceUrl,
+      connector: { id: "lincoln-university-key-dates", version: "1.0.0", browserMode: "headed" },
+      rawVisibleText: "Friday 1 May Graduation",
+      keyDates: [{
+        id: "lincoln:2026:graduation:2026-05-01:2026-05-01",
+        institution: "Lincoln University",
+        academicYear: 2026,
+        title: "Graduation",
+        advertisedDate: "Friday 1 May",
+        startsOn: "2026-05-01",
+        endsOn: "2026-05-01",
+        startsAt: "2026-05-01T00:00:00",
+        endsAt: "2026-05-01T23:59:59",
+        dateStatus: "RESOLVED",
+        category: "GRADUATION",
+        demandRelevant: true,
+        sourceUrl,
+        timezone: "Pacific/Auckland",
+        rawVisibleText: "Friday 1 May Graduation",
+        fieldSources: { title: "table cell" },
+      }],
+      quality: "complete",
+      missingFields: [],
+      warnings: [],
+      fieldSources: { keyDates: "academic dates table" },
     },
   };
 }

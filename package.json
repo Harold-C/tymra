@@ -10,8 +10,6 @@
   "scripts": {
     "compose:up": "docker compose build web && docker compose up -d",
     "compose:down": "docker compose down --remove-orphans",
-    "compose:browser:up": "docker compose --profile browser up -d ulixee-cloud browser-worker",
-    "compose:browser:down": "docker compose --profile browser rm --stop --force browser-worker ulixee-cloud",
     "compose:scheduler:up": "SCHEDULER_ENABLED=true docker compose --profile scheduler up -d scheduler",
     "compose:scheduler:down": "docker compose --profile scheduler rm --stop --force scheduler",
     "compose:smoke": "./scripts/verify-compose-smoke.sh",
@@ -24,7 +22,7 @@
     "build": "pnpm --filter @tymra/web build && pnpm --filter @tymra/worker build",
     "lint": "cd apps/web && node scripts/lint.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "vitest run --config vitest.config.ts && pnpm --filter @tymra/worker test && pnpm --filter @tymra/browser-runtime test && pnpm --filter @tymra/browser-site-extractors test && pnpm --filter @tymra/browser-worker test",
+    "test": "vitest run --config vitest.config.ts && pnpm --filter @tymra/worker test",
     "test:integration": "DATABASE_URL=${DATABASE_URL:-postgresql://tymra@127.0.0.1:5433/tymra_dev} vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build"

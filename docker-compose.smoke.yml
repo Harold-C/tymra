@@ -32,11 +32,3 @@ services:
     ports: !override
       - "127.0.0.1:51025:1025"
       - "127.0.0.1:58025:8025"
-  browser-worker:
-    profiles: !override ["smoke-browser"]
-    ports: !override []
-  ulixee-cloud:
-    profiles: !override ["smoke-browser"]
-    ports: !override []
-  browser-fixture:
-    profiles: !override ["smoke-browser"]

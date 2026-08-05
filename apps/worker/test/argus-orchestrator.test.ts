@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, it, vi } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import type { Environment } from "@tymra/config";
 
 const mocks = vi.hoisted(() => ({
@@ -11,11 +14,14 @@ const mocks = vi.hoisted(() => ({
   parentFind: vi.fn(),
   parentUpdateMany: vi.fn(),
   collectionRunUpdateMany: vi.fn(),
+  rawArtifactFindMany: vi.fn(),
+  rawArtifactUpdateMany: vi.fn(),
   submit: vi.fn(),
   getJob: vi.fn(),
   getResult: vi.fn(),
   cancel: vi.fn(),
   acknowledge: vi.fn(),
+  downloadEvidence: vi.fn(),
 }));
 
 vi.mock("@tymra/db", () => ({
@@ -35,6 +41,10 @@ vi.mock("@tymra/db", () => ({
     collectionRun: {
       updateMany: mocks.collectionRunUpdateMany,
     },
+    rawArtifact: {
+      findMany: mocks.rawArtifactFindMany,
+      updateMany: mocks.rawArtifactUpdateMany,
+    },
   },
 }));
 
@@ -47,6 +57,7 @@ vi.mock("../src/clients/argus-client", async (importOriginal) => {
     getArgusJobResult: mocks.getResult,
     cancelArgusJob: mocks.cancel,
     acknowledgeArgusJobResult: mocks.acknowledge,
+    downloadArgusEvidence: mocks.downloadEvidence,
   };
 });
 
@@ -63,6 +74,7 @@ const environment = {
   ARGUS_API_TOKEN: "a".repeat(32),
   ARGUS_TIMEOUT_MS: 60_000,
   ARGUS_JOB_POLL_TIMEOUT_MS: 180_000,
+  ARGUS_EVIDENCE_ROOT: "/tmp/tymra-argus-evidence-test",
 } as Environment;
 const context = { parentJobId: "parent-1", collectionRunId: "run-1", dataSourceId: "source-1" };
 const input = {
@@ -74,6 +86,11 @@ const input = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.rawArtifactFindMany.mockResolvedValue([]);
+});
+
+afterEach(async () => {
+  await rm(environment.ARGUS_EVIDENCE_ROOT, { recursive: true, force: true });
 });
 
 describe("durable Argus orchestration", () => {
@@ -167,6 +184,7 @@ describe("durable Argus orchestration", () => {
   it("acknowledges completed results only after their hash is persisted locally", async () => {
     mocks.executionFindMany.mockResolvedValue([{
       argusJobId: "argus-1",
+      collectionRunId: "run-1",
       result: completedJob(),
     }]);
     mocks.acknowledge.mockResolvedValue({ ok: true });
@@ -175,9 +193,51 @@ describe("durable Argus orchestration", () => {
 
     assert.deepEqual(mocks.executionFindMany.mock.calls[0]?.[0], {
       where: { parentJobId: "parent-1", status: "COMPLETED" },
-      select: { argusJobId: true, result: true },
+      select: { argusJobId: true, collectionRunId: true, result: true },
     });
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
+  });
+
+  it("downloads and verifies retained evidence before acknowledging Argus", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tymra-argus-evidence-"));
+    const content = Buffer.from("verified evidence", "utf8");
+    const sha256 = "d".repeat(64);
+    const pointer = {
+      kind: "html",
+      traceId: input.traceId,
+      relativePath: `${input.traceId}/page.html`,
+      storageRef: `argus-evidence:${input.traceId}/page.html`,
+      sha256,
+      sizeBytes: content.byteLength,
+      containsSensitiveData: false,
+      createdAt: "2026-08-02T00:00:00.000Z",
+    };
+    const result = completedJob();
+    result.items[0]!.result.evidence = [pointer];
+    mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result }]);
+    mocks.rawArtifactFindMany.mockResolvedValue([{ id: "artifact-1", storageRef: pointer.storageRef, contentHash: sha256 }]);
+    mocks.downloadEvidence.mockResolvedValue(content);
+    mocks.rawArtifactUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.acknowledge.mockResolvedValue({ ok: true });
+
+    await acknowledgePersistedArgusResults({ ...environment, ARGUS_EVIDENCE_ROOT: root }, "parent-1");
+
+    assert.deepEqual(await readFile(path.join(root, input.traceId, "page.html")), content);
+    assert.equal(mocks.rawArtifactUpdateMany.mock.calls[0]?.[0].data.storageRef, `tymra-evidence:${input.traceId}/page.html`);
+    assert.ok(mocks.rawArtifactUpdateMany.mock.invocationCallOrder[0]! < mocks.acknowledge.mock.invocationCallOrder[0]!);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("does not acknowledge when a persisted evidence pointer is missing from the Argus result", async () => {
+    mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result: completedJob() }]);
+    mocks.rawArtifactFindMany.mockResolvedValue([{ id: "artifact-1", storageRef: "argus-evidence:missing/page.html", contentHash: "e".repeat(64) }]);
+
+    await assert.rejects(
+      acknowledgePersistedArgusResults(environment, "parent-1"),
+      /Only 0 of 1 Argus evidence artifacts were retained/u,
+    );
+
+    assert.equal(mocks.acknowledge.mock.calls.length, 0);
   });
 
   it("propagates parent cancellation to Argus", async () => {

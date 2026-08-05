@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import type { Environment } from "@tymra/config";
 import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import {
   acknowledgeArgusJobResult,
   cancelArgusJob,
+  downloadArgusEvidence,
   getArgusJob,
   getArgusJobResult,
   isTerminalArgusJobStatus,
@@ -203,13 +206,14 @@ export async function acknowledgePersistedArgusResults(
 ): Promise<void> {
   const executions = await prisma.argusExecution.findMany({
     where: { parentJobId, status: "COMPLETED" },
-    select: { argusJobId: true, result: true },
+    select: { argusJobId: true, collectionRunId: true, result: true },
   });
   for (const execution of executions) {
     const result = execution.result as unknown as Partial<ArgusJobResult> | null;
     if (!result?.result_sha256) {
       throw new Error(`Persisted Argus result ${execution.argusJobId} has no result SHA-256`);
     }
+    await retainArgusEvidence(environment, execution.collectionRunId, result as ArgusJobResult);
     const acknowledgement = await acknowledgeArgusJobResult(
       environment,
       execution.argusJobId,
@@ -219,6 +223,53 @@ export async function acknowledgePersistedArgusResults(
       throw new Error(`Argus result acknowledgement failed: ${acknowledgement.message}`);
     }
   }
+}
+
+async function retainArgusEvidence(environment: Environment, collectionRunId: string, result: ArgusJobResult) {
+  const remoteArtifacts = await prisma.rawArtifact.findMany({
+    where: { collectionRunId, storageRef: { startsWith: "argus-evidence:" }, deletedAt: null },
+    select: { id: true, storageRef: true, contentHash: true },
+  });
+  if (remoteArtifacts.length === 0) return;
+
+  const artifactByReference = new Map(remoteArtifacts.map((artifact) => [`${artifact.storageRef}\0${artifact.contentHash}`, artifact]));
+  const retainedArtifactIds = new Set<string>();
+  for (const item of result.items) {
+    for (const pointer of item.result?.evidence ?? []) {
+      const artifact = artifactByReference.get(`${pointer.storageRef}\0${pointer.sha256}`);
+      if (!artifact) continue;
+      const content = await downloadArgusEvidence(environment, pointer);
+      const relativePath = retainedEvidencePath(pointer.traceId, pointer.kind);
+      const target = resolveRetainedEvidencePath(environment.ARGUS_EVIDENCE_ROOT, relativePath);
+      await mkdir(path.dirname(target), { recursive: true });
+      const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+      await writeFile(temporary, content, { mode: 0o600 });
+      await rename(temporary, target);
+      const updated = await prisma.rawArtifact.updateMany({
+        where: { id: artifact.id, storageRef: pointer.storageRef, contentHash: pointer.sha256 },
+        data: { storageRef: `tymra-evidence:${relativePath}` },
+      });
+      if (updated.count !== 1) throw new Error(`Argus evidence artifact ${artifact.id} changed before it could be retained`);
+      retainedArtifactIds.add(artifact.id);
+    }
+  }
+  if (retainedArtifactIds.size !== remoteArtifacts.length) {
+    throw new Error(`Only ${retainedArtifactIds.size} of ${remoteArtifacts.length} Argus evidence artifacts were retained`);
+  }
+}
+
+function retainedEvidencePath(traceId: string, kind: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u.test(traceId)) throw new Error("Argus evidence trace ID is invalid");
+  if (kind === "html") return `${traceId}/page.html`;
+  if (kind === "screenshot") return `${traceId}/screenshot.png`;
+  throw new Error(`Argus evidence kind ${kind} cannot be retained`);
+}
+
+function resolveRetainedEvidencePath(root: string, relativePath: string): string {
+  const resolvedRoot = path.resolve(root);
+  const target = path.resolve(resolvedRoot, relativePath);
+  if (!target.startsWith(`${resolvedRoot}${path.sep}`)) throw new Error("Argus evidence path escapes its root");
+  return target;
 }
 
 export async function settleCancelledCollectionRun(parentJobId: string): Promise<boolean> {
