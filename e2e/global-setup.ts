@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@tymra/db";
+
+import { recreateRuntime } from "./compose-runtime";
 
 export default async function globalSetup() {
   const environment = e2eEnvironment();
@@ -13,15 +14,7 @@ export default async function globalSetup() {
   await prisma.usageLedger.deleteMany({ where: { action: "ROUGH_CHECK" } });
   await prisma.abuseDecision.deleteMany({ where: { action: "ROUGH_CHECK" } });
   await prisma.$disconnect();
-  const worker = spawn("pnpm", ["--filter", "@tymra/worker", "start"], {
-    cwd: process.cwd(),
-    env: environment,
-    detached: true,
-    stdio: "ignore",
-  });
-  worker.unref();
-  mkdirSync("output", { recursive: true });
-  writeFileSync("output/e2e-worker.pid", String(worker.pid), "utf8");
+  recreateRuntime({ ...environment, PROVIDER_MODE: "demo", COMPOSE_EMAIL_PROVIDER: "smtp", WORKER_POLL_INTERVAL_MS: "100" });
 }
 
 function e2eEnvironment(): NodeJS.ProcessEnv {

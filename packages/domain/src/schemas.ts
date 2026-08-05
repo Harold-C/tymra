@@ -34,6 +34,7 @@ export const createAnonymousCheckSchema = z.object({
   input: z.string().trim().url().max(1_000),
   locale: localeSchema,
   idempotencyKey: z.string().min(16).max(200),
+  challengeToken: z.string().min(32).max(1_000).optional(),
 });
 
 export const unlockRoughResultSchema = z.object({

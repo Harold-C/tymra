@@ -13,6 +13,7 @@ import { stayQuerySchema, unlockRoughResultSchema } from "@tymra/domain";
 import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers";
 
 import { issueCustomerSessionToken } from "./customer-auth";
+import { padNeutralResponse } from "./security-controls";
 
 export class InvalidMagicLinkError extends Error {
   constructor() {
@@ -26,6 +27,7 @@ export async function requestMagicLink(
   inputValue: unknown,
   requestIdentity: { ipAddress: string },
 ) {
+  const responseStartedAt = Date.now();
   const input = unlockRoughResultSchema.parse(inputValue);
   const environment = getEnvironment();
   const check = await prisma.anonymousCheck.findUnique({ where: { id: anonymousCheckId } });
@@ -34,7 +36,7 @@ export async function requestMagicLink(
   }
 
   const existingRequest = await prisma.magicLink.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
-  if (existingRequest) return neutralMagicLinkResponse(environment.MAGIC_LINK_TTL_MINUTES);
+  if (existingRequest) return neutralMagicLinkResponseAfter(responseStartedAt, environment.MAGIC_LINK_TTL_MINUTES, environment.NEUTRAL_RESPONSE_MIN_MS);
 
   const analyticsDimensions = { locale: check.locale === "zh" ? "zh" as const : "en" as const, platform: check.platform, isDemo: check.isDemo };
   await recordFunnelEvent({ name: "formal_unlock_requested", dimensions: analyticsDimensions });
@@ -59,7 +61,7 @@ export async function requestMagicLink(
       cooldownUntil: limited ? new Date(Date.now() + 60_000) : null,
     },
   });
-  if (limited) return neutralMagicLinkResponse(environment.MAGIC_LINK_TTL_MINUTES);
+  if (limited) return neutralMagicLinkResponseAfter(responseStartedAt, environment.MAGIC_LINK_TTL_MINUTES, environment.NEUTRAL_RESPONSE_MIN_MS);
 
   const issued = issueOpaqueToken(environment.SESSION_SECRET);
   const encryptedEmail = encryptPersonalData(input.email, environment.DATA_ENCRYPTION_KEY);
@@ -122,7 +124,7 @@ export async function requestMagicLink(
       { action: "MAGIC_LINK", subjectType: "IP", subjectHash: ipHash, anonymousCheckId, metadata: {} },
     ],
   });
-  return neutralMagicLinkResponse(environment.MAGIC_LINK_TTL_MINUTES);
+  return neutralMagicLinkResponseAfter(responseStartedAt, environment.MAGIC_LINK_TTL_MINUTES, environment.NEUTRAL_RESPONSE_MIN_MS);
 }
 
 export async function consumeMagicLink(rawToken: string) {
@@ -308,6 +310,11 @@ function neutralMagicLinkResponse(expiresInMinutes: number) {
     expiresInMinutes,
     message: "If the request is eligible, a secure sign-in link has been sent.",
   };
+}
+
+async function neutralMagicLinkResponseAfter(startedAt: number, expiresInMinutes: number, minimumMs: number) {
+  await padNeutralResponse(startedAt, minimumMs);
+  return neutralMagicLinkResponse(expiresInMinutes);
 }
 
 function isConcurrentConsumeError(error: unknown) {

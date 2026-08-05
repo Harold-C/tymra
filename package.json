@@ -16,6 +16,7 @@
     "dev": "pnpm --filter @tymra/web dev",
     "worker": "pnpm --filter @tymra/worker dev",
     "accept:public": "pnpm --filter @tymra/worker accept:public",
+    "accept:soak:eventfinda": "ACCEPTANCE_SOURCES=eventfinda ACCEPTANCE_PASSES=5 pnpm --filter @tymra/worker accept:public",
     "db:generate": "pnpm --filter @tymra/db db:generate",
     "db:migrate": "pnpm --filter @tymra/db db:migrate",
     "db:seed": "pnpm --filter @tymra/db db:seed",
@@ -24,7 +25,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run --config vitest.config.ts && pnpm --filter @tymra/worker test",
     "test:integration": "DATABASE_URL=${DATABASE_URL:-postgresql://tymra@127.0.0.1:5433/tymra_dev} vitest run --config vitest.integration.config.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=desktop && playwright test --project=mobile",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build"
   },
   "devDependencies": {

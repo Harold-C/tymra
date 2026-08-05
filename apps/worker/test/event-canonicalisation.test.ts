@@ -6,6 +6,7 @@ import {
   canonicalEventKey,
   canonicalEventOccurrenceKey,
   canonicalVenueKey,
+  exactCrossSourceEventMatch,
   sourceEventIdentity,
 } from "../src/collection/event-canonicalisation";
 
@@ -56,5 +57,13 @@ describe("event canonicalisation", () => {
 
   it("does not invent a venue when no location evidence exists", () => {
     expect(canonicalVenueKey({ ...event, venueName: null, address: null, city: null, region: null, postcode: null, latitude: null, longitude: null })).toBeNull();
+  });
+
+  it("matches Eventfinda and Ticketmaster only with complete exact occurrence evidence", () => {
+    const ticketmaster = { ...event, sourceId: "ticketmaster", externalId: "tm-1", title: "MATARIKI concert", venueName: "Auckland-Town Hall" };
+    expect(exactCrossSourceEventMatch(event, ticketmaster)).toBe(true);
+    expect(exactCrossSourceEventMatch(event, { ...ticketmaster, startsAt: new Date("2026-08-16T06:01:00.000Z") })).toBe(false);
+    expect(exactCrossSourceEventMatch(event, { ...ticketmaster, venueName: null })).toBe(false);
+    expect(exactCrossSourceEventMatch(event, { ...ticketmaster, sourceId: "eventfinda" })).toBe(false);
   });
 });

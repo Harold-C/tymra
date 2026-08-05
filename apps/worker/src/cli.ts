@@ -1,9 +1,11 @@
 import { getEnvironment } from "@tymra/config";
-import { enqueueJob, prisma } from "@tymra/db";
+import { enqueueJob, hashPersonalIdentifier, prisma } from "@tymra/db";
 import { closeRedis } from "@tymra/queue";
 
 import { handleJob } from "./jobs/job-handlers";
 import { WorkerService } from "./services/worker-service";
+import { queueFailureSummary } from "./operations/queue-governance";
+import { canaryPlan, productionPreflight } from "./operations/release-safety";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -42,6 +44,46 @@ switch (command) {
   case "health": print(await service.health()); break;
   case "cleanup":
   case "retention:cleanup": print(await service.retentionCleanup()); break;
+  case "queue:audit": {
+    const jobs = await prisma.job.findMany({
+      where: { status: { in: ["FAILED", "DEAD_LETTER"] } },
+      select: { id: true, status: true, type: true, lastErrorCode: true, lastErrorMessage: true },
+      orderBy: { createdAt: "asc" },
+      take: integerOption(args, "--limit") ?? 500,
+    });
+    print({ total: jobs.length, summary: queueFailureSummary(jobs), mutationPerformed: false });
+    break;
+  }
+  case "release:preflight": {
+    const requested = csvOption(args, "--sources");
+    const sources = await prisma.dataSource.findMany({ where: requested.length ? { key: { in: requested } } : undefined });
+    const result = productionPreflight({
+      schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED,
+      enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }),
+      requestedSourceKeys: requested,
+      sources,
+    });
+    print({ ...result, checkedSources: sources.map((source) => source.key), mutationPerformed: false });
+    break;
+  }
+  case "release:canary-plan": {
+    const requested = csvOption(args, "--sources");
+    if (!requested.length) throw new Error("Missing --sources");
+    print({ ...canaryPlan(requested), mutationPerformed: false });
+    break;
+  }
+  case "release:rollback": {
+    if (option(args, "--confirm") !== "DISABLE_COLLECTIONS") throw new Error("Rollback requires --confirm DISABLE_COLLECTIONS");
+    const collectionTypes = ["PUBLIC_DATA_COLLECTION", "EVENT_COLLECTION", "WEATHER_COLLECTION", "TRANSPORT_COLLECTION"] as const;
+    const result = await prisma.$transaction(async (transaction) => {
+      const schedules = await transaction.scheduleDefinition.updateMany({ where: { enabled: true }, data: { enabled: false } });
+      const jobs = await transaction.job.updateMany({ where: { type: { in: [...collectionTypes] }, status: "PENDING" }, data: { status: "CANCELLED", completedAt: new Date(), lastErrorCode: "RELEASE_ROLLBACK", lastErrorMessage: "Cancelled by guarded release rollback" } });
+      await transaction.auditEvent.create({ data: { eventType: "release_collection_rollback", entityType: "CollectionRuntime", entityId: "global", payload: { schedulesDisabled: schedules.count, pendingJobsCancelled: jobs.count }, eventHash: hashPersonalIdentifier(`release-rollback:${Date.now()}`, environment.ACCESS_KEY_SECRET) } });
+      return { schedulesDisabled: schedules.count, pendingJobsCancelled: jobs.count };
+    });
+    print({ ...result, mutationPerformed: true });
+    break;
+  }
   case "seed:fixtures": print({ fixtureSource: await prisma.dataSource.findUnique({ where: { key: "development-demo" } }) }); break;
   case "run-job": {
     const job = await prisma.job.findUniqueOrThrow({ where: { id: requiredArg(args, 0) } });
@@ -69,7 +111,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|release:preflight|release:canary-plan|release:rollback|seed:fixtures> ...\n");
     process.exitCode = 2;
 }
 
@@ -80,6 +122,7 @@ function print(value: unknown) { process.stdout.write(`${JSON.stringify(value, n
 function requiredArg(args: string[], index: number) { const value = args[index]; if (!value || value.startsWith("--")) throw new Error(`Missing argument ${index + 1}`); return value; }
 function option(args: string[], name: string) { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; }
 function requiredOption(args: string[], name: string) { const value = option(args, name); if (!value) throw new Error(`Missing ${name}`); return value; }
+function csvOption(args: string[], name: string) { return (option(args, name) ?? "").split(",").map((value) => value.trim()).filter(Boolean); }
 function locale(args: string[]): "en" | "zh" { return option(args, "--locale") === "zh" ? "zh" : "en"; }
 function dateOption(args: string[], name: string, inclusiveEnd = false) {
   const value = option(args, name);

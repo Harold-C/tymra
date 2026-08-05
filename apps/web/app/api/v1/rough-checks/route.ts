@@ -3,7 +3,7 @@ import { getEnvironment } from "@tymra/config";
 import { NextRequest } from "next/server";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { createAnonymousCheck, RoughCheckLimitError } from "@/lib/server/anonymous-checks";
+import { createAnonymousCheck, RoughCheckChallengeError, RoughCheckLimitError } from "@/lib/server/anonymous-checks";
 import { UnsupportedListingUrlError } from "@/lib/server/listing-input";
 
 const deviceCookie = "tymra_device";
@@ -41,6 +41,11 @@ export async function POST(request: NextRequest) {
     if (error instanceof RoughCheckLimitError) {
       return apiError(429, "ROUGH_CHECK_LIMITED", error.message, {
         headers: { "retry-after": String(error.retryAfterSeconds) },
+      });
+    }
+    if (error instanceof RoughCheckChallengeError) {
+      return apiError(403, "ROUGH_CHECK_CHALLENGE_REQUIRED", error.message, {
+        headers: environment.NODE_ENV === "development" ? { "x-tymra-challenge-token": error.challengeToken } : undefined,
       });
     }
     return apiException(error);

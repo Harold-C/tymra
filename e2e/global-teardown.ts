@@ -1,12 +1,11 @@
-import { readFileSync, rmSync } from "node:fs";
+import { recreateRuntime } from "./compose-runtime";
 
 export default async function globalTeardown() {
-  try {
-    const pid = Number(readFileSync("output/e2e-worker.pid", "utf8"));
-    if (Number.isInteger(pid) && pid > 0) process.kill(-pid, "SIGTERM");
-  } catch {
-    // The worker may already have exited after a failed setup.
-  } finally {
-    rmSync("output/e2e-worker.pid", { force: true });
-  }
+  const restoreEnvironment = { ...process.env };
+  for (const name of [
+    "PROVIDER_MODE", "WORKER_POLL_INTERVAL_MS", "EMAIL_PROVIDER", "EMAIL_FROM",
+    "NODE_ENV", "WORKER_ID", "BASE_DOMAIN", "APP_BASE_URL", "PUBLIC_ORIGIN",
+    "ADMIN_ORIGIN", "WORKER_INTERNAL_URL",
+  ]) delete restoreEnvironment[name];
+  recreateRuntime(restoreEnvironment);
 }

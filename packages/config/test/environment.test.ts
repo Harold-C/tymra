@@ -29,6 +29,10 @@ describe("production provider guard", () => {
   it("rejects development admin credentials in production", () => {
     expect(() => environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", ADMIN_DEV_PASSWORD: "123456" })).toThrow("forbidden in production");
   });
+
+  it("rejects the deterministic abuse challenge provider in production", () => {
+    expect(() => environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", ABUSE_CHALLENGE_MODE: "deterministic" })).toThrow("forbidden in production");
+  });
 });
 
 describe("service origins", () => {

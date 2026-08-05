@@ -93,18 +93,23 @@ describe("Release 1.5 anonymous customer funnel", () => {
     const neutralPayload = (await first.json()).data;
     expect(neutralPayload.accepted).toBe(true);
 
+    const duplicateStartedAt = Date.now();
     const duplicate = await unlockRoughCheck(jsonRequest(`/api/v1/rough-checks/${checkIds[0]}/unlock`, body), {
       params: { checkId: checkIds[0] },
     });
+    const duplicateDurationMs = Date.now() - duplicateStartedAt;
     expect(duplicate.status).toBe(202);
     expect((await duplicate.json()).data).toEqual(neutralPayload);
+    expect(duplicateDurationMs).toBeGreaterThanOrEqual(200);
 
+    const cooldownStartedAt = Date.now();
     const cooledDown = await unlockRoughCheck(jsonRequest(`/api/v1/rough-checks/${checkIds[0]}/unlock`, {
       ...body,
       idempotencyKey: `unlock-cooldown:${randomUUID()}`,
     }), { params: { checkId: checkIds[0] } });
     expect(cooledDown.status).toBe(202);
     expect((await cooledDown.json()).data).toEqual(neutralPayload);
+    expect(Date.now() - cooldownStartedAt).toBeGreaterThanOrEqual(200);
 
     expect(await prisma.magicLink.count({ where: { emailHash } })).toBe(1);
     expect(await prisma.emailDelivery.count({ where: { recipientHash: emailHash, type: "VERIFY_AND_SIGN_IN", status: "SENT" } })).toBe(1);

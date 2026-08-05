@@ -28,6 +28,13 @@ export function canonicalEventOccurrenceKey(event: PublicEvent) {
   ]);
 }
 
+export function exactCrossSourceEventMatch(left: PublicEvent, right: PublicEvent) {
+  if (left.sourceId === right.sourceId) return false;
+  if (!left.title.trim() || !left.venueName?.trim() || !left.city?.trim()) return false;
+  if (!right.title.trim() || !right.venueName?.trim() || !right.city?.trim()) return false;
+  return canonicalEventOccurrenceKey(left) === canonicalEventOccurrenceKey(right);
+}
+
 export function canonicalVenueKey(event: PublicEvent) {
   const parts = [
     event.venueName,

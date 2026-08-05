@@ -1,6 +1,6 @@
 # 本地数据采集验收标准
 
-Last updated: 2026-08-01
+Last updated: 2026-08-06
 
 **状态：** 所有在本地开发环境实现的数据采集渠道都必须遵守的项目标准。
 
@@ -11,7 +11,8 @@ Last updated: 2026-08-01
 - `localAcceptance` 只允许在 `NODE_ENV=development` 下运行。
 - Scheduler 必须关闭；验收不得创建、启用或修改计划任务。
 - 数据源需在开发环境启用，但本地验收不要求或写入 `approved-by`、`license-basis`，也不得改变审批、权利、生命周期、健康或运行状态。
-- 生产启用是独立的运维决策，不由本地验收自动触发。
+- 生产启用是独立的运维决策，不由本地验收自动触发。最新统一 34 来源、68 pass 结果见
+  [2026-08-06 operational hardening acceptance](../evidence/operational-hardening-acceptance-2026-08-06.md)。
 
 ## 有边界的真实采集
 

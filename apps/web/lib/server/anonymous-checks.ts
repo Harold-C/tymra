@@ -3,6 +3,7 @@ import { hashPersonalIdentifier, prisma, recordFunnelEvent, type AnonymousCheckS
 import { createAnonymousCheckSchema } from "@tymra/domain";
 
 import { resolveSupportedListingUrl, type ListingPricingContext } from "./listing-input";
+import { abuseOutcome, issueDeterministicChallenge, verifyDeterministicChallenge } from "./security-controls";
 
 type RequestIdentity = {
   deviceId: string;
@@ -19,6 +20,13 @@ export class RoughCheckLimitError extends Error {
   }
 }
 
+export class RoughCheckChallengeError extends Error {
+  constructor(readonly challengeToken: string) {
+    super("An additional verification step is required.");
+    this.name = "RoughCheckChallengeError";
+  }
+}
+
 export async function createAnonymousCheck(inputValue: unknown, identity: RequestIdentity) {
   const input = createAnonymousCheckSchema.parse(inputValue);
   const environment = getEnvironment();
@@ -32,7 +40,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
   await recordFunnelEvent({ name: "rough_check_started", dimensions: { locale: input.locale, platform: resolved.platform } });
   const deviceHash = hashPersonalIdentifier(identity.deviceId, environment.ACCESS_KEY_SECRET);
   const ipHash = hashPersonalIdentifier(identity.ipAddress, environment.ACCESS_KEY_SECRET);
-  await enforceRoughLimits(deviceHash, ipHash);
+  await enforceRoughLimits(deviceHash, ipHash, input.challengeToken, environment);
 
   const contextKey = JSON.stringify(resolved.context);
   const cacheKey = hashPersonalIdentifier(`${resolved.platform}:${resolved.listingId}:${contextKey}`, environment.ACCESS_KEY_SECRET);
@@ -204,7 +212,12 @@ function demoIdentity(listingId: string) {
       };
 }
 
-async function enforceRoughLimits(deviceHash: string, ipHash: string) {
+async function enforceRoughLimits(
+  deviceHash: string,
+  ipHash: string,
+  challengeToken: string | undefined,
+  environment: ReturnType<typeof getEnvironment>,
+) {
   const hourAgo = new Date(Date.now() - 3_600_000);
   const dayAgo = new Date(Date.now() - 86_400_000);
   const [deviceHour, deviceDay, ipHour, ipDay] = await Promise.all([
@@ -213,17 +226,23 @@ async function enforceRoughLimits(deviceHash: string, ipHash: string) {
     usageCount("IP", ipHash, hourAgo),
     usageCount("IP", ipHash, dayAgo),
   ]);
-  const blocked = deviceHour >= 5 || deviceDay >= 15 || ipHour >= 10 || ipDay >= 30;
+  let outcome = abuseOutcome({ deviceHour, deviceDay, ipHour, ipDay });
+  if (outcome === "CHALLENGE" && environment.ABUSE_CHALLENGE_MODE === "deterministic") {
+    if (challengeToken && verifyDeterministicChallenge(challengeToken, deviceHash, environment.SESSION_SECRET)) outcome = "ALLOW";
+  } else if (outcome === "CHALLENGE") {
+    outcome = "ALLOW";
+  }
   await prisma.abuseDecision.create({
     data: {
       action: "ROUGH_CHECK",
       subjectHash: deviceHash,
-      outcome: blocked ? "COOLDOWN" : "ALLOW",
-      reasonCodes: blocked ? ["ROUGH_LIMIT_REACHED"] : [],
-      cooldownUntil: blocked ? new Date(Date.now() + 3_600_000) : null,
+      outcome,
+      reasonCodes: outcome === "COOLDOWN" ? ["ROUGH_LIMIT_REACHED"] : outcome === "CHALLENGE" ? ["ROUGH_CHALLENGE_REQUIRED"] : [],
+      cooldownUntil: outcome === "COOLDOWN" ? new Date(Date.now() + 3_600_000) : null,
     },
   });
-  if (blocked) throw new RoughCheckLimitError(3_600);
+  if (outcome === "CHALLENGE") throw new RoughCheckChallengeError(issueDeterministicChallenge(deviceHash, environment.SESSION_SECRET));
+  if (outcome === "COOLDOWN") throw new RoughCheckLimitError(3_600);
 }
 
 function usageCount(subjectType: string, subjectHash: string, since: Date) {

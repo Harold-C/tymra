@@ -52,6 +52,8 @@ export const environmentSchema = z
     SMTP_URL: optionalUrl,
     RESULT_LINK_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),
     MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
+    NEUTRAL_RESPONSE_MIN_MS: z.coerce.number().int().min(50).max(2_000).default(250),
+    ABUSE_CHALLENGE_MODE: z.enum(["disabled", "deterministic"]).default("disabled"),
     CUSTOMER_SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     ROUGH_RESULT_CACHE_HOURS: z.coerce.number().int().min(1).max(24).default(6),
     ANONYMOUS_CHECK_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
@@ -92,6 +94,14 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["ADMIN_DEV_PASSWORD"],
         message: "ADMIN_DEV_PASSWORD is forbidden in production",
+      });
+    }
+
+    if (value.NODE_ENV === "production" && value.ABUSE_CHALLENGE_MODE === "deterministic") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ABUSE_CHALLENGE_MODE"],
+        message: "The deterministic challenge provider is forbidden in production",
       });
     }
 

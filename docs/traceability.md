@@ -156,14 +156,14 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | R15-ID-002 | Idempotent magic-link consume transaction and `CustomerSession` | Concurrent consume produces exactly one success, customer session and formal job | verified |
 | R15-ID-003 | Separate customer/Admin models, cookies and guards | Customer isolation and Admin authorization tests | verified |
 | R15-SEC-001 | Hashed, single-use 15-minute magic link and clean redirect | Hash/clean-URL E2E plus replay, expiry and concurrent-consume integration tests | verified |
-| R15-SEC-002 | Neutral verification response and invalid-link disclosure boundary | Eligible, idempotent and cooldown responses have the same neutral payload; timing-class acceptance remains | implemented_not_verified |
+| R15-SEC-002 | Neutral verification response and invalid-link disclosure boundary | Eligible, idempotent and cooldown responses share one payload; integration verifies the idempotent and cooldown timing floor | verified |
 | R15-SEC-003 | Rotating, expiring and revocable customer session isolated from Admin | Rotation plus expired/revoked session 401 and Admin isolation tests | verified |
 | R15-OWN-001 | `PriceCheck.customerUserId` plus report ownership guard | Owner 200, cross-account 404 and unauthenticated 401 integration tests | verified |
 | R15-EMAIL-001 | `VERIFY_AND_SIGN_IN` plus conditional terminal notification policy | Mailpit E2E proves one happy-path email | verified |
 | R15-EMAIL-002 | Authenticated in-page delivery acknowledgement and grace-period decision | E2E forces grace job and proves no second message | verified |
 | R15-CONSENT-001 | Account disclosure plus separate default-off marketing consent | EN/ZH form plus service-consent requirement and default-off/explicit-opt-in persistence tests | verified |
 | R15-ABUSE-001 | Idempotency across rough compute, link send, account activation and formal enqueue | Rough/send idempotency plus concurrent activation proving one formal enqueue | verified |
-| R15-ABUSE-002 | Configurable risk service with allow/challenge/cooldown outcomes | Allow/cooldown verified; interactive challenge not implemented | implemented_not_verified |
+| R15-ABUSE-002 | Configurable risk service with allow/challenge/cooldown outcomes | Decision matrix plus signed, expiring development challenge handshake; deterministic mode is forbidden in production | verified |
 | R15-QUOTA-001 | `UsageLedger` checked before formal enqueue | 1-per-24h boundary is enforced before enqueue in integration | verified |
 | R15-MOTION-001 | Real-state progress components and reduced-motion path | Desktop/mobile reduced-motion E2E proves no active motion, static canvas and interactive FAQ | verified |
 | R15-RET-001 | Scheduled cleanup expires unused links, keeps terminal token metadata for 30 days, removes expired anonymous records without formal ownership, removes expired/revoked sessions after 30 days, and removes rate-limit/abuse hashes after 90 days | Time-controlled Worker integration matrix | verified |
@@ -180,7 +180,7 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck` plus pre-enqueue quota boundary | verified |
 | D-019 Authenticated formal reports | R15-OWN-001, R15-MIG-001 | Cross-account denial and legacy-link E2E | verified |
 | D-020 Minimal conditional email | R15-EMAIL-001, R15-EMAIL-002, R15-CONSENT-001 | Single-message Mailpit and acknowledgement E2E | verified |
-| D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, email cooldown and device 429 tests; challenge pending | implemented_not_verified |
+| D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, challenge handshake, email cooldown, device 429 and formal quota tests | verified |
 | D-022 No exclusive property claim | R15-OWN-001 | Independent anonymous records and customer ownership guard | verified |
 | D-023 Retention defaults | R15-RET-001, R15-AN-001 | Recommended 7/30/90-day defaults implemented and tested; final production privacy approval remains external | implemented_not_verified |
 | D-024 Real-state motion | R15-MOTION-001 | Server-backed stages plus desktop/mobile reduced-motion E2E | verified |
@@ -197,9 +197,9 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | `pnpm db:seed` | Deterministic demo seed | historical verified; not rerun in this update |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
 | `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
-| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 109 root tests (4 skipped fixtures) plus 55 Worker tests |
+| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 113 root tests (4 skipped fixtures) plus 60 Worker tests |
 | `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 63 tests |
-| `pnpm test:e2e` | Playwright and accessibility | targeted reduced-motion desktop/mobile acceptance passed; full suite not rerun because UI implementation did not change |
+| `pnpm test:e2e` | Playwright and accessibility | full desktop and mobile suites passed: 9 tests per project, including axe and responsive checks |
 | `pnpm build` | Production Web and Worker build | 64-page Web build and four Worker entrypoint builds verified; known optional LinkeDOM canvas warning only |
 | `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree verified on 2026-08-05 |
 

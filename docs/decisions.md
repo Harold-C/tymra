@@ -229,8 +229,8 @@ outside the first customer-account release.
 
 ## D-023 Proposed Retention Defaults
 
-**Status:** Product-approved defaults in configuration; cleanup jobs remain `not_implemented` and
-final privacy approval remains pending.
+**Status:** Product-approved defaults implemented and locally verified; final privacy approval remains
+pending.
 
 **Decision:** Retain anonymous rough checks for seven days, unused verification requests for 24 hours,
 token security metadata for 30 days and privacy-preserving abuse records for 30-90 days. Active
@@ -241,8 +241,7 @@ history to enforce cooldown and investigate abuse.
 
 ## D-024 Real-State Motion
 
-**Status:** Product-approved; implemented. Dedicated reduced-motion automation remains
-`not_verified`.
+**Status:** Product-approved; implemented and verified with desktop/mobile reduced-motion automation.
 
 **Decision:** The rough-result experience may use expressive motion, but each progress stage maps to a
 real server state or completed subtask. Ready results are not artificially delayed, reduced motion is

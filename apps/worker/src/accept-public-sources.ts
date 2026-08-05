@@ -127,6 +127,7 @@ async function main() {
   const rangeFrom = startedAt;
   const rangeTo = new Date(startedAt.getTime() + 31 * 86_400_000);
   const acceptanceId = `public-sources-${startedAt.toISOString()}-${randomUUID().slice(0, 8)}`;
+  const acceptancePasses = acceptancePassCount(process.env.ACCEPTANCE_PASSES);
   const requestedSourceKeys = new Set((process.env.ACCEPTANCE_SOURCES ?? "").split(",").map((value) => value.trim()).filter(Boolean));
   const selectedSources = requestedSourceKeys.size
     ? sources.filter((source) => requestedSourceKeys.has(source.key))
@@ -143,7 +144,7 @@ async function main() {
   for (const spec of selectedSources) {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: spec.key } });
     const passes: PassReport[] = [];
-    for (const pass of [1, 2]) {
+    for (const pass of Array.from({ length: acceptancePasses }, (_, index) => index + 1)) {
       const countsBefore = await sourceCounts(source.id);
       const job = await enqueueJob({
         type: spec.jobType,
@@ -243,9 +244,10 @@ async function main() {
     }
 
     const secondPassNewRows = passes[1]?.newSourceRows ?? zeroCounts;
-    const secondPassGrowth = Object.values(secondPassNewRows).some((value) => value !== 0);
-    if (secondPassGrowth) {
-      passes[1]?.failures.push(`Second pass changed source/link row counts: ${JSON.stringify(secondPassNewRows)}`);
+    for (const repeat of passes.slice(1)) {
+      if (Object.values(repeat.newSourceRows).some((value) => value !== 0)) {
+        repeat.failures.push(`Repeat pass changed source/link row counts: ${JSON.stringify(repeat.newSourceRows)}`);
+      }
     }
     reports.push({
       sourceKey: spec.key,
@@ -305,6 +307,13 @@ function annualAcceptanceWindow(month: number, durationDays: number) {
   const year = new Date().getFullYear();
   const from = new Date(Date.UTC(year, month, 1));
   return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
+}
+
+function acceptancePassCount(value: string | undefined) {
+  if (!value) return 2;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 2 || parsed > 20) throw new Error("ACCEPTANCE_PASSES must be an integer from 2 to 20");
+  return parsed;
 }
 
 async function waitForTerminalJob(jobId: string): Promise<Job> {
