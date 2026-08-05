@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 
 import type { Environment } from "@tymra/config";
 import { lincolnKeyDatesExtractionSchema } from "../collection/lincoln-university-key-dates";
+import {
+  sportySchoolSportExtractionSchema,
+  ticketekDetailExtractionSchema,
+  ticketekListingExtractionSchema,
+} from "../collection/school-sport-ticketek";
 
 export type ArgusEvidencePointer = {
   kind: string;
@@ -14,8 +19,8 @@ export type ArgusEvidencePointer = {
   createdAt: string;
 };
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates";
+export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public";
+export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -53,6 +58,18 @@ const argusDataContracts = {
   },
   "lincoln-university-key-dates:collect_key_dates": {
     dataSchema: "lincoln-university-key-dates.collect_key_dates",
+    schemaVersion: "1.0.0",
+  },
+  "sporty-school-sport-public:collect_events": {
+    dataSchema: "sporty-school-sport-public.collect_events",
+    schemaVersion: "1.0.0",
+  },
+  "ticketek-public:collect_listing": {
+    dataSchema: "ticketek-public.collect_listing",
+    schemaVersion: "1.0.0",
+  },
+  "ticketek-public:collect_detail": {
+    dataSchema: "ticketek-public.collect_detail",
     schemaVersion: "1.0.0",
   },
 } as const satisfies Record<string, ArgusDataContract>;
@@ -114,6 +131,8 @@ export type ArgusCaptureInput = {
   workflowId: ArgusWorkflowId;
   url: string;
   entryUrl?: string;
+  startDate?: string;
+  endDate?: string;
   maxRecords?: number;
 };
 
@@ -461,6 +480,19 @@ function assertArgusDataContract(
       throw new Error(`Argus returned invalid Lincoln key-dates data: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`);
     }
   }
+  const sourceSchema = connectorId === "sporty-school-sport-public" && workflowId === "collect_events"
+    ? sportySchoolSportExtractionSchema
+    : connectorId === "ticketek-public" && workflowId === "collect_listing"
+      ? ticketekListingExtractionSchema
+      : connectorId === "ticketek-public" && workflowId === "collect_detail"
+        ? ticketekDetailExtractionSchema
+        : null;
+  if (sourceSchema) {
+    const parsed = sourceSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error(`Argus returned invalid ${expected.dataSchema} data: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`);
+    }
+  }
 }
 
 function expectedArgusDataContract(
@@ -506,6 +538,8 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       workflow_id: input.workflowId,
       url: input.url,
       ...(input.entryUrl === undefined ? {} : { entry_url: input.entryUrl }),
+      ...(input.startDate === undefined ? {} : { start_date: input.startDate }),
+      ...(input.endDate === undefined ? {} : { end_date: input.endDate }),
       timeout_ms: environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",
       ...(input.maxRecords === undefined ? {} : { max_records: Math.min(500, Math.max(1, input.maxRecords)) }),

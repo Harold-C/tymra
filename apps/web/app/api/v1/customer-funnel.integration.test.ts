@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { hashPersonalIdentifier, prisma } from "@tymra/db";
 import { NextRequest } from "next/server";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { POST as createRoughCheck } from "./rough-checks/route";
 import { POST as unlockRoughCheck } from "./rough-checks/[checkId]/unlock/route";
@@ -16,8 +16,15 @@ const accessSecret = process.env.ACCESS_KEY_SECRET!;
 const deviceHash = hashPersonalIdentifier(deviceId, accessSecret);
 const ipHash = hashPersonalIdentifier(ipAddress, accessSecret);
 const emailHash = hashPersonalIdentifier(email, accessSecret);
+const metricBaseline = new Map<string, number>();
 
 describe("Release 1.5 anonymous customer funnel", () => {
+  beforeAll(async () => {
+    for (const eventName of ["rough_check_started", "rough_check_completed", "formal_unlock_requested", "verification_email_queued"]) {
+      metricBaseline.set(eventName, await funnelMetricTotal(eventName));
+    }
+  });
+
   afterAll(async () => {
     await prisma.emailDelivery.deleteMany({ where: { recipientHash: emailHash } });
     await prisma.magicLink.deleteMany({ where: { emailHash } });
@@ -83,18 +90,21 @@ describe("Release 1.5 anonymous customer funnel", () => {
       params: { checkId: checkIds[0] },
     });
     expect(first.status).toBe(202);
-    expect((await first.json()).data.accepted).toBe(true);
+    const neutralPayload = (await first.json()).data;
+    expect(neutralPayload.accepted).toBe(true);
 
     const duplicate = await unlockRoughCheck(jsonRequest(`/api/v1/rough-checks/${checkIds[0]}/unlock`, body), {
       params: { checkId: checkIds[0] },
     });
     expect(duplicate.status).toBe(202);
+    expect((await duplicate.json()).data).toEqual(neutralPayload);
 
     const cooledDown = await unlockRoughCheck(jsonRequest(`/api/v1/rough-checks/${checkIds[0]}/unlock`, {
       ...body,
       idempotencyKey: `unlock-cooldown:${randomUUID()}`,
     }), { params: { checkId: checkIds[0] } });
     expect(cooledDown.status).toBe(202);
+    expect((await cooledDown.json()).data).toEqual(neutralPayload);
 
     expect(await prisma.magicLink.count({ where: { emailHash } })).toBe(1);
     expect(await prisma.emailDelivery.count({ where: { recipientHash: emailHash, type: "VERIFY_AND_SIGN_IN", status: "SENT" } })).toBe(1);
@@ -122,7 +132,46 @@ describe("Release 1.5 anonymous customer funnel", () => {
     expect(limited.headers.get("retry-after")).toBe("3600");
     expect(await prisma.abuseDecision.count({ where: { action: "ROUGH_CHECK", subjectHash: deviceHash, outcome: "COOLDOWN" } })).toBe(1);
   });
+
+  it("records only aggregate privacy-safe funnel counters", async () => {
+    expect(await funnelMetricTotal("rough_check_started")).toBeGreaterThanOrEqual(metricBaseline.get("rough_check_started")! + 6);
+    expect(await funnelMetricTotal("rough_check_completed")).toBeGreaterThanOrEqual(metricBaseline.get("rough_check_completed")! + 5);
+    expect(await funnelMetricTotal("formal_unlock_requested")).toBeGreaterThanOrEqual(metricBaseline.get("formal_unlock_requested")! + 2);
+    expect(await funnelMetricTotal("verification_email_queued")).toBe(metricBaseline.get("verification_email_queued")! + 1);
+    const metrics = await prisma.funnelMetricDaily.findMany({ where: { eventName: { in: [...metricBaseline.keys()] } } });
+    expect(JSON.stringify(metrics)).not.toContain(email);
+    expect(JSON.stringify(metrics)).not.toContain(checkIds[0]);
+    expect(metrics.every((metric) => !metric.dimensionKey.includes("http") && !metric.dimensionKey.includes("?"))).toBe(true);
+  });
+
+  it("returns the terminal no-default-quote state without starting verification or formal work", async () => {
+    const response = await createRoughCheck(new NextRequest(`${baseUrl}/api/v1/rough-checks`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `tymra_device=no-quote-${randomUUID()}`,
+        "x-forwarded-for": `no-quote-${randomUUID()}`,
+      },
+      body: JSON.stringify({
+        input: "https://www.booking.com/hotel/nz/no-price-integration.html",
+        locale: "en",
+        idempotencyKey: `rough-no-quote:${randomUUID()}`,
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    const check = (await response.json()).data;
+    checkIds.push(check.id);
+    expect(check).toMatchObject({ status: "NO_DEFAULT_QUOTE", failureReason: "NO_DEFAULT_QUOTE", roughResult: null });
+    expect(await prisma.magicLink.count({ where: { anonymousCheckId: check.id } })).toBe(0);
+    expect(await prisma.priceCheck.count({ where: { anonymousCheckId: check.id } })).toBe(0);
+  });
 });
+
+async function funnelMetricTotal(eventName: string) {
+  const result = await prisma.funnelMetricDaily.aggregate({ where: { eventName }, _sum: { count: true } });
+  return result._sum.count ?? 0;
+}
 
 function jsonRequest(path: string, body: unknown) {
   return new NextRequest(`${baseUrl}${path}`, {

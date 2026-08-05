@@ -22,6 +22,7 @@ import {
   confidenceForDate,
   createQuerySignature,
   evaluateBlockingQualityGates,
+  evaluateEventImpactEvidence,
   type ComparableRate,
   type QueryPlanDate,
 } from "@tymra/domain";
@@ -40,6 +41,7 @@ import {
   type PublicSignal,
   type ResolvedOtaListing,
 } from "@tymra/providers";
+import { enrichEventVenue } from "../collection/venue-reference";
 import { redisHealth, withRedisLock } from "@tymra/queue";
 import {
   eventfindaEvidenceTtlHours,
@@ -93,6 +95,20 @@ import {
   lincolnKeyDatesExtractionSchema,
   normaliseLincolnKeyDateSignals,
 } from "../collection/lincoln-university-key-dates";
+import {
+  isArgusEventSourceId,
+  normaliseSportySchoolSportEvents,
+  normaliseTicketekEvents,
+  SCHOOL_SPORT_CANTERBURY_SOURCE_ID,
+  SCHOOL_SPORT_NZ_SOURCE_ID,
+  sportySchoolSportExtractionSchema,
+  sportySourceDefinition,
+  TICKETEK_LISTING_URL,
+  TICKETEK_SOURCE_ID,
+  ticketekDetailExtractionSchema,
+  ticketekListingExtractionSchema,
+  type ArgusEventSourceId,
+} from "../collection/school-sport-ticketek";
 import { captureBrowserTaskWithArgus, getArgusHealth, type ArgusBrowserTaskResult } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import {
@@ -489,6 +505,7 @@ export class WorkerService {
     if (sourceId === "eventfinda") return this.collectEventfindaSource(marketScope, analysisRequestId, options);
     if (sourceId === "ticketmaster") return this.collectTicketmasterSource(marketScope, analysisRequestId, options);
     if (sourceId === "fx_rates") return this.collectRbnzFxSource(marketScope, analysisRequestId, options);
+    if (isArgusEventSourceId(sourceId)) return this.collectArgusEventSource(sourceId, marketScope, analysisRequestId, options);
     const adapter = this.publicAdapters[sourceId];
     if (!adapter) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No public adapter exists for ${sourceId}`, 404);
     const localAcceptance = options.localAcceptance === true;
@@ -790,6 +807,210 @@ export class WorkerService {
         isDemo,
       },
     });
+  }
+
+  private async collectArgusEventSource(
+    sourceId: ArgusEventSourceId,
+    marketScope: string,
+    analysisRequestId?: string,
+    options: CollectSourceOptions = {},
+  ) {
+    if ((sourceId === SCHOOL_SPORT_NZ_SOURCE_ID || sourceId === SCHOOL_SPORT_CANTERBURY_SOURCE_ID) && marketScope !== "christchurch") {
+      throw new WorkerRequestError("INVALID_MARKET_SCOPE", "School Sport demand collection currently promotes explicitly located Canterbury events only", 422);
+    }
+    if (sourceId === TICKETEK_SOURCE_ID && !["new-zealand", "christchurch"].includes(marketScope)) {
+      throw new WorkerRequestError("INVALID_MARKET_SCOPE", "Ticketek collection currently supports New Zealand or Christchurch scope only", 422);
+    }
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
+    const localAcceptance = options.localAcceptance === true;
+    if (localAcceptance) this.assertLocalAcceptanceAllowed(source, true);
+    else if (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) {
+      throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
+    } else if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) {
+      throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
+    }
+
+    const now = new Date();
+    const requestedFrom = options.from ?? now;
+    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + (sourceId === TICKETEK_SOURCE_ID ? 90 : 62) * 86_400_000);
+    const maxWindowDays = sourceId === TICKETEK_SOURCE_ID ? 366 : 62;
+    const to = new Date(Math.min(requestedTo.getTime(), requestedFrom.getTime() + maxWindowDays * 86_400_000));
+    if (to <= requestedFrom) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Collection range must be positive", 422);
+    const maxRecords = localAcceptance
+      ? Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 10 : 20), sourceId === TICKETEK_SOURCE_ID ? 10 : 20)
+      : Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 20 : 100), sourceId === TICKETEK_SOURCE_ID ? 20 : 100);
+    const maxDetails = sourceId === TICKETEK_SOURCE_ID
+      ? Math.min(options.maxDetails ?? (localAcceptance ? 1 : 3), localAcceptance ? 1 : 10)
+      : 0;
+    const phase = options.phase ?? "full";
+    const governanceBefore = sourceGovernanceSnapshot(source);
+    const schedulesBefore = await sourceScheduleSnapshot(sourceId);
+    const initialScope = {
+      sourceId,
+      marketScope,
+      phase,
+      localAcceptance,
+      dryRun: options.dryRun === true,
+      requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
+      effective: { from: requestedFrom.toISOString(), to: to.toISOString(), maxRecords, maxDetails },
+      governanceBefore,
+      schedulesBefore,
+    };
+    const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
+    const counters = emptyPublicCollectionCounters();
+    let rateLimited = false;
+    try {
+      const result = await withRedisLock(`source:${sourceId}`, 60 * 60_000, async () => {
+        const events = new Map<string, PublicEvent>();
+        if (sourceId === SCHOOL_SPORT_NZ_SOURCE_ID || sourceId === SCHOOL_SPORT_CANTERBURY_SOURCE_ID) {
+          const definition = sportySourceDefinition(sourceId);
+          const capture = await this.executePriorityArgusEventTask({
+            sourceId,
+            dataSourceId: source.id,
+            collectionRunId: run.id,
+            connectorId: "sporty-school-sport-public",
+            workflowId: "collect_events",
+            url: definition.url,
+            startDate: requestedFrom.toISOString().slice(0, 10),
+            endDate: to.toISOString().slice(0, 10),
+            maxRecords,
+            dryRun: options.dryRun === true,
+            parentJobId: options.jobId,
+          });
+          counters.requests += 1;
+          const parsed = sportySchoolSportExtractionSchema.safeParse(capture.extracted);
+          if (!parsed.success || parsed.data.sourceOrganisation !== definition.sourceOrganisation) {
+            if (!options.dryRun) await this.markArgusEvidenceParserFailure(run.id, capture.traceId);
+            throw new AdapterError("PARSING_ERROR", `Sporty extractor returned an invalid ${definition.sourceOrganisation} payload: ${parsed.success ? "source organisation mismatch" : parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+          }
+          if (!options.dryRun) await this.persistArgusConnectorPayload(source.id, run.id, capture, sourceId, definition.url);
+          counters.records = parsed.data.occurrences.length;
+          counters.discovered = parsed.data.series.length;
+          for (const event of normaliseSportySchoolSportEvents(parsed.data, sourceId, { from: requestedFrom, to }, maxRecords)) events.set(event.externalId, event);
+        } else {
+          let listing: ReturnType<typeof ticketekListingExtractionSchema.parse> | null = null;
+          if (phase === "discovery" || phase === "full") {
+            const capture = await this.executePriorityArgusEventTask({
+              sourceId,
+              dataSourceId: source.id,
+              collectionRunId: run.id,
+              connectorId: "ticketek-public",
+              workflowId: "collect_listing",
+              url: TICKETEK_LISTING_URL,
+              maxRecords,
+              dryRun: options.dryRun === true,
+              parentJobId: options.jobId,
+            });
+            counters.requests += 1;
+            const parsed = ticketekListingExtractionSchema.safeParse(capture.extracted);
+            if (!parsed.success) {
+              if (!options.dryRun) await this.markArgusEvidenceParserFailure(run.id, capture.traceId);
+              throw new AdapterError("PARSING_ERROR", `Ticketek listing returned an invalid payload: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+            }
+            listing = parsed.data;
+            if (!options.dryRun) {
+              await this.persistArgusConnectorPayload(source.id, run.id, capture, sourceId, TICKETEK_LISTING_URL);
+              for (const series of listing.series) {
+                const urlHash = createHash("sha256").update(series.canonicalUrl).digest("hex");
+                const seriesOccurrences = listing.occurrences.filter((item) => item.seriesId === series.seriesId);
+                const cancelled = series.status === "CANCELLED" || (seriesOccurrences.length > 0 && seriesOccurrences.every((item) => item.status === "CANCELLED"));
+                await prisma.sourceCrawlTarget.upsert({
+                  where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash } },
+                  create: { dataSourceId: source.id, url: series.canonicalUrl, urlHash, kind: "EVENT_DETAIL", status: cancelled ? "COMPLETE" : "PENDING", priority: 50, active: !cancelled, lastSeenAt: now, nextFetchAt: cancelled ? null : now, metadata: { seriesId: series.seriesId, listing: series, entryUrl: TICKETEK_LISTING_URL } },
+                  update: { url: series.canonicalUrl, status: cancelled ? "COMPLETE" : "PENDING", active: !cancelled, lastSeenAt: now, missedDiscoveryCount: 0, nextFetchAt: cancelled ? null : now, metadata: { seriesId: series.seriesId, listing: series, entryUrl: TICKETEK_LISTING_URL } },
+                });
+              }
+            }
+            counters.discovered = listing.series.length;
+            counters.records += listing.occurrences.length;
+            for (const event of normaliseTicketekEvents(listing, { from: requestedFrom, to }, maxRecords)) events.set(event.externalId, event);
+          }
+
+          if ((phase === "details" || phase === "full") && maxDetails > 0) {
+            const detailTargets = listing
+              ? listing.series.filter((series) => series.status !== "CANCELLED" && listing!.occurrences.some((occurrence) => occurrence.seriesId === series.seriesId && occurrence.status !== "CANCELLED")).slice(0, maxDetails).map((series) => series.canonicalUrl)
+              : (await prisma.sourceCrawlTarget.findMany({ where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, status: { in: ["PENDING", "FAILED"] } }, orderBy: [{ priority: "asc" }, { lastSeenAt: "desc" }], take: maxDetails, select: { url: true } })).map((target) => target.url);
+            for (const detailUrl of detailTargets) {
+              try {
+                counters.requests += 1;
+                const capture = await this.executePriorityArgusEventTask({
+                  sourceId,
+                  dataSourceId: source.id,
+                  collectionRunId: run.id,
+                  connectorId: "ticketek-public",
+                  workflowId: "collect_detail",
+                  url: detailUrl,
+                  entryUrl: TICKETEK_LISTING_URL,
+                  dryRun: options.dryRun === true,
+                  parentJobId: options.jobId,
+                });
+                const parsed = ticketekDetailExtractionSchema.safeParse(capture.extracted);
+                if (!parsed.success) {
+                  if (!options.dryRun) await this.markArgusEvidenceParserFailure(run.id, capture.traceId);
+                  throw new AdapterError("PARSING_ERROR", `Ticketek detail returned an invalid payload: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+                }
+                if (!options.dryRun) {
+                  await this.persistArgusConnectorPayload(source.id, run.id, capture, sourceId, detailUrl);
+                  await prisma.sourceCrawlTarget.updateMany({ where: { dataSourceId: source.id, url: detailUrl }, data: { status: "COMPLETE", lastFetchedAt: new Date(), nextFetchAt: new Date(Date.now() + 24 * 3_600_000), contentHash: stableHash(parsed.data), consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null } });
+                }
+                counters.records += parsed.data.occurrences.length;
+                for (const event of normaliseTicketekEvents(parsed.data, { from: requestedFrom, to }, maxRecords)) events.set(event.externalId, event);
+              } catch (error) {
+                if (error instanceof DeferredJobError) throw error;
+                counters.failures += 1;
+                const code = error instanceof AdapterError ? error.code : "SOURCE_UNAVAILABLE";
+                const challenged = code === "RATE_LIMITED";
+                if (!options.dryRun) {
+                  await prisma.sourceCrawlTarget.updateMany({
+                    where: { dataSourceId: source.id, url: detailUrl },
+                    data: {
+                      status: challenged ? "RATE_LIMITED" : "FAILED",
+                      nextFetchAt: new Date(Date.now() + (challenged ? 6 : 1) * 3_600_000),
+                      consecutiveFailures: { increment: 1 },
+                      lastErrorCode: code,
+                      lastErrorAt: new Date(),
+                    },
+                  });
+                }
+                if (challenged) {
+                  rateLimited = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        counters.events = events.size;
+        counters.references = counters.requests;
+        if (!options.dryRun) {
+          const persisted = await this.persistNormalisedEvents([...events.values()], source.id, run.id);
+          for (const item of persisted.values()) if (item.unchanged) counters.unchangedSkipped += 1;
+          counters.rawArtifacts = await prisma.rawArtifact.count({ where: { collectionRunId: run.id } });
+        }
+        counters.persisted = events.size;
+        return { events: events.size, records: counters.records, requests: counters.requests };
+      });
+      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const schedulesAfter = await sourceScheduleSnapshot(sourceId);
+      const status = counters.failures > 0 ? "PARTIAL" : "SUCCEEDED";
+      await prisma.$transaction([
+        prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: result.events, failureCount: counters.failures, errorCode: rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: rateLimited ? "Ticketek detail collection stopped after an access challenge; listing events were retained" : null, scope: { ...initialScope, counters, rateLimited, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } }),
+        ...(localAcceptance ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: new Date(), healthStatus: "HEALTHY", operationalStatus: "HEALTHY", errorRate: 0 } })]),
+      ]);
+      await this.syncCollectionIncidentSafely(run.id);
+      return { runId: run.id, localAcceptance, dryRun: options.dryRun === true, ...result, counters };
+    } catch (error) {
+      if (error instanceof DeferredJobError) throw error;
+      counters.failures += 1;
+      if (!options.dryRun) counters.rawArtifacts = await prisma.rawArtifact.count({ where: { collectionRunId: run.id } });
+      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const schedulesAfter = await sourceScheduleSnapshot(sourceId);
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Argus event collection failure", scope: { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      if (options.jobId) await settleCancelledCollectionRun(options.jobId);
+      await this.syncCollectionIncidentSafely(run.id);
+      throw error;
+    }
   }
 
   private async collectRbnzFxSource(marketScope: string, analysisRequestId?: string, options: CollectSourceOptions = {}) {
@@ -1639,6 +1860,86 @@ export class WorkerService {
     }));
   }
 
+  private async executePriorityArgusEventTask(input: {
+    sourceId: ArgusEventSourceId;
+    dataSourceId: string;
+    collectionRunId: string;
+    connectorId: "sporty-school-sport-public" | "ticketek-public";
+    workflowId: "collect_events" | "collect_listing" | "collect_detail";
+    url: string;
+    entryUrl?: string;
+    startDate?: string;
+    endDate?: string;
+    maxRecords?: number;
+    dryRun: boolean;
+    parentJobId?: string;
+  }): Promise<ArgusBrowserTaskResult> {
+    const traceId = input.parentJobId
+      ? durableArgusTraceId(input.parentJobId, input.connectorId, input.workflowId, input.url)
+      : `${input.sourceId}-${randomUUID()}`;
+    const captureInput = {
+      traceId,
+      connectorId: input.connectorId,
+      workflowId: input.workflowId,
+      url: input.url,
+      ...(input.entryUrl === undefined ? {} : { entryUrl: input.entryUrl }),
+      ...(input.startDate === undefined ? {} : { startDate: input.startDate }),
+      ...(input.endDate === undefined ? {} : { endDate: input.endDate }),
+      ...(input.maxRecords === undefined ? {} : { maxRecords: input.maxRecords }),
+    };
+    const response = input.parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, captureInput, { parentJobId: input.parentJobId, collectionRunId: input.collectionRunId, dataSourceId: input.dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, captureInput);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
+      throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    }
+    if (!input.dryRun) await this.persistArgusEvidence(input.dataSourceId, input.collectionRunId, result, input.connectorId, input.url);
+    if (result.status === "manual_required") {
+      throw new AdapterError("RATE_LIMITED", `${input.sourceId} presented an access challenge; collection stopped without bypassing it`, true);
+    }
+    if (result.status !== "success") {
+      const category = result.error?.category.toUpperCase();
+      throw new AdapterError(category === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? `${input.sourceId} Argus capture failed`, result.error?.retryable ?? true);
+    }
+    return result;
+  }
+
+  private async persistArgusConnectorPayload(
+    dataSourceId: string,
+    collectionRunId: string,
+    result: ArgusBrowserTaskResult,
+    sourceId: ArgusEventSourceId,
+    requestedUrl: string,
+  ) {
+    const id = stableId("argus-connector-payload", `${collectionRunId}:${result.traceId}`);
+    const payload = {
+      traceId: result.traceId,
+      sourceId,
+      requestedUrl,
+      page: result.page,
+      extracted: result.extracted,
+    } as Prisma.InputJsonValue;
+    await prisma.rawArtifact.upsert({
+      where: { id },
+      create: {
+        id,
+        collectionRunId,
+        dataSourceId,
+        artifactType: "MANIFEST_JSON",
+        storageRef: `postgres:RawArtifact:${id}`,
+        contentHash: stableHash(payload),
+        payload,
+        containsSensitiveData: false,
+        parserFailure: false,
+        expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_TTL_HOURS * 3_600_000),
+      },
+      update: {},
+    });
+  }
+
   private async persistArgusEvidence(dataSourceId: string, collectionRunId: string, result: ArgusBrowserTaskResult, extractor: string, requestedUrl: string) {
     const ttlHours = eventfindaEvidenceTtlHours(
       result.status,
@@ -1701,12 +2002,52 @@ export class WorkerService {
   }
 
   async retentionCleanup(now = new Date()) {
-    const [artifacts, anonymousChecks, magicLinks] = await prisma.$transaction([
-      prisma.rawArtifact.updateMany({ where: { expiresAt: { lte: now }, deletedAt: null }, data: { deletedAt: now, storageRef: "DELETED", payload: Prisma.JsonNull } }),
-      prisma.anonymousCheck.deleteMany({ where: { expiresAt: { lte: now }, magicLinks: { none: { status: "PENDING" } } } }),
-      prisma.magicLink.updateMany({ where: { expiresAt: { lte: now }, status: "PENDING" }, data: { status: "EXPIRED" } }),
-    ]);
-    return { rawArtifactsDeleted: artifacts.count, anonymousChecksDeleted: anonymousChecks.count, magicLinksExpired: magicLinks.count };
+    const tokenMetadataCutoff = new Date(now.getTime() - 30 * 86_400_000);
+    const securityHashCutoff = new Date(now.getTime() - 90 * 86_400_000);
+    return prisma.$transaction(async (transaction) => {
+      const artifacts = await transaction.rawArtifact.updateMany({
+        where: { expiresAt: { lte: now }, deletedAt: null },
+        data: { deletedAt: now, storageRef: "DELETED", payload: Prisma.JsonNull },
+      });
+      const magicLinks = await transaction.magicLink.updateMany({
+        where: { expiresAt: { lte: now }, status: "PENDING" },
+        data: { status: "EXPIRED" },
+      });
+      const terminalMagicLinks = await transaction.magicLink.deleteMany({
+        where: { status: { in: ["CONSUMED", "EXPIRED", "REVOKED", "BLOCKED"] }, createdAt: { lte: tokenMetadataCutoff } },
+      });
+      const verificationEmails = await transaction.emailDelivery.deleteMany({
+        where: { type: "VERIFY_AND_SIGN_IN", createdAt: { lte: tokenMetadataCutoff } },
+      });
+      const anonymousChecks = await transaction.anonymousCheck.deleteMany({
+        where: {
+          expiresAt: { lte: now },
+          magicLinks: { none: {} },
+          priceChecks: { none: {} },
+        },
+      });
+      const sessions = await transaction.customerSession.deleteMany({
+        where: {
+          createdAt: { lte: tokenMetadataCutoff },
+          OR: [
+            { expiresAt: { lte: tokenMetadataCutoff } },
+            { revokedAt: { lte: tokenMetadataCutoff } },
+          ],
+        },
+      });
+      const usageLedger = await transaction.usageLedger.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
+      const abuseDecisions = await transaction.abuseDecision.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
+      return {
+        rawArtifactsDeleted: artifacts.count,
+        anonymousChecksDeleted: anonymousChecks.count,
+        magicLinksExpired: magicLinks.count,
+        terminalMagicLinksDeleted: terminalMagicLinks.count,
+        verificationEmailsDeleted: verificationEmails.count,
+        customerSessionsDeleted: sessions.count,
+        usageLedgerDeleted: usageLedger.count,
+        abuseDecisionsDeleted: abuseDecisions.count,
+      };
+    });
   }
 
   async approveSource(sourceId: string) {
@@ -2099,6 +2440,16 @@ export class WorkerService {
 
   private async persistNormalisedEventCached(event: PublicEvent, seriesEvent: PublicEvent, dataSourceId: string, collectionRunId: string, cache: EventPersistenceCache) {
     if (event.countryCode.toUpperCase() !== "NZ") throw new AdapterError("PARSING_ERROR", `Event ${event.externalId} is outside New Zealand`, false);
+    const venueEnrichment = enrichEventVenue(event);
+    const impact = evaluateEventImpactEvidence(venueEnrichment.event.impactEvidence);
+    event = {
+      ...venueEnrichment.event,
+      impactStatus: impact.status,
+      impactScore: impact.score,
+      impactConfidence: impact.confidence,
+      impactEvidence: impact.evidence,
+    };
+    if (seriesEvent.externalId === event.externalId) seriesEvent = event;
     const sourceIdentity = sourceEventIdentity(seriesEvent);
     const seriesCanonicalKey = canonicalEventKey(seriesEvent);
     const occurrenceCanonicalKey = canonicalEventOccurrenceKey(event);
@@ -2122,6 +2473,12 @@ export class WorkerService {
       endsAt: event.endsAt.toISOString(),
       status: event.status,
       ticketStatus: event.ticketStatus,
+      timePrecision: event.timePrecision ?? inferredTimePrecision(event),
+      evidenceRef: event.evidenceRef ?? event.sourceUrl,
+      impactStatus: event.impactStatus,
+      impactScore: event.impactScore,
+      impactConfidence: event.impactConfidence,
+      impactEvidence: impactEvidenceForHash(event.impactEvidence),
       metadata: event.metadata,
     });
     const sourceOccurrenceData = {
@@ -2141,8 +2498,11 @@ export class WorkerService {
       latitude: event.latitude,
       longitude: event.longitude,
       timezone: event.timezone,
+      timePrecision: event.timePrecision ?? inferredTimePrecision(event),
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      observedAt: event.observedAt ?? seenAt,
+      evidenceRef: event.evidenceRef ?? event.sourceUrl,
       status: event.status,
       ticketStatus: event.ticketStatus,
       impactStatus: event.impactStatus,
@@ -2178,9 +2538,24 @@ export class WorkerService {
     const existingCanonicalLink = existingOccurrence?.canonicalLinks[0];
     if (existingOccurrence?.contentHash === contentHash && existingOccurrence.sourceEvent.contentHash === sourceContentHash && existingCanonicalLink) {
       const [sourceOccurrence, sourceEvent, eventOccurrence, canonicalEvent] = await prisma.$transaction([
-        prisma.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt } }),
+        prisma.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt, observedAt: event.observedAt ?? seenAt, evidenceRef: event.evidenceRef ?? event.sourceUrl, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue } }),
         prisma.sourceEvent.update({ where: { id: existingOccurrence.sourceEventId }, data: { lastSeenAt: seenAt } }),
-        prisma.eventOccurrence.update({ where: { id: existingCanonicalLink.eventOccurrenceId }, data: { lastSeenAt: seenAt } }),
+        prisma.eventOccurrence.update({
+          where: { id: existingCanonicalLink.eventOccurrenceId },
+          data: {
+            lastSeenAt: seenAt,
+            timePrecision: event.timePrecision ?? inferredTimePrecision(event),
+            impactStatus: event.impactStatus,
+            impactScore: event.impactScore,
+            impactConfidence: event.impactConfidence,
+            impactEvidence: event.impactEvidence as Prisma.InputJsonValue,
+            metadata: {
+              canonicalisationVersion: "event-occurrence-exact-v1",
+              evidenceRef: event.evidenceRef ?? event.sourceUrl,
+              observedAt: (event.observedAt ?? seenAt).toISOString(),
+            },
+          },
+        }),
         prisma.canonicalEvent.update({ where: { id: existingCanonicalLink.eventOccurrence.canonicalEventId }, data: { lastSeenAt: seenAt } }),
       ]);
       if (venueCanonicalKey && eventOccurrence.venueId) cache.venues.set(venueCanonicalKey, eventOccurrence.venueId);
@@ -2225,8 +2600,8 @@ export class WorkerService {
         : venueCanonicalKey
           ? await tx.canonicalVenue.upsert({
             where: { canonicalKey: venueCanonicalKey },
-            create: { canonicalKey: venueCanonicalKey, name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, metadata: { canonicalisationVersion: "venue-exact-v1" } },
-            update: { name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude },
+            create: { canonicalKey: venueCanonicalKey, name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: venueEnrichment.reference?.capacity, capacitySourceUrl: venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined, metadata: { canonicalisationVersion: "venue-exact-v1", ...(venueEnrichment.reference ? { venueReferenceKey: venueEnrichment.reference.key, venueReferenceVersion: "trusted-venue-v1" } : {}) } },
+            update: { name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: venueEnrichment.reference?.capacity, capacitySourceUrl: venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined },
             })
           : null;
       if (venueCanonicalKey && venue) cache.venues.set(venueCanonicalKey, venue.id);
@@ -2238,7 +2613,7 @@ export class WorkerService {
       });
 
       const existingOccurrenceLink = await tx.eventOccurrenceSourceLink.findUnique({ where: { sourceEventOccurrenceId: sourceOccurrence.id }, select: { eventOccurrenceId: true } });
-      const occurrenceData = { canonicalEventId: canonicalEvent.id, venueId: venue?.id ?? null, timezone: event.timezone, startsAt: event.startsAt, endsAt: event.endsAt, status: event.status, ticketStatus: event.ticketStatus, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-occurrence-exact-v1" }, isDemo };
+      const occurrenceData = { canonicalEventId: canonicalEvent.id, venueId: venue?.id ?? null, timezone: event.timezone, timePrecision: event.timePrecision ?? inferredTimePrecision(event), startsAt: event.startsAt, endsAt: event.endsAt, status: event.status, ticketStatus: event.ticketStatus, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-occurrence-exact-v1", evidenceRef: event.evidenceRef ?? event.sourceUrl, observedAt: (event.observedAt ?? seenAt).toISOString() }, isDemo };
       const eventOccurrence = existingOccurrenceLink
         ? await tx.eventOccurrence.update({ where: { id: existingOccurrenceLink.eventOccurrenceId }, data: occurrenceData })
         : await tx.eventOccurrence.upsert({
@@ -2271,6 +2646,31 @@ export class WorkerRequestError extends Error {
 
 function emptyPublicCollectionCounters() {
   return { requests: 0, requestsAvoided: 0, discovered: 0, references: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, duplicatesSkipped: 0, unchangedSkipped: 0, failures: 0 };
+}
+
+function inferredTimePrecision(event: PublicEvent): "DATE" | "DATETIME" {
+  if (event.metadata.timePrecision === "DATE" || event.metadata.timePrecision === "DATETIME") return event.metadata.timePrecision;
+  const formatter = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: event.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const startTime = formatter.format(event.startsAt);
+  const endTime = formatter.format(event.endsAt);
+  return startTime === "00:00:00" && (endTime === "23:59:59" || endTime === "00:00:00") ? "DATE" : "DATETIME";
+}
+
+function impactEvidenceForHash(value: Record<string, unknown>) {
+  const items = Array.isArray(value.items)
+    ? value.items.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const { observedAt: _observedAt, ...stableItem } = item as Record<string, unknown>;
+      return stableItem;
+    })
+    : value.items;
+  return { ...value, ...(items ? { items } : {}) };
 }
 
 function defaultPublicRecordLimit(sourceId: string) {

@@ -550,6 +550,21 @@ model AbuseDecision {
   @@index([cooldownUntil])
 }
 
+model FunnelMetricDaily {
+  id           String   @id @default(cuid())
+  bucketDate   DateTime @db.Date
+  eventName    String
+  dimensionKey String
+  dimensions   Json
+  count        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([bucketDate, eventName, dimensionKey])
+  @@index([eventName, bucketDate])
+  @@index([bucketDate])
+}
+
 model Property {
   id                   String                  @id @default(cuid())
   canonicalName        String
@@ -1393,8 +1408,11 @@ model SourceEventOccurrence {
   latitude             Float?
   longitude            Float?
   timezone             String                      @default("Pacific/Auckland")
+  timePrecision        String                      @default("DATETIME")
   startsAt             DateTime
   endsAt               DateTime
+  observedAt           DateTime                    @default(now())
+  evidenceRef          String
   status               String                      @default("SCHEDULED")
   ticketStatus         String?
   impactStatus         String                      @default("PENDING_EVIDENCE")
@@ -1435,6 +1453,9 @@ model CanonicalVenue {
   countryCode          String            @default("NZ")
   latitude             Float?
   longitude            Float?
+  capacity             Int?
+  capacitySourceUrl    String?
+  capacityObservedAt   DateTime?
   metadata             Json              @default("{}")
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
@@ -1469,6 +1490,7 @@ model EventOccurrence {
   venueId          String?
   canonicalKey     String                      @unique
   timezone         String                      @default("Pacific/Auckland")
+  timePrecision    String                      @default("DATETIME")
   startsAt         DateTime
   endsAt           DateTime
   status           String                      @default("SCHEDULED")

@@ -1,9 +1,9 @@
 # Argus browser collection boundary
 
-Last updated: 2026-08-03
+Last updated: 2026-08-05
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
-Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, and future Ticketek NZ;
+Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
 stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
 
 ## Responsibility split
@@ -25,6 +25,8 @@ stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
 - `ticketmaster-public` supports selectively required detail capture; listings are direct HTTP in Tymra.
 - Eventfinda listing and detail collection are direct HTTP in Tymra; its legacy connector is outside the current responsibility boundary.
 - `rbnz-fx` supports the fixed RBNZ B1 exchange-rate page.
+- `sporty-school-sport-public` supports bounded School Sport NZ and School Sport Canterbury event windows.
+- `ticketek-public` supports one bounded national listing and selectively queued event details.
 - For successful and partial results, Tymra selects the source normalizer only when `data_schema` and
   `schema_version` exactly match the submitted Connector/workflow. Unknown versions, missing markers
   and another Connector's payload fail closed as an upstream contract error before business data is
@@ -64,7 +66,7 @@ covers queueing plus execution and must be greater than the capture deadline.
   wakes the parent so normal source failure handling can finish the `CollectionRun`.
 
 Direct CLI calls without a database Job retain the synchronous compatibility path. Scheduled and
-manually queued Eventfinda, Ticketmaster and RBNZ collections use the durable path.
+manually queued Eventfinda, Ticketmaster, RBNZ, School Sport and Ticketek collections use the durable path.
 
 The accepted Argus data contracts are currently:
 
@@ -77,6 +79,9 @@ The accepted Argus data contracts are currently:
 | `ourauckland-public / collect_listing` | `ourauckland-public.collect_listing` | `1.0.0` |
 | `ourauckland-public / collect_detail` | `ourauckland-public.collect_detail` | `1.0.0` |
 | `rbnz-fx / collect_exchange_rates` | `rbnz-fx.collect_exchange_rates` | `1.0.0` |
+| `sporty-school-sport-public / collect_events` | `sporty-school-sport-public.collect_events` | `1.0.0` |
+| `ticketek-public / collect_listing` | `ticketek-public.collect_listing` | `1.0.0` |
+| `ticketek-public / collect_detail` | `ticketek-public.collect_detail` | `1.0.0` |
 
 The Worker reaches the same HTTPS API origin used by cross-network clients. Docker maps `api.argus.test`
 to the host gateway, and Node trusts only the mounted mkcert development root CA. Do not disable TLS
@@ -154,12 +159,17 @@ failures, and dry-run persistence remained empty. See
 
 ## Current local runtime snapshot
 
-On 2026-08-01 both `https://argus.test/health` and `/readiness` returned HTTP 200 with no active task.
-The Tymra development database had the `20260729093000_argus_execution_orchestration` migration
-applied, 33 completed Argus executions, one cancelled execution and no active Argus execution.
-Scheduler remained disabled with zero enabled schedule definitions.
+On 2026-08-05 `https://api.argus.test/health` and `/readiness` returned HTTP 200. The current Tymra
+containers reached that origin with the shared development CA and service token; Tymra Web and Worker
+health/readiness also returned HTTP 200. Scheduler remained disabled with zero enabled schedule
+definitions.
 
-This is a point-in-time health and persistence check. The Tymra application containers were rebuilt
-during the final review; the running Argus client, Worker service and acceptance runner hashes then
-matched the worktree and Worker health/readiness returned HTTP 200. Fresh database integration and
-real-source acceptance were still not rerun, so this is not production readiness evidence.
+The fresh cross-service run completed two School Sport NZ passes (20 raw records, six promoted
+events) and two School Sport Canterbury passes (13 raw records, zero safely promotable events). Each
+second pass added zero source, canonical or lineage rows. Ticketek completed two listing passes (ten
+records and seven events per pass) and retained both listing and detail evidence locally before ACK.
+Its selected `show.aspx` detail returned a real hidden Akamai document that the current Argus build
+misclassified as `PARSING_ERROR`; both Tymra runs therefore correctly remained `PARTIAL`, with no
+bypass and no loss of the listing events. See the
+[2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md) for Job IDs and
+hashes. This is development evidence, not production schedule approval.

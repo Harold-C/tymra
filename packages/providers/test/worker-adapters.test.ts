@@ -71,6 +71,14 @@ describe("public data adapter contract", () => {
     await expect(adapter.fetch("https://www.ticketmaster.co.nz/", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
   });
 
+  it("registers School Sport and Ticketek as fixed Argus-only public sources", async () => {
+    expect(publicDataAdapters.school_sport_nz.metadata).toMatchObject({ adapterKey: "public:school_sport_nz:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1 });
+    expect(publicDataAdapters.school_sport_canterbury.metadata.supportedDomains).toContain("teamup.com");
+    expect(publicDataAdapters.ticketek_events.metadata).toMatchObject({ adapterKey: "public:ticketek_events:argus-v1", dailyBudget: 20 });
+    await expect(publicDataAdapters.school_sport_nz.discover({ marketScope: "christchurch", from: new Date(), to: new Date() }, fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
+    await expect(publicDataAdapters.ticketek_events.fetch("https://premier.ticketek.co.nz/shows/whatson.aspx", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
+  });
+
   it("extracts Eventfinda and Ticketmaster direct HTTP listing payloads", () => {
     const eventfinda = extractEventfindaHttpPage({
       finalUrl: "https://www.eventfinda.co.nz/whatson/events/new-zealand",
@@ -257,12 +265,12 @@ describe("public data adapter contract", () => {
   });
 
   it("promotes the Canterbury A&P Show only when the official page publishes scale evidence", () => {
-    const [show] = parseCanterburyMajorAnnualEvent(`<main>Ravensdown Canterbury A&amp;P Show Wed 11 - Fri 13 November 2026 Canterbury Agricultural Park 70,000 Annual Visitors 400 Trade Sites 5,000 Show Events &amp; Competitions</main>`, "https://www.theshow.co.nz/");
+    const [show] = parseCanterburyMajorAnnualEvent(`<main>Ravensdown Canterbury A&amp;P Show Wed 11 - Fri 13 November 2026 Canterbury Agricultural Park 70,000 Annual\nVisitors 400 Trade\nSites 5,000 Show\nEvents &amp; Competitions</main>`, "https://www.theshow.co.nz/");
     expect(show).toMatchObject({
       externalId: "canterbury-ap-show:2026",
       impactStatus: "PROMOTED",
       impactScore: 0.95,
-      impactEvidence: { annualVisitors: 70_000 },
+      impactEvidence: { schemaVersion: "event-impact-evidence-v1", items: [expect.objectContaining({ evidenceType: "EXPECTED_ATTENDANCE", value: 70_000, unit: "people" })] },
       metadata: { tradeSites: 400, showEventsAndCompetitions: 5_000 },
     });
     const [marathon] = parseCanterburyMajorAnnualEvent(`<main>ASICS Christchurch Marathon 18 April 2027</main>`, "https://www.christchurchmarathon.co.nz/");

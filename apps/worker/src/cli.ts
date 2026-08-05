@@ -52,7 +52,7 @@ switch (command) {
   case "enqueue-source": {
     const sourceId = requiredArg(args, 0);
     print(await enqueueJob({
-      type: ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_racing", "christchurch_council_events", "canterbury_major_annual_events"].includes(sourceId)
+      type: ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "christchurch_sports", "christchurch_racing", "christchurch_council_events", "canterbury_major_annual_events"].includes(sourceId)
         ? "EVENT_COLLECTION"
         : ["christchurch_airport", "christchurch_cruise", "christchurch_airport_monthly"].includes(sourceId) ? "TRANSPORT_COLLECTION" : "PUBLIC_DATA_COLLECTION",
       payload: {

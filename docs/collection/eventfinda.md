@@ -237,6 +237,21 @@ frontier gradually. Operators may run additional manual detail batches, but the 
 daily budget still apply. Exact listing and occurrence counts are snapshots of the source at run time,
 not fixed contractual totals.
 
+### Production canary and rollback gate
+
+Activation is not one step. In the approved target environment, keep both schedules disabled while
+running one bounded dry run and one bounded persisted pass. Confirm the source lock, request budget,
+raw evidence, parser-failure rate, duplicate rate, queue depth, lease renewal, canonical-link growth
+and source cooldown before enabling discovery only. Enable the hourly detail schedule only after one
+successful daily discovery interval and an operator review of the new frontier.
+
+Rollback is deliberately independent of a deployment: disable both Eventfinda schedules first, then
+leave the source registry and accumulated frontier intact for audit and later recovery. If remote
+rights or operational approval is withdrawn, also deactivate the source through the audited CLI.
+Never delete the frontier, immutable collection runs or evidence as part of rollback. A canary is
+accepted only after disable/re-enable has been exercised in the target environment and no collection
+job or source lock remains active after disable.
+
 ## Data quality controls
 
 - Listing sponsorship is retained in metadata and is not interpreted as demand impact.

@@ -1,4 +1,4 @@
-import { prisma } from "@tymra/db";
+import { prisma, recordFunnelEvent } from "@tymra/db";
 
 const terminalStatuses = new Set([
   "PUBLISHED",
@@ -29,6 +29,12 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
   });
   if (!check) return null;
   const result = check.resultVersions[0] ?? null;
+  if (result) {
+    await recordFunnelEvent({
+      name: "formal_result_viewed",
+      dimensions: { locale: check.locale === "zh" ? "zh" : "en", outcome: result.outcome, isDemo: check.isDemo },
+    });
+  }
   return {
     id: check.id,
     status: check.status,

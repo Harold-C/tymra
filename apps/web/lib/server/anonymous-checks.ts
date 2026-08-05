@@ -1,5 +1,5 @@
 import { getEnvironment } from "@tymra/config";
-import { hashPersonalIdentifier, prisma, type AnonymousCheckStatus, type Prisma } from "@tymra/db";
+import { hashPersonalIdentifier, prisma, recordFunnelEvent, type AnonymousCheckStatus, type Prisma } from "@tymra/db";
 import { createAnonymousCheckSchema } from "@tymra/domain";
 
 import { resolveSupportedListingUrl, type ListingPricingContext } from "./listing-input";
@@ -29,6 +29,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
   if (idempotent) return serializeAnonymousCheck(idempotent, true);
 
   const resolved = resolveSupportedListingUrl(input.input);
+  await recordFunnelEvent({ name: "rough_check_started", dimensions: { locale: input.locale, platform: resolved.platform } });
   const deviceHash = hashPersonalIdentifier(identity.deviceId, environment.ACCESS_KEY_SECRET);
   const ipHash = hashPersonalIdentifier(identity.ipAddress, environment.ACCESS_KEY_SECRET);
   await enforceRoughLimits(deviceHash, ipHash);
@@ -82,6 +83,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
       return transaction.anonymousCheck.findUniqueOrThrow({ where: { id: created.id }, include: { roughResult: true } });
     });
     await recordRoughUsage(copied.id, deviceHash, ipHash, true);
+    await recordFunnelEvent({ name: "rough_check_completed", dimensions: { locale: input.locale, platform: resolved.platform, outcome: copied.status, reused: true, isDemo: copied.isDemo } });
     return serializeAnonymousCheck(copied, true);
   }
 
@@ -124,6 +126,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
   });
 
   await recordRoughUsage(check.id, deviceHash, ipHash, false);
+  await recordFunnelEvent({ name: "rough_check_completed", dimensions: { locale: input.locale, platform: resolved.platform, outcome: check.status, reused: false, isDemo: check.isDemo } });
   return serializeAnonymousCheck(
     await prisma.anonymousCheck.findUniqueOrThrow({ where: { id: check.id }, include: { roughResult: true } }),
     false,
@@ -136,6 +139,9 @@ export async function getAnonymousCheck(checkId: string) {
   if (check.expiresAt <= new Date() && check.status !== "EXPIRED") {
     await prisma.anonymousCheck.update({ where: { id: check.id }, data: { status: "EXPIRED" } });
     return serializeAnonymousCheck({ ...check, status: "EXPIRED" }, false);
+  }
+  if (check.status === "ROUGH_READY" && check.roughResult) {
+    await recordFunnelEvent({ name: "rough_result_viewed", dimensions: { locale: check.locale === "zh" ? "zh" : "en", platform: check.platform, isDemo: check.isDemo } });
   }
   return serializeAnonymousCheck(check, false);
 }

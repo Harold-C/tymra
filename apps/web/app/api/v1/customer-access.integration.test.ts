@@ -106,6 +106,18 @@ describe("customer report access isolation", () => {
     expect(acknowledged.status).toBe(200);
     expect((await acknowledged.json()).data.acknowledged).toBe(true);
   });
+
+  it("rejects revoked and expired customer sessions", async () => {
+    const ownerSessionId = created.sessionIds[0]!;
+    await prisma.customerSession.update({ where: { id: ownerSessionId }, data: { revokedAt: new Date() } });
+    expect((await getCustomerCheck(request(created.checkId, ownerCookie), { params: { checkId: created.checkId } })).status).toBe(401);
+
+    await prisma.customerSession.update({
+      where: { id: ownerSessionId },
+      data: { revokedAt: null, expiresAt: new Date(Date.now() - 1_000) },
+    });
+    expect((await getCustomerCheck(request(created.checkId, ownerCookie), { params: { checkId: created.checkId } })).status).toBe(401);
+  });
 });
 
 function request(checkId: string, cookie?: string, method = "GET") {

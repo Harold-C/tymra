@@ -96,9 +96,9 @@ Argus currently publishes these additional fixed contracts:
 
 | Connector | Workflow | Data schema | Version | Argus state | Tymra state |
 | --- | --- | --- | --- | --- | --- |
-| `sporty-school-sport-public` | `collect_events` | `sporty-school-sport-public.collect_events` | `1.0.0` | implemented and bounded-live verified | not integrated |
-| `ticketek-public` | `collect_listing` | `ticketek-public.collect_listing` | `1.0.0` | implemented and bounded-live verified | not integrated |
-| `ticketek-public` | `collect_detail` | `ticketek-public.collect_detail` | `1.0.0` | parser fix verified; challenge gap remains | not integrated |
+| `sporty-school-sport-public` | `collect_events` | `sporty-school-sport-public.collect_events` | `1.0.0` | implemented and bounded-live verified | integrated; schedules disabled |
+| `ticketek-public` | `collect_listing` | `ticketek-public.collect_listing` | `1.0.0` | implemented and bounded-live verified | integrated; schedules disabled |
+| `ticketek-public` | `collect_detail` | `ticketek-public.collect_detail` | `1.0.0` | parser fixed; `show.aspx` hidden-challenge classification still blocked | integrated with safe partial handling; schedules disabled |
 
 Bounded retained jobs verified School Sport NZ (`20/20` series/occurrences), School Sport
 Canterbury (`20/20`) and Ticketek listing (`10/10`). Repeating each request with the same
@@ -134,7 +134,7 @@ independent PostgreSQL tests were skipped because `ARGUS_TEST_DATABASE_URL` was 
 The target Ticketek tests cover stable performance IDs, multiple dates, ticket states and rejection
 of fully unresolved detail data.
 
-## Open blocker: hidden Akamai challenge
+## Remaining upstream blocker: hidden Akamai challenge
 
 A fresh independent capture after the parser fix did not return the event page:
 
@@ -148,51 +148,56 @@ A fresh independent capture after the parser fix did not return the event page:
 
 The HTML is an Akamai behavioural challenge and contains `sec-if-cpt-container`,
 `behavioral-content`, `scf-akamai-protected-by` and `Powered and protected by Akamai`; its challenge
-container is initially hidden and the screenshot is blank. Argus therefore misclassified a source
-challenge as a non-retryable parser failure. Until Argus detects this shape as `ACCESS_CHALLENGE`,
-Ticketek cannot be considered ready for unattended full collection because cooldown, consecutive
-block accounting and the circuit breaker are bypassed.
+container is initially hidden and the screenshot is blank. The Argus fix currently keys this shape
+to a final `/detection.aspx` path. Fresh challenged detail Jobs retained `show.aspx`, so the current
+Argus runtime still returns `PARSING_ERROR`, `retryable: false`, `challenge: null`. This remains an
+upstream classification blocker; Tymra never attempts to bypass it.
 
-The failed Job remains unacknowledged so Argus can use the exact retained evidence for regression.
-The required Argus fix is to classify the above DOM/script signals before extraction, retain the
-evidence, stop interaction, apply the Ticketek source policy and add the real shape as a fixture.
+Fresh two-pass Tymra Jobs `cmsfstri00000p52a7rnyuf8k` and `cmsfsuicw0001p52arnlaeyzf` verified the
+safe partial boundary. Each pass completed its Ticketek listing execution, retained ten listing
+records and seven canonical events, attempted one selected detail, and finished `PARTIAL /
+PARTIAL_FAILURE`. The detail executions `job_2a2c0ef4296f8d5ffa89beab8c15fb35` and
+`job_422830894dcf5516dc4ad90ebe6eb33d` retained the challenged HTML and blank screenshot locally.
+The second pass created no new source, canonical or lineage rows. All four execution evidence pairs
+were copied before any result ACK; zero `argus-evidence:` references remained.
 
-## Remaining Tymra work
+## Completed Tymra work
 
-Tymra's current `ArgusConnectorId`, workflow union and contract map do not include
-`sporty-school-sport-public`, `ticketek-public` or `collect_events`. Consequently Tymra cannot yet
-schedule these connectors, validate their results, copy and ACK their evidence, normalise their raw
-records, expose them in collection control/Data Explorer, or run database idempotency acceptance.
+Tymra now includes the three connector/workflow contracts, strict cross-record validation, source
+registry and collection-control entries, durable Argus submission and disabled schedule definitions.
+It stores the full source connector payload as raw JSON, retains HTML/screenshots, and reuses the
+existing copy/size/hash/database-reference gate before sending the exact result hash ACK. Automated
+acceptance proves that a post-ACK result read returns `410`, and that missing evidence prevents ACK.
 
-Resume in this order:
+Sporty and Ticketek series and occurrences now use the canonical event pipeline. School Sport
+administrative rows, unresolved locations and rows not explicitly marked Canterbury-hosted remain
+raw. Ticketek missing city/region remains missing. Every promoted event stays `PENDING_EVIDENCE`
+until separate scale and accommodation-demand evidence exists.
 
-1. In Argus, fix and regress the hidden Akamai challenge classification. Do not implement that
-   browser change in Tymra.
-2. In Tymra, add the three fixed connector/workflow contracts and strict source-specific schemas.
-3. Add source registry/control entries and asynchronous Argus submission without enabling schedules.
-4. Copy and hash-verify every retained evidence object before ACK; prove post-ACK `410` cleanup.
-5. Normalise Sporty and Ticketek series/occurrences, filtering administrative School Sport rows and
-   preserving missing location instead of guessing it.
-6. Run two bounded database passes for School Sport NZ, School Sport Canterbury, Ticketek listing
-   and one selected detail. The second pass must add zero source, canonical or lineage rows.
-7. Re-run cancellation, restart recovery and ACK failure-path acceptance, then update Data Explorer
-   and collection monitoring evidence.
+The fresh cross-service acceptance reached Argus through `https://api.argus.test`. School Sport NZ
+completed two passes with 20 raw records and six promoted events; School Sport Canterbury completed
+two passes with 13 raw records and correctly promoted zero unresolved/administrative rows. Each
+School Sport pass used one Argus execution, retained HTML/screenshot evidence locally, left zero
+remote evidence references and added no rows on the second pass. Ticketek listing also preserved
+second-pass idempotency, with its detail limitation recorded above. Governance snapshots were
+unchanged and all related schedules remained disabled.
+
+After the multi-execution evidence fix, 102 root tests (four live probes skipped), 53 Worker unit
+tests and 55 database/API/Worker integration tests passed. Cancellation, restart recovery,
+per-execution evidence scoping, all-copy-before-any-ACK and ACK failure paths remain covered by the
+durable Argus orchestration suite.
 
 ## Coverage conclusion
 
-Christchurch now has broad direct coverage across council events, major venues, public event
-platforms, sports, university and Ara dates, racing, cruise, airport demand and selected independent
-annual events. Lincoln is integrated through Argus. The remaining material event-discovery gap in
-this task is not another direct Christchurch adapter: it is completing Tymra integration and
-operational acceptance for School Sport and Ticketek, plus correcting Ticketek's hidden Akamai
-challenge classification. Coverage should be described as broad but not complete until those items
-pass end-to-end database acceptance.
+Christchurch now has broad coverage across council events, major venues, public event platforms,
+sports, university and Ara dates, racing, cruise, airport demand and selected independent annual
+events. Lincoln, School Sport and Ticketek listing are integrated through Argus. Ticketek detail
+challenge classification, production rights approval and schedule enablement remain separate gates;
+they are not implied by the completed development and database acceptance.
 
 ## Archive boundary
 
-This archive records the verified state observed through 2026-08-05. The Tymra worktree contains a
-large set of uncommitted changes from this workstream, including the Argus-only cutover, Admin
-operations UI, direct Christchurch adapters and Lincoln integration. No commit, push, production
-deployment, production database migration or production schedule activation was performed as part
-of this archive step. Before release, review the complete diff and run the repository's full quality
-gate from the intended release commit.
+This archive records the verified state observed through 2026-08-05. No production deployment,
+production database migration or production schedule activation was performed as part of this work.
+Before release, review the complete diff and run the repository's full quality gate from the intended
+release commit and target environment.

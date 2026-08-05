@@ -62,18 +62,22 @@ Their weekly/12-hour production candidates are seeded disabled in development.
 
 School Sport NZ, School Sport Canterbury and Ticketek are not Tymra direct sources: ordinary HTTP
 currently receives Cloudflare or Akamai access-control responses. Their browser work is assigned to
-Argus and is documented in `docs/collection/argus-responsibilities.md`. Argus has implemented their
-fixed browser contracts, but Tymra has not yet integrated those contracts into scheduling,
-normalisation, evidence copy/ACK, Data Explorer or two-pass database acceptance. A fresh Ticketek
-detail run also exposed a hidden Akamai challenge that Argus currently misclassifies as
-`PARSING_ERROR`; see the
+Argus and is documented in [`argus.md`](argus.md). Tymra now registers all three sources, submits the
+fixed contracts through durable Argus Jobs, retains raw connector output, copies and verifies browser
+evidence before ACK, and normalises accepted series and occurrences through the canonical event and
+lineage pipeline. Administrative School Sport rows and rows without an explicit published location
+remain raw; source organisation is never used to invent a Canterbury location. All four development
+schedules are seeded disabled. Tymra safely retains the hidden Ticketek Akamai response and keeps
+listing events when detail enrichment fails. The current Argus build still labels the challenged
+`show.aspx` detail as `PARSING_ERROR` instead of `ACCESS_CHALLENGE`, so detail live acceptance remains
+an upstream blocker and no bypass is attempted; see the
 [2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md).
 
 ## Verification
 
 The parser contract suite covers every direct source and its source-specific boundary. Run
 `LIVE_SOURCE_PROBE=1 pnpm exec vitest run packages/providers/test/worker-adapters.test.ts` for a
-bounded real-source probe. Run `pnpm acceptance:public-sources` with the scheduler disabled for the
+bounded real-source probe. Run `pnpm accept:public` with the scheduler disabled for the
 two-pass database and lineage acceptance.
 
 The 2026-08-04 real-source probe passed all 37 tests, including every new Christchurch channel.

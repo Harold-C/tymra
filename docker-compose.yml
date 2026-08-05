@@ -36,6 +36,7 @@ x-app-environment: &app-environment
   DEFAULT_MARKET: ${DEFAULT_MARKET:-christchurch}
   AUTO_PUBLISH_ENABLED: ${AUTO_PUBLISH_ENABLED:-true}
   ACCEPT_NEW_CHECKS: ${ACCEPT_NEW_CHECKS:-true}
+  CUSTOMER_FUNNEL_ENABLED: ${CUSTOMER_FUNNEL_ENABLED:-true}
   EMAIL_PROVIDER: ${COMPOSE_EMAIL_PROVIDER:-smtp}
   EMAIL_FROM: ${EMAIL_FROM:-Tymra by Synix <no-reply@tymra.test>}
   SMTP_URL: ${COMPOSE_SMTP_URL:-smtp://tymra-mailpit:1025}

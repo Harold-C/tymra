@@ -7,6 +7,36 @@ const resultPath = (locale: "en" | "zh", checkId: string, version = 1) =>
   `/${locale}/result/${encodeURIComponent(`result:${checkId}:${version}`)}`;
 
 test.describe("public Release 1", () => {
+  test("reduced-motion preference keeps the homepage static and interactive", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/en");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+
+    const activeMotion = await page.locator("body *").evaluateAll((elements) => elements.flatMap((element) => {
+      const style = getComputedStyle(element);
+      const durations = `${style.animationDuration},${style.transitionDuration}`
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const exceedsReducedLimit = durations.some((value) => value.endsWith("ms")
+        ? Number.parseFloat(value) > 0.001
+        : Number.parseFloat(value) > 0.000001);
+      return exceedsReducedLimit ? [element.tagName] : [];
+    }));
+    expect(activeMotion).toEqual([]);
+
+    const canvas = page.locator("canvas").first();
+    const firstFrame = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+    await page.waitForTimeout(250);
+    const secondFrame = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+    expect(secondFrame).toBe(firstFrame);
+
+    const faq = page.getByRole("button", { name: "Does Tymra provide real pricing results?" });
+    await faq.click();
+    await expect(faq).toHaveAttribute("aria-expanded", "true");
+  });
+
   test("English and Chinese Home are usable and accessible", async ({ page }, testInfo) => {
     const locale = testInfo.project.name === "mobile" ? "zh" : "en";
     await page.goto(`/${locale}`);

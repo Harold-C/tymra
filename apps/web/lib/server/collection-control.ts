@@ -73,7 +73,7 @@ async function enqueueControlledCollection(adminId: string, scheduleKey: string,
     queueName: schedule.queueName,
     payload,
     sourceId: source.key,
-    maxAttempts: ["eventfinda", "ticketmaster", "fx_rates"].includes(source.key) ? 1 : 2,
+    maxAttempts: ["eventfinda", "ticketmaster", "fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(source.key) ? 1 : 2,
     idempotencyKey: `admin-collection:${schedule.key}:${randomUUID()}`,
   });
   await writeAudit(adminId, "collection_job_enqueued", "Job", job.id, {
@@ -165,6 +165,11 @@ export function buildControlledCollectionPayload(
     if (basePayload.phase === "discovery") payload.maxPages = 1;
     if (basePayload.phase === "details") payload.maxDetails = 1;
   }
+  if (source.key === "ticketek_events") {
+    if (basePayload.phase === "discovery") payload.limit = 10;
+    if (basePayload.phase === "details") payload.maxDetails = 1;
+  }
+  if (source.key === "school_sport_nz" || source.key === "school_sport_canterbury") payload.limit = 20;
   if (environment.NODE_ENV === "development" && !productionCollectionAllowed(source)) {
     if (source.key === "eventfinda" || source.key === "ticketmaster") payload.developmentBootstrap = true;
     else payload.localAcceptance = true;
@@ -225,7 +230,8 @@ function workflowMatches(job: Job, scheduleKey: string, basePayload: Record<stri
 }
 
 export function manualCollectionCooldownMinutes(sourceKey: string) {
-  if (sourceKey === "ticketmaster") return 30;
+  if (sourceKey === "ticketmaster" || sourceKey === "ticketek_events") return 30;
+  if (sourceKey === "school_sport_nz" || sourceKey === "school_sport_canterbury") return 15;
   if (sourceKey === "eventfinda") return 15;
   return 5;
 }

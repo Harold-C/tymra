@@ -9,6 +9,7 @@ import {
   captureBrowserTaskWithArgus,
   captureTicketmasterListingWithArgus,
   downloadArgusEvidence,
+  getArgusJobResult,
 } from "../src/clients/argus-client";
 
 let server: http.Server | undefined;
@@ -152,6 +153,50 @@ describe("Argus async Job client", () => {
     assert.match(response.ok ? "" : response.message, /invalid Lincoln key-dates data/u);
   });
 
+  it("submits and validates the fixed Sporty event contract and date window", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      return sportyResult();
+    });
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "sporty-test",
+      connectorId: "sporty-school-sport-public",
+      workflowId: "collect_events",
+      url: "https://www.sporty.co.nz/sscanterbury",
+      startDate: "2026-08-01",
+      endDate: "2026-09-30",
+      maxRecords: 20,
+    });
+
+    assert.equal(response.ok, true);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.start_date, "2026-08-01");
+    assert.equal(capture.end_date, "2026-09-30");
+    assert.equal(capture.max_records, 20);
+  });
+
+  it("accepts Ticketek listing/detail contracts and rejects internal identity drift", async () => {
+    const invalid = ticketekDetailResult();
+    const data = invalid.data as { occurrences: Array<Record<string, unknown>> };
+    data.occurrences[0]!.seriesId = "ticketek:OTHER";
+    server = jobServer(async () => invalid);
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "ticketek-detail-test",
+      connectorId: "ticketek-public",
+      workflowId: "collect_detail",
+      url: "https://premier.ticketek.co.nz/shows/show.aspx?sh=SHOW26",
+      entryUrl: "https://premier.ticketek.co.nz/shows/whatson.aspx?d=NDays&dn=30",
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid ticketek-public\.collect_detail data/u);
+  });
+
   it("uses the independent Job polling deadline", async () => {
     server = http.createServer(async (request, response) => {
       if (request.method === "POST" && request.url === "/v1/jobs") {
@@ -180,14 +225,19 @@ describe("Argus async Job client", () => {
     });
   });
 
-  it("acknowledges the exact persisted result hash", async () => {
+  it("acknowledges the exact persisted result hash and observes remote 410 cleanup", async () => {
     const resultSha256 = "b".repeat(64);
     let acknowledgementBody: Record<string, unknown> | undefined;
+    let acknowledged = false;
     server = http.createServer(async (request, response) => {
       assert.equal(request.headers.authorization, "Bearer argus-test-token-with-at-least-32-characters");
       if (request.method === "POST" && request.url === `/v1/jobs/${jobId}/ack`) {
         acknowledgementBody = JSON.parse(await body(request)) as Record<string, unknown>;
+        acknowledged = true;
         return json(response, 200, { contract_version: "1.0", job_id: jobId });
+      }
+      if (request.method === "GET" && request.url === `/v1/jobs/${jobId}/result` && acknowledged) {
+        return json(response, 410, { error: "RESULT_ACKNOWLEDGED" });
       }
       json(response, 404, { error: "NOT_FOUND" });
     });
@@ -199,6 +249,11 @@ describe("Argus async Job client", () => {
     assert.deepEqual(acknowledgementBody, {
       contract_version: "1.0",
       result_sha256: resultSha256,
+    });
+    assert.deepEqual(await getArgusJobResult(environment, jobId), {
+      ok: false,
+      httpStatus: 410,
+      message: "RESULT_ACKNOWLEDGED",
     });
   });
 
@@ -386,6 +441,53 @@ function lincolnKeyDatesResult(): Record<string, unknown> {
       missingFields: [],
       warnings: [],
       fieldSources: { keyDates: "academic dates table" },
+    },
+  };
+}
+
+function sportyResult(): Record<string, unknown> {
+  const canonicalUrl = "https://www.sporty.co.nz/sscanterbury";
+  return {
+    ...baseResult("sporty-test", "collect_events", "sporty-school-sport-public"),
+    data: {
+      data_schema: "sporty-school-sport-public.collect_events",
+      schema_version: "1.0.0",
+      extractor: "sporty_school_sport",
+      kind: "event_listing",
+      title: "School Sport Canterbury",
+      canonicalUrl,
+      sourceOrganisation: "School Sport Canterbury",
+      window: { startsOn: "2026-08-01", endsOn: "2026-09-30" },
+      series: [{ seriesId: "sporty:ssc:event", title: "Winter Tournament", sport: "Athletics", genderGrade: "Secondary", sourceOrganisation: "School Sport Canterbury", canonicalUrl, sourceUpdated: null, imageUrl: null, description: null, fieldSources: { title: "fixture" } }],
+      occurrences: [{ seriesId: "sporty:ssc:event", occurrenceId: "sporty:ssc:event:2026-08-20", title: "Winter Tournament", sport: "Athletics", genderGrade: "Secondary", venue: "Nga Puna Wai", address: null, locality: "Christchurch", region: "Canterbury", startsAt: "2026-08-20", endsAt: "2026-08-20", timePrecision: "DATE", timezone: "Pacific/Auckland", status: "SCHEDULED", canonicalUrl, sourceOrganisation: "School Sport Canterbury", sourceUpdated: null, imageUrl: null, description: null, canterburyHosted: true, fieldSources: { title: "fixture" } }],
+      totalSeries: 1,
+      totalOccurrences: 1,
+      truncated: false,
+      quality: "complete",
+      missingFields: [],
+      warnings: [],
+      fieldSources: { series: "fixture", occurrences: "fixture" },
+    },
+  };
+}
+
+function ticketekDetailResult(): Record<string, unknown> {
+  const canonicalUrl = "https://premier.ticketek.co.nz/shows/show.aspx?sh=SHOW26";
+  return {
+    ...baseResult("ticketek-detail-test", "collect_detail", "ticketek-public"),
+    data: {
+      data_schema: "ticketek-public.collect_detail",
+      schema_version: "1.0.0",
+      extractor: "ticketek",
+      kind: "event_detail",
+      title: "Example Show",
+      canonicalUrl,
+      series: { seriesId: "ticketek:SHOW26", title: "Example Show", category: "Theatre", imageUrl: null, canonicalUrl, status: "SCHEDULED", sourceUpdated: null, description: "A public event", fieldSources: { title: "fixture" } },
+      occurrences: [{ occurrenceId: "ticketek:SHOW26:PERF1", seriesId: "ticketek:SHOW26", title: "Example Show", startsAt: "2026-08-20T19:30:00", endsAt: null, timePrecision: "DATETIME", timezone: "Pacific/Auckland", venue: "Isaac Theatre Royal", city: "Christchurch", region: "Canterbury", status: "SCHEDULED", ticketState: "AVAILABLE", canonicalUrl, fieldSources: { title: "fixture" } }],
+      quality: "complete",
+      missingFields: [],
+      warnings: [],
+      fieldSources: { series: "fixture", occurrences: "fixture" },
     },
   };
 }

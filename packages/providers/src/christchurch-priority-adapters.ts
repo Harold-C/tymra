@@ -1,4 +1,5 @@
 import { parseHTML } from "linkedom";
+import { emptyEventImpactEvidence } from "@tymra/domain";
 
 import type {
   AdapterContext,
@@ -187,7 +188,8 @@ export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string):
     const start = namedDate(Number(match[4]), match[3]!, Number(match[1]));
     const end = namedDate(Number(match[4]), match[3]!, Number(match[2]));
     if (!start || !end) return [];
-    const attendance = numberNearLabel(text, /([\d,]+)\s+Annual Visitors/i);
+    const attendance = numberNearLabel(text, /([\d,]+)\s*Annual\s*Visitors/i);
+    const observedAt = new Date();
     return [event({
       sourceId: "canterbury_major_annual_events",
       externalId: `canterbury-ap-show:${match[4]}`,
@@ -199,13 +201,24 @@ export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string):
       venueName: "Canterbury Agricultural Park",
       address: "102 Curletts Road, Wigram, Christchurch 8042",
       category: "Agricultural show",
-      impactEvidence: { reason: attendance ? "PUBLISHED_ANNUAL_VISITORS" : "ATTENDANCE_REQUIRED", annualVisitors: attendance },
+      impactEvidence: attendance ? {
+        ...emptyEventImpactEvidence(),
+        items: [{
+          evidenceType: "EXPECTED_ATTENDANCE",
+          value: attendance,
+          unit: "people",
+          sourceUrl: finalUrl,
+          observedAt: observedAt.toISOString(),
+          confidence: 0.96,
+          notes: "Official annual visitors published for the three-day show",
+        }],
+      } : emptyEventImpactEvidence(["ATTENDANCE_REQUIRED"]),
       impactScore: attendance && attendance >= 50_000 ? 0.95 : null,
       impactConfidence: attendance ? 0.96 : null,
       metadata: {
         annualVisitors: attendance,
-        tradeSites: numberNearLabel(text, /([\d,]+)\s+Trade Sites/i),
-        showEventsAndCompetitions: numberNearLabel(text, /([\d,]+)\s+Show Events/i),
+        tradeSites: numberNearLabel(text, /([\d,]+)\s*Trade\s*Sites/i),
+        showEventsAndCompetitions: numberNearLabel(text, /([\d,]+)\s*Show\s*Events/i),
         advertisedDate: match[0],
         extractionVersion: "canterbury-ap-show-page-v1",
       },

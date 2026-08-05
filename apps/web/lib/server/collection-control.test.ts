@@ -43,6 +43,20 @@ describe("collection control safety", () => {
       { sourceId: "fx_rates", marketScope: "new-zealand" },
       { NODE_ENV: "development" },
     )).toMatchObject({ localAcceptance: true, limit: 2, manualSafety: true });
+
+    expect(buildControlledCollectionPayload(
+      { key: "school_sport_canterbury", ...pendingSource },
+      "school-sport-canterbury-daily",
+      { sourceId: "school_sport_canterbury", marketScope: "christchurch", phase: "full", limit: 100 },
+      { NODE_ENV: "development" },
+    )).toMatchObject({ localAcceptance: true, limit: 2, manualSafety: true });
+
+    expect(buildControlledCollectionPayload(
+      { key: "ticketek_events", ...pendingSource },
+      "ticketek-events-details-six-hour",
+      { sourceId: "ticketek_events", marketScope: "new-zealand", phase: "details", maxDetails: 3 },
+      { NODE_ENV: "development" },
+    )).toMatchObject({ localAcceptance: true, limit: 2, maxDetails: 1, manualSafety: true });
   });
 
   it("does not add development bypass flags for production-ready sources", () => {
@@ -59,7 +73,9 @@ describe("collection control safety", () => {
 
   it("applies longer cooldowns to browser event sources", () => {
     expect(manualCollectionCooldownMinutes("ticketmaster")).toBe(30);
+    expect(manualCollectionCooldownMinutes("ticketek_events")).toBe(30);
     expect(manualCollectionCooldownMinutes("eventfinda")).toBe(15);
+    expect(manualCollectionCooldownMinutes("school_sport_nz")).toBe(15);
     expect(manualCollectionCooldownMinutes("geonet")).toBe(5);
   });
 });

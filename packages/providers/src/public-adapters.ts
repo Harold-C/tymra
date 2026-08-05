@@ -974,6 +974,63 @@ class TicketmasterWebAdapter implements PublicDataAdapter {
   }
 }
 
+class ArgusEventWebAdapter implements PublicDataAdapter {
+  readonly metadata: AdapterMetadata;
+
+  constructor(
+    sourceId: "school_sport_nz" | "school_sport_canterbury" | "ticketek_events",
+    sourceName: string,
+    supportedDomains: string[],
+    private readonly healthUrl: string,
+    connector: "sporty-school-sport-public" | "ticketek-public",
+    dailyBudget: number,
+  ) {
+    this.metadata = {
+      sourceId,
+      sourceName,
+      sourceType: "PUBLIC_DATA",
+      supportedDomains,
+      adapterKey: `public:${sourceId}:argus-v1`,
+      accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY",
+      concurrencyLimit: 1,
+      dailyBudget,
+      collectorVersion: `${connector}-1.0.0`,
+      parserVersion: `${connector}-1.0.0`,
+    };
+  }
+
+  async discover(): Promise<string[]> {
+    throw new AdapterError("CONFIGURATION_ERROR", `${this.metadata.sourceName} collection is orchestrated by Argus`, false);
+  }
+
+  async fetch(): Promise<PublicRawRecord[]> {
+    throw new AdapterError("CONFIGURATION_ERROR", `${this.metadata.sourceName} collection is orchestrated by Argus`, false);
+  }
+
+  async normalise(): Promise<PublicSignal[]> { return []; }
+
+  async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
+    const started = Date.now();
+    try {
+      const response = await fetch(this.healthUrl, { method: "HEAD", redirect: "manual", signal: context.signal ?? AbortSignal.timeout(10_000) });
+      const reachable = response.status > 0 && response.status < 500;
+      return {
+        status: reachable ? "DEGRADED" : "DOWN",
+        checkedAt: new Date(),
+        message: `${this.metadata.sourceName} public route returned HTTP ${response.status}; Argus readiness is authoritative`,
+        latencyMs: Date.now() - started,
+        mode: context.mode,
+      };
+    } catch (error) {
+      return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : `${this.metadata.sourceName} health check failed`, latencyMs: Date.now() - started, mode: context.mode };
+    }
+  }
+
+  rightsMetadata(): SourceRights {
+    return reviewPublicRights(`${this.metadata.sourceName} uses a fixed, read-only Argus connector; production use remains subject to source-governance approval`);
+  }
+}
+
 export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   public_holidays_nz: new OfficialHtmlCalendarAdapter("public_holidays_nz", "Employment New Zealand public holidays", "https://www.employment.govt.nz/leave-and-holidays/public-holidays/public-holidays-and-anniversary-dates", parseEmploymentPublicHolidays),
   school_holidays_nz: new OfficialHtmlCalendarAdapter("school_holidays_nz", "Ministry of Education school holidays", "https://www.education.govt.nz/school/school-terms-and-holidays", parseEducationSchoolHolidays),
@@ -985,6 +1042,9 @@ export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   fx_rates: new RbnzFxBrowserAdapter(),
   ticketmaster: new TicketmasterWebAdapter(),
   eventfinda: new EventfindaWebAdapter(),
+  school_sport_nz: new ArgusEventWebAdapter("school_sport_nz", "School Sport New Zealand", ["www.sporty.co.nz"], "https://www.sporty.co.nz/SSNZ/Sport-1/Events", "sporty-school-sport-public", 4),
+  school_sport_canterbury: new ArgusEventWebAdapter("school_sport_canterbury", "School Sport Canterbury", ["www.sporty.co.nz", "teamup.com"], "https://www.sporty.co.nz/sscanterbury", "sporty-school-sport-public", 4),
+  ticketek_events: new ArgusEventWebAdapter("ticketek_events", "Ticketek New Zealand Events", ["www.ticketek.co.nz", "premier.ticketek.co.nz"], "https://premier.ticketek.co.nz/shows/whatson.aspx", "ticketek-public", 20),
   ...officialNzSourceAdapters,
   ...christchurchEventAdapters,
   ...christchurchDemandAdapters,

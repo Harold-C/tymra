@@ -10,6 +10,9 @@ const deviceCookie = "tymra_device";
 
 export async function POST(request: NextRequest) {
   const environment = getEnvironment();
+  if (!environment.CUSTOMER_FUNNEL_ENABLED) {
+    return apiError(503, "CUSTOMER_FUNNEL_PAUSED", "The customer funnel is temporarily paused.");
+  }
   const existingDeviceId = request.cookies.get(deviceCookie)?.value;
   const deviceId = existingDeviceId ?? issueOpaqueToken(environment.SESSION_SECRET).token;
   const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()

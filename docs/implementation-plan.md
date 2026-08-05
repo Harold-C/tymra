@@ -1,6 +1,6 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-08-02
+Last updated: 2026-08-05
 
 ## 基线与状态源
 
@@ -20,35 +20,37 @@ scripts/                  本地运维、验收与 Compose smoke
 docs/                     产品、架构、采集、证据、决策和状态
 ```
 
-## 2026-08-01 实际快照
+## 2026-08-05 实际快照
 
 - 当前交付包含 Argus 持久编排、公开来源验收、采集优化、Compose profile 和文档改动。
   Git 提交状态不作为功能或验收事实源。
 - 本地 Compose 只保留 Web、Worker API、Worker、PostgreSQL、Redis 和 Mailpit；浏览器执行
   由独立 Argus 服务提供。Scheduler 容器未运行，数据库中启用的计划数为 0。
-- Worker health/readiness 现在把 Argus 作为必需依赖。最终复核前
-  运行时有 5 个 `FAILED` 和 60 个 `DEAD_LETTER` Job；最新失败是一个已有 RBNZ 采集 Job
-  被当前 Worker 以 `RIGHTS_BLOCKED` 终止，其余需区分历史验收残留与真实待处理失败。
+- Worker health/readiness 把 Argus 作为必需依赖。当前失败队列已分类：7 个 `FAILED` 中
+  4 个为历史/外部来源不可用、1 个历史来源 ID、1 个 RBNZ 权限门禁、1 个历史邮件；72 个
+  `DEAD_LETTER` 中 68 个是旧加密密钥下的邮件夹具、2 个是本轮修复前的 Argus 证据范围
+  回归、2 个是本轮修复前的 Ticketek 详情失败。它们均不是当前调度任务，未擅自重放或删除。
 - Argus health/readiness 通过；数据库迁移
   `20260729093000_argus_execution_orchestration` 已应用，存在 33 个 `COMPLETED` 和 1 个
   `CANCELLED` 的 `ArgusExecution`，没有活动执行。
-- 最终复核期间 Tymra Web/API/Worker 被重建；容器中的 Argus client、Worker service 和
-  公开来源验收脚本哈希均与当前工作树一致。Web、Worker 和 Argus HTTPS health/readiness
-  随后均返回 HTTP 200。运行健康仍不替代未执行的数据库集成与真实来源验收。
+- Tymra Web/API/Worker 已用当前工作树重建，Web、Worker 和 Argus HTTPS health/readiness
+  返回 HTTP 200。School Sport 两轮跨服务实采通过；Ticketek listing 两轮幂等通过，detail
+  的真实隐藏 Akamai 页面仍由 Argus 错分为 `PARSING_ERROR`，Tymra 已验证安全 partial 路径。
 
 ## 当前优先级
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
 | P0 | 收口当前实现 | 删除两个带 ` 2` 的 Argus 旧副本；审查最终 diff；只保留唯一异步 Job client/test | 已完成 |
-| P0 | 完成当前工作树质量门槛 | 专用测试库上的 `pnpm verify` 通过；必要时再跑 `pnpm test:e2e` | `pnpm verify` 已通过：lint、类型、79 个根单元测试、42 个 Worker 单元测试、53 个数据库集成测试和生产构建均通过 |
-| P0 | 核对本地运行栈与失败队列 | 当前工作树容器 health/readiness、迁移、队列与 Argus 恢复一致；历史失败已分类 | Argus-only 栈与重启恢复已验证；5 个 FAILED / 60 个 DEAD_LETTER 为本轮前既有队列状态，仍待运营分类 |
+| P0 | 完成当前工作树质量门槛 | 专用测试库上的 `pnpm verify` 通过；必要时再跑 `pnpm test:e2e` | 已通过：lint、类型、109 个根测试（4 个 provider fixture 跳过）、55 个 Worker 测试、63 个数据库/API/Worker 集成测试和生产构建；reduced-motion 桌面/移动 E2E 通过 |
+| P0 | 核对本地运行栈与失败队列 | 当前工作树容器 health/readiness、迁移、队列与 Argus 恢复一致；历史失败已分类 | 已完成只读分类；未重放或删除历史/验收任务 |
 | P0 | 保持首页现有视觉与交互 | EN/ZH 桌面与移动端真实渲染、关键交互、可访问性和无横向溢出 | 历史已验证；本轮无 UI 实现改动，未重跑 E2E |
-| P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑 17 来源两轮验收 | 本轮已重跑 Argus 四来源有界真实验收；其余 13 个直接来源沿用 2026-07-30 验收 |
+| P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑新增来源两轮验收 | School Sport NZ/Canterbury 通过；Ticketek listing 通过，detail 上游分类仍阻塞；其余直接来源沿用 2026-07-30/08-04 证据 |
 | P1 | Eventfinda 长期稳定性 | 目标环境全国持久抓取、多日无人值守、恢复、容量和告警证据 | 本地有界与全国 bootstrap 已有历史证据；长期验收待部署环境 |
 | P1 | Ticketmaster 实页稳定性 | 挑战冷却后重复有界实页验收，列表优先且无绕过 | 列表优先实现和自动化已通过；详情实页仍受外部挑战条件限制 |
 | P1 | 手工导入真实文件验收 | 真实运营导出文件完成两次持久化验收 | `not_verified`：缺少真实文件 |
-| P1 | Release 1.5 剩余项 | Retention、匿名漏斗分析、挑战/配额/会话边界测试完成 | 见追踪表中的逐项状态 |
+| P1 | Release 1.5 剩余项 | Retention、匿名漏斗分析、挑战/配额/会话边界测试完成 | Retention、匿名聚合分析、并发消费、会话、consent、quota、no-default-quote、reduced-motion 和回滚开关已验证；互动 challenge provider 与最终隐私批准仍是外部门槛 |
+| P1 | Event impact v1 | 结构化证据、可信场馆 enrichment、真实样本 pending/promotion 和两轮幂等 | 已完成；Canterbury A&P Show 70,000 人官方证据实采提升，Te Pae 容量单独保持 pending；5 轮/10 pass 本地 soak 无 source/link 增长 |
 | P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | 未启动；本地验收不等于生产批准 |
 
 ## 交付顺序
@@ -58,8 +60,9 @@ docs/                     产品、架构、采集、证据、决策和状态
 3. 用当前工作树重建本地 Compose 应用，再核对 `/worker/health`、`/worker/readiness`、
    Argus health/readiness、迁移状态和队列失败分类。
 4. 在 Scheduler 关闭、边界固定且不会覆盖用户数据库的条件下，重跑公开来源两轮真实验收。
-5. 本地门槛通过后，再在目标环境分别完成 Eventfinda 长期运行和生产来源启用验收。
-6. 只有实际证据完成后才更新 `traceability.md`；历史 evidence 文件不回写成实时状态。
+5. 在本地演练 Release 1.5 新入口暂停/恢复，确认旧结果链接的期限和权限边界不变。
+6. 本地门槛通过后，再在目标环境分别完成 Eventfinda 多日无人值守、生产来源 canary 和回滚验收。
+7. 只有实际证据完成后才更新 `traceability.md`；历史 evidence 文件不回写成实时状态。
 
 ## 已知边界
 

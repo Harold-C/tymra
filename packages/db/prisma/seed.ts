@@ -312,6 +312,9 @@ function registrySourceSeedRecords() {
     ["ticketmaster", "Ticketmaster New Zealand", ["www.ticketmaster.co.nz", "ticketmaster.co.nz"], LegalRightsStatus.REVIEW],
     ["eventbrite_events", "Eventbrite New Zealand Events", ["www.eventbrite.co.nz", "eventbrite.co.nz"], LegalRightsStatus.REVIEW],
     ["humanitix_events", "Humanitix New Zealand Events", ["humanitix.com", "events.humanitix.com"], LegalRightsStatus.REVIEW],
+    ["school_sport_nz", "School Sport New Zealand Events", ["www.sporty.co.nz"], LegalRightsStatus.REVIEW],
+    ["school_sport_canterbury", "School Sport Canterbury Events", ["www.sporty.co.nz", "teamup.com"], LegalRightsStatus.REVIEW],
+    ["ticketek_events", "Ticketek New Zealand Events", ["www.ticketek.co.nz", "premier.ticketek.co.nz"], LegalRightsStatus.REVIEW],
     ["venue_calendars", "Auckland Live Events", ["www.aucklandlive.co.nz"], LegalRightsStatus.REVIEW],
     ["council_calendars", "Auckland Council OurAuckland Events", ["ourauckland.aucklandcouncil.govt.nz"], LegalRightsStatus.REVIEW],
     ["university_calendars", "University of Auckland Events", ["apis.auckland.ac.nz"], LegalRightsStatus.REVIEW],
@@ -347,13 +350,15 @@ function registrySourceSeedRecords() {
       allowedUsage: ["URL_IDENTIFICATION", "PARSER_TEST", "RECORD_REPLAY_RESEARCH"], concurrencyLimit: 1, dailyBudget: 100,
     })),
     ...publicSources.map(([key, name, supportedDomains, legalRightsStatus]) => {
-      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "geonet", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "mbie", "stats_nz", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
+      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "geonet", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
       const locallyVerified = ["public_holidays_nz", "school_holidays_nz", "geonet"].includes(key);
-      const browserSource = ["fx_rates"].includes(key);
+      const browserSource = ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(key);
       const adapterKey = key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
         : key === "eventfinda" ? "public:eventfinda:http-v1"
           : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v1"
             : key === "humanitix_events" ? "public:humanitix:jsonld-listing-v1"
+              : key === "school_sport_nz" || key === "school_sport_canterbury" ? `public:${key}:argus-v1`
+                : key === "ticketek_events" ? "public:ticketek_events:argus-v1"
           : key === "fx_rates" ? "public:fx_rates:rbnz-browser-v1"
             : key === "mbie" ? "public:mbie:adp-csv-v1"
               : key === "stats_nz" ? "public:stats_nz:international-travel-v1"
@@ -382,6 +387,7 @@ function registrySourceSeedRecords() {
       const accessMethod = key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
         : key === "eventfinda" ? "PUBLIC_HTTP_HTML_JSONLD"
           : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD"
+            : ["school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
       : key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
         : key === "mbie" ? "OFFICIAL_PUBLIC_CSV_RANGE"
           : key === "stats_nz" ? "OFFICIAL_PUBLIC_HTML_EMBEDDED_JSON"
@@ -426,6 +432,8 @@ function registrySourceSeedRecords() {
                       : key === "christchurch_council_events" ? 48
                         : ["ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? 4
                       : ["eventbrite_events", "humanitix_events"].includes(key) ? 24
+                        : ["school_sport_nz", "school_sport_canterbury"].includes(key) ? 4
+                          : key === "ticketek_events" ? 20
                       : ["university_calendars", "te_pae_events", "port_and_cruise"].includes(key) ? 24
                       : ["mbie", "fx_rates"].includes(key) ? 4
                         : key === "stats_nz" ? 8 : 2_000,
@@ -483,6 +491,10 @@ async function seedSchedules() {
     { key: "canterbury-major-annual-events-weekly", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "weekly", payload: { sourceId: "canterbury_major_annual_events", marketScope: "christchurch" } },
     { key: "eventbrite-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "eventbrite_events", marketScope: "new-zealand" } },
     { key: "humanitix-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "humanitix_events", marketScope: "new-zealand" } },
+    { key: "school-sport-nz-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "school_sport_nz", marketScope: "christchurch", phase: "full", limit: 100 } },
+    { key: "school-sport-canterbury-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "school_sport_canterbury", marketScope: "christchurch", phase: "full", limit: 100 } },
+    { key: "ticketek-events-discovery-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "ticketek_events", marketScope: "new-zealand", phase: "discovery", limit: 20 } },
+    { key: "ticketek-events-details-six-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-6-hours", payload: { sourceId: "ticketek_events", marketScope: "new-zealand", phase: "details", maxDetails: 3 } },
     { key: "queenstown-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "airport_data", marketScope: "queenstown" } },
     { key: "christchurch-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "christchurch_airport", marketScope: "christchurch" } },
     { key: "christchurch-sports-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "christchurch_sports", marketScope: "christchurch" } },

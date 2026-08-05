@@ -3,7 +3,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Environment } from "@tymra/config";
-import { enqueueJob, prisma, type Prisma } from "@tymra/db";
+import { enqueueJob, prisma, Prisma } from "@tymra/db";
 import {
   acknowledgeArgusJobResult,
   cancelArgusJob,
@@ -70,7 +70,7 @@ export async function captureBrowserTaskWithDurableArgus(
     });
   }
 
-  if (execution.status === "COMPLETED" && execution.result) {
+  if ((execution.status === "COMPLETED" || execution.status === "FAILED") && execution.result) {
     return mapArgusJobResult(execution.result as unknown as ArgusJobResult, input);
   }
   if (execution.status === "FAILED" || execution.status === "CANCELLED") {
@@ -205,7 +205,7 @@ export async function acknowledgePersistedArgusResults(
   parentJobId: string,
 ): Promise<void> {
   const executions = await prisma.argusExecution.findMany({
-    where: { parentJobId, status: "COMPLETED" },
+    where: { parentJobId, status: { in: ["COMPLETED", "FAILED"] }, result: { not: Prisma.DbNull } },
     select: { argusJobId: true, collectionRunId: true, result: true },
   });
   for (const execution of executions) {
@@ -214,10 +214,20 @@ export async function acknowledgePersistedArgusResults(
       throw new Error(`Persisted Argus result ${execution.argusJobId} has no result SHA-256`);
     }
     await retainArgusEvidence(environment, execution.collectionRunId, result as ArgusJobResult);
+  }
+  const collectionRunIds = [...new Set(executions.map((execution) => execution.collectionRunId))];
+  if (collectionRunIds.length > 0) {
+    const remaining = await prisma.rawArtifact.count({
+      where: { collectionRunId: { in: collectionRunIds }, storageRef: { startsWith: "argus-evidence:" }, deletedAt: null },
+    });
+    if (remaining > 0) throw new Error(`${remaining} Argus evidence artifacts remain remote before ACK`);
+  }
+  for (const execution of executions) {
+    const result = execution.result as unknown as ArgusJobResult;
     const acknowledgement = await acknowledgeArgusJobResult(
       environment,
       execution.argusJobId,
-      result.result_sha256,
+      result.result_sha256!,
     );
     if (!acknowledgement.ok) {
       throw new Error(`Argus result acknowledgement failed: ${acknowledgement.message}`);
@@ -226,35 +236,34 @@ export async function acknowledgePersistedArgusResults(
 }
 
 async function retainArgusEvidence(environment: Environment, collectionRunId: string, result: ArgusJobResult) {
+  const pointers = result.items.flatMap((item) => item.result?.evidence ?? []);
+  if (pointers.length === 0) return;
   const remoteArtifacts = await prisma.rawArtifact.findMany({
-    where: { collectionRunId, storageRef: { startsWith: "argus-evidence:" }, deletedAt: null },
+    where: { collectionRunId, storageRef: { in: [...new Set(pointers.map((pointer) => pointer.storageRef))] }, deletedAt: null },
     select: { id: true, storageRef: true, contentHash: true },
   });
-  if (remoteArtifacts.length === 0) return;
 
   const artifactByReference = new Map(remoteArtifacts.map((artifact) => [`${artifact.storageRef}\0${artifact.contentHash}`, artifact]));
   const retainedArtifactIds = new Set<string>();
-  for (const item of result.items) {
-    for (const pointer of item.result?.evidence ?? []) {
-      const artifact = artifactByReference.get(`${pointer.storageRef}\0${pointer.sha256}`);
-      if (!artifact) continue;
-      const content = await downloadArgusEvidence(environment, pointer);
-      const relativePath = retainedEvidencePath(pointer.traceId, pointer.kind);
-      const target = resolveRetainedEvidencePath(environment.ARGUS_EVIDENCE_ROOT, relativePath);
-      await mkdir(path.dirname(target), { recursive: true });
-      const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-      await writeFile(temporary, content, { mode: 0o600 });
-      await rename(temporary, target);
-      const updated = await prisma.rawArtifact.updateMany({
-        where: { id: artifact.id, storageRef: pointer.storageRef, contentHash: pointer.sha256 },
-        data: { storageRef: `tymra-evidence:${relativePath}` },
-      });
-      if (updated.count !== 1) throw new Error(`Argus evidence artifact ${artifact.id} changed before it could be retained`);
-      retainedArtifactIds.add(artifact.id);
-    }
+  for (const pointer of pointers) {
+    const artifact = artifactByReference.get(`${pointer.storageRef}\0${pointer.sha256}`);
+    if (!artifact) throw new Error(`Argus evidence ${pointer.storageRef} was not persisted with its verified hash`);
+    const content = await downloadArgusEvidence(environment, pointer);
+    const relativePath = retainedEvidencePath(pointer.traceId, pointer.kind);
+    const target = resolveRetainedEvidencePath(environment.ARGUS_EVIDENCE_ROOT, relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporary, content, { mode: 0o600 });
+    await rename(temporary, target);
+    const updated = await prisma.rawArtifact.updateMany({
+      where: { id: artifact.id, storageRef: pointer.storageRef, contentHash: pointer.sha256 },
+      data: { storageRef: `tymra-evidence:${relativePath}` },
+    });
+    if (updated.count !== 1) throw new Error(`Argus evidence artifact ${artifact.id} changed before it could be retained`);
+    retainedArtifactIds.add(artifact.id);
   }
-  if (retainedArtifactIds.size !== remoteArtifacts.length) {
-    throw new Error(`Only ${retainedArtifactIds.size} of ${remoteArtifacts.length} Argus evidence artifacts were retained`);
+  if (retainedArtifactIds.size !== new Set(pointers.map((pointer) => `${pointer.storageRef}\0${pointer.sha256}`)).size) {
+    throw new Error(`Only ${retainedArtifactIds.size} of ${pointers.length} Argus evidence pointers were retained`);
   }
 }
 

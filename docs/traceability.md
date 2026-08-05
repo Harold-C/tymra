@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-01
+Last updated: 2026-08-05
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
@@ -21,6 +21,8 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | Ticketmaster | Implementation and automated two-pass persistence verified; live detail attempts stop and cool down on challenge | Repeat live detail acceptance when the public page permits passive access |
 | Configured non-OTA public channels | All 17 configured sources completed one unified bounded two-pass real local acceptance on 2026-07-30 | Fresh live rerun, production source review, activation and ongoing operations remain separate |
 | Argus execution boundary | Async submit/poll/resume/ACK, restart recovery, cancellation and post-ACK purge have dated local evidence; current image/unit/build checks pass | Current-worktree database integration and production acceptance remain separate |
+| School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production rights and schedule activation remain separate |
+| Ticketek | Fresh two-pass listing collection retained 10 records and seven events per pass with zero second-pass growth | Detail `show.aspx` Akamai document is still misclassified by Argus as `PARSING_ERROR`; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
 | Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
 
@@ -148,25 +150,25 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | R15-FLOW-002 | Rough-result presentation contract and limitation copy | Browser assertions distinguish rough/demo/formal evidence | verified |
 | R15-INPUT-001 | Supported OTA URL allowlist, URL normalization, listing-ID resolution and invalid-input states | 7 resolver tests plus valid/invalid browser coverage | verified |
 | R15-INPUT-002 | Automatic URL-context/default-context resolver with no anonymous date, guest or room controls | Resolver tests and control-absence E2E | verified |
-| R15-INPUT-003 | Observed-context persistence/disclosure and `NO_DEFAULT_QUOTE` terminal handling | Persistence and browser disclosure verified; no-quote fixture test pending | implemented_not_verified |
+| R15-INPUT-003 | Observed-context persistence/disclosure and `NO_DEFAULT_QUOTE` terminal handling | Persistence/browser disclosure plus no-default-quote integration regression | verified |
 | R15-COST-001 | Rough analysis service and aggregate/cache provider boundary | Integration proves no `PriceCheck` before verification | verified |
 | R15-ID-001 | Pending verification separate from active `CustomerUser` | Integration proves email request creates no customer | verified |
-| R15-ID-002 | Idempotent magic-link consume transaction and `CustomerSession` | Valid-link E2E passes; replay/concurrency test pending | implemented_not_verified |
+| R15-ID-002 | Idempotent magic-link consume transaction and `CustomerSession` | Concurrent consume produces exactly one success, customer session and formal job | verified |
 | R15-ID-003 | Separate customer/Admin models, cookies and guards | Customer isolation and Admin authorization tests | verified |
-| R15-SEC-001 | Hashed, single-use 15-minute magic link and clean redirect | Hashed implementation and clean `tymra.test` E2E; replay/expiry test pending | implemented_not_verified |
-| R15-SEC-002 | Neutral verification response and invalid-link disclosure boundary | Neutral API implemented; timing-class test pending | implemented_not_verified |
-| R15-SEC-003 | Rotating, expiring and revocable customer session isolated from Admin | Isolation verified; rotation/revocation lifecycle tests pending | implemented_not_verified |
+| R15-SEC-001 | Hashed, single-use 15-minute magic link and clean redirect | Hash/clean-URL E2E plus replay, expiry and concurrent-consume integration tests | verified |
+| R15-SEC-002 | Neutral verification response and invalid-link disclosure boundary | Eligible, idempotent and cooldown responses have the same neutral payload; timing-class acceptance remains | implemented_not_verified |
+| R15-SEC-003 | Rotating, expiring and revocable customer session isolated from Admin | Rotation plus expired/revoked session 401 and Admin isolation tests | verified |
 | R15-OWN-001 | `PriceCheck.customerUserId` plus report ownership guard | Owner 200, cross-account 404 and unauthenticated 401 integration tests | verified |
 | R15-EMAIL-001 | `VERIFY_AND_SIGN_IN` plus conditional terminal notification policy | Mailpit E2E proves one happy-path email | verified |
 | R15-EMAIL-002 | Authenticated in-page delivery acknowledgement and grace-period decision | E2E forces grace job and proves no second message | verified |
-| R15-CONSENT-001 | Account disclosure plus separate default-off marketing consent | EN/ZH form implemented; consent persistence matrix pending | implemented_not_verified |
-| R15-ABUSE-001 | Idempotency across rough compute, link send, account activation and formal enqueue | Rough/send idempotency verified; concurrent activation test pending | implemented_not_verified |
+| R15-CONSENT-001 | Account disclosure plus separate default-off marketing consent | EN/ZH form plus service-consent requirement and default-off/explicit-opt-in persistence tests | verified |
+| R15-ABUSE-001 | Idempotency across rough compute, link send, account activation and formal enqueue | Rough/send idempotency plus concurrent activation proving one formal enqueue | verified |
 | R15-ABUSE-002 | Configurable risk service with allow/challenge/cooldown outcomes | Allow/cooldown verified; interactive challenge not implemented | implemented_not_verified |
-| R15-QUOTA-001 | `UsageLedger` checked before formal enqueue | Quota implementation present; boundary matrix pending | implemented_not_verified |
-| R15-MOTION-001 | Real-state progress components and reduced-motion path | Real-state responsive E2E passes; reduced-motion automation pending | implemented_not_verified |
-| R15-RET-001 | Expiry/de-identification jobs for anonymous, verification and abuse records | Time-controlled cleanup integration tests | not_implemented |
-| R15-AN-001 | Safe aggregate funnel events with identity, raw listing URL, OTA query, auth and report redaction | Event contract and redaction tests | not_implemented |
-| R15-MIG-001 | Feature flag and bounded coexistence for legacy result links | Migration and legacy-link tests pass; feature flag/rollback exercise pending | implemented_not_verified |
+| R15-QUOTA-001 | `UsageLedger` checked before formal enqueue | 1-per-24h boundary is enforced before enqueue in integration | verified |
+| R15-MOTION-001 | Real-state progress components and reduced-motion path | Desktop/mobile reduced-motion E2E proves no active motion, static canvas and interactive FAQ | verified |
+| R15-RET-001 | Scheduled cleanup expires unused links, keeps terminal token metadata for 30 days, removes expired anonymous records without formal ownership, removes expired/revoked sessions after 30 days, and removes rate-limit/abuse hashes after 90 days | Time-controlled Worker integration matrix | verified |
+| R15-AN-001 | Daily aggregate counters with strict event/dimension allowlists; no row-level user/check/session identity or raw URL/query/report content | All 11 event names covered by contract/redaction tests; funnel integration verifies aggregate deltas and stored-value redaction | verified |
+| R15-MIG-001 | Feature flag and bounded coexistence for legacy result links | Independent customer-funnel flag, migration/legacy-link tests and local rollback/restore exercise | verified |
 
 ## Release 1.5 Decision Trace
 
@@ -174,14 +176,14 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | --- | --- | --- | --- |
 | D-015 Two-stage customer funnel | R15-FLOW-001, R15-FLOW-002, R15-COST-001 | API, Mailpit and desktop/mobile E2E | verified |
 | D-016 Customer/Admin separation | R15-ID-001, R15-ID-003, R15-SEC-003 | Separate models/cookies and authorization tests | verified |
-| D-017 Verify before account activation | R15-ID-001, R15-ID-002, R15-SEC-001 | Pending-state integration and valid-link E2E | implemented_not_verified |
-| D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck`; quota code pending matrix | implemented_not_verified |
+| D-017 Verify before account activation | R15-ID-001, R15-ID-002, R15-SEC-001 | Pending state plus replay/expiry/concurrent activation integration and valid-link E2E | verified |
+| D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck` plus pre-enqueue quota boundary | verified |
 | D-019 Authenticated formal reports | R15-OWN-001, R15-MIG-001 | Cross-account denial and legacy-link E2E | verified |
 | D-020 Minimal conditional email | R15-EMAIL-001, R15-EMAIL-002, R15-CONSENT-001 | Single-message Mailpit and acknowledgement E2E | verified |
 | D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, email cooldown and device 429 tests; challenge pending | implemented_not_verified |
 | D-022 No exclusive property claim | R15-OWN-001 | Independent anonymous records and customer ownership guard | verified |
-| D-023 Retention defaults | R15-RET-001, R15-AN-001 | Pending privacy approval | proposed |
-| D-024 Real-state motion | R15-MOTION-001 | Server-backed stages and responsive E2E; reduced-motion test pending | implemented_not_verified |
+| D-023 Retention defaults | R15-RET-001, R15-AN-001 | Recommended 7/30/90-day defaults implemented and tested; final production privacy approval remains external | implemented_not_verified |
+| D-024 Real-state motion | R15-MOTION-001 | Server-backed stages plus desktop/mobile reduced-motion E2E | verified |
 | D-025 Supported OTA link with automatic default context | R15-INPUT-001, R15-INPUT-002, R15-INPUT-003, R15-AN-001 | Resolver tests plus desktop/mobile browser evidence | verified |
 
 ## Required Commands
@@ -190,16 +192,16 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | --- | --- | --- |
 | `pnpm dev` | Next.js local development | current worktree image running and HTTPS route returns 200 |
 | `pnpm worker` | Persistent Worker | current worktree image running; health/readiness return 200 |
-| `pnpm db:generate` | Prisma client generation | current worktree verified in Docker |
-| `pnpm db:migrate` | Development migration | latest Argus migration confirmed applied; command not rerun |
+| `pnpm db:generate` | Prisma client generation | current worktree verified on host and in Docker |
+| `pnpm db:migrate` | Development migration | Release 1.5 retention/analytics and event-impact migrations applied in development |
 | `pnpm db:seed` | Deterministic demo seed | historical verified; not rerun in this update |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
-| `pnpm typecheck` | Workspace type checking | equivalent direct checks current-worktree verified |
-| `pnpm test` | Unit/domain and browser suites | equivalent direct suites current-worktree verified: 117 TypeScript + 37 browser tests |
-| `pnpm test:integration` | Database/API/Worker integration | current worktree `not_verified`; historical evidence retained below |
-| `pnpm test:e2e` | Playwright and accessibility | current worktree `not_verified`; no UI implementation diff |
-| `pnpm build` | Production Web and Worker build | equivalent direct current-worktree builds verified |
-| `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree `not_verified`; integration and aggregate command not completed |
+| `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
+| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 109 root tests (4 skipped fixtures) plus 55 Worker tests |
+| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 63 tests |
+| `pnpm test:e2e` | Playwright and accessibility | targeted reduced-motion desktop/mobile acceptance passed; full suite not rerun because UI implementation did not change |
+| `pnpm build` | Production Web and Worker build | 64-page Web build and four Worker entrypoint builds verified; known optional LinkeDOM canvas warning only |
+| `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree verified on 2026-08-05 |
 
 ## Final Acceptance Evidence
 
@@ -234,8 +236,8 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | Product recommendation captured | Flow, rough/formal contract, identity, email, abuse, retention and migration documented | verified |
 | Product approval | Explicit approval of the Release 1.5 baseline and D-025 defaults | verified |
 | Implementation plan | Phases 1.5-0 through 1.5-8, dependencies, risks and gates recorded | verified |
-| Implementation | Core funnel is implemented; challenge, cleanup jobs and safe funnel analytics remain | implemented_not_verified |
-| Automated acceptance | Core flow passes; remaining `implemented_not_verified` rows retain named gaps above | implemented_not_verified |
+| Implementation | Core funnel, cleanup, safe aggregate analytics, security/quota boundaries and rollback flag are implemented; interactive challenge provider remains external | implemented_not_verified |
+| Automated acceptance | All locally implementable named matrices pass; neutral-response timing acceptance and external product/production gates remain | implemented_not_verified |
 | Runtime acceptance | Chrome, Mailpit, migration, abuse cooldown and persistent-service evidence | verified |
 
 ## Worker Baseline v1 Evidence (2026-07-18)
@@ -248,6 +250,7 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | Public signal lineage | RawArtifact -> SourceMarketSignal -> MarketSignal -> MarketSignalSourceLink | locally verified across holidays, GeoNet, MBIE, Stats NZ, MetService, NZTA, RBNZ FX, airport and port/cruise adapters |
 | Public source adapters | Every configured public source ID uses a concrete official/public transport or a required Argus read-only Job; Christchurch sports, UC and Lincoln dates, racing, cruise and airport monthly sources are registered separately | implementations, live-source probes and bounded two-pass local acceptance verified; Lincoln contract, local evidence copy, ACK purge and idempotency verified on 2026-08-04; schedules remain disabled |
 | Canonical event persistence | Source-normalised series/occurrences, exact canonical matching, venue linkage, idempotent repeat writes and preserved source state | verified by Worker unit tests and local database integration regression |
+| Event impact evidence v1 | Versioned evidence validation, provenance/time precision, trusted venue enrichment and conservative attendance-only promotion | unit/integration verified; Canterbury A&P Show two-pass real acceptance and 10-pass bounded soak passed; capacity-only Te Pae sample stays pending |
 | Local source acceptance standard | Development-only guard, scheduler-off guard, bounded real collection, immutable run evidence, two-pass idempotency, retention, Redis lock, lease recovery, unchanged governance and full quality gate | verified and required for every implemented collection channel |
 | Manual import local acceptance | Bounded operator-file parser, source/canonical accommodation persistence, immutable observation identity and evidence retention | implementation and fixture/database regression verified; genuine operator file and two-pass real-file evidence remain not_verified |
 | Eventfinda browser collection | Nationwide discovery, detail frontier, persistence, retention and unattended stability | bounded acceptance and development-bootstrap implementation verified; nationwide run evidence is recorded in the source-specific document; unattended production evidence remains |

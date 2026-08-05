@@ -46,6 +46,7 @@ export const environmentSchema = z
     DEFAULT_MARKET: z.string().min(1).default("christchurch"),
     AUTO_PUBLISH_ENABLED: booleanFromEnvironment.default("true"),
     ACCEPT_NEW_CHECKS: booleanFromEnvironment.default("true"),
+    CUSTOMER_FUNNEL_ENABLED: booleanFromEnvironment.default("true"),
     EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
     EMAIL_FROM: z.string().min(3),
     SMTP_URL: optionalUrl,

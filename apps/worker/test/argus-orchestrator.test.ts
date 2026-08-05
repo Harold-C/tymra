@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   parentUpdateMany: vi.fn(),
   collectionRunUpdateMany: vi.fn(),
   rawArtifactFindMany: vi.fn(),
+  rawArtifactCount: vi.fn(),
   rawArtifactUpdateMany: vi.fn(),
   submit: vi.fn(),
   getJob: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tymra/db", () => ({
+  Prisma: { DbNull: "DbNull" },
   enqueueJob: mocks.enqueueJob,
   prisma: {
     argusExecution: {
@@ -43,6 +45,7 @@ vi.mock("@tymra/db", () => ({
     },
     rawArtifact: {
       findMany: mocks.rawArtifactFindMany,
+      count: mocks.rawArtifactCount,
       updateMany: mocks.rawArtifactUpdateMany,
     },
   },
@@ -87,6 +90,7 @@ const input = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.rawArtifactFindMany.mockResolvedValue([]);
+  mocks.rawArtifactCount.mockResolvedValue(0);
 });
 
 afterEach(async () => {
@@ -126,6 +130,23 @@ describe("durable Argus orchestration", () => {
     const response = await captureBrowserTaskWithDurableArgus(environment, input, context);
 
     assert.equal(response.ok, true);
+    assert.equal(mocks.submit.mock.calls.length, 0);
+  });
+
+  it("returns a persisted failed challenge result so evidence and cooldown handling can complete", async () => {
+    const result = completedJob();
+    result.status = "FAILED";
+    result.items[0]!.status = "FAILED";
+    result.items[0]!.result.ok = false;
+    result.items[0]!.result.status = "challenge";
+    result.items[0]!.result.data = null;
+    result.items[0]!.result.challenge = { kind: "access_challenge_detected" };
+    mocks.executionFind.mockResolvedValue({ status: "FAILED", result });
+
+    const response = await captureBrowserTaskWithDurableArgus(environment, input, context);
+
+    assert.equal(response.ok, true);
+    assert.equal(response.ok && response.payload.status, "manual_required");
     assert.equal(mocks.submit.mock.calls.length, 0);
   });
 
@@ -192,7 +213,7 @@ describe("durable Argus orchestration", () => {
     await acknowledgePersistedArgusResults(environment, "parent-1");
 
     assert.deepEqual(mocks.executionFindMany.mock.calls[0]?.[0], {
-      where: { parentJobId: "parent-1", status: "COMPLETED" },
+      where: { parentJobId: "parent-1", status: { in: ["COMPLETED", "FAILED"] }, result: { not: "DbNull" } },
       select: { argusJobId: true, collectionRunId: true, result: true },
     });
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
@@ -228,13 +249,61 @@ describe("durable Argus orchestration", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it("retains each execution's evidence independently before acknowledging a multi-capture run", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tymra-argus-evidence-multi-"));
+    const listing = completedJob();
+    const detail = completedJob();
+    const listingPointer = {
+      kind: "html",
+      traceId: "listing-trace",
+      relativePath: "listing-trace/page.html",
+      storageRef: "argus-evidence:listing-trace/page.html",
+      sha256: "1".repeat(64),
+      sizeBytes: 7,
+      containsSensitiveData: false,
+      createdAt: "2026-08-02T00:00:00.000Z",
+    };
+    const detailPointer = {
+      ...listingPointer,
+      traceId: "detail-trace",
+      relativePath: "detail-trace/page.html",
+      storageRef: "argus-evidence:detail-trace/page.html",
+      sha256: "2".repeat(64),
+    };
+    listing.items[0]!.result.evidence = [listingPointer];
+    detail.items[0]!.result.evidence = [detailPointer];
+    mocks.executionFindMany.mockResolvedValue([
+      { argusJobId: "argus-listing", collectionRunId: "run-1", result: listing },
+      { argusJobId: "argus-detail", collectionRunId: "run-1", result: detail },
+    ]);
+    mocks.rawArtifactFindMany
+      .mockResolvedValueOnce([{ id: "listing-artifact", storageRef: listingPointer.storageRef, contentHash: listingPointer.sha256 }])
+      .mockResolvedValueOnce([{ id: "detail-artifact", storageRef: detailPointer.storageRef, contentHash: detailPointer.sha256 }]);
+    mocks.downloadEvidence
+      .mockResolvedValueOnce(Buffer.from("listing"))
+      .mockResolvedValueOnce(Buffer.from("detail!"));
+    mocks.rawArtifactUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.acknowledge.mockResolvedValue({ ok: true });
+
+    await acknowledgePersistedArgusResults({ ...environment, ARGUS_EVIDENCE_ROOT: root }, "parent-1");
+
+    assert.deepEqual(
+      mocks.rawArtifactFindMany.mock.calls.map(([query]) => query.where.storageRef.in),
+      [[listingPointer.storageRef], [detailPointer.storageRef]],
+    );
+    assert.deepEqual(mocks.acknowledge.mock.calls.map((call) => call[1]), ["argus-listing", "argus-detail"]);
+    assert.ok(mocks.rawArtifactUpdateMany.mock.invocationCallOrder.at(-1)! < mocks.acknowledge.mock.invocationCallOrder[0]!);
+    await rm(root, { recursive: true, force: true });
+  });
+
   it("does not acknowledge when a persisted evidence pointer is missing from the Argus result", async () => {
     mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result: completedJob() }]);
     mocks.rawArtifactFindMany.mockResolvedValue([{ id: "artifact-1", storageRef: "argus-evidence:missing/page.html", contentHash: "e".repeat(64) }]);
+    mocks.rawArtifactCount.mockResolvedValue(1);
 
     await assert.rejects(
       acknowledgePersistedArgusResults(environment, "parent-1"),
-      /Only 0 of 1 Argus evidence artifacts were retained/u,
+      /1 Argus evidence artifacts remain remote before ACK/u,
     );
 
     assert.equal(mocks.acknowledge.mock.calls.length, 0);

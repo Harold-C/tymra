@@ -49,6 +49,22 @@ describe("service origins", () => {
   });
 });
 
+describe("customer-funnel rollout", () => {
+  it("can pause Release 1.5 entry independently while preserving the legacy check switch", () => {
+    const environment = environmentSchema.parse({
+      ...required,
+      ACCEPT_NEW_CHECKS: "true",
+      CUSTOMER_FUNNEL_ENABLED: "false",
+    });
+    expect(environment.CUSTOMER_FUNNEL_ENABLED).toBe(false);
+    expect(environment.ACCEPT_NEW_CHECKS).toBe(true);
+  });
+
+  it("enables the Release 1.5 entry by default", () => {
+    expect(environmentSchema.parse(required).CUSTOMER_FUNNEL_ENABLED).toBe(true);
+  });
+});
+
 describe("Argus configuration", () => {
   it("requires an authenticated Argus API origin", () => {
     expect(() => environmentSchema.parse({ ...required, ARGUS_API_TOKEN: undefined })).toThrow("ARGUS_API_TOKEN");

@@ -180,8 +180,11 @@ export type PublicEvent = {
   latitude: number | null;
   longitude: number | null;
   timezone: string;
+  timePrecision?: "DATE" | "DATETIME";
   startsAt: Date;
   endsAt: Date;
+  observedAt?: Date;
+  evidenceRef?: string;
   status: "SCHEDULED" | "CANCELLED" | "POSTPONED" | "RESCHEDULED" | "UNKNOWN";
   ticketStatus: string | null;
   impactStatus: "PENDING_EVIDENCE" | "PROMOTED" | "REJECTED";

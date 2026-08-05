@@ -77,6 +77,9 @@ const sources: SourceSpec[] = [
   { key: "canterbury_major_annual_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: { from: "2026-11-01T00:00:00.000Z", to: "2026-12-01T00:00:00.000Z" } },
   { key: "eventbrite_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "humanitix_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
+  { key: "school_sport_nz", jobType: "EVENT_COLLECTION", marketScope: "christchurch", payload: { phase: "full", limit: 20 } },
+  { key: "school_sport_canterbury", jobType: "EVENT_COLLECTION", marketScope: "christchurch", payload: { phase: "full", limit: 20 } },
+  { key: "ticketek_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand", payload: { phase: "full", limit: 10, maxDetails: 1 } },
   { key: "metservice", jobType: "WEATHER_COLLECTION", marketScope: "new-zealand" },
   { key: "nzta", jobType: "TRANSPORT_COLLECTION", marketScope: "new-zealand" },
   { key: "airport_data", jobType: "TRANSPORT_COLLECTION", marketScope: "queenstown" },
@@ -170,9 +173,10 @@ async function main() {
       if (terminalJob.status !== "SUCCEEDED") {
         failures.push(`Job ended as ${terminalJob.status}: ${terminalJob.lastErrorCode ?? "UNKNOWN"}`);
       }
+      const acceptedTicketekChallenge = spec.key === "ticketek_events" && run?.status === "PARTIAL" && run.errorCode === "RATE_LIMITED";
       if (!run) {
         failures.push("No CollectionRun was created");
-      } else if (run.status !== "SUCCEEDED") {
+      } else if (run.status !== "SUCCEEDED" && !acceptedTicketekChallenge) {
         failures.push(`CollectionRun ended as ${run.status}: ${run.errorCode ?? "UNKNOWN"}`);
       }
       if (run && scope.governanceUnchanged !== true) failures.push("Source governance changed");
@@ -195,6 +199,13 @@ async function main() {
         if (retainedEvidenceCount < 1) failures.push("Lincoln Argus evidence was not retained in Tymra storage");
         if (remoteEvidenceCount !== 0) failures.push(`${remoteEvidenceCount} Lincoln artifacts still referenced remote Argus evidence after ACK`);
         if (lincolnSignalCount < 1) failures.push("No normalised Lincoln market signal was persisted");
+      }
+      if (["school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(spec.key)) {
+        const expectedExecutions = spec.key === "ticketek_events" ? 2 : 1;
+        if (argusExecutions !== expectedExecutions) failures.push(`Expected ${expectedExecutions} ${spec.key} Argus execution(s); found ${argusExecutions}`);
+        if (retainedEvidenceCount < 1) failures.push(`${spec.key} Argus evidence was not retained in Tymra storage`);
+        if (remoteEvidenceCount !== 0) failures.push(`${remoteEvidenceCount} ${spec.key} artifacts still referenced remote Argus evidence after ACK`);
+        if (spec.key === "ticketek_events" && countsAfter.sourceOccurrences < 1) failures.push("No normalised ticketek_events event occurrence was persisted");
       }
 
       const report: PassReport = {

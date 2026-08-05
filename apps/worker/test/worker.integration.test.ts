@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 
 import { getEnvironment } from "@tymra/config";
 import { prisma, Prisma } from "@tymra/db";
+import { emptyEventImpactEvidence } from "@tymra/domain";
 import { AdapterError, type PublicDataAdapter } from "@tymra/providers";
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -218,6 +219,76 @@ describe("Worker baseline pipeline", () => {
     }
   });
 
+  it("validates impact evidence, enriches a trusted venue and promotes only the qualified real-source shape", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "canterbury_major_annual_events" } });
+    const observedAt = new Date("2026-08-05T00:00:00.000Z");
+    const externalIds = [`${prefix}:te-pae-pending`, `${prefix}:show-promoted`];
+    const baseEvent = {
+      sourceId: source.key, category: "Conference", subcategory: null, address: null, city: "Christchurch", region: "Canterbury",
+      territorialAuthority: null, postcode: null, countryCode: "NZ", latitude: null, longitude: null, timezone: "Pacific/Auckland",
+      startsAt: new Date("2026-11-11T08:00:00+13:00"), endsAt: new Date("2026-11-11T17:00:00+13:00"), status: "SCHEDULED" as const,
+      ticketStatus: null, impactStatus: "PENDING_EVIDENCE" as const, impactScore: null, impactConfidence: null,
+      sourceUpdatedAt: null, observedAt, fixture: false,
+    };
+    const events = [
+      {
+        ...baseEvent, externalId: externalIds[0]!, title: "Integration Te Pae Conference",
+        sourceUrl: "https://www.tepae.co.nz/whats-on/integration", venueName: "Te Pae Christchurch Convention Centre",
+        impactEvidence: {}, metadata: {},
+      },
+      {
+        ...baseEvent, externalId: externalIds[1]!, title: "Ravensdown Canterbury A&P Show Integration",
+        sourceUrl: "https://www.theshow.co.nz/", venueName: "Canterbury Agricultural Park",
+        impactEvidence: { ...emptyEventImpactEvidence(), items: [{ evidenceType: "EXPECTED_ATTENDANCE" as const, value: 70_000, unit: "people", sourceUrl: "https://www.theshow.co.nz/", observedAt: observedAt.toISOString(), confidence: 0.96 }] },
+        metadata: {},
+      },
+    ];
+    const adapter: PublicDataAdapter = {
+      metadata: { sourceId: source.key, sourceName: source.name, sourceType: "PUBLIC_DATA", supportedDomains: ["www.theshow.co.nz"], adapterKey: "public:event-impact:integration", accessMethod: "OFFICIAL_PUBLIC_HTML", concurrencyLimit: 1, dailyBudget: 10, collectorVersion: "test", parserVersion: "test" },
+      async discover() { return ["https://www.theshow.co.nz/"]; },
+      async fetch() { return events.map((event) => ({ sourceId: source.key, externalId: event.externalId, payload: event, fetchedAt: observedAt, fixture: false })); },
+      async normaliseEvents() { return events; },
+      async normalise() { return []; },
+      async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "integration", latencyMs: 0, mode: "live" }; },
+      rightsMetadata() { return { internalApprovalStatus: "APPROVED", legalRightsStatus: "ALLOWED", lifecycle: "PILOT", environments: ["DEVELOPMENT", "TEST"], allowedUsage: ["COLLECTION"], displayPermission: true, derivedAnalysisPermission: true, retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null }, basis: "integration" }; },
+    };
+    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false }, { [source.key]: adapter });
+
+    try {
+      const first = await acceptanceService.collectSource(source.key, "christchurch", undefined, { localAcceptance: true });
+      const second = await acceptanceService.collectSource(source.key, "christchurch", undefined, { localAcceptance: true });
+      expect(first.events).toBe(2);
+      expect(second.counters.unchangedSkipped).toBe(2);
+      const occurrences = await prisma.sourceEventOccurrence.findMany({
+        where: { dataSourceId: source.id, externalId: { in: externalIds } },
+        include: { canonicalLinks: { include: { eventOccurrence: { include: { venue: true } } } } },
+        orderBy: { externalId: "asc" },
+      });
+      const pending = occurrences.find((occurrence) => occurrence.externalId === externalIds[0])!;
+      const promoted = occurrences.find((occurrence) => occurrence.externalId === externalIds[1])!;
+      expect(pending).toMatchObject({ impactStatus: "PENDING_EVIDENCE", impactScore: null, address: "188 Oxford Terrace, Christchurch 8011", timePrecision: "DATETIME", evidenceRef: "https://www.tepae.co.nz/whats-on/integration" });
+      expect(pending.canonicalLinks[0]?.eventOccurrence.venue).toMatchObject({ capacity: 3_600, capacitySourceUrl: "https://www.tepae.co.nz/spaces/exhibition-hall" });
+      expect(pending.impactEvidence).toMatchObject({ schemaVersion: "event-impact-evidence-v1", items: [expect.objectContaining({ evidenceType: "VENUE_CAPACITY", value: 3_600 })] });
+      expect(promoted.impactStatus).toBe("PROMOTED");
+      expect(promoted.impactScore).toBeGreaterThan(0.75);
+      expect(promoted.impactEvidence).toMatchObject({ items: [expect.objectContaining({ evidenceType: "EXPECTED_ATTENDANCE", value: 70_000 })] });
+    } finally {
+      const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: { in: externalIds } }, select: { id: true } });
+      const sourceOccurrences = await prisma.sourceEventOccurrence.findMany({ where: { dataSourceId: source.id, externalId: { in: externalIds } }, include: { canonicalLinks: true } });
+      const occurrenceIds = sourceOccurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId));
+      const canonicalOccurrences = await prisma.eventOccurrence.findMany({ where: { id: { in: occurrenceIds } }, select: { id: true, canonicalEventId: true, venueId: true } });
+      await prisma.eventOccurrenceSourceLink.deleteMany({ where: { sourceEventOccurrenceId: { in: sourceOccurrences.map((occurrence) => occurrence.id) } } });
+      await prisma.eventSourceLink.deleteMany({ where: { sourceEventId: { in: sourceEvents.map((event) => event.id) } } });
+      await prisma.sourceEventOccurrence.deleteMany({ where: { id: { in: sourceOccurrences.map((occurrence) => occurrence.id) } } });
+      await prisma.sourceEvent.deleteMany({ where: { id: { in: sourceEvents.map((event) => event.id) } } });
+      await prisma.eventOccurrence.deleteMany({ where: { id: { in: canonicalOccurrences.map((occurrence) => occurrence.id) } } });
+      await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalOccurrences.map((occurrence) => occurrence.canonicalEventId) } } });
+      for (const venueId of canonicalOccurrences.flatMap((occurrence) => occurrence.venueId ? [occurrence.venueId] : [])) {
+        if (await prisma.eventOccurrence.count({ where: { venueId } }) === 0) await prisma.canonicalVenue.deleteMany({ where: { id: venueId } });
+      }
+    }
+  });
+
   it("retains generic parser failures with the longer evidence TTL", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "geonet" } });
     const externalId = `${prefix}:parser-failure`;
@@ -250,6 +321,65 @@ describe("Worker baseline pipeline", () => {
     const cleanup = await service.retentionCleanup();
     expect(cleanup.rawArtifactsDeleted).toBeGreaterThanOrEqual(1);
     expect(await prisma.rawArtifact.findUnique({ where: { id: artifact.id } })).toMatchObject({ storageRef: "DELETED", payload: null });
+  });
+
+  it("applies the Release 1.5 retention windows without deleting active formal-report ownership", async () => {
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const old = new Date(now.getTime() - 91 * 86_400_000);
+    const recent = new Date(now.getTime() - 10 * 86_400_000);
+    const customer = await prisma.customerUser.create({
+      data: { emailHash: `${prefix}:retention-email`, encryptedEmail: "encrypted", locale: "en" },
+    });
+    const oldCheck = await prisma.anonymousCheck.create({
+      data: { locale: "en", platform: "booking.com", listingId: `${prefix}:old`, cacheKey: `${prefix}:old-cache`, idempotencyKey: `${prefix}:old-check`, status: "ROUGH_READY", pricingContext: {}, expiresAt: old, createdAt: old },
+    });
+    const recentMetadataCheck = await prisma.anonymousCheck.create({
+      data: { locale: "en", platform: "booking.com", listingId: `${prefix}:recent`, cacheKey: `${prefix}:recent-cache`, idempotencyKey: `${prefix}:recent-check`, status: "ROUGH_READY", pricingContext: {}, expiresAt: old, createdAt: old },
+    });
+    const oldMagicLink = await prisma.magicLink.create({
+      data: { tokenHash: `${prefix}:old-token`, idempotencyKey: `${prefix}:old-link`, status: "EXPIRED", emailHash: customer.emailHash, encryptedEmail: "encrypted", locale: "en", anonymousCheckId: oldCheck.id, expiresAt: old, createdAt: old },
+    });
+    const recentMagicLink = await prisma.magicLink.create({
+      data: { tokenHash: `${prefix}:recent-token`, idempotencyKey: `${prefix}:recent-link`, status: "CONSUMED", emailHash: customer.emailHash, encryptedEmail: "encrypted", locale: "en", anonymousCheckId: recentMetadataCheck.id, customerUserId: customer.id, expiresAt: old, consumedAt: recent, createdAt: recent },
+    });
+    const pendingCheck = await prisma.anonymousCheck.create({
+      data: { locale: "en", platform: "booking.com", listingId: `${prefix}:pending`, cacheKey: `${prefix}:pending-cache`, idempotencyKey: `${prefix}:pending-check`, pricingContext: {}, expiresAt: old, createdAt: old },
+    });
+    const pendingLink = await prisma.magicLink.create({
+      data: { tokenHash: `${prefix}:pending-token`, idempotencyKey: `${prefix}:pending-link`, emailHash: customer.emailHash, encryptedEmail: "encrypted", locale: "en", anonymousCheckId: pendingCheck.id, expiresAt: old, createdAt: recent },
+    });
+    const oldSession = await prisma.customerSession.create({
+      data: { customerUserId: customer.id, tokenHash: `${prefix}:old-session`, expiresAt: old, createdAt: old },
+    });
+    const recentSession = await prisma.customerSession.create({
+      data: { customerUserId: customer.id, tokenHash: `${prefix}:recent-session`, expiresAt: new Date(now.getTime() + 86_400_000), createdAt: recent },
+    });
+    const oldUsage = await prisma.usageLedger.create({ data: { action: "ROUGH_CHECK", subjectType: "IP", subjectHash: `${prefix}:old-hash`, metadata: {}, createdAt: old } });
+    const recentUsage = await prisma.usageLedger.create({ data: { action: "ROUGH_CHECK", subjectType: "IP", subjectHash: `${prefix}:recent-hash`, metadata: {}, createdAt: recent } });
+    const oldDecision = await prisma.abuseDecision.create({ data: { action: "ROUGH_CHECK", subjectHash: `${prefix}:old-hash`, outcome: "ALLOW", reasonCodes: [], createdAt: old } });
+
+    try {
+      const cleanup = await service.retentionCleanup(now);
+
+      expect(cleanup).toMatchObject({ magicLinksExpired: 1, terminalMagicLinksDeleted: 1, customerSessionsDeleted: 1, usageLedgerDeleted: 1, abuseDecisionsDeleted: 1 });
+      expect(await prisma.magicLink.findUnique({ where: { id: oldMagicLink.id } })).toBeNull();
+      expect(await prisma.anonymousCheck.findUnique({ where: { id: oldCheck.id } })).toBeNull();
+      expect(await prisma.magicLink.findUnique({ where: { id: recentMagicLink.id } })).not.toBeNull();
+      expect(await prisma.anonymousCheck.findUnique({ where: { id: recentMetadataCheck.id } })).not.toBeNull();
+      expect(await prisma.magicLink.findUnique({ where: { id: pendingLink.id } })).toMatchObject({ status: "EXPIRED" });
+      expect(await prisma.customerSession.findUnique({ where: { id: oldSession.id } })).toBeNull();
+      expect(await prisma.customerSession.findUnique({ where: { id: recentSession.id } })).not.toBeNull();
+      expect(await prisma.usageLedger.findUnique({ where: { id: oldUsage.id } })).toBeNull();
+      expect(await prisma.usageLedger.findUnique({ where: { id: recentUsage.id } })).not.toBeNull();
+      expect(await prisma.abuseDecision.findUnique({ where: { id: oldDecision.id } })).toBeNull();
+    } finally {
+      await prisma.magicLink.deleteMany({ where: { anonymousCheckId: { in: [oldCheck.id, recentMetadataCheck.id, pendingCheck.id] } } });
+      await prisma.anonymousCheck.deleteMany({ where: { id: { in: [oldCheck.id, recentMetadataCheck.id, pendingCheck.id] } } });
+      await prisma.customerSession.deleteMany({ where: { customerUserId: customer.id } });
+      await prisma.usageLedger.deleteMany({ where: { subjectHash: { in: [`${prefix}:old-hash`, `${prefix}:recent-hash`] } } });
+      await prisma.abuseDecision.deleteMany({ where: { subjectHash: `${prefix}:old-hash` } });
+      await prisma.customerUser.delete({ where: { id: customer.id } });
+    }
   });
 
   it("idempotently persists direct Ticketmaster listings and Argus details without changing governance", async () => {
@@ -389,6 +519,100 @@ describe("Worker baseline pipeline", () => {
         where: { id: source.id },
         data: { metadata: source.metadata as Prisma.InputJsonValue },
       });
+    }
+  });
+
+  it("persists both School Sport sources and Ticketek idempotently across two bounded passes", async () => {
+    const sourceIds = ["school_sport_nz", "school_sport_canterbury", "ticketek_events"] as const;
+    const sources = await prisma.dataSource.findMany({ where: { key: { in: [...sourceIds] } } });
+    expect(sources).toHaveLength(3);
+    const sourceByKey = new Map(sources.map((source) => [source.key, source]));
+    const suffix = prefix.replace(/[^a-z0-9]/giu, "").slice(-10);
+    const sportySeriesId = `sporty:ssc:${suffix}`;
+    const sportyOccurrenceId = `${sportySeriesId}:2026-08-20`;
+    const sportyNzSeriesId = `sporty:ssnz:${suffix}`;
+    const sportyNzOccurrenceId = `${sportyNzSeriesId}:2026-08-19`;
+    const ticketekSeriesId = `ticketek:${suffix}`;
+    const ticketekOccurrenceId = `${ticketekSeriesId}:PERF1`;
+    const ticketekUrl = `https://premier.ticketek.co.nz/shows/show.aspx?sh=${suffix.toUpperCase()}`;
+    let ticketekDetailChallenge = false;
+    const argusServer = createArgusServer((capture) => {
+      if (capture.connector_id === "sporty-school-sport-public") {
+        const isNational = capture.url.includes("/SSNZ/");
+        const canonicalUrl = isNational ? "https://www.sporty.co.nz/SSNZ/Sport-1/Events" : "https://www.sporty.co.nz/sscanterbury";
+        const sourceOrganisation = isNational ? "School Sport NZ" : "School Sport Canterbury";
+        const seriesId = isNational ? sportyNzSeriesId : sportySeriesId;
+        const occurrenceId = isNational ? sportyNzOccurrenceId : sportyOccurrenceId;
+        const startsAt = isNational ? "2026-08-19" : "2026-08-20";
+        return argusSuccess(capture, {
+          data_schema: "sporty-school-sport-public.collect_events", schema_version: "1.0.0", extractor: "sporty_school_sport", kind: "event_listing",
+          title: `Canterbury Tournament ${suffix}`, canonicalUrl, sourceOrganisation, window: { startsOn: "2026-08-01", endsOn: "2026-09-30" },
+          series: [{ seriesId, title: `Canterbury Tournament ${suffix}`, sport: "Athletics", genderGrade: "Secondary", sourceOrganisation, canonicalUrl, sourceUpdated: null, imageUrl: null, description: null, fieldSources: { title: "fixture" } }],
+          occurrences: [{ seriesId, occurrenceId, title: `Canterbury Tournament ${suffix}`, sport: "Athletics", genderGrade: "Secondary", venue: "Nga Puna Wai", address: null, locality: "Christchurch", region: "Canterbury", startsAt, endsAt: startsAt, timePrecision: "DATE", timezone: "Pacific/Auckland", status: "SCHEDULED", canonicalUrl, sourceOrganisation, sourceUpdated: null, imageUrl: null, description: null, canterburyHosted: true, fieldSources: { title: "fixture" } }],
+          totalSeries: 1, totalOccurrences: 1, truncated: false, quality: "complete", missingFields: [], warnings: [], fieldSources: { series: "fixture", occurrences: "fixture" },
+        }, `Canterbury Tournament ${suffix}`, "d");
+      }
+      const series = { seriesId: ticketekSeriesId, title: `Ticketek Show ${suffix}`, category: "Theatre", imageUrl: null, canonicalUrl: ticketekUrl, status: "SCHEDULED", sourceUpdated: null, description: "Integration detail", fieldSources: { title: "fixture" } };
+      const occurrence = { occurrenceId: ticketekOccurrenceId, seriesId: ticketekSeriesId, title: `Ticketek Show ${suffix}`, startsAt: "2026-08-21T19:30:00", endsAt: null, timePrecision: "DATETIME", timezone: "Pacific/Auckland", venue: "Isaac Theatre Royal", city: "Christchurch", region: "Canterbury", status: "SCHEDULED", ticketState: "AVAILABLE", canonicalUrl: ticketekUrl, fieldSources: { title: "fixture" } };
+      if (capture.workflow_id === "collect_detail" && ticketekDetailChallenge) return argusChallenge(capture, "Access challenge", "e");
+      return argusSuccess(capture, capture.workflow_id === "collect_listing" ? {
+        data_schema: "ticketek-public.collect_listing", schema_version: "1.0.0", extractor: "ticketek", kind: "event_listing", title: "What's On", canonicalUrl: capture.url, currentPage: 1,
+        series: [{ ...series, description: undefined }], occurrences: [occurrence], totalSeries: 1, totalOccurrences: 1, truncated: false, quality: "complete", missingFields: [], warnings: [], fieldSources: { series: "fixture", occurrences: "fixture" },
+      } : {
+        data_schema: "ticketek-public.collect_detail", schema_version: "1.0.0", extractor: "ticketek", kind: "event_detail", title: series.title, canonicalUrl: ticketekUrl,
+        series, occurrences: [occurrence], quality: "complete", missingFields: [], warnings: [], fieldSources: { series: "fixture", occurrences: "fixture" },
+      }, `Ticketek Show ${suffix}`, "e");
+    });
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Argus event integration server did not bind");
+    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters" });
+    const runIds: string[] = [];
+    const counts = async (dataSourceId: string) => ({
+      sourceEvents: await prisma.sourceEvent.count({ where: { dataSourceId } }),
+      sourceOccurrences: await prisma.sourceEventOccurrence.count({ where: { dataSourceId } }),
+      eventLinks: await prisma.eventSourceLink.count({ where: { sourceEvent: { dataSourceId } } }),
+      occurrenceLinks: await prisma.eventOccurrenceSourceLink.count({ where: { sourceEventOccurrence: { dataSourceId } } }),
+    });
+    try {
+      for (const sourceId of sourceIds) {
+        const source = sourceByKey.get(sourceId)!;
+        const options = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-30T00:00:00Z"), phase: "full" as const, limit: 10, maxDetails: 1, localAcceptance: true };
+        const first = await acceptanceService.collectSource(sourceId, "christchurch", undefined, options);
+        runIds.push(first.runId);
+        const afterFirst = await counts(source.id);
+        const second = await acceptanceService.collectSource(sourceId, "christchurch", undefined, options);
+        runIds.push(second.runId);
+        expect(await counts(source.id)).toEqual(afterFirst);
+        expect(second.counters.unchangedSkipped).toBeGreaterThanOrEqual(1);
+        expect(second.events).toBeGreaterThanOrEqual(1);
+        const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
+        expect(secondRun.scope).toMatchObject({ governanceUnchanged: true, schedulesUnchanged: true });
+      }
+      ticketekDetailChallenge = true;
+      const ticketekCountsBeforeChallenge = await counts(sourceByKey.get("ticketek_events")!.id);
+      const challenged = await acceptanceService.collectSource("ticketek_events", "christchurch", undefined, { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-30T00:00:00Z"), phase: "full", limit: 10, maxDetails: 1, localAcceptance: true });
+      runIds.push(challenged.runId);
+      expect(challenged).toMatchObject({ events: 1, counters: { failures: 1 } });
+      expect(await counts(sourceByKey.get("ticketek_events")!.id)).toEqual(ticketekCountsBeforeChallenge);
+      expect(await prisma.collectionRun.findUniqueOrThrow({ where: { id: challenged.runId } })).toMatchObject({ status: "PARTIAL", errorCode: "RATE_LIMITED" });
+      expect(await prisma.sourceCrawlTarget.findFirstOrThrow({ where: { dataSourceId: sourceByKey.get("ticketek_events")!.id, url: ticketekUrl } })).toMatchObject({ status: "RATE_LIMITED", consecutiveFailures: 1, lastErrorCode: "RATE_LIMITED" });
+    } finally {
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
+      for (const [sourceId, externalId] of [["school_sport_nz", sportyNzOccurrenceId], ["school_sport_canterbury", sportyOccurrenceId], ["ticketek_events", ticketekOccurrenceId]] as const) {
+        const source = sourceByKey.get(sourceId)!;
+        const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
+        const ownedEvents = sourceEvents.filter((item) => item.occurrences.some((occurrence) => occurrence.externalId === externalId));
+        const canonicalEventIds = ownedEvents.flatMap((item) => item.canonicalLinks.map((link) => link.canonicalEventId));
+        const eventOccurrenceIds = ownedEvents.flatMap((item) => item.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)));
+        const venues = eventOccurrenceIds.length ? await prisma.eventOccurrence.findMany({ where: { id: { in: eventOccurrenceIds } }, select: { venueId: true } }) : [];
+        await prisma.sourceEvent.deleteMany({ where: { id: { in: ownedEvents.map((item) => item.id) } } });
+        await prisma.eventOccurrence.deleteMany({ where: { id: { in: eventOccurrenceIds } } });
+        await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalEventIds } } });
+        await prisma.canonicalVenue.deleteMany({ where: { id: { in: venues.flatMap((item) => item.venueId ? [item.venueId] : []) } } });
+        await prisma.sourceCrawlTarget.deleteMany({ where: { dataSourceId: source.id, url: ticketekUrl } });
+      }
+      await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });
     }
   });
 
@@ -627,10 +851,12 @@ describe("Worker baseline pipeline", () => {
 
 type TestArgusCapture = {
   trace_id: string;
-  connector_id: "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx";
-  workflow_id: "collect_listing" | "collect_detail" | "collect_exchange_rates";
+  connector_id: "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "sporty-school-sport-public" | "ticketek-public";
+  workflow_id: "collect_events" | "collect_listing" | "collect_detail" | "collect_exchange_rates";
   url: string;
   entry_url?: string;
+  start_date?: string;
+  end_date?: string;
 };
 
 function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>) {

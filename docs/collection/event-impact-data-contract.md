@@ -79,22 +79,23 @@ Tymra 收集事件不是为了复刻票务网站，而是为了判断某个住�
 
 Argus 负责确定性采集可观察事实；Tymra 负责业务判断。
 
-## Tymra 当前模型差距
+## Tymra 当前实现
 
-本节区分目标契约和现有实现，避免把文档定义误认为代码已经完成：
+- `PublicEvent`、`SourceEventOccurrence` 和 canonical `EventOccurrence` 已保存受控的
+  `timePrecision`；source occurrence 另存 `observedAt` 与 `evidenceRef`，canonical occurrence
+  metadata 保留同一 provenance。
+- `event-impact-evidence-v1` 对 evidence type、数值单位、来源 URL、采集时间和置信度进行严格
+  校验。旧的任意 JSON 不再被当作可提升证据，而是安全降级为 `PENDING_EVIDENCE`。
+- `event-impact-promotion-v1` 只接受可信度至少 `0.7` 且预计或实际到场至少 50,000 人的证据；
+  `VENUE_CAPACITY` 单独出现时始终保持 pending。
+- 可信场馆参考表使用精确别名匹配补充 Te Pae 的官方名称、地址和 3,600 人容量，并保留官方
+  来源和观察日期；容量只作 enrichment，不等同于预计到场。
+- Canterbury A&P Show 官方页面公布的 70,000 annual visitors 被规范化为
+  `EXPECTED_ATTENDANCE`。2026-08-05 两轮真实采集均成功，第二轮 source/link 行零增长，source
+  与 canonical occurrence 均为 `PROMOTED`。
 
-- `PublicEvent` 已有身份、标题、分类、时间、位置、状态、ticket status 和影响结果字段。
-- `timePrecision` 目前只零散存在于 metadata；应提升为受控字段，避免缺失结束时间时把
-  `endsAt = startsAt` 误读为零时长事件。
-- `observedAt` 和采集证据目前由 raw record、collection run 与 browser evidence 保存，尚未形成
-  occurrence 可直接引用的统一 provenance 对象。
-- `impactEvidence` 当前只是无 Schema 的 JSON object；尚未校验本契约列出的 evidence type、
-  value、来源和置信度。
-- 来源原始分类和 Tymra 标准分类目前共用 `category`；后续应拆开，避免来源标签被误当作
-  Tymra 的业务分类。
-
-因此，这份 v1 文档已经确定业务字段，但对应的类型、校验器和 promotion 逻辑仍是后续开发，
-不应把当前 `PublicEvent` 类型视为完整实现。
+尚未拆分的是来源原始分类和 Tymra 标准分类；当前二者仍共用 `category`。这不影响 v1 promotion
+安全边界，但仍是后续数据模型质量工作。
 
 ## Argus 当前覆盖评估
 
@@ -120,12 +121,16 @@ Argus 负责确定性采集可观察事实；Tymra 负责业务判断。
 
 - **事件发现、入库和基础日期/市场匹配：基本满足，但不是所有来源都达到完整质量。**
   Eventfinda detail 最完整；Ticketmaster 依赖 listing/detail 可用性；OurAuckland 只适合作为日期精度、Auckland 市场级事件。
-- **自动判断事件会影响房价：不满足。** 三个 Connector 都没有提供容量、预计/实际到场人数或其他结构化影响证据，因此当前事件应继续保持 `PENDING_EVIDENCE`。
+- **自动判断事件会影响房价：只对有合格结构化证据的来源满足。** Ticketmaster、Eventfinda 和
+  OurAuckland 本身仍不提供可用的人数证据，因此其事件保持 `PENDING_EVIDENCE`；Canterbury
+  A&P Show 的官方 70,000 annual visitors 证据通过 v1 policy 后可提升。
 - **门票价格不是缺口的修复方向。** 当前更重要的缺口是事件规模、位置精度和可审计的需求证据。
 
-## 最小后续工作
+## 后续扩展门槛
 
-1. Tymra 先为 `impactEvidence` 增加版本化校验器和 promotion 规则，不改变 Argus 的通用 Job 契约。
-2. 建立可信场馆参考数据，用 venue identity 补充容量和坐标；这是 Tymra enrichment，不应重复抓取每个事件页面。
-3. 仅为确实公开人数或规模信息的已批准来源新增确定性 Argus Connector/字段，并保留出处、采集时间和证据哈希。
-4. 用真实 Christchurch、Auckland 事件样本验收：无影响证据时保持 pending；有合格证据时才允许 promotion。
+1. 新增 evidence type 或调整 50,000 人阈值必须发布新 policy version，并补充 pending/promotion
+   回归样本，不能原地改变历史解释。
+2. 扩展可信场馆表必须使用官方容量来源、精确别名和有效观察日期；不得用模糊名称匹配。
+3. 新增来源人数证据必须保留出处、观察时间和 evidence reference，并完成两轮真实采集幂等验收。
+4. Auckland 等新市场在取得合格样本前继续保持 `PENDING_EVIDENCE`，不得以票价或售罄状态替代
+   规模证据。

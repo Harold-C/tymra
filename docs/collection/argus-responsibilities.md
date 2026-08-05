@@ -49,10 +49,12 @@ Ordinary HTTP verification on 2026-08-04 returned an Akamai `403 Access Denied` 
 Ticketek therefore must not be implemented as a Tymra HTTP adapter or browser fallback.
 
 The embedded-performance parser regression passed against a retained real page, including four
-separate performances with time and location. A later independent run exposed an unrecognised
-hidden Akamai behavioural challenge and returned non-retryable `PARSING_ERROR` instead of
-`ACCESS_CHALLENGE`. Argus must fix that classification before unattended Ticketek acceptance. Tymra
-has not yet added this Connector to its client contract, normalisation or database acceptance path.
+separate performances with time and location. A fresh cross-service run on 2026-08-05 found that the
+current Argus classifier recognises the Akamai shape only after navigation to `detection.aspx`; the
+real challenged detail retained `show.aspx` as its final URL and was therefore still returned as
+`PARSING_ERROR`. Tymra preserves the ten listing records and seven canonical events, marks the run
+`PARTIAL`, retains both executions' HTML/screenshots before ACK, and never attempts a bypass. Detail
+live acceptance remains blocked on the Argus classification fix. Production schedules remain disabled.
 
 ### School Sport NZ and School Sport Canterbury
 
@@ -76,9 +78,10 @@ Ordinary HTTP verification on 2026-08-04 returned Cloudflare `403` challenge pag
 entry points, so these sources belong entirely in Argus.
 
 Bounded Argus runs returned 20 records from each source with stable IDs and retained evidence.
-Tymra has not yet integrated the Connector. School Sport Canterbury also contains administrative
-calendar rows and sparsely located records, so Tymra normalisation must filter demand relevance and
-must not infer location from the organisation name.
+Tymra now integrates the Connector for both source identities. School Sport Canterbury also contains
+administrative calendar rows and sparsely located records, so Tymra retains the raw payload but
+promotes only non-administrative, explicitly located rows marked Canterbury-hosted. It never infers
+location from the organisation name.
 
 The complete handoff, Job IDs, hashes and remaining execution order are recorded in
 [`non-ota-collection-task-archive-2026-08-05.md`](../evidence/non-ota-collection-task-archive-2026-08-05.md).
