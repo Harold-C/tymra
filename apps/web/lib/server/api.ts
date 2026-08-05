@@ -12,7 +12,7 @@ export function apiError(
   status: number,
   code: string,
   message: string,
-  options?: { fieldErrors?: Record<string, string[]>; referenceId?: string; headers?: HeadersInit },
+  options?: { fieldErrors?: Record<string, string[]>; referenceId?: string; headers?: HeadersInit; details?: Record<string, unknown> },
 ) {
   const referenceId = options?.referenceId ?? createReferenceId();
   return NextResponse.json(
@@ -21,6 +21,7 @@ export function apiError(
         code,
         message,
         ...(options?.fieldErrors ? { fieldErrors: options.fieldErrors } : {}),
+        ...(options?.details ? { details: options.details } : {}),
         referenceId,
       },
     },

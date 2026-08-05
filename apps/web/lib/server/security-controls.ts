@@ -1,6 +1,46 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type AbuseOutcome = "ALLOW" | "CHALLENGE" | "COOLDOWN";
+export type ChallengeDescriptor = { mode: "deterministic" | "managed"; token?: string; siteKey?: string };
+export type ChallengeProvider = {
+  mode: "disabled" | "deterministic" | "managed";
+  issue(subjectHash: string): Promise<ChallengeDescriptor | null>;
+  verify(token: string | undefined, subjectHash: string): Promise<boolean>;
+};
+
+export function createChallengeProvider(configuration: {
+  mode: "disabled" | "deterministic" | "managed";
+  secret: string;
+  verifyUrl?: string;
+  siteKey?: string;
+  providerSecret?: string;
+}, request: typeof fetch = fetch): ChallengeProvider {
+  if (configuration.mode === "disabled") return { mode: "disabled", issue: async () => null, verify: async () => true };
+  if (configuration.mode === "deterministic") return {
+    mode: "deterministic",
+    issue: async (subjectHash) => ({ mode: "deterministic", token: issueDeterministicChallenge(subjectHash, configuration.secret) }),
+    verify: async (token, subjectHash) => Boolean(token && verifyDeterministicChallenge(token, subjectHash, configuration.secret)),
+  };
+  if (!configuration.verifyUrl || !configuration.siteKey) throw new Error("Managed challenge provider is incomplete");
+  return {
+    mode: "managed",
+    issue: async () => ({ mode: "managed", siteKey: configuration.siteKey }),
+    verify: async (token, subjectHash) => {
+      if (!token) return false;
+      try {
+        const response = await request(configuration.verifyUrl!, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(configuration.providerSecret ? { authorization: `Bearer ${configuration.providerSecret}` } : {}) },
+          body: JSON.stringify({ token, subjectHash }),
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!response.ok) return false;
+        const result = await response.json() as { success?: boolean };
+        return result.success === true;
+      } catch { return false; }
+    },
+  };
+}
 
 export function abuseOutcome(input: {
   deviceHour: number;

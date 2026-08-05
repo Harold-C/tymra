@@ -37,3 +37,50 @@ export function canaryPlan(sourceKeys: string[]) {
     rollback: "disable all schedules and cancel pending collection jobs",
   };
 }
+
+export type CanaryPassResult = {
+  sourceKey: string;
+  pass: number;
+  governanceUnchanged: boolean;
+  schedulesUnchanged: boolean;
+  parserFailures: number;
+  repeatRowGrowth: number;
+  remoteEvidenceRemaining: number;
+  error?: string;
+};
+
+export async function executeCanary(
+  sourceKeys: string[],
+  executePass: (sourceKey: string, pass: number) => Promise<CanaryPassResult>,
+) {
+  const plan = canaryPlan(sourceKeys);
+  const results: CanaryPassResult[] = [];
+  let stoppedBy: string | null = null;
+  for (const sourceKey of plan.sources) {
+    for (let pass = 1; pass <= plan.passes; pass += 1) {
+      const result = await executePass(sourceKey, pass);
+      results.push(result);
+      stoppedBy = canaryStopReason(result);
+      if (stoppedBy) break;
+    }
+    if (stoppedBy) break;
+  }
+  return {
+    ...plan,
+    executedPasses: results.length,
+    passed: stoppedBy === null,
+    stoppedBy,
+    conclusion: stoppedBy ? `STOPPED: ${stoppedBy}; execute guarded rollback before further collection.` : "PASSED: every bounded pass satisfied the release gates.",
+    results,
+  };
+}
+
+function canaryStopReason(result: CanaryPassResult) {
+  if (result.error) return `execution_error:${result.error}`;
+  if (!result.governanceUnchanged) return "governance_changed";
+  if (!result.schedulesUnchanged) return "schedule_changed";
+  if (result.parserFailures > 0) return "parser_failure";
+  if (result.pass > 1 && result.repeatRowGrowth > 0) return "lineage_growth_on_repeat";
+  if (result.remoteEvidenceRemaining > 0) return "remote_evidence_remaining";
+  return null;
+}

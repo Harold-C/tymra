@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { abuseOutcome, issueDeterministicChallenge, padNeutralResponse, verifyDeterministicChallenge } from "./security-controls";
+import { abuseOutcome, createChallengeProvider, issueDeterministicChallenge, padNeutralResponse, verifyDeterministicChallenge } from "./security-controls";
 
 describe("customer funnel security controls", () => {
   it("escalates progressively without using IP as the only blocking signal", () => {
@@ -24,5 +24,14 @@ describe("customer funnel security controls", () => {
     await padNeutralResponse(1_000, 250, wait);
     expect(wait).toHaveBeenCalledWith(170);
     now.mockRestore();
+  });
+
+  it("supports a provider-neutral managed verification boundary", async () => {
+    const provider = createChallengeProvider({ mode: "managed", secret: "s".repeat(32), verifyUrl: "https://challenge.test/verify", siteKey: "site-a", providerSecret: "provider-secret" }, async (_url, init) => {
+      expect(init?.headers).toMatchObject({ authorization: "Bearer provider-secret" });
+      return Response.json({ success: true });
+    });
+    await expect(provider.issue("subject-a")).resolves.toEqual({ mode: "managed", siteKey: "site-a" });
+    await expect(provider.verify("response-token", "subject-a")).resolves.toBe(true);
   });
 });

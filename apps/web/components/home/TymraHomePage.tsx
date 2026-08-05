@@ -30,6 +30,7 @@ type SearchState =
   | { status: "idle"; value: string }
   | { status: "typing"; value: string }
   | { status: "submitting"; value: string }
+  | { status: "challenge"; value: string; challenge: { mode: "deterministic" | "managed"; token?: string; siteKey?: string } }
   | { status: "validationError"; value: string; error: { code: ValidationCode; message: string } };
 
 type DeviceType = "desktop" | "mobile";
@@ -93,6 +94,7 @@ export function TymraHomePage() {
   async function submitSearch(event?: FormEvent) {
     event?.preventDefault();
     const submittedValue = inputRef.current?.value ?? value;
+    const challengeToken = searchState.status === "challenge" ? searchState.challenge.token : undefined;
     const result = validateHomeInput(submittedValue, locale);
 
     if (!result.ok) {
@@ -125,10 +127,16 @@ export function TymraHomePage() {
           input: normalizedInput,
           locale,
           idempotencyKey: roughRequestKey.current ?? (roughRequestKey.current = crypto.randomUUID()),
+          ...(challengeToken ? { challengeToken } : {}),
         }),
       });
-      const payload = await response.json() as { data?: { id: string }; error?: { message?: string; fieldErrors?: Record<string, string[]> } };
+      const payload = await response.json() as { data?: { id: string }; error?: { code?: string; message?: string; fieldErrors?: Record<string, string[]>; details?: { challenge?: { mode: "deterministic" | "managed"; token?: string; siteKey?: string } } } };
       if (!response.ok || !payload.data) {
+        const challenge = payload.error?.details?.challenge;
+        if (payload.error?.code === "ROUGH_CHECK_CHALLENGE_REQUIRED" && challenge) {
+          setSearchState({ status: "challenge", value: submittedValue, challenge });
+          return;
+        }
         const message = payload.error?.fieldErrors?.input?.[0]
           ?? payload.error?.message
           ?? (locale === "zh" ? "暂时无法检查这个房源链接，请稍后重试。" : "This listing could not be checked. Please try again.");
@@ -506,6 +514,7 @@ function SearchCard({
   onSubmit: (event?: FormEvent) => void;
 }) {
   const hasValidationError = state.status === "validationError";
+  const requiresChallenge = state.status === "challenge";
   const submitting = state.status === "submitting";
   const hasValue = Boolean(value.trim());
 
@@ -572,7 +581,7 @@ function SearchCard({
             className="group inline-flex h-[64px] min-w-[258px] items-center justify-center gap-3 rounded-[14px] border border-transparent bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_44%,#7C3AED_100%)] px-6 text-[1.02rem] font-bold text-white shadow-[0_16px_34px_rgba(37,99,235,0.24)] transition duration-250 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] max-lg:min-w-0 max-lg:w-full"
           >
             {submitting ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" /> : null}
-            {submitting ? t.search.working : t.search.cta}
+            {submitting ? t.search.working : requiresChallenge ? (locale === "zh" ? "完成验证并继续" : "Complete verification") : t.search.cta}
             {!submitting ? <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" /> : null}
           </button>
         </div>
@@ -593,6 +602,14 @@ function SearchCard({
               <CircleAlert className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
               {state.error.message}
             </p>
+          ) : null}
+          {requiresChallenge ? (
+            <div className="rounded-xl border border-[#93C5FD] bg-[#EFF6FF] px-4 py-3 text-left text-[0.92rem] text-[#1E3A8A]" data-testid="rough-check-challenge">
+              <strong className="block">{locale === "zh" ? "需要额外验证" : "Additional verification required"}</strong>
+              <span>{state.challenge.mode === "deterministic"
+                ? (locale === "zh" ? "这是本地确定性验证。点击上方按钮即可继续。" : "This is the local deterministic check. Use the button above to continue.")
+                : (locale === "zh" ? "请在验证服务中完成检查，然后重试。" : "Complete the managed verification, then retry this request.")}</span>
+            </div>
           ) : null}
         </div>
       </div>

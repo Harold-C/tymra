@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canaryPlan, productionPreflight } from "../src/operations/release-safety";
+import { canaryPlan, executeCanary, productionPreflight } from "../src/operations/release-safety";
 
 describe("production release safety", () => {
   const source = { key: "eventfinda", enabled: true, status: "APPROVED", operationalStatus: "HEALTHY", rightsAllowStorage: true, rightsAllowDerivedAnalysis: true };
@@ -15,5 +15,16 @@ describe("production release safety", () => {
     expect(canaryPlan(["ticketek_events", "eventfinda", "eventfinda"])).toMatchObject({
       mode: "READ_ONLY_BOUNDED", sources: ["eventfinda", "ticketek_events"], passes: 2,
     });
+  });
+
+  it("executes passes in order and stops at the first failed gate", async () => {
+    const result = await executeCanary(["ticketmaster", "eventfinda"], async (sourceKey, pass) => ({
+      sourceKey, pass, governanceUnchanged: true, schedulesUnchanged: true,
+      parserFailures: sourceKey === "eventfinda" && pass === 2 ? 1 : 0,
+      repeatRowGrowth: 0, remoteEvidenceRemaining: 0,
+    }));
+    expect(result.passed).toBe(false);
+    expect(result.stoppedBy).toBe("parser_failure");
+    expect(result.results.map(({ sourceKey, pass }) => `${sourceKey}:${pass}`)).toEqual(["eventfinda:1", "eventfinda:2"]);
   });
 });

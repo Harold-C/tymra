@@ -53,7 +53,10 @@ export const environmentSchema = z
     RESULT_LINK_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),
     MAGIC_LINK_TTL_MINUTES: z.coerce.number().int().min(5).max(60).default(15),
     NEUTRAL_RESPONSE_MIN_MS: z.coerce.number().int().min(50).max(2_000).default(250),
-    ABUSE_CHALLENGE_MODE: z.enum(["disabled", "deterministic"]).default("disabled"),
+    ABUSE_CHALLENGE_MODE: z.enum(["disabled", "deterministic", "managed"]).default("disabled"),
+    ABUSE_CHALLENGE_VERIFY_URL: optionalUrl,
+    ABUSE_CHALLENGE_SITE_KEY: optionalString,
+    ABUSE_CHALLENGE_SECRET: optionalString,
     CUSTOMER_SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
     ROUGH_RESULT_CACHE_HOURS: z.coerce.number().int().min(1).max(24).default(6),
     ANONYMOUS_CHECK_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(7),
@@ -102,6 +105,14 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["ABUSE_CHALLENGE_MODE"],
         message: "The deterministic challenge provider is forbidden in production",
+      });
+    }
+
+    if (value.ABUSE_CHALLENGE_MODE === "managed" && (!value.ABUSE_CHALLENGE_VERIFY_URL || !value.ABUSE_CHALLENGE_SITE_KEY)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ABUSE_CHALLENGE_MODE"],
+        message: "Managed challenges require ABUSE_CHALLENGE_VERIFY_URL and ABUSE_CHALLENGE_SITE_KEY",
       });
     }
 

@@ -15,6 +15,7 @@ import {
   MessageSquare,
   RadioTower,
   Search,
+  ShieldCheck,
   Settings,
   Tags,
   X,
@@ -69,6 +70,7 @@ export function AdminShell({
     {
       label: text.collection,
       items: [
+        { label: text.readiness, href: "/admin/production-readiness", icon: ShieldCheck },
         { label: text.sources, href: "/admin/data-sources", icon: Database },
         { label: text.runs, href: "/admin/collection-runs", icon: Activity },
         { label: text.schedules, href: "/admin/collection-control", icon: CalendarClock },
@@ -173,6 +175,7 @@ function copy(locale: AdminLocale) {
     inbox: { en: "Inbox & incidents", zh: "待办与异常" },
     priceChecks: { en: "Price checks", zh: "价格检查" },
     collection: { en: "Collection", zh: "采集" },
+    readiness: { en: "Production readiness", zh: "生产就绪" },
     sources: { en: "Data sources", zh: "数据来源" },
     runs: { en: "Collection runs", zh: "采集运行" },
     schedules: { en: "Schedules & queue", zh: "计划与队列" },

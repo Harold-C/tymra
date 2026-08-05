@@ -1091,7 +1091,11 @@ async function seedResult(
       revokedAt: outcome === PriceCheckStatus.WITHDRAWN ? seedDate : null,
       revokeReason: outcome === PriceCheckStatus.WITHDRAWN ? "Development demo withdrawn result" : null,
     },
-    update: {},
+    update: {
+      expiresAt: outcome === PriceCheckStatus.EXPIRED ? addDays(seedDate, -1) : addDays(seedDate, 14),
+      revokedAt: outcome === PriceCheckStatus.WITHDRAWN ? seedDate : null,
+      revokeReason: outcome === PriceCheckStatus.WITHDRAWN ? "Development demo withdrawn result" : null,
+    },
   });
 }
 
@@ -1146,7 +1150,7 @@ async function seedSupersededResult(priceCheckId: string) {
   await prisma.resultAccessToken.upsert({
     where: { tokenHash },
     create: { resultVersionId: result.id, tokenHash, expiresAt: addDays(seedDate, 14) },
-    update: {},
+    update: { expiresAt: addDays(seedDate, 14), revokedAt: null, revokeReason: null },
   });
   await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { currentResultVersionNumber: 2, status: PriceCheckStatus.PUBLISHED } });
 }

@@ -45,7 +45,8 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof RoughCheckChallengeError) {
       return apiError(403, "ROUGH_CHECK_CHALLENGE_REQUIRED", error.message, {
-        headers: environment.NODE_ENV === "development" ? { "x-tymra-challenge-token": error.challengeToken } : undefined,
+        headers: environment.NODE_ENV === "development" && error.challenge.token ? { "x-tymra-challenge-token": error.challenge.token } : undefined,
+        details: { challenge: error.challenge },
       });
     }
     return apiException(error);

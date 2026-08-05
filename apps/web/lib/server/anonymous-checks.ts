@@ -3,7 +3,7 @@ import { hashPersonalIdentifier, prisma, recordFunnelEvent, type AnonymousCheckS
 import { createAnonymousCheckSchema } from "@tymra/domain";
 
 import { resolveSupportedListingUrl, type ListingPricingContext } from "./listing-input";
-import { abuseOutcome, issueDeterministicChallenge, verifyDeterministicChallenge } from "./security-controls";
+import { abuseOutcome, createChallengeProvider, type ChallengeDescriptor } from "./security-controls";
 
 type RequestIdentity = {
   deviceId: string;
@@ -21,7 +21,7 @@ export class RoughCheckLimitError extends Error {
 }
 
 export class RoughCheckChallengeError extends Error {
-  constructor(readonly challengeToken: string) {
+  constructor(readonly challenge: ChallengeDescriptor) {
     super("An additional verification step is required.");
     this.name = "RoughCheckChallengeError";
   }
@@ -226,12 +226,15 @@ async function enforceRoughLimits(
     usageCount("IP", ipHash, hourAgo),
     usageCount("IP", ipHash, dayAgo),
   ]);
+  const provider = createChallengeProvider({
+    mode: environment.ABUSE_CHALLENGE_MODE,
+    secret: environment.SESSION_SECRET,
+    verifyUrl: environment.ABUSE_CHALLENGE_VERIFY_URL,
+    siteKey: environment.ABUSE_CHALLENGE_SITE_KEY,
+    providerSecret: environment.ABUSE_CHALLENGE_SECRET,
+  });
   let outcome = abuseOutcome({ deviceHour, deviceDay, ipHour, ipDay });
-  if (outcome === "CHALLENGE" && environment.ABUSE_CHALLENGE_MODE === "deterministic") {
-    if (challengeToken && verifyDeterministicChallenge(challengeToken, deviceHash, environment.SESSION_SECRET)) outcome = "ALLOW";
-  } else if (outcome === "CHALLENGE") {
-    outcome = "ALLOW";
-  }
+  if (outcome === "CHALLENGE" && await provider.verify(challengeToken, deviceHash)) outcome = "ALLOW";
   await prisma.abuseDecision.create({
     data: {
       action: "ROUGH_CHECK",
@@ -241,7 +244,10 @@ async function enforceRoughLimits(
       cooldownUntil: outcome === "COOLDOWN" ? new Date(Date.now() + 3_600_000) : null,
     },
   });
-  if (outcome === "CHALLENGE") throw new RoughCheckChallengeError(issueDeterministicChallenge(deviceHash, environment.SESSION_SECRET));
+  if (outcome === "CHALLENGE") {
+    const challenge = await provider.issue(deviceHash);
+    if (challenge) throw new RoughCheckChallengeError(challenge);
+  }
   if (outcome === "COOLDOWN") throw new RoughCheckLimitError(3_600);
 }
 

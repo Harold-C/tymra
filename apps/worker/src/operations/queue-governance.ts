@@ -26,3 +26,25 @@ export function queueFailureSummary(jobs: Array<Parameters<typeof classifyQueueF
   for (const job of jobs) summary[classifyQueueFailure(job)] += 1;
   return summary;
 }
+
+export function queueFailureReport<T extends Parameters<typeof classifyQueueFailure>[0] & { id: string }>(jobs: T[], sampleLimit = 5) {
+  const groups = (Object.keys(queueFailureSummary([])) as QueueDisposition[]).map((disposition) => {
+    const matching = jobs.filter((job) => classifyQueueFailure(job) === disposition);
+    const errorCodes = [...new Set(matching.map((job) => job.lastErrorCode ?? "UNKNOWN"))].sort();
+    return {
+      disposition,
+      count: matching.length,
+      sampleJobIds: matching.slice(0, sampleLimit).map((job) => job.id),
+      errorCodes,
+      recommendation: recommendation(disposition),
+    };
+  });
+  return { total: jobs.length, summary: queueFailureSummary(jobs), groups };
+}
+
+function recommendation(disposition: QueueDisposition) {
+  if (disposition === "RETRY_ELIGIBLE") return "Retry only after confirming the transient dependency has recovered.";
+  if (disposition === "EXTERNAL_BLOCK") return "Keep stopped until rights, rate limits or source access are resolved.";
+  if (disposition === "HISTORICAL_FIXTURE") return "Archive legacy fixture failures; do not replay against current keys.";
+  return "Review payload and evidence manually before choosing retry or ignore.";
+}

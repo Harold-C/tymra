@@ -43,7 +43,8 @@ type RoughCheck = {
   };
 };
 
-type ApiPayload<T> = { data?: T; error?: { message?: string; fieldErrors?: Record<string, string[]> } };
+type Challenge = { mode: "deterministic" | "managed"; token?: string; siteKey?: string };
+type ApiPayload<T> = { data?: T; error?: { code?: string; message?: string; fieldErrors?: Record<string, string[]>; details?: { challenge?: Challenge } } };
 
 export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Locale; initialInput?: string }) {
   const router = useRouter();
@@ -51,6 +52,7 @@ export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Loc
   const [input, setInput] = useState(initialInput);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
   const copy = roughCopy[locale];
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -61,10 +63,14 @@ export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Loc
       const response = await fetch("/api/v1/rough-checks", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input: input.trim(), locale, idempotencyKey: requestKey.current ??= crypto.randomUUID() }),
+        body: JSON.stringify({ input: input.trim(), locale, idempotencyKey: requestKey.current ??= crypto.randomUUID(), ...(challenge?.token ? { challengeToken: challenge.token } : {}) }),
       });
       const payload = await response.json() as ApiPayload<{ id: string }>;
       if (!response.ok || !payload.data) {
+        if (payload.error?.code === "ROUGH_CHECK_CHALLENGE_REQUIRED" && payload.error.details?.challenge) {
+          setChallenge(payload.error.details.challenge);
+          return;
+        }
         setError(payload.error?.fieldErrors?.input?.[0] ?? payload.error?.message ?? copy.genericError);
         return;
       }
@@ -86,11 +92,12 @@ export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Loc
           <label htmlFor="rough-listing-url">{copy.urlLabel}</label>
           <div className="rough-url-control">
             <Search aria-hidden="true" />
-            <input id="rough-listing-url" type="url" value={input} onChange={(event) => { setInput(event.target.value); requestKey.current = null; }} placeholder={copy.urlPlaceholder} required disabled={busy} />
-            <button className="button button-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <ArrowRight />}{busy ? copy.checking : copy.checkAction}</button>
+            <input id="rough-listing-url" type="url" value={input} onChange={(event) => { setInput(event.target.value); requestKey.current = null; setChallenge(null); }} placeholder={copy.urlPlaceholder} required disabled={busy} />
+            <button className="button button-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" /> : <ArrowRight />}{busy ? copy.checking : challenge ? (locale === "zh" ? "完成验证并继续" : "Complete verification") : copy.checkAction}</button>
           </div>
           <p className="rough-field-hint">{copy.urlHint}</p>
           {error ? <p className="field-error" role="alert">{error}</p> : null}
+          {challenge ? <div className="rough-demo" data-testid="rough-entry-challenge"><ShieldCheck aria-hidden="true" /><strong>{locale === "zh" ? "需要额外验证" : "Additional verification required"}</strong><span>{challenge.mode === "deterministic" ? (locale === "zh" ? "点击按钮完成本地验证。" : "Use the button to complete the local verification.") : (locale === "zh" ? "请先完成托管验证。" : "Complete the managed verification before retrying.")}</span></div> : null}
         </form>
       </div>
     </section>

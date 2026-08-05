@@ -46,12 +46,12 @@ docs/                     产品、架构、采集、证据、决策和状态
 | P0 | 核对本地运行栈与失败队列 | 当前工作树容器 health/readiness、迁移、队列与 Argus 恢复一致；历史失败已分类 | 已完成只读分类；未重放或删除历史/验收任务 |
 | P0 | 保持首页现有视觉与交互 | EN/ZH 桌面与移动端真实渲染、关键交互、可访问性和无横向溢出 | 已完成完整桌面/移动 E2E、axe 与真实 Browser 检查；无 console error |
 | P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑全部来源两轮验收 | 34 个来源、68 pass 全部通过；第二轮均零增长，Argus execution 全部收口 |
-| P1 | Eventfinda 长期稳定性 | 目标环境全国持久抓取、多日无人值守、恢复、容量和告警证据 | 本地 5 轮 soak 已通过且零增长；长期验收待部署环境 |
+| P1 | Eventfinda 长期稳定性 | 目标环境全国持久抓取、多日无人值守、恢复、容量和告警证据 | 已实现可恢复 checkpoint、容量统计和失败率告警；本轮 2 cycle/4 pass 实采通过，长期验收待部署环境 |
 | P1 | Ticketmaster 实页稳定性 | 挑战冷却后重复有界实页验收，列表优先且无绕过 | 列表优先实现和自动化已通过；详情实页仍受外部挑战条件限制 |
 | P1 | 手工导入真实文件验收 | 真实运营导出文件完成两次持久化验收 | `not_verified`：缺少真实文件 |
-| P1 | Release 1.5 剩余项 | Retention、匿名漏斗分析、挑战/配额/会话边界测试完成 | 本地 deterministic challenge 握手、neutral timing、retention、聚合分析、会话、consent、quota、reduced-motion 和回滚均已验证；生产 challenge vendor 与最终隐私批准仍是外部门槛 |
+| P1 | Release 1.5 剩余项 | Retention、匿名漏斗分析、挑战/配额/会话边界测试完成 | 本地 deterministic challenge 与前端状态已验证；托管 provider 的服务端接口已完成，生产 vendor 配置、客户端组件与最终隐私批准仍是外部门槛 |
 | P1 | Event impact v1 | 结构化证据、可信场馆 enrichment、真实样本 pending/promotion 和两轮幂等 | 已完成；Canterbury A&P Show 70,000 人官方证据实采提升，Te Pae 容量单独保持 pending；5 轮/10 pass 本地 soak 无 source/link 增长 |
-| P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | 未启动；本地验收不等于生产批准 |
+| P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | Admin 就绪页、可执行 canary、事务回滚、队列动作和跨源对账已完成；当前权利/审批门禁正确阻止执行 |
 
 ## 交付顺序
 

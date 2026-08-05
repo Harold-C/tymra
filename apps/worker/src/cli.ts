@@ -1,11 +1,13 @@
 import { getEnvironment } from "@tymra/config";
-import { enqueueJob, hashPersonalIdentifier, prisma } from "@tymra/db";
+import { enqueueJob, prisma } from "@tymra/db";
 import { closeRedis } from "@tymra/queue";
 
 import { handleJob } from "./jobs/job-handlers";
 import { WorkerService } from "./services/worker-service";
-import { queueFailureSummary } from "./operations/queue-governance";
-import { canaryPlan, productionPreflight } from "./operations/release-safety";
+import { queueFailureReport } from "./operations/queue-governance";
+import { executeCanary, canaryPlan, productionPreflight } from "./operations/release-safety";
+import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
+import { loadEventReconciliation } from "./operations/event-reconciliation";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -51,7 +53,17 @@ switch (command) {
       orderBy: { createdAt: "asc" },
       take: integerOption(args, "--limit") ?? 500,
     });
-    print({ total: jobs.length, summary: queueFailureSummary(jobs), mutationPerformed: false });
+    print({ ...queueFailureReport(jobs, integerOption(args, "--samples") ?? 5), mutationPerformed: false });
+    break;
+  }
+  case "queue:history": {
+    const action = requiredOption(args, "--action");
+    if (!["retry", "archive", "ignore"].includes(action)) throw new Error("--action must be retry, archive or ignore");
+    const expected = `${action.toUpperCase()}_JOB`;
+    if (option(args, "--confirm") !== expected) throw new Error(`Queue history action requires --confirm ${expected}`);
+    print({ ...await executeQueueHistoryAction(prisma, environment.ACCESS_KEY_SECRET, {
+      jobId: requiredArg(args, 0), action: action as "retry" | "archive" | "ignore", reason: requiredOption(args, "--reason"),
+    }), mutationPerformed: true });
     break;
   }
   case "release:preflight": {
@@ -72,16 +84,42 @@ switch (command) {
     print({ ...canaryPlan(requested), mutationPerformed: false });
     break;
   }
+  case "release:canary-run": {
+    const requested = csvOption(args, "--sources");
+    if (!requested.length) throw new Error("Missing --sources");
+    if (option(args, "--confirm") !== "RUN_BOUNDED_CANARY") throw new Error("Canary requires --confirm RUN_BOUNDED_CANARY");
+    const sourceRows = await prisma.dataSource.findMany({ where: { key: { in: requested } } });
+    const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), requestedSourceKeys: requested, sources: sourceRows });
+    if (!preflight.ready) throw new Error(`Canary preflight failed: ${preflight.failures.join("; ")}`);
+    print(await executeCanary(requested, async (sourceKey, pass) => {
+      const source = sourceRows.find((item) => item.key === sourceKey)!;
+      const before = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
+      try {
+        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: integerOption(args, "--limit") ?? 2, dryRun: false });
+        const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: result.runId } });
+        const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
+        const after = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
+        const parserFailures = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } });
+        const remoteEvidenceRemaining = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } });
+        return { sourceKey, pass, governanceUnchanged: scope.governanceUnchanged === true, schedulesUnchanged: scope.schedulesUnchanged === true, parserFailures, repeatRowGrowth: pass > 1 ? Math.max(0, after - before) : 0, remoteEvidenceRemaining };
+      } catch (error) {
+        return { sourceKey, pass, governanceUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.message : "unknown" };
+      }
+    }));
+    break;
+  }
   case "release:rollback": {
     if (option(args, "--confirm") !== "DISABLE_COLLECTIONS") throw new Error("Rollback requires --confirm DISABLE_COLLECTIONS");
-    const collectionTypes = ["PUBLIC_DATA_COLLECTION", "EVENT_COLLECTION", "WEATHER_COLLECTION", "TRANSPORT_COLLECTION"] as const;
-    const result = await prisma.$transaction(async (transaction) => {
-      const schedules = await transaction.scheduleDefinition.updateMany({ where: { enabled: true }, data: { enabled: false } });
-      const jobs = await transaction.job.updateMany({ where: { type: { in: [...collectionTypes] }, status: "PENDING" }, data: { status: "CANCELLED", completedAt: new Date(), lastErrorCode: "RELEASE_ROLLBACK", lastErrorMessage: "Cancelled by guarded release rollback" } });
-      await transaction.auditEvent.create({ data: { eventType: "release_collection_rollback", entityType: "CollectionRuntime", entityId: "global", payload: { schedulesDisabled: schedules.count, pendingJobsCancelled: jobs.count }, eventHash: hashPersonalIdentifier(`release-rollback:${Date.now()}`, environment.ACCESS_KEY_SECRET) } });
-      return { schedulesDisabled: schedules.count, pendingJobsCancelled: jobs.count };
-    });
+    const result = await executeReleaseRollback(prisma, environment.ACCESS_KEY_SECRET);
     print({ ...result, mutationPerformed: true });
+    break;
+  }
+  case "events:reconcile": {
+    const sources = csvOption(args, "--sources");
+    if (sources.length < 2) throw new Error("Reconciliation requires at least two --sources");
+    const from = dateOption(args, "--from") ?? new Date();
+    const to = dateOption(args, "--to", true) ?? new Date(from.getTime() + 31 * 86_400_000);
+    print({ ...await loadEventReconciliation(prisma, { sources, from, to }), mutationPerformed: false });
     break;
   }
   case "seed:fixtures": print({ fixtureSource: await prisma.dataSource.findUnique({ where: { key: "development-demo" } }) }); break;
@@ -111,7 +149,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|release:preflight|release:canary-plan|release:rollback|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
     process.exitCode = 2;
 }
 

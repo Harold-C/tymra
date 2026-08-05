@@ -1696,6 +1696,10 @@ a {
   text-transform: uppercase;
 }
 
+.production-readiness-page .overview-priority > div > span {
+  color: var(--text-secondary);
+}
+
 .overview-priority > div > strong {
   margin-top: 3px;
   color: var(--navy);

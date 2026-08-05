@@ -9,6 +9,8 @@ import {
   type JobType,
 } from "@tymra/db";
 
+import { writeAcceptanceArtifacts } from "./operations/acceptance-artifacts";
+
 type SourceSpec = {
   key: string;
   jobType: JobType;
@@ -299,7 +301,8 @@ async function main() {
     failures,
     reports,
   };
-  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+  const artifacts = await writeAcceptanceArtifacts(output);
+  process.stdout.write(`${JSON.stringify({ ...output, artifacts }, null, 2)}\n`);
   if (failures.length > 0) process.exitCode = 1;
 }
 
