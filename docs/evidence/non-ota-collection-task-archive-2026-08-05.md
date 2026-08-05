@@ -98,7 +98,7 @@ Argus currently publishes these additional fixed contracts:
 | --- | --- | --- | --- | --- | --- |
 | `sporty-school-sport-public` | `collect_events` | `sporty-school-sport-public.collect_events` | `1.0.0` | implemented and bounded-live verified | integrated; schedules disabled |
 | `ticketek-public` | `collect_listing` | `ticketek-public.collect_listing` | `1.0.0` | implemented and bounded-live verified | integrated; schedules disabled |
-| `ticketek-public` | `collect_detail` | `ticketek-public.collect_detail` | `1.0.0` | parser fixed; `show.aspx` hidden-challenge classification still blocked | integrated with safe partial handling; schedules disabled |
+| `ticketek-public` | `collect_detail` | `ticketek-public.collect_detail` | `1.0.0` | embedded-performance and umbrella-show parsers bounded-live verified | integrated and two-pass verified; schedules disabled |
 
 Bounded retained jobs verified School Sport NZ (`20/20` series/occurrences), School Sport
 Canterbury (`20/20`) and Ticketek listing (`10/10`). Repeating each request with the same
@@ -134,7 +134,7 @@ independent PostgreSQL tests were skipped because `ARGUS_TEST_DATABASE_URL` was 
 The target Ticketek tests cover stable performance IDs, multiple dates, ticket states and rejection
 of fully unresolved detail data.
 
-## Remaining upstream blocker: hidden Akamai challenge
+## Historical hidden Akamai challenge
 
 A fresh independent capture after the parser fix did not return the event page:
 
@@ -148,10 +148,10 @@ A fresh independent capture after the parser fix did not return the event page:
 
 The HTML is an Akamai behavioural challenge and contains `sec-if-cpt-container`,
 `behavioral-content`, `scf-akamai-protected-by` and `Powered and protected by Akamai`; its challenge
-container is initially hidden and the screenshot is blank. The Argus fix currently keys this shape
-to a final `/detection.aspx` path. Fresh challenged detail Jobs retained `show.aspx`, so the current
-Argus runtime still returns `PARSING_ERROR`, `retryable: false`, `challenge: null`. This remains an
-upstream classification blocker; Tymra never attempts to bypass it.
+container is initially hidden and the screenshot is blank. At that historical checkpoint, the Argus
+fix keyed this shape to a final `/detection.aspx` path. Those detail Jobs retained `show.aspx`, so the
+then-current runtime returned `PARSING_ERROR`, `retryable: false`, `challenge: null`. Tymra did not
+attempt to bypass it; the later normal umbrella-page resolution is recorded below.
 
 Fresh two-pass Tymra Jobs `cmsfstri00000p52a7rnyuf8k` and `cmsfsuicw0001p52arnlaeyzf` verified the
 safe partial boundary. Each pass completed its Ticketek listing execution, retained ten listing
@@ -160,6 +160,28 @@ PARTIAL_FAILURE`. The detail executions `job_2a2c0ef4296f8d5ffa89beab8c15fb35` a
 `job_422830894dcf5516dc4ad90ebe6eb33d` retained the challenged HTML and blank screenshot locally.
 The second pass created no new source, canonical or lineage rows. All four execution evidence pairs
 were copied before any result ACK; zero `argus-evidence:` references remained.
+
+## Umbrella-detail resolution and fresh acceptance
+
+The retained `LEGOSWE27` page was a normal HTTP 200 `UmbrellaShow`, not a
+challenge. Its `SOFTIX.GAData.Show.Venues` value was null while five public
+child cards carried the child show codes, date ranges and venue text. Argus now
+uses those cards only after embedded performances produce no occurrences. It
+keeps the parent series, produces stable child occurrence IDs, retains four
+explicit ranges and leaves the anytime start null with `quality: partial`.
+
+Acceptance `public-sources-2026-08-05T09:23:46.485Z-0f8aebe9` reran only
+`ticketek_events` twice through the rebuilt local Argus service:
+
+- Tymra Jobs `cmsfvqspt0000ru84dm7cq2jt` and `cmsfvrisb0001ru84dz9u0ql3`
+  and both CollectionRuns finished `SUCCEEDED` with no failures;
+- each pass made two Argus executions, retained four evidence objects locally
+  before ACK and left zero remote evidence references;
+- each pass normalised 15 records into 11 events; pass one added one source
+  event and four occurrences beyond the earlier listing-only baseline;
+- pass two added zero source, canonical or lineage rows and reported
+  `unchangedSkipped: 11`;
+- governance snapshots were unchanged and enabled schedules stayed at zero.
 
 ## Completed Tymra work
 
@@ -178,8 +200,8 @@ The fresh cross-service acceptance reached Argus through `https://api.argus.test
 completed two passes with 20 raw records and six promoted events; School Sport Canterbury completed
 two passes with 13 raw records and correctly promoted zero unresolved/administrative rows. Each
 School Sport pass used one Argus execution, retained HTML/screenshot evidence locally, left zero
-remote evidence references and added no rows on the second pass. Ticketek listing also preserved
-second-pass idempotency, with its detail limitation recorded above. Governance snapshots were
+remote evidence references and added no rows on the second pass. Ticketek listing/detail also
+preserved second-pass idempotency after the umbrella parser fix. Governance snapshots were
 unchanged and all related schedules remained disabled.
 
 After the multi-execution evidence fix, 102 root tests (four live probes skipped), 53 Worker unit
@@ -191,8 +213,8 @@ durable Argus orchestration suite.
 
 Christchurch now has broad coverage across council events, major venues, public event platforms,
 sports, university and Ara dates, racing, cruise, airport demand and selected independent annual
-events. Lincoln, School Sport and Ticketek listing are integrated through Argus. Ticketek detail
-challenge classification, production rights approval and schedule enablement remain separate gates;
+events. Lincoln, School Sport and Ticketek listing/detail are integrated through Argus. Production
+rights approval and schedule enablement remain separate gates;
 they are not implied by the completed development and database acceptance.
 
 ## Archive boundary

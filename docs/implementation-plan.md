@@ -34,8 +34,8 @@ docs/                     产品、架构、采集、证据、决策和状态
   `20260729093000_argus_execution_orchestration` 已应用，存在 33 个 `COMPLETED` 和 1 个
   `CANCELLED` 的 `ArgusExecution`，没有活动执行。
 - Tymra Web/API/Worker 已用当前工作树重建，Web、Worker 和 Argus HTTPS health/readiness
-  返回 HTTP 200。School Sport 两轮跨服务实采通过；Ticketek listing 两轮幂等通过，detail
-  的真实隐藏 Akamai 页面仍由 Argus 错分为 `PARSING_ERROR`，Tymra 已验证安全 partial 路径。
+  返回 HTTP 200。School Sport 两轮跨服务实采通过；Argus 修复 Ticketek umbrella detail 后，
+  Ticketek listing/detail 两轮均成功且第二轮零增长。
 
 ## 当前优先级
 
@@ -45,7 +45,7 @@ docs/                     产品、架构、采集、证据、决策和状态
 | P0 | 完成当前工作树质量门槛 | 专用测试库上的 `pnpm verify` 通过；必要时再跑 `pnpm test:e2e` | 已通过：lint、类型、109 个根测试（4 个 provider fixture 跳过）、55 个 Worker 测试、63 个数据库/API/Worker 集成测试和生产构建；reduced-motion 桌面/移动 E2E 通过 |
 | P0 | 核对本地运行栈与失败队列 | 当前工作树容器 health/readiness、迁移、队列与 Argus 恢复一致；历史失败已分类 | 已完成只读分类；未重放或删除历史/验收任务 |
 | P0 | 保持首页现有视觉与交互 | EN/ZH 桌面与移动端真实渲染、关键交互、可访问性和无横向溢出 | 历史已验证；本轮无 UI 实现改动，未重跑 E2E |
-| P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑新增来源两轮验收 | School Sport NZ/Canterbury 通过；Ticketek listing 通过，detail 上游分类仍阻塞；其余直接来源沿用 2026-07-30/08-04 证据 |
+| P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑新增来源两轮验收 | School Sport NZ/Canterbury 与 Ticketek listing/detail 均通过；其余直接来源沿用 2026-07-30/08-04 证据 |
 | P1 | Eventfinda 长期稳定性 | 目标环境全国持久抓取、多日无人值守、恢复、容量和告警证据 | 本地有界与全国 bootstrap 已有历史证据；长期验收待部署环境 |
 | P1 | Ticketmaster 实页稳定性 | 挑战冷却后重复有界实页验收，列表优先且无绕过 | 列表优先实现和自动化已通过；详情实页仍受外部挑战条件限制 |
 | P1 | 手工导入真实文件验收 | 真实运营导出文件完成两次持久化验收 | `not_verified`：缺少真实文件 |

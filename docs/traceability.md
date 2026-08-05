@@ -22,7 +22,7 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | Configured non-OTA public channels | All 17 configured sources completed one unified bounded two-pass real local acceptance on 2026-07-30 | Fresh live rerun, production source review, activation and ongoing operations remain separate |
 | Argus execution boundary | Async submit/poll/resume/ACK, restart recovery, cancellation and post-ACK purge have dated local evidence; current image/unit/build checks pass | Current-worktree database integration and production acceptance remain separate |
 | School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production rights and schedule activation remain separate |
-| Ticketek | Fresh two-pass listing collection retained 10 records and seven events per pass with zero second-pass growth | Detail `show.aspx` Akamai document is still misclassified by Argus as `PARSING_ERROR`; source remains disabled |
+| Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production rights and schedule activation remain separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
 | Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
 

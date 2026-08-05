@@ -166,10 +166,8 @@ definitions.
 
 The fresh cross-service run completed two School Sport NZ passes (20 raw records, six promoted
 events) and two School Sport Canterbury passes (13 raw records, zero safely promotable events). Each
-second pass added zero source, canonical or lineage rows. Ticketek completed two listing passes (ten
-records and seven events per pass) and retained both listing and detail evidence locally before ACK.
-Its selected `show.aspx` detail returned a real hidden Akamai document that the current Argus build
-misclassified as `PARSING_ERROR`; both Tymra runs therefore correctly remained `PARTIAL`, with no
-bypass and no loss of the listing events. See the
+second pass added zero source, canonical or lineage rows. After the Argus umbrella-detail parser
+fix, Ticketek completed two listing/detail passes (15 raw records and 11 events per pass), retained
+all listing/detail evidence locally before ACK, and added zero rows on pass two. See the
 [2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md) for Job IDs and
 hashes. This is development evidence, not production schedule approval.
