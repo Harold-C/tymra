@@ -62,9 +62,9 @@ describe("Worker baseline domain contracts", () => {
     expect(calculateAvailabilityCompression(rates)).toMatchObject({ eligible: 3, available: 1, restricted: 1, sourceFailure: 1, compression: 0.5 });
   });
 
-  it("blocks publication on rights, fee, coherence and competitor failures", () => {
-    const flags = evaluateBlockingQualityGates({ targetRatePresent: true, unitConfirmed: true, feesKnown: false, comparable: false, sourceRightsAllowed: false, sourceAvailable: true, severeConflict: false, freshnessExpired: false, snapshotCoherent: false, competitorCount: 2 });
-    expect(flags).toEqual(expect.arrayContaining(["FEES_UNKNOWN", "COMPARABILITY_FAILURE", "SOURCE_RIGHTS_BLOCKED", "SNAPSHOT_INCOHERENT", "COMPETITOR_COUNT_BELOW_3"]));
+  it("blocks publication on fee, coherence and competitor failures", () => {
+    const flags = evaluateBlockingQualityGates({ targetRatePresent: true, unitConfirmed: true, feesKnown: false, comparable: false, sourceAvailable: true, severeConflict: false, freshnessExpired: false, snapshotCoherent: false, competitorCount: 2 });
+    expect(flags).toEqual(expect.arrayContaining(["FEES_UNKNOWN", "COMPARABILITY_FAILURE", "SNAPSHOT_INCOHERENT", "COMPETITOR_COUNT_BELOW_3"]));
     expect(negativeCacheTtlSeconds("SOLD_OUT")).toBe(1_800);
     expect(negativeCacheTtlSeconds("BLOCKED")).toBe(86_400);
   });

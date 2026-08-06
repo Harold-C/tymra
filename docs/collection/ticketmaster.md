@@ -23,8 +23,7 @@ page is extracted normally; a challenge that remains becomes `manual_required`, 
 failure backoff and opens the source circuit.
 
 The Worker-level `discovery`, `details` and `full` phases are implemented. The seeded daily discovery
-and six-hour detail schedules remain disabled in development. Schedule activation still requires
-explicit source, storage and derived-analysis approval.
+and six-hour detail schedules remain disabled, and development hard-disables scheduler execution.
 
 ## Pipeline
 
@@ -133,7 +132,7 @@ source removed that deployment drift; the successful acceptance above uses the r
   disappear. Normal scheduled pages still omit screenshots.
 - Database integration performs discovery once and the same detail twice, proves an idempotent
   frontier, source/canonical events, venue and lineage, verifies 72/168-hour evidence classes, and
-  confirms governance and both schedules do not change.
+  confirms source configuration and both schedules do not change.
 - Database integration also proves that a first challenge stores the six-hour `OPEN` state and an
   expired cooldown permits only one listing-only half-open probe before resetting to `CLOSED`.
 - Real city checks succeeded for Auckland, Wellington, Christchurch, Hamilton and Rotorua. The latest bounded Auckland runs `cmrtfdhjc0001mq2ans0flgl0` and `cmrtfdst30001mq3thsa0v9ys` each made one request, discovered 18 events, persisted two records and retained three success artifacts with no failure.
@@ -178,7 +177,7 @@ source removed that deployment drift; the successful acceptance above uses the r
 
 ## Remaining Production Gates
 
-- Complete source/legal review and explicitly activate storage and derived-analysis rights.
+- Confirm source health and operational configuration in the target environment.
 - Repeat one bounded live detail acceptance after the current cooldown; do not retry during cooldown
   or increase interaction to force access.
 - Observe evidence expiry and several days of unattended discovery/detail runs in the target environment.
@@ -192,7 +191,6 @@ On 2026-08-01 the current Ticketmaster unit tests, shared extractor tests, Worke
 Worker build passed. Live listing/detail capture and the database integration suite were not rerun;
 the source-behaviour claims above remain tied to their recorded historical traces.
 
-After explicit source activation, production operators can use
-`schedule:ticketmaster:enable`; the command refuses to enable the schedule unless storage and
-derived-analysis rights are approved. `schedule:ticketmaster:disable` disables it without changing
-source governance.
+After source activation, production operators can use `schedule:ticketmaster:enable`; the command
+refuses to enable the schedule unless the source is enabled and operationally healthy.
+`schedule:ticketmaster:disable` disables it without changing source configuration.

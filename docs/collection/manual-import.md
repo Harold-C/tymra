@@ -6,14 +6,12 @@ operator-file acceptance is `not_verified`.
 ## Boundary
 
 The normal Admin import remains a production-capable operator workflow. It requires an authenticated
-administrator, same-origin request, operator rights attestation, an approved and enabled source, and
-storage/analysis/display rights. It may update source health after an import.
+administrator, same-origin request and an enabled, operationally available source. It may update
+source health after an import.
 
-Explicit `localAcceptance=true` is a separate development-only path. It still requires the operator
-to attest that the uploaded data may be used, but it does not query `approvedBy` or `licenseBasis`,
-does not require production approval/right flags and does not modify any source governance, rights,
-operational or health field. It refuses `test` and `production`, refuses an enabled scheduler, and
-requires the source to be enabled for `DEVELOPMENT`.
+Explicit `localAcceptance=true` is a separate development-only path. It does not modify source
+configuration, operational or health fields. It refuses `test` and `production` and requires the
+source to be enabled for `DEVELOPMENT`. Development scheduling is hard-disabled.
 
 ## Hard limits and coordination
 
@@ -31,7 +29,7 @@ gates; manual import does not create a background job.
 ## Persistence and evidence
 
 Each invocation creates an auditable `ManualImport` and `CollectionRun`. The run scope records the
-requested byte/row counts, effective two-row bound, counters, governance snapshots and schedule
+requested byte/row counts, effective two-row bound, counters, configuration snapshots and schedule
 snapshots. Local acceptance creates one short-lived `RawArtifact` metadata record containing a file
 hash and no file body. Clean imports use the 72-hour success class; row-validation failures use the
 168-hour parser-failure class.
@@ -47,7 +45,7 @@ records the existing observation count in the second `CollectionRun` instead.
 
 The database integration regression verifies development/test/production and scheduler guards,
 256 KB and two-record bounds, two-pass idempotency, one source listing and immutable observation per
-stable identity, 72/168-hour evidence selection, unchanged governance and disabled schedules. It
+stable identity, 72/168-hour evidence selection, unchanged source configuration and disabled schedules. It
 uses generated test rows, not an operator export.
 
 The remaining local acceptance blocker is a genuine operator CSV/JSON export that Harold is willing

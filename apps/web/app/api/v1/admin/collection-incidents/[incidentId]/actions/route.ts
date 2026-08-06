@@ -15,7 +15,6 @@ const incidentMessages: Record<string, [number, string]> = {
 
 const controlMessages: Record<string, [number, string]> = {
   SOURCE_PAUSED: [409, "Resume the source before retrying collection."],
-  SOURCE_GOVERNANCE_BLOCKED: [409, "The source is not approved for this environment and collection mode."],
   COLLECTION_ALREADY_ACTIVE: [409, "This collection workflow already has a pending or running job."],
   COLLECTION_COOLDOWN: [429, "This workflow is still in its manual cooldown period."],
 };

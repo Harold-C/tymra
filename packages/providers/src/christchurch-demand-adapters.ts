@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseHTML } from "linkedom";
 
-import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal, SourceRights } from "./adapter-types";
+import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 import { parsePlatformJsonLdEvents } from "./public-event-platform-adapters";
 
@@ -52,7 +52,6 @@ class ChristchurchDemandAdapter implements PublicDataAdapter {
     return records.flatMap((record) => isRecord(record.payload) && record.payload.kind === "event" && isEvent(record.payload.value) ? [record.payload.value] : []);
   }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(this.references[0]!, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights(`${this.metadata.sourceName} official public page; production collection and display remain subject to source review`); }
 }
 
 class ChristchurchCruiseAdapter implements PublicDataAdapter {
@@ -87,7 +86,6 @@ class ChristchurchCruiseAdapter implements PublicDataAdapter {
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> { return records.flatMap((record) => isRecord(record.payload) && record.payload.kind === "event" && isEvent(record.payload.value) ? [record.payload.value] : []); }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(CRUISE_URL, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights("ChristchurchNZ public dashboard and its browser-visible Power BI public-report JSON endpoints; production collection and display remain subject to source review"); }
 }
 
 export function parseChristchurchSports(html: string, finalUrl: string): HtmlResult {
@@ -209,7 +207,7 @@ export function decodePowerBiCruiseRows(payload: unknown): CruiseRow[] {
 
 export function parseAirportMonthlyPassengers(html: string, finalUrl: string): HtmlResult {
   const { document } = parseHTML(html);
-  const signals: PublicSignal[] = [];
+  const records: Array<{ year: number; month: number; monthName: string; domestic: number; international: number; total: number }> = [];
   for (const heading of document.querySelectorAll("h4")) {
     const year = Number(clean(heading.textContent));
     const table = heading.nextElementSibling;
@@ -221,11 +219,19 @@ export function parseAirportMonthlyPassengers(html: string, finalUrl: string): H
       const international = parseCount(cells[2]);
       const total = parseCount(cells[3]);
       if (month < 0 || domestic === null || international === null || total === null) continue;
-      const startsAt = nzDate(year, month, 1, 0, 0);
-      const endsAt = nzDate(year, month + 1, 1, 0, 0);
-      signals.push(signalRecord("christchurch_airport_monthly", `airport-passengers:${year}-${String(month + 1).padStart(2, "0")}`, `Christchurch Airport passengers - ${cells[0]} ${year}`, finalUrl, startsAt, endsAt, "AIRPORT_MONTHLY_CAPACITY", 0.98, { domesticPassengers: domestic, internationalPassengers: international, totalPassengers: total }));
+      records.push({ year, month, monthName: cells[0]!, domestic, international, total });
     }
   }
+  const byPeriod = new Map(records.map((record) => [`${record.year}-${record.month}`, record]));
+  const signals = records.map((record) => {
+    const previous = byPeriod.get(`${record.year - 1}-${record.month}`);
+    const annualChangePercent = previous?.total ? (record.total - previous.total) / previous.total * 100 : null;
+    const startsAt = nzDate(record.year, record.month, 1, 0, 0);
+    const endsAt = nzDate(record.year, record.month + 1, 1, 0, 0);
+    const signal = signalRecord("christchurch_airport_monthly", `airport-passengers:${record.year}-${String(record.month + 1).padStart(2, "0")}`, `Christchurch Airport passengers - ${record.monthName} ${record.year}`, finalUrl, startsAt, endsAt, "TOURISM_DEMAND", 0.9, { contextSeriesKey: "airport-monthly-passengers", domesticPassengers: record.domestic, internationalPassengers: record.international, totalPassengers: record.total, annualChangePercent });
+    signal.direction = annualChangePercent === null ? "UNKNOWN" : annualChangePercent > 2 ? "POSITIVE" : annualChangePercent < -2 ? "NEGATIVE" : "MIXED";
+    return signal;
+  });
   return { signals };
 }
 
@@ -270,4 +276,3 @@ function assertAllowed(value: string, domains: string[]) { let url: URL; try { u
 function sourceError(name: string, status: number) { return new AdapterError(status === 429 ? "RATE_LIMITED" : "SOURCE_UNAVAILABLE", `${name} returned HTTP ${status}`, status === 429 || status >= 500); }
 async function boundedText(response: Response, maxBytes: number) { const length = Number(response.headers.get("content-length") ?? 0); if (length > maxBytes) throw new AdapterError("PARSING_ERROR", "Source response exceeded the configured byte limit", false); const text = await response.text(); if (Buffer.byteLength(text) > maxBytes) throw new AdapterError("PARSING_ERROR", "Source response exceeded the configured byte limit", false); return text; }
 async function health(url: string, name: string, context: AdapterContext): Promise<AdapterHealth> { const started = Date.now(); try { const response = await fetch(url, { headers: { "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" }, signal: context.signal ?? AbortSignal.timeout(10_000) }); return { status: response.ok ? "HEALTHY" : "DEGRADED", checkedAt: new Date(), message: `${name} returned HTTP ${response.status}`, latencyMs: Date.now() - started, mode: context.mode }; } catch (error) { return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : `${name} health check failed`, latencyMs: Date.now() - started, mode: context.mode }; } }
-function reviewRights(basis: string): SourceRights { return { internalApprovalStatus: "PENDING", legalRightsStatus: "REVIEW", lifecycle: "RESEARCH", environments: ["DEVELOPMENT", "TEST", "PILOT"], allowedUsage: ["HEALTH_CHECK", "FIXTURE_TEST"], displayPermission: false, derivedAnalysisPermission: false, retentionPolicy: { rawHours: 168, parserFailureHours: 720, normalizedDays: null }, basis }; }

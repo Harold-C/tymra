@@ -86,15 +86,20 @@ Argus 负责确定性采集可观察事实；Tymra 负责业务判断。
   metadata 保留同一 provenance。
 - `event-impact-evidence-v1` 对 evidence type、数值单位、来源 URL、采集时间和置信度进行严格
   校验。旧的任意 JSON 不再被当作可提升证据，而是安全降级为 `PENDING_EVIDENCE`。
-- `event-impact-promotion-v1` 只接受可信度至少 `0.7` 且预计或实际到场至少 50,000 人的证据；
-  `VENUE_CAPACITY` 单独出现时始终保持 pending。
+- `event-impact-promotion-v2` 保留 v1 的人数门槛：可信度至少 `0.7` 且预计或实际到场至少
+  50,000 人即可提升。它还允许“官方 `HIGH/MAJOR` 规模标签 + 独立域名发布的
+  `HIGH/MAJOR` 住宿需求佐证”组合提升；两项置信度都必须至少 `0.8`。单独的规模标签、同域
+  自证、多来源重复刊登和 `VENUE_CAPACITY` 都保持 pending。历史 v1 bundle 仍按原规则读取。
+- 同一 canonical occurrence 的严格有效 evidence bundle 会在 Tymra 中去重合并，再统一计算
+  impact。后到的 pending 来源不会覆盖已有强证据；一个 occurrence 只生成一个 canonical
+  `MAJOR_EVENT`，各来源通过 lineage link 追溯。证据失效时信号会变为 `RETRACTED`。
 - 可信场馆参考表使用精确别名匹配补充 Te Pae 的官方名称、地址和 3,600 人容量，并保留官方
   来源和观察日期；容量只作 enrichment，不等同于预计到场。
 - Canterbury A&P Show 官方页面公布的 70,000 annual visitors 被规范化为
   `EXPECTED_ATTENDANCE`。2026-08-05 两轮真实采集均成功，第二轮 source/link 行零增长，source
   与 canonical occurrence 均为 `PROMOTED`。
 
-尚未拆分的是来源原始分类和 Tymra 标准分类；当前二者仍共用 `category`。这不影响 v1 promotion
+尚未拆分的是来源原始分类和 Tymra 标准分类；当前二者仍共用 `category`。这不影响 v2 promotion
 安全边界，但仍是后续数据模型质量工作。
 
 ## Argus 当前覆盖评估
@@ -128,7 +133,7 @@ Argus 负责确定性采集可观察事实；Tymra 负责业务判断。
 
 ## 后续扩展门槛
 
-1. 新增 evidence type 或调整 50,000 人阈值必须发布新 policy version，并补充 pending/promotion
+1. 新增 evidence type 或调整人数/组合证据阈值必须发布新 policy version，并补充 pending/promotion
    回归样本，不能原地改变历史解释。
 2. 扩展可信场馆表必须使用官方容量来源、精确别名和有效观察日期；不得用模糊名称匹配。
 3. 新增来源人数证据必须保留出处、观察时间和 evidence reference，并完成两轮真实采集幂等验收。

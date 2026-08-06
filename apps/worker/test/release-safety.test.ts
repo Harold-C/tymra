@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { canaryPlan, executeCanary, productionPreflight } from "../src/operations/release-safety";
 
 describe("production release safety", () => {
-  const source = { key: "eventfinda", enabled: true, status: "APPROVED", operationalStatus: "HEALTHY", rightsAllowStorage: true, rightsAllowDerivedAnalysis: true };
+  const source = { key: "eventfinda", enabled: true, status: "PILOT", operationalStatus: "HEALTHY" };
 
-  it("fails closed while schedules are active or rights are incomplete", () => {
+  it("fails closed while schedules are active or a source is unhealthy", () => {
     expect(productionPreflight({ schedulerRuntimeEnabled: false, enabledScheduleCount: 0, sources: [source] })).toEqual({ ready: true, failures: [] });
-    expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 1, sources: [{ ...source, rightsAllowStorage: false }] }).ready).toBe(false);
+    expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 1, sources: [{ ...source, operationalStatus: "DOWN" }] }).ready).toBe(false);
     expect(productionPreflight({ schedulerRuntimeEnabled: false, enabledScheduleCount: 0, requestedSourceKeys: ["eventfinda", "missing-source"], sources: [source] }).failures).toContain("missing-source: source does not exist");
   });
 
@@ -19,7 +19,7 @@ describe("production release safety", () => {
 
   it("executes passes in order and stops at the first failed gate", async () => {
     const result = await executeCanary(["ticketmaster", "eventfinda"], async (sourceKey, pass) => ({
-      sourceKey, pass, governanceUnchanged: true, schedulesUnchanged: true,
+      sourceKey, pass, configurationUnchanged: true, schedulesUnchanged: true,
       parserFailures: sourceKey === "eventfinda" && pass === 2 ? 1 : 0,
       repeatRowGrowth: 0, remoteEvidenceRemaining: 0,
     }));

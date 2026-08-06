@@ -49,7 +49,7 @@
 • /admin/market/competitors：Competitor Relationship 查询。  
 • /admin/market/coverage：市场支持范围和覆盖指标。  
 • /admin/collections：Collection Run、计划任务、重试和失败。  
-• /admin/data-sources：来源权利、健康和开关。  
+• /admin/data-sources：来源配置、健康和开关。
 • /admin/signals：Important Dates 与 Market Signals。  
 • /admin/feedback：用户反馈和举报。  
 • /admin/audit：审计事件。
@@ -207,7 +207,7 @@ Check ID、Property、Unit、Stay Query、创建时间和邮件地址脱敏显�
 • PARTIAL/INSUFFICIENT：显示原因摘要和可用结果。  
 • FAILED：显示 Retry 或 Contact，包含 Reference ID。  
 • UNSUPPORTED：显示替代输入或 Waitlist。  
-• SOURCE\_UNAVAILABLE：说明当前没有可用且获批的数据来源，显示最近尝试时间、自动重试或通知选项；Retry later 仅是用户文案。  
+• SOURCE\_UNAVAILABLE：说明当前没有已启用且运行健康的数据来源，显示最近尝试时间、自动重试或通知选项；Retry later 仅是用户文案。
 • CANCELLED：说明任务已取消，可重新创建检查。  
 • EXPIRED：不显示结果摘要，允许重新签发或重新检查。  
 • WITHDRAWN：说明结果已撤回并提供 Contact；不得继续展示旧结果。
@@ -344,7 +344,7 @@ Tabs：Overview、Collection Runs、Observations、Competitors、Analysis、Resu
 
 ## 16.3 数据安全
 
-原始供应商响应仅在来源权利允许时显示；敏感字段默认折叠并记录访问 Audit Event。
+原始供应商响应中的敏感字段默认折叠，并记录访问 Audit Event。
 
 # \[PG-MARKET\] 十七、市场与来源运维
 
@@ -366,7 +366,7 @@ Tabs：Overview、Collection Runs、Observations、Competitors、Analysis、Resu
 
 ## 17.5 Data Sources
 
-显示 Enabled、Rights status、Health、Last success、Error rate、Storage permission、Display permission、Derived analysis permission 和 Retention。生产 Demo Source 必须明显阻断并不可启用。
+显示 Enabled、Lifecycle、Operational status、Health、Last success、Error rate 和 Retention。生产 Demo Source 必须明显阻断并不可启用。
 
 ## 17.6 Signals
 
@@ -429,4 +429,3 @@ PG-AT-005 非新西兰、未开放、数据不足、来源失败和链接过期�
 PG-AT-006 结果页展示真实数据时间、置信度、限制和版本，不展示内部评分。  
 PG-AT-007 1440px 与 390px 通过视觉与功能验收，无横向滚动。  
 PG-AT-008 未批准的 Dashboard、Billing、Monitoring、Team 和自动调价路由不存在。  
-

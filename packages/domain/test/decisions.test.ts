@@ -7,8 +7,6 @@ const publishable: PublicationInput = {
   propertyConfirmed: true,
   unitConfirmed: true,
   targetRatePresent: true,
-  sourceApproved: true,
-  rightsAllowPublication: true,
   dataAgeHours: 2,
   competitorCount: 8,
   feeCompleteness: "COMPLETE",
@@ -84,4 +82,3 @@ describe("publication decision", () => {
     ).toBe("AUTO_PUBLISH");
   });
 });
-

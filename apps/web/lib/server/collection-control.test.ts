@@ -7,10 +7,8 @@ import {
 } from "./collection-control";
 
 const pendingSource = {
-  internalApprovalStatus: "PENDING",
-  legalRightsStatus: "REVIEW",
-  rightsAllowStorage: false,
-  rightsAllowDerivedAnalysis: false,
+  enabled: true,
+  operationalStatus: "DEGRADED",
 };
 
 describe("collection control safety", () => {
@@ -36,7 +34,7 @@ describe("collection control safety", () => {
     )).toMatchObject({ developmentBootstrap: true, maxDetails: 1, limit: 2 });
   });
 
-  it("uses bounded local acceptance for unapproved official sources", () => {
+  it("uses bounded local acceptance for official sources in development", () => {
     expect(buildControlledCollectionPayload(
       { key: "fx_rates", ...pendingSource },
       "rbnz-fx-daily",
@@ -59,15 +57,15 @@ describe("collection control safety", () => {
     )).toMatchObject({ localAcceptance: true, limit: 2, maxDetails: 1, manualSafety: true });
   });
 
-  it("does not add development bypass flags for production-ready sources", () => {
+  it("keeps development runs bounded for healthy sources", () => {
     const payload = buildControlledCollectionPayload(
-      { key: "geonet", internalApprovalStatus: "APPROVED", legalRightsStatus: "ALLOWED", rightsAllowStorage: true, rightsAllowDerivedAnalysis: true },
+      { key: "geonet", enabled: true, operationalStatus: "HEALTHY" },
       "geonet-high-frequency-hourly",
       { sourceId: "geonet", marketScope: "new-zealand" },
       { NODE_ENV: "development" },
     );
     expect(payload).toMatchObject({ manualSafety: true, adminScheduleKey: "geonet-high-frequency-hourly" });
-    expect(payload).not.toHaveProperty("localAcceptance");
+    expect(payload).toHaveProperty("localAcceptance", true);
     expect(payload).not.toHaveProperty("developmentBootstrap");
   });
 

@@ -26,11 +26,7 @@ export default async function CollectionControlPage() {
         name: true,
         enabled: true,
         operationalStatus: true,
-        internalApprovalStatus: true,
-        legalRightsStatus: true,
         environments: true,
-        rightsAllowStorage: true,
-        rightsAllowDerivedAnalysis: true,
         lastSuccessAt: true,
         errorRate: true,
       },
@@ -70,7 +66,7 @@ export default async function CollectionControlPage() {
   }
   const jobCounts = Object.fromEntries(groupedJobs.map((item) => [item.status, item._count._all]));
   const view: CollectionControlView = {
-    schedulerEnabled: environment.SCHEDULER_ENABLED,
+    schedulerEnabled: environment.NODE_ENV !== "development" && environment.SCHEDULER_ENABLED,
     nodeEnvironment: environment.NODE_ENV,
     summary: {
       sources: sources.length,
@@ -87,10 +83,8 @@ export default async function CollectionControlPage() {
         name: source.name,
         enabled: source.enabled,
         operationalStatus: source.operationalStatus,
-        approvalStatus: source.internalApprovalStatus,
-        rightsStatus: source.legalRightsStatus,
         developmentAllowed: source.environments.includes("DEVELOPMENT"),
-        productionReady: source.internalApprovalStatus === "APPROVED" && source.legalRightsStatus === "ALLOWED" && source.rightsAllowStorage && source.rightsAllowDerivedAnalysis,
+        operationallyReady: ["HEALTHY", "DEGRADED"].includes(source.operationalStatus),
         lastSuccessAt: iso(source.lastSuccessAt),
         errorRate: source.errorRate,
         schedules: schedulesBySource.get(source.key) ?? [],

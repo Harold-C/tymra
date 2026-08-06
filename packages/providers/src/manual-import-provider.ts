@@ -7,7 +7,6 @@ import type {
   ProviderContext,
   ProviderHealth,
   ProviderRate,
-  ProviderRightsMetadata,
   RateRequest,
   UnitCandidate,
 } from "./index";
@@ -125,10 +124,7 @@ function parseJsonRows(content: string): unknown[] {
 export class ManualImportProvider implements DataProvider {
   readonly key = "manual";
 
-  constructor(
-    private readonly rows: readonly ManualImportRow[],
-    private readonly rights: ProviderRightsMetadata,
-  ) {}
+  constructor(private readonly rows: readonly ManualImportRow[]) {}
 
   async identifyProperty(input: string, _context: ProviderContext): Promise<PropertyCandidate[]> {
     const normalized = input.trim().toLowerCase();
@@ -201,7 +197,4 @@ export class ManualImportProvider implements DataProvider {
     };
   }
 
-  async rightsMetadata(_context: ProviderContext): Promise<ProviderRightsMetadata> {
-    return { ...this.rights };
-  }
 }

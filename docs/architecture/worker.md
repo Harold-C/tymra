@@ -20,7 +20,7 @@ input -> Property + SellableUnit + Listing -> QueryPlan + QuerySignature
 
 Anonymous preview uses two dates and exposes only aggregate preliminary output. Formal analysis uses
 the next 30 dates and at most five key dates. Multi-room inputs stop at `NEEDS_CONFIRMATION`. Blocking
-quality gates prevent publication for missing target price, unknown fees, rights failure, source
+quality gates prevent publication for missing target price, unknown fees, source
 failure, stale/incoherent evidence or fewer than three unique comparable units.
 
 ## Source Matrix
@@ -31,9 +31,8 @@ duplicate mutable completion states. See [traceability](../traceability.md#curre
 for current status and the [2026-07-21 acceptance snapshot](../evidence/collection-acceptance-2026-07-21.md)
 for immutable run IDs and counts.
 
-SourceRegistry keeps internal approval, legal rights and operational health as independent states.
-Every public collection checks enabled state and all governance states before network access.
-Approval alone does not imply legal rights or availability. Optional signal failure is recorded as a failed `CollectionRun` and
+SourceRegistry keeps source enablement, lifecycle and operational health. Collection requires an
+enabled, healthy source before network access. Optional signal failure is recorded as a failed `CollectionRun` and
 does not convert valid rate evidence into sold out or block an otherwise valid result. A blocked or
 unavailable core rate source returns `SOURCE_UNAVAILABLE` and publishes neither a result nor email.
 
@@ -75,24 +74,30 @@ only CAP details whose URL/GUID/publication version is new or changed. Eventfind
 detail targets additionally increase their refresh interval after consecutive unchanged content
 hashes, with near-event safety caps; a changed listing resets that stability state.
 
-The Worker marks rights, configuration, invalid-input/range and parser-contract failures terminal
+The Worker marks configuration, invalid-input/range and parser-contract failures terminal
 instead of consuming all job attempts. Transient failures still retry, and expired leases are
 recovered periodically during normal operation rather than only at process startup. See
 [non-OTA public collection](../collection/public-data.md) for source request shapes and counters.
 
 All new collection channels follow the canonical
 [local source collection acceptance](../collection/acceptance.md) standard.
-Local acceptance never requires or writes `approved-by` or `license-basis`, never changes source
-governance and never activates a schedule.
+Local acceptance never changes source configuration and never activates a schedule.
+
+Source-bound schedules have a generic guarded control path. `schedule:sources:plan` is read-only and
+lists the exact schedules and blockers for each requested source. Enabling requires an explicit
+confirmation token and reason, and succeeds atomically only when every requested source exists,
+has a registered public adapter and schedule, is enabled and operationally healthy. Development
+hard-disables scheduler execution even if runtime configuration is accidentally enabled. Disabling
+clears `nextRunAt` and remains the rollback path when source health degrades. Both mutations create
+an audit event.
 
 ## External Limits
 
-No official OTA API or approved live browser rate collector is configured. The repository therefore
+No official OTA API or live browser rate collector is configured. The repository therefore
 does not claim that live OTA rates are available. Non-OTA adapters are implemented but remain
-unavailable for scheduled production collection until their source-specific approval and operating
-gates pass. Nationwide catalog/panel scheduling and coverage models are implemented, but a real
-1,000-1,500-unit accommodation panel cannot be populated honestly before live OTA/catalog sources
-are approved.
+unavailable for scheduled production collection until their operating gates pass. Nationwide
+catalog/panel scheduling and coverage models are implemented, but a real 1,000-1,500-unit
+accommodation panel still requires live OTA/catalog sources.
 
 ## Verification Baseline
 
@@ -102,12 +107,12 @@ tests, 37 Worker unit tests, 37 Browser Runtime/Extractor/Worker tests, the four
 build and a 64-page Next.js production build. The Next.js build emitted only LinkeDOM's non-fatal
 optional-`canvas` warning; the calendar parsers do not use canvas.
 
-The current worktree did not complete `pnpm test:integration`, `pnpm test:e2e` or the aggregate
-`pnpm verify` command during that update. Those gates retain their dated historical evidence but are
-not represented as freshly verified. See [traceability](../traceability.md#current-worktree-verification-2026-08-01).
+That 2026-08-01 snapshot is historical. The current verification state, including the later isolated
+database integration run, is maintained in [traceability](../traceability.md); Playwright retains its
+separate dated evidence because the nationwide signal changes do not modify UI code.
 Worker-specific integration coverage includes unique and ambiguous address
 resolution, multi-unit confirmation,
-fresh/stale cache behavior, source-rights blocking, partial public-signal failure, insufficient
+fresh/stale cache behavior, source availability blocking, partial public-signal failure, insufficient
 competitors, unknown mandatory fees, retention cleanup, production fixture rejection and exactly one
 formal-result email. Collection-control coverage additionally includes Redis lock contention and
 reacquisition, pre/post-expiry job lease recovery and Eventfinda local-acceptance environment and

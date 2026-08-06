@@ -21,7 +21,7 @@ state remained disabled and no production source configuration was changed.
 - Source: `canterbury_major_annual_events`
 - Pass 1 job/run: `cmsfu4tbp0000oe2opc6ym7nm` / `cmsfu4tm20001oe0okomcpqrq`
 - Pass 2 job/run: `cmsfu4vag0001oe2o2qw2lx3d` / `cmsfu4vh9000goe0ocgbz7uy9`
-- Both jobs and runs succeeded; governance and schedules were unchanged; enabled schedules stayed
+- Both jobs and runs succeeded; source configuration and schedules were unchanged; enabled schedules stayed
   at zero; no active acceptance execution remained.
 - Pass 2 added zero source events, source occurrences, canonical links or signal links and reported
   two unchanged records.

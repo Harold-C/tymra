@@ -13,7 +13,6 @@ export function ManualImportPanel({ locale }: { locale: AdminLocale }) {
   const [file, setFile] = useState<File | null>(null);
   const [content, setContent] = useState("");
   const [format, setFormat] = useState<"csv" | "json">("csv");
-  const [rightsAttested, setRightsAttested] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState("");
@@ -40,7 +39,7 @@ export function ManualImportPanel({ locale }: { locale: AdminLocale }) {
       const response = await fetch("/api/v1/admin/manual-imports", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: file.name, format, content, mode, rightsAttested }),
+        body: JSON.stringify({ filename: file.name, format, content, mode }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(adminText(locale, "importFailed"));
@@ -96,11 +95,7 @@ export function ManualImportPanel({ locale }: { locale: AdminLocale }) {
             <span><strong>{preview.errors.length}</strong> {adminText(locale, "invalid")}</span>
           </div>
           {preview.errors.length > 0 ? <ImportErrors locale={locale} errors={preview.errors} /> : <p className="admin-form-success">{adminText(locale, "allRowsValid")}</p>}
-          <label className="admin-checkbox-field">
-            <input type="checkbox" checked={rightsAttested} onChange={(event) => setRightsAttested(event.target.checked)} />
-            <span>{adminText(locale, "rightsAttestation")}</span>
-          </label>
-          <button className="admin-primary-action" type="button" disabled={busy || !rightsAttested || preview.validRowCount === 0} onClick={() => void submit("import")}>
+          <button className="admin-primary-action" type="button" disabled={busy || preview.validRowCount === 0} onClick={() => void submit("import")}>
             <Upload size={16} aria-hidden="true" /> {adminText(locale, "importAction")} {preview.validRowCount} {adminText(locale, "validRows")}
           </button>
         </div>

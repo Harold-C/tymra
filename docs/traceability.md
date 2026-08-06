@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
@@ -19,17 +19,18 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | --- | --- | --- |
 | Eventfinda | Bounded two-pass real collection, persistence and idempotency verified | Nationwide multi-day unattended stability requires a deployed long-running environment |
 | Ticketmaster | Implementation and automated two-pass persistence verified; live detail attempts stop and cool down on challenge | Repeat live detail acceptance when the public page permits passive access |
-| Configured non-OTA public channels | All 17 configured sources completed one unified bounded two-pass real local acceptance on 2026-07-30 | Fresh live rerun, production source review, activation and ongoing operations remain separate |
+| Configured non-OTA public channels | All 17 configured sources completed one unified bounded two-pass real local acceptance on 2026-07-30 | Fresh live rerun, production activation and ongoing operations remain separate |
+| Major-market event/public signals | 14 markets have a direct official calendar and Dunedin has a verified Argus calendar path; DOC alerts and TVF/MRTE cover all 15, IVS provides rolling context, and MoT plus Auckland Airport monthly passengers passed two persistence runs | Multi-day stability and schedule activation remain separate; Auckland's malformed final source month is excluded |
 | Argus execution boundary | Async submit/poll/resume/ACK, restart recovery, cancellation and post-ACK purge have dated local evidence; current image/unit/build checks pass | Current-worktree database integration and production acceptance remain separate |
-| School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production rights and schedule activation remain separate |
-| Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production rights and schedule activation remain separate; source remains disabled |
+| School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production activation and schedule activation remain separate |
+| Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production activation remains separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
 | Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
-never requires or writes `approved-by` or `license-basis` and never changes source governance.
+never changes source configuration and cannot enable schedules.
 
-## Current Worktree Verification (2026-08-01)
+## Current Worktree Verification (2026-08-06)
 
 The current revision contains the Argus orchestration, public-source acceptance, collection
 efficiency, Compose and documentation changes described below. Git commit state is not used as
@@ -40,23 +41,25 @@ verification evidence.
 | Source/config assembly | Docker Node 24 base image built and Prisma Client generated from the current schema | verified |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
 | TypeScript | Web, Worker, config, db, domain, providers and queue each passed `tsc --noEmit` | verified |
-| Root unit/component suite | 14 files, 80 tests passed | verified |
-| Worker unit suite | 7 files, 37 tests passed, including Argus client/orchestrator and failure classification | verified |
+| Root unit/component suite | 18 files, 138 tests passed and 5 external provider fixtures intentionally skipped | verified |
+| Worker unit suite | 17 files, 86 tests passed, including named Argus downloads, retry-safe evidence retention, strict aviation contracts, nationwide signal routing, source/schedule gating and failure classification | verified |
 | Argus boundary suites | Async Job client, durable orchestration, schema validation, cancellation and evidence-before-ACK tests | verified by current Worker unit and database integration suites plus 2026-08-02 real bounded acceptance |
 | Worker production build | `index`, `api`, `scheduler` and `cli` entrypoints built successfully | verified |
-| Web production build | Next.js generated 64/64 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
+| Web production build | Next.js generated 65/65 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
 | Isolated Compose smoke | Fresh image, migration, seed, Web, Worker API, Worker, Redis, PostgreSQL and Mailpit passed on isolated ports/volumes; cleanup completed | verified |
-| Database/API/Worker integration | Not rerun against the current worktree; the development database was inspected read-only | not_verified |
-| Playwright/accessibility | Not rerun; no UI implementation file changed in the current diff | not_verified |
-| Aggregate `pnpm verify` | The direct constituent checks above passed except integration; the aggregate command itself did not complete | not_verified |
-| Current runtime image | Final Web/API/Worker container hashes match the current Argus client, Worker service and acceptance runner; Web, Worker and Argus HTTPS health checks return 200 | verified for runtime health; integration remains not_verified |
+| Database/API/Worker integration | 15 files and 69 tests passed against a migrated and seeded isolated PostgreSQL database; development scheduler disablement, production activation and guarded schedule rollback are included, and the database was removed afterwards | verified |
+| Playwright/accessibility | Not rerun after the source-control UI simplification | not_verified |
+| Aggregate `pnpm verify` | All constituent gates—lint, typecheck, unit, integration and build—passed; they were invoked separately in this update | verified by constituents |
+| Current runtime image | Web, Worker and Worker API were rebuilt/recreated from the current worktree; database, Redis and Argus health are green | verified; Worker health returned HTTP 200 and Web returned HTTP 200 |
 
-Read-only runtime inspection found the Argus orchestration migration applied, zero enabled schedules,
-33 completed and one cancelled Argus execution, and no active Argus execution. Worker health/readiness
-were healthy. During the final rebuild an existing RBNZ Job was correctly stopped by the source
-governance guard with `RIGHTS_BLOCKED`, bringing the queue snapshot to 5 `FAILED` and 60
-`DEAD_LETTER` Jobs. The remaining failures require classification before schedule activation and
-are not treated as fresh quality-test failures without inspecting their origin.
+Runtime inspection found the source-control removal migration applied, zero enabled schedules and
+no Scheduler container in development. Worker health returned database, Redis and Argus healthy;
+Web and Worker health both returned HTTP 200. Historical failed/dead-letter jobs remain available
+for operational review and were not replayed by this change.
+
+The nationwide source-schedule plan resolves all 50 direct sources to 52 schedules without a missing
+mapping. Source scheduling now checks only enablement, registered adapters and operational health;
+development hard-disables scheduler execution. The plan is read-only and left all schedules disabled.
 
 The obsolete synchronous `argus-client 2.ts` and its duplicate test were removed before delivery;
 the asynchronous Job client and its test are the only retained implementation.
@@ -197,10 +200,10 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | `pnpm db:seed` | Deterministic demo seed | historical verified; not rerun in this update |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
 | `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
-| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 113 root tests (4 skipped fixtures) plus 60 Worker tests |
-| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 63 tests |
+| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 138 root tests (5 skipped external fixtures) plus 86 Worker tests |
+| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 69 tests in an isolated database |
 | `pnpm test:e2e` | Playwright and accessibility | full desktop and mobile suites passed: 9 tests per project, including axe and responsive checks |
-| `pnpm build` | Production Web and Worker build | 64-page Web build and four Worker entrypoint builds verified; known optional LinkeDOM canvas warning only |
+| `pnpm build` | Production Web and Worker build | 65-page Web build and four Worker entrypoint builds verified; known optional LinkeDOM canvas warning only |
 | `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree verified on 2026-08-05 |
 
 ## Final Acceptance Evidence
@@ -246,23 +249,24 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | --- | --- | --- |
 | Durable runtime | PostgreSQL jobs, Redis locks, API, Worker and Scheduler entrypoints | verified by isolated full Compose smoke |
 | Domain persistence | Property, SellableUnit, Listing, SourceRegistry, QueryPlan/Profile, Observation, snapshots, analysis and result schema | verified by clean migration and seed |
-| OTA research adapters | Seven shared contract adapters, deterministic record/replay, stable errors and rights metadata | verified |
-| Public signal lineage | RawArtifact -> SourceMarketSignal -> MarketSignal -> MarketSignalSourceLink | locally verified across holidays, GeoNet, MBIE, Stats NZ, MetService, NZTA, RBNZ FX, airport and port/cruise adapters |
+| OTA research adapters | Seven shared contract adapters, deterministic record/replay and stable errors | verified |
+| Public signal lineage | RawArtifact -> SourceMarketSignal -> MarketSignal -> MarketSignalSourceLink | locally verified across holidays, ski seasons, DOC/Interislander alerts, GeoNet, MBIE ADP/TVF/MRTE/IVS, Stats NZ, MetService, NZTA, RBNZ FX, airport and port/cruise adapters |
 | Public source adapters | Every configured public source ID uses a concrete official/public transport or a required Argus read-only Job; Christchurch sports, UC and Lincoln dates, racing, cruise and airport monthly sources are registered separately | implementations, live-source probes and bounded two-pass local acceptance verified; Lincoln contract, local evidence copy, ACK purge and idempotency verified on 2026-08-04; schedules remain disabled |
+| New Zealand major-market coverage gate | 15-market executable matrix distinguishes official, demand, disruption, seasonal and local-flow layers and names every required source | 14 direct markets plus Dunedin's verified Argus path; DOC closures and ADP/TVF/MRTE route to all 15 markets, IVS/Stats provide national context, and MoT plus Auckland Airport passed repeat persistence |
 | Canonical event persistence | Source-normalised series/occurrences, exact canonical matching, venue linkage, idempotent repeat writes and preserved source state | verified by Worker unit tests and local database integration regression |
-| Event impact evidence v1 | Versioned evidence validation, provenance/time precision, trusted venue enrichment and conservative attendance-only promotion | unit/integration verified; Canterbury A&P Show two-pass real acceptance and 10-pass bounded soak passed; capacity-only Te Pae sample stays pending |
-| Local source acceptance standard | Development-only guard, scheduler-off guard, bounded real collection, immutable run evidence, two-pass idempotency, retention, Redis lock, lease recovery, unchanged governance and full quality gate | verified and required for every implemented collection channel |
+| Event impact evidence v2 | Versioned evidence validation, provenance/time precision, cross-source aggregation, trusted venue enrichment and conservative promotion | unit/integration verified; attendance or independent official-scale plus demand evidence can qualify; capacity-only and same-domain corroboration stay pending; one canonical signal retains all lineage |
+| Local source acceptance standard | Development-only guard, hard-disabled development scheduler, bounded real collection, immutable run evidence, two-pass idempotency, retention, Redis lock, lease recovery, unchanged source configuration and full quality gate | verified and required for every implemented collection channel |
 | Manual import local acceptance | Bounded operator-file parser, source/canonical accommodation persistence, immutable observation identity and evidence retention | implementation and fixture/database regression verified; genuine operator file and two-pass real-file evidence remain not_verified |
 | Eventfinda browser collection | Nationwide discovery, detail frontier, persistence, retention and unattended stability | bounded acceptance and development-bootstrap implementation verified; nationwide run evidence is recorded in the source-specific document; unattended production evidence remains |
 | Ticketmaster browser collection | Five-city discovery, durable detail frontier, bounded hydration, exact-target canonical persistence and cooldown | implementation and automated two-pass database acceptance verified; latest bounded live detail acceptance remained challenged and stopped without bypass |
-| Source governance | Every public collection enforces enabled, internal approval, legal rights and operational health before network access | verified by Worker integration tests |
-| Degraded source behavior | Approved calendar succeeds while Eventfinda rights failure is audited; valid formal result still completes | verified by Worker integration tests |
+| Source controls | Every environment requires enabled, operationally healthy sources; development additionally hard-disables automatic scheduling | verified by Worker unit and integration tests |
+| Degraded source behavior | Optional source failure is audited while valid formal evidence can still complete | verified by Worker integration tests |
 | Preview/formal pipeline | Two-date preview, 30-date formal result, multi-unit confirmation, cache reuse | verified by Worker integration tests |
 | Email policy | Formal happy path creates and sends exactly one `RESULT_READY` delivery | verified by Worker integration and Mailpit smoke |
 | Abuse controls | Idempotency, device/unit preview and formal email/unit limits recorded in usage/decision tables | verified |
 | Retention | Redacted short-lived RawArtifact creation and expired payload deletion | verified |
 | Failure controls | Redis lock contention/reacquisition, lease recovery only after expiry, retry schedule, dead-letter and blocking quality-gate tests | verified |
 | Production fixture guard | Production config rejects both demo and fixture provider modes | verified |
-| External live OTA collection | No approved API/browser source is configured; no fixture fallback is allowed | external prerequisite |
-| Nationwide live panel | Schema, schedules and coverage operations exist; real 1,000-1,500 units require approved live catalog sources | external prerequisite |
+| External live OTA collection | No live API/browser source is configured; no fixture fallback is allowed | external prerequisite |
+| Nationwide live panel | Schema, schedules and coverage operations exist; real 1,000-1,500 units require live catalog sources | external prerequisite |
 | Quality baseline | Lint, workspace typecheck, 81 TypeScript unit/component tests, 34 browser runtime/extractor/Worker tests, 49 integration tests, 57-route Next.js production build and four Worker entrypoint builds pass; Next.js reports only LinkeDOM's unused optional-canvas warning | verified |

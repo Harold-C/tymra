@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { AdapterContext, AdapterHealth, AdapterMetadata, OtaAdapter, OtaPolicy, OtaRate, OtaRateQuery, OtaUnit, ResolvedOtaListing, SourceRights } from "./adapter-types";
+import type { AdapterContext, AdapterHealth, AdapterMetadata, OtaAdapter, OtaPolicy, OtaRate, OtaRateQuery, OtaUnit, ResolvedOtaListing } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
 type OtaDefinition = {
@@ -10,17 +10,16 @@ type OtaDefinition = {
   type: "OTA" | "META_SEARCH";
   idFromUrl: (url: URL) => string | null;
   canonicalPath: (id: string) => string;
-  legalRights: "REVIEW" | "BLOCKED";
 };
 
 const definitions: OtaDefinition[] = [
-  { sourceId: "booking", name: "Booking.com", domains: ["booking.com"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/hotel\/[a-z]{2}\/([^/]+?)(?:\.html)?\/?$/i)?.[1]?.toLowerCase() ?? null, canonicalPath: (id) => `/hotel/nz/${id}.html`, legalRights: "REVIEW" },
-  { sourceId: "airbnb", name: "Airbnb", domains: ["airbnb.com", "airbnb.co.nz"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/rooms\/(\d+)(?:\/|$)/i)?.[1] ?? null, canonicalPath: (id) => `/rooms/${id}`, legalRights: "BLOCKED" },
-  { sourceId: "expedia", name: "Expedia", domains: ["expedia.com", "expedia.co.nz"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/Hotel-Information-${id}`, legalRights: "REVIEW" },
-  { sourceId: "hotels", name: "Hotels.com", domains: ["hotels.com", "nz.hotels.com"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/ho${id}`, legalRights: "REVIEW" },
-  { sourceId: "agoda", name: "Agoda", domains: ["agoda.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotel/nz/${id}.html`, legalRights: "REVIEW" },
-  { sourceId: "trip", name: "Trip.com", domains: ["trip.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotels/detail/${id}`, legalRights: "REVIEW" },
-  { sourceId: "google_hotels", name: "Google Hotels", domains: ["google.com", "google.co.nz"], type: "META_SEARCH", idFromUrl: (url) => url.searchParams.get("q") || url.searchParams.get("hotel"), canonicalPath: (id) => `/travel/hotels?q=${encodeURIComponent(id)}`, legalRights: "REVIEW" },
+  { sourceId: "booking", name: "Booking.com", domains: ["booking.com"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/hotel\/[a-z]{2}\/([^/]+?)(?:\.html)?\/?$/i)?.[1]?.toLowerCase() ?? null, canonicalPath: (id) => `/hotel/nz/${id}.html` },
+  { sourceId: "airbnb", name: "Airbnb", domains: ["airbnb.com", "airbnb.co.nz"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/rooms\/(\d+)(?:\/|$)/i)?.[1] ?? null, canonicalPath: (id) => `/rooms/${id}` },
+  { sourceId: "expedia", name: "Expedia", domains: ["expedia.com", "expedia.co.nz"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/Hotel-Information-${id}` },
+  { sourceId: "hotels", name: "Hotels.com", domains: ["hotels.com", "nz.hotels.com"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/ho${id}` },
+  { sourceId: "agoda", name: "Agoda", domains: ["agoda.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotel/nz/${id}.html` },
+  { sourceId: "trip", name: "Trip.com", domains: ["trip.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotels/detail/${id}` },
+  { sourceId: "google_hotels", name: "Google Hotels", domains: ["google.com", "google.co.nz"], type: "META_SEARCH", idFromUrl: (url) => url.searchParams.get("q") || url.searchParams.get("hotel"), canonicalPath: (id) => `/travel/hotels?q=${encodeURIComponent(id)}` },
 ];
 
 export class ResearchOtaAdapter implements OtaAdapter {
@@ -56,11 +55,7 @@ export class ResearchOtaAdapter implements OtaAdapter {
     const sourceListingId = this.definition.idFromUrl(url);
     if (!sourceListingId) throw new AdapterError("INVALID_INPUT", `URL does not identify a ${this.definition.name} accommodation listing`, false);
     if (context.mode === "live") {
-      throw new AdapterError(
-        this.definition.legalRights === "BLOCKED" ? "RIGHTS_BLOCKED" : "SOURCE_UNAVAILABLE",
-        `${this.definition.name} live collection is not enabled; research fixture is available without bypassing access controls`,
-        false,
-      );
+      throw new AdapterError("SOURCE_UNAVAILABLE", `${this.definition.name} live collection is not enabled; research fixture is available`, false);
     }
     const idHash = numericHash(`${this.definition.sourceId}:${sourceListingId}`);
     const multiUnit = sourceListingId.toLowerCase().includes("hotel") || sourceListingId.toLowerCase().includes("motel");
@@ -136,23 +131,9 @@ export class ResearchOtaAdapter implements OtaAdapter {
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     const started = Date.now();
     if (context.mode === "live") {
-      return { status: this.definition.legalRights === "BLOCKED" ? "BLOCKED" : "UNCONFIGURED", checkedAt: new Date(), message: "Live mode is intentionally disabled pending rights and operational approval", latencyMs: Date.now() - started, mode: context.mode };
+      return { status: "UNCONFIGURED", checkedAt: new Date(), message: "Live mode is not configured", latencyMs: Date.now() - started, mode: context.mode };
     }
     return { status: "HEALTHY", checkedAt: new Date(), message: "Deterministic record/replay fixture is available", latencyMs: Date.now() - started, mode: context.mode };
-  }
-
-  rightsMetadata(): SourceRights {
-    return {
-      internalApprovalStatus: "APPROVED",
-      legalRightsStatus: this.definition.legalRights,
-      lifecycle: "RESEARCH",
-      environments: ["DEVELOPMENT", "TEST"],
-      allowedUsage: ["URL_IDENTIFICATION", "PARSER_TEST", "RECORD_REPLAY_RESEARCH"],
-      displayPermission: false,
-      derivedAnalysisPermission: false,
-      retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null },
-      basis: "Development research adapter only; fixture data does not grant production rights",
-    };
   }
 
   private supportsHost(hostname: string): boolean {

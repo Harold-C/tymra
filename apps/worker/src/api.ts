@@ -28,7 +28,7 @@ app.get("/worker/analysis/:id/result", async (request, reply) => sendFound(reply
 app.post("/worker/analysis/:id/resend-link", async (request, reply) => reply.code(202).send(await service.resendLink(pathId(request.params))));
 app.post("/worker/analysis/:id/cancel", async (request) => service.cancelAnalysis(pathId(request.params)));
 
-app.get("/worker/sources", async () => prisma.dataSource.findMany({ orderBy: { key: "asc" }, select: { id: true, key: true, name: true, sourceType: true, lifecycle: true, internalApprovalStatus: true, legalRightsStatus: true, operationalStatus: true, enabled: true, environments: true, lastSuccessAt: true, healthSummary: true } }));
+app.get("/worker/sources", async () => prisma.dataSource.findMany({ orderBy: { key: "asc" }, select: { id: true, key: true, name: true, sourceType: true, lifecycle: true, operationalStatus: true, enabled: true, environments: true, lastSuccessAt: true, healthSummary: true } }));
 app.get("/worker/sources/:id/health", async (request, reply) => {
   const id = pathId(request.params);
   const source = await prisma.dataSource.findFirst({ where: { OR: [{ id }, { key: id }] } });

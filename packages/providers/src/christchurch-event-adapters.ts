@@ -9,7 +9,6 @@ import type {
   PublicEvent,
   PublicRawRecord,
   PublicSignal,
-  SourceRights,
 } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
@@ -61,9 +60,6 @@ class ChristchurchHtmlEventAdapter implements PublicDataAdapter {
   }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     return endpointHealth(this.reference, this.metadata.sourceName, context);
-  }
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights(`${this.metadata.sourceName} public event listing; production collection and display remain subject to source review`);
   }
 }
 
@@ -121,9 +117,6 @@ class VenuesOtautahiAdapter implements PublicDataAdapter {
   }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     return endpointHealth(VENUES_OTAUTAHI_URL, this.metadata.sourceName, context);
-  }
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Venues Otautahi public event page and its browser-visible Storyblok delivery endpoint; production collection and display remain subject to source review");
   }
 }
 
@@ -414,14 +407,6 @@ function assertAllowedUrl(value: string, hosts: string[]) {
     if (url.protocol === "https:" && hosts.includes(url.hostname.toLowerCase())) return;
   } catch { /* handled below */ }
   throw new AdapterError("INVALID_INPUT", "Event source reference host is not allowed", false);
-}
-
-function reviewPublicRights(basis: string): SourceRights {
-  return {
-    internalApprovalStatus: "PENDING", legalRightsStatus: "REVIEW", lifecycle: "RESEARCH", environments: ["DEVELOPMENT", "TEST"],
-    allowedUsage: ["HEALTH_CHECK", "FIXTURE_CONTRACT_TEST"], displayPermission: false, derivedAnalysisPermission: false,
-    retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null }, basis,
-  };
 }
 
 function overlaps(startsAt: Date, endsAt: Date, context: AdapterContext) {

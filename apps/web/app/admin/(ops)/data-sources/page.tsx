@@ -19,7 +19,7 @@ export default async function DataSourcesPage() {
   });
   const enabled = items.filter((item) => item.enabled).length;
   const healthy = items.filter((item) => item.operationalStatus === "HEALTHY").length;
-  const production = items.filter((item) => item.environments.includes("PRODUCTION") && item.internalApprovalStatus === "APPROVED" && item.legalRightsStatus === "ALLOWED").length;
+  const production = items.filter((item) => item.environments.includes("PRODUCTION") && item.enabled && item.operationalStatus === "HEALTHY").length;
   const rows = items.map((item) => {
     const lastRun = item.collectionRuns[0];
     return {
@@ -29,7 +29,7 @@ export default async function DataSourcesPage() {
         source: <><strong>{item.name}</strong><small>{item.key}</small></>,
         type: item.providerType,
         state: <><StatusPill value={item.enabled ? "ENABLED" : "PAUSED"} locale={locale} /> <StatusPill value={item.operationalStatus} locale={locale} /></>,
-        governance: <><StatusPill value={item.internalApprovalStatus} locale={locale} /> <StatusPill value={item.legalRightsStatus} locale={locale} /></>,
+        lifecycle: <StatusPill value={item.lifecycle} locale={locale} />,
         records: `${item._count.sourceEventOccurrences + item._count.sourceMarketSignals} / ${item._count.crawlTargets}`,
         run: lastRun ? <><StatusPill value={lastRun.status} locale={locale} /><small>{date(lastRun.finishedAt ?? lastRun.startedAt, locale)}</small></> : "—",
       },
@@ -39,10 +39,10 @@ export default async function DataSourcesPage() {
     <AdminPageHeader title={text.title} description={text.description} actions={<Link className="button button-secondary" href="/admin/data-sources/import">{text.manualImport}</Link>} />
     <dl className="collection-summary"><div><dt>{text.total}</dt><dd>{items.length}</dd></div><div><dt>{text.enabled}</dt><dd>{enabled}</dd></div><div><dt>{text.healthy}</dt><dd>{healthy}</dd></div><div><dt>{text.production}</dt><dd>{production}</dd></div></dl>
     <div className="data-explorer-result-meta source-list-heading"><strong>{text.catalog}</strong><span>{text.catalogBody}</span></div>
-    <AdminTable columns={[{ key: "source", label: text.source }, { key: "type", label: text.type }, { key: "state", label: text.state }, { key: "governance", label: text.governance }, { key: "records", label: text.records }, { key: "run", label: text.lastRun }]} rows={rows} emptyTitle={text.empty} emptyBody={text.emptyBody} />
+    <AdminTable columns={[{ key: "source", label: text.source }, { key: "type", label: text.type }, { key: "state", label: text.state }, { key: "lifecycle", label: text.lifecycle }, { key: "records", label: text.records }, { key: "run", label: text.lastRun }]} rows={rows} emptyTitle={text.empty} emptyBody={text.emptyBody} />
   </section>;
 }
 
 function date(value: Date | null, locale: AdminLocale) { return value ? value.toLocaleString(adminDateLocale(locale), { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }) : "—"; }
-const en = { title: "Data sources", description: "Operational health, governance and collection coverage for every non-OTA source.", manualImport: "Manual import", total: "Sources", enabled: "Enabled", healthy: "Healthy", production: "Production ready", catalog: "Source catalog", catalogBody: "Open a source to inspect its runs, schedules, crawl frontier and data.", source: "Data source", type: "Type", state: "Collection state", governance: "Governance", records: "Records / targets", lastRun: "Latest run", empty: "No data sources", emptyBody: "No non-OTA sources are configured." };
-const zh: typeof en = { title: "数据来源", description: "查看所有非 OTA 来源的运行健康、治理状态和采集覆盖。", manualImport: "手工导入", total: "来源数量", enabled: "已启用", healthy: "健康", production: "生产就绪", catalog: "来源目录", catalogBody: "打开来源可查看运行、计划、抓取前沿和数据。", source: "数据来源", type: "类型", state: "采集状态", governance: "治理状态", records: "记录 / 目标", lastRun: "最近运行", empty: "暂无数据来源", emptyBody: "尚未配置非 OTA 数据来源。" };
+const en = { title: "Data sources", description: "Operational health and collection coverage for every non-OTA source.", manualImport: "Manual import", total: "Sources", enabled: "Enabled", healthy: "Healthy", production: "Production ready", catalog: "Source catalog", catalogBody: "Open a source to inspect its runs, schedules, crawl frontier and data.", source: "Data source", type: "Type", state: "Collection state", lifecycle: "Lifecycle", records: "Records / targets", lastRun: "Latest run", empty: "No data sources", emptyBody: "No non-OTA sources are configured." };
+const zh: typeof en = { title: "数据来源", description: "查看所有非 OTA 来源的运行健康和采集覆盖。", manualImport: "手工导入", total: "来源数量", enabled: "已启用", healthy: "健康", production: "生产就绪", catalog: "来源目录", catalogBody: "打开来源可查看运行、计划、抓取前沿和数据。", source: "数据来源", type: "类型", state: "采集状态", lifecycle: "生命周期", records: "记录 / 目标", lastRun: "最近运行", empty: "暂无数据来源", emptyBody: "尚未配置非 OTA 数据来源。" };

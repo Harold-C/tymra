@@ -74,7 +74,7 @@ Sellable Unit 在渠道上的具体页面。最少包含：Listing ID、Unit ID�
 
 ## 2.11 Data Source
 
-数据来源及其权利状态。必须记录获取方式、许可依据、允许用途、是否允许保存、是否允许衍生分析、是否允许展示、保存期限、健康状态和负责人。
+数据来源及其运行状态。必须记录获取方式、保存期限、健康状态和负责人。
 
 ## 2.12 Collection Run
 
@@ -96,7 +96,7 @@ Feedback 保存用户对竞品、洞察和结果的反馈；Audit Event 保存�
 
 ## 3.2 首个正式市场
 
-Christchurch 及 Market Coverage 配置中批准的周边区域为首个自动支持市场。其他区域按数据权利、识别成功率、竞品覆盖、数据新鲜度和来源健康决定状态。
+Christchurch 及 Market Coverage 配置中的周边区域为首个自动支持市场。其他区域按识别成功率、竞品覆盖、数据新鲜度和来源健康决定状态。
 
 ## 3.3 Market Status
 
@@ -163,7 +163,7 @@ VALIDATING → NEEDS\_CONFIRMATION；用户确认后进入 QUEUED。未确认任
 • PARTIAL：仅部分日期可靠，必须标记可靠范围。  
 • INSUFFICIENT\_DATA：无法形成可靠结论。  
 • UNSUPPORTED：国家、市场、住宿类型或输入不支持。  
-• SOURCE\_UNAVAILABLE：市场本身可支持，但当前没有可用且获批的数据来源；页面提供稍后重试或通知入口。  
+• SOURCE\_UNAVAILABLE：市场本身可支持，但当前没有已启用且运行健康的数据来源；页面提供稍后重试或通知入口。
 • FAILED：不可恢复系统错误；业务数据不足不得使用 FAILED。  
 • CANCELLED：用户或运营者在发布前取消。  
 • EXPIRED：安全结果链接过期，结果版本本身仍保留。  
@@ -183,15 +183,15 @@ VALIDATING → NEEDS\_CONFIRMATION；用户确认后进入 QUEUED。未确认任
 
 ## 6.2 Data Source Adapter
 
-每个来源必须实现统一能力接口：identifyProperty、listUnits、fetchRates、healthCheck 和 rightsMetadata。Data Source 状态只能为 APPROVED、PILOT、SUSPENDED、DISABLED、DEPRECATED 或 UNKNOWN；只有 APPROVED 可进入自动发布。系统必须提供生产可用的 Manual Import Provider 和仅限开发测试的 Demo Provider。生产环境不得启用 Demo Provider；未配置 APPROVED 价格来源时，系统停止自动发布并进入 SOURCE\_UNAVAILABLE。
+每个来源必须实现统一能力接口：identifyProperty、listUnits、fetchRates 和 healthCheck。Data Source 必须显式启用且运行健康，才可进入自动发布。系统必须提供生产可用的 Manual Import Provider 和仅限开发测试的 Demo Provider。生产环境不得启用 Demo Provider；未配置可用价格来源时，系统停止自动发布并进入 SOURCE\_UNAVAILABLE。
 
 ## 6.3 重试
 
-可重试错误默认执行 3 次，建议间隔 1 分钟、5 分钟和 30 分钟；具体间隔可配置。认证失败、许可禁止、输入无效和明确 4xx 不自动重试。
+可重试错误默认执行 3 次，建议间隔 1 分钟、5 分钟和 30 分钟；具体间隔可配置。认证失败、输入无效和明确 4xx 不自动重试。
 
 ## 6.4 采集失败分类
 
-RATE\_LIMIT、AUTH\_FAILURE、SOURCE\_UNAVAILABLE、PARSING\_ERROR、DATA\_CONFLICT、TIMEOUT、RIGHTS\_BLOCKED、UNKNOWN。失败必须关联 Data Source、Collection Run 和 Check ID。
+RATE\_LIMIT、AUTH\_FAILURE、SOURCE\_UNAVAILABLE、PARSING\_ERROR、DATA\_CONFLICT、TIMEOUT、UNKNOWN。失败必须关联 Data Source、Collection Run 和 Check ID。
 
 ## 6.5 新鲜度
 
@@ -251,7 +251,7 @@ CORE 参与主要基准；REFERENCE 仅提供市场背景；EXCLUDED 不参与�
 
 ## 9.1 Blocking Quality Flags
 
-TARGET\_RATE\_MISSING、UNIT\_UNCONFIRMED、FEES\_UNKNOWN、COMPARABILITY\_FAILURE、SOURCE\_RIGHTS\_BLOCKED、SOURCE\_UNAVAILABLE、SEVERE\_CONFLICT、FRESHNESS\_EXPIRED、COMPETITOR\_COUNT\_BELOW\_3。
+TARGET\_RATE\_MISSING、UNIT\_UNCONFIRMED、FEES\_UNKNOWN、COMPARABILITY\_FAILURE、SOURCE\_UNAVAILABLE、SEVERE\_CONFLICT、FRESHNESS\_EXPIRED、COMPETITOR\_COUNT\_BELOW\_3。
 
 ## 9.2 High Confidence
 
@@ -267,7 +267,7 @@ TARGET\_RATE\_MISSING、UNIT\_UNCONFIRMED、FEES\_UNKNOWN、COMPARABILITY\_FAILU
 
 ## 9.5 Insufficient
 
-少于 3 个竞品、目标价格缺失、Unit 未确认、费用不可比较、来源不可用、权利受限或严重冲突。
+少于 3 个竞品、目标价格缺失、Unit 未确认、费用不可比较、来源不可用或严重冲突。
 
 # \[BR-RISK\] 十、市场信号、风险与建议
 
@@ -295,7 +295,7 @@ REVIEW\_RATE\_UPWARD、MONITOR\_DATE、NO\_CLEAR\_LOW\_PRICE\_RISK、INSUFFICIEN
 
 ## 11.1 AUTO\_PUBLISH
 
-同时满足：Market=SUPPORTED；Property 和 Unit 已确认；目标价格存在；数据权利允许；主要数据小于 24 小时；CORE 竞品至少 5 个；费用 COMPLETE 或不影响结论的 PARTIAL；无 Blocking Flag；无未解决 Exception；风险通过质量门槛；结果 Schema 完整。
+同时满足：Market=SUPPORTED；Property 和 Unit 已确认；目标价格存在；来源已启用且运行健康；主要数据小于 24 小时；CORE 竞品至少 5 个；费用 COMPLETE 或不影响结论的 PARTIAL；无 Blocking Flag；无未解决 Exception；风险通过质量门槛；结果 Schema 完整。
 
 ## 11.2 AUTO\_PUBLISH\_WITH\_LIMITATIONS
 
@@ -307,7 +307,7 @@ Property 或 Unit 冲突、异常价格、费用缺失但可能影响结果、�
 
 ## 11.4 AUTO\_RETURN
 
-市场未开放、来源权利不允许、目标价缺失且重试失败、竞品少于 3 个、Unit 无法确认且用户未响应、条件不可比较或来源持续不可用。返回 NEEDS\_CONFIRMATION、UNSUPPORTED、COMING\_SOON、SOURCE\_UNAVAILABLE、PARTIAL 或 INSUFFICIENT\_DATA；“Retry later”只作为 SOURCE\_UNAVAILABLE 的用户文案，不是独立状态。
+市场未开放、目标价缺失且重试失败、竞品少于 3 个、Unit 无法确认且用户未响应、条件不可比较或来源持续不可用。返回 NEEDS\_CONFIRMATION、UNSUPPORTED、COMING\_SOON、SOURCE\_UNAVAILABLE、PARTIAL 或 INSUFFICIENT\_DATA；“Retry later”只作为 SOURCE\_UNAVAILABLE 的用户文案，不是独立状态。
 
 # \[BR-EXC\] 十二、Exception Inbox
 
@@ -339,7 +339,7 @@ Rate Observation、Collection Run、Result Version、Audit Event 和 Feedback �
 
 ## 13.3 原始数据
 
-原始供应商响应仅在许可允许时保存，并遵守来源 TTL。若不允许保存原始响应，只保存获准的规范化字段或聚合衍生结果。
+原始供应商响应按来源 TTL 短期保存，敏感字段在持久化前清除。规范化字段、聚合结果和来源链路按各自保留策略处理。
 
 ## 13.4 市场覆盖指标
 
@@ -453,4 +453,3 @@ BR-AT-010 用户举报竞品：创建 USER\_REPORT Exception，并版本化竞�
 • Demo、fixture 和 mock 仅允许开发与测试；生产构建必须在检测到 Demo 数据源时失败或拒绝自动发布。  
 • 正式上线前必须至少配置一个已批准的 Rate Provider。未选择具体供应商是外部上线依赖，不得通过抓取未授权网页规避。  
 • 本文明确的数值门槛可以配置，但默认值必须与本文一致；算法细节和内部风险阈值保存在受限配置。  
-

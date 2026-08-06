@@ -11,7 +11,6 @@ const requestSchema = z.object({
   format: z.enum(["csv", "json"]),
   content: z.string().min(1).max(2_000_000),
   mode: z.enum(["preview", "import"]),
-  rightsAttested: z.boolean().default(false),
   localAcceptance: z.boolean().default(false),
 });
 
@@ -44,10 +43,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof RedisLockUnavailableError) return apiError(409, "SOURCE_BUSY", "Another Manual Import operation is already running.");
     if (error instanceof Error) {
-      if (error.message === "RIGHTS_ATTESTATION_REQUIRED") return apiError(422, "RIGHTS_ATTESTATION_REQUIRED", "Confirm the data rights attestation before importing.");
-      if (error.message === "MANUAL_SOURCE_UNAVAILABLE") return apiError(409, "MANUAL_SOURCE_UNAVAILABLE", "The Manual Import Provider is not approved and enabled.");
-      if (error.message === "MANUAL_SOURCE_RIGHTS_BLOCKED") return apiError(409, "MANUAL_SOURCE_RIGHTS_BLOCKED", "The Manual Import Provider rights do not allow this import.");
-      if (error.message === "LOCAL_ACCEPTANCE_UNAVAILABLE") return apiError(409, "LOCAL_ACCEPTANCE_UNAVAILABLE", "Local acceptance requires development mode, a disabled scheduler and a DEVELOPMENT-enabled source.");
+      if (error.message === "MANUAL_SOURCE_UNAVAILABLE") return apiError(409, "MANUAL_SOURCE_UNAVAILABLE", "The Manual Import Provider is not enabled and available.");
+      if (error.message === "LOCAL_ACCEPTANCE_UNAVAILABLE") return apiError(409, "LOCAL_ACCEPTANCE_UNAVAILABLE", "Local acceptance requires development mode and a DEVELOPMENT-enabled source.");
       if (error.message === "LOCAL_ACCEPTANCE_FILE_TOO_LARGE") return apiError(413, "LOCAL_ACCEPTANCE_FILE_TOO_LARGE", "Local acceptance files are limited to 256 KB.");
     }
     return apiException(error);

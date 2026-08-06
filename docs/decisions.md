@@ -54,7 +54,7 @@ attempt counter and deterministic idempotency key. Retry defaults are 1, 5 and 3
 
 **Decision:** `demo` uses deterministic fixtures and is allowed only in development/test. `manual`
 accepts validated CSV/JSON imports and only permits auto-publication when its registered source is
-`APPROVED`, rights allow analysis/display/storage, and all quality gates pass.
+enabled and operationally healthy, and all quality gates pass.
 
 **Reason:** This implements the provider contract without inventing or scraping an OTA source.
 
@@ -168,7 +168,7 @@ point at which identity, ownership and consent become effective.
 
 **Status:** Product-approved; implemented and locally verified.
 
-**Decision:** Anonymous rough analysis uses approved cached or aggregate evidence. Formal provider
+**Decision:** Anonymous rough analysis uses validated cached or aggregate evidence. Formal provider
 collection is enqueued only after email verification or by an already authenticated eligible
 customer.
 
@@ -278,11 +278,11 @@ keeps the first interaction frictionless while preserving an auditable explanati
 **Decision:** Formal analysis is anchored to Property, SellableUnit and Listing. PostgreSQL stores
 immutable observations and versioned snapshots/results; Redis only coordinates. OTA adapters expose
 one contract and deterministic research fixtures, but live collection remains unavailable until each
-source has legal approval and an operational implementation. Production forbids demo/fixture modes
+source has an operational implementation. Production forbids demo/fixture modes
 and returns `SOURCE_UNAVAILABLE` instead of substituting generated data.
 
-Public-signal collection must also pass enabled, internal-approval, legal-rights and operational-
-health gates before network access. A failed optional signal source is retained as a failed
+Public-signal collection must pass enabled and operational-health gates before network access. A
+failed optional signal source is retained as a failed
 `CollectionRun` but does not imply unavailable accommodation inventory. A blocked core rate source
 ends the request as `SOURCE_UNAVAILABLE` without a result or notification email.
 
@@ -327,7 +327,7 @@ trust boundaries. Same-origin customer APIs avoid unnecessary CORS and parent-do
 **Decision:** Eventfinda and Ticketmaster use the same read-only Browser Worker architecture; no
 Ticketmaster API integration is retained. Development keeps event schedules disabled. Eventfinda
 implements nationwide paginated discovery, a durable detail frontier, bounded local acceptance and
-a scheduler-off development bootstrap mode.
+a development bootstrap mode with scheduler execution hard-disabled by environment.
 Ticketmaster implements five verified city listing routes, a durable detail frontier, bounded detail
 batches, exact-target canonical persistence, horizon-based refresh and exponential failure backoff.
 Earlier captures stopped on its initial verification interstitial; two-stage evidence on 2026-07-21
@@ -335,32 +335,31 @@ proved that the same page can resolve to normal public event content after a bou
 without a click, form input, login or challenge solution. Later live runs remained challenged after
 10-20 seconds and correctly stopped, retained failure evidence and applied a six-hour cooldown.
 Automated database acceptance proves two-pass idempotency, 72/168-hour evidence and unchanged
-governance and schedules. This is development implementation evidence, not a claim of reliable
+source configuration and schedules. This is development implementation evidence, not a claim of reliable
 unattended production access.
 Event facts are not automatically represented as `MAJOR_EVENT` demand signals without capacity,
 attendance or other explicit impact evidence. Raw browser evidence has short retention.
 
-Bounded local Eventfinda acceptance does not require an `approved-by` or `license-basis` activation
-step. It runs only with `NODE_ENV=development`, requires the scheduler to be disabled, is capped at
+Bounded local Eventfinda acceptance runs only with `NODE_ENV=development` and is capped at
 one listing page and two detail pages, records `localAcceptance=true` on the collection run and does
-not change the source's approval, rights or operational status. This development-only path cannot
-enable schedules and is not production source approval.
+not change the source's configuration or operational status. This development-only path cannot
+enable schedules.
 
-`--development-bootstrap` uses the same environment, scheduler and governance guards but allows the
+`--development-bootstrap` uses the same environment and configuration guards but allows the
 configured nationwide page and detail-batch limits. It still enforces source locks, one browser,
 4-7 second request spacing, daily budgets, challenge stop and cooldown. It exists to prove and seed
 the complete development frontier without representing production authorization.
 
 The 2026-07-21 nationwide bootstrap completed 187/187 listing pages, verified the pagination
 boundary and upserted 2,821 detail targets with no retry or failure. A following five-target detail
-batch persisted 51 advertised occurrences with no failure. Governance and schedules remained
+batch persisted 51 advertised occurrences with no failure. Source configuration and schedules remained
 unchanged; remaining detail hydration is deliberately paced operating work.
 
 The same separation is mandatory for every future data-collection channel through the
 [local source collection acceptance](collection/acceptance.md) standard.
 Each source supplies its own hard bounds and evidence, while sharing the environment guards,
 read-only behaviour, two-pass persistence/idempotency proof, source-lock contention, lease recovery,
-retention, governance-preservation and full-verification gates.
+retention, source-configuration preservation and full-verification gates.
 
 **Reason:** Channel implementation status must reflect full operational acceptance rather than a
 successful bounded regression, while source facts remain distinct from pricing-impact claims.
@@ -384,10 +383,10 @@ manual correction without destroying collected evidence or silently changing ana
 **Verification:** Both event migrations were applied to the local development database. A two-pass
 Eventfinda fixture regression verified one source series, two idempotent source occurrences, one
 canonical event, two canonical occurrences, one canonical venue and complete source links without
-changing Eventfinda approval or rights state. The full database integration suite passed afterward.
+changing Eventfinda configuration. The full database integration suite passed afterward.
 The 2026-07-21 bounded real-page acceptance additionally verified 20 frontier targets, two source
 series, 120 unique source and canonical occurrences, two venues and complete source links; the
-second pass created no new occurrence or link rows and left Eventfinda governance unchanged.
+second pass created no new occurrence or link rows and left Eventfinda configuration unchanged.
 The nationwide development run then verified all 187 listing pages, 2,821 current discovery
 targets and a five-target detail batch that persisted 51 advertised occurrences without failure.
 Ticketmaster integration then verified one discovery target and two idempotent detail hydrations into
@@ -411,7 +410,7 @@ rows instead of creating duplicates.
 The generic public-source local path shares development/scheduler/source guards, explicit
 source-specific request/record/window/response limits, a Redis per-source lock, 72/168-hour evidence
 selection and immutable run counters. Local acceptance skips source health mutations and records
-pre/post governance and schedule hashes.
+pre/post source-configuration and schedule hashes.
 
 **Reason:** Direct writes to `MarketSignal` did not satisfy source-normalised ownership or explicit
 lineage. The new pipeline provides the same audit boundary as canonical events while retaining
@@ -420,7 +419,7 @@ conservative matching.
 **Verification:** Holidays, GeoNet, MBIE, Stats NZ, MetService, NZTA, RBNZ FX, Queenstown Airport and
 Port of Auckland cruise sources completed bounded real passes on 2026-07-21. Database queries and
 adapter-specific tests verify deterministic inputs, source/canonical lineage where an analytical
-signal is emitted, unchanged governance and disabled schedules. A valid zero-alert MetService feed
+signal is emitted, unchanged source configuration and disabled schedules. A valid zero-alert MetService feed
 is a successful observation, while LINZ Gazetteer records remain reference data and intentionally
 do not manufacture a market signal. Parser failure uses 168-hour evidence in integration regression.
 
@@ -430,19 +429,18 @@ do not manufacture a market signal. Parser failure uses 168-hour evidence in int
 
 **Decision:** Manual import has an explicit development-only `localAcceptance` path capped at one
 256 KB file and two valid rows under the shared Redis source lock. It stores only hashed metadata as
-short-lived raw evidence, preserves source governance and schedules, and records duplicate immutable
+short-lived raw evidence, preserves source configuration and schedules, and records duplicate immutable
 observations as existing evidence on pass two rather than updating append-only records. The normal
-Admin import keeps its approval, rights and source-health behavior. Operator rights attestation is
-required in both modes, while local acceptance neither queries nor requires `approvedBy` or
-`licenseBasis`.
+Admin import requires an enabled, operationally available source; local acceptance uses the same
+parser and persistence path under development-only bounds.
 
 **Reason:** A fixture can verify parser and persistence mechanics but cannot stand in for an
-operator-owned export or its rights attestation. Immutable observations also require idempotent
+operator-owned export. Immutable observations also require idempotent
 create-if-absent behavior rather than an upsert that attempts an update.
 
-**Verification:** Integration coverage proves negative environment/scheduler guards, file and row
+**Verification:** Integration coverage proves environment guards, development scheduler disablement, file and row
 bounds, two-pass source/canonical persistence, zero second-pass observations, 72/168-hour evidence,
-governance preservation and disabled schedules. A genuine operator file has not been supplied, so
+source-configuration preservation and disabled schedules. A genuine operator file has not been supplied, so
 no real-file run IDs or locally verified claim exist.
 
 ## D-032 Persistent Browser Identity and Adaptive Challenge Circuit
@@ -525,7 +523,7 @@ framework error overlay and no relevant console warning or error.
 
 **Status:** Implemented and locally verified.
 
-**Decision:** Tymra retains ownership of source governance, schedules, budgets, locks, collection
+**Decision:** Tymra retains ownership of source configuration, schedules, budgets, locks, collection
 runs, persistence and canonicalisation. Browser execution for Ticketmaster selective details,
 OurAuckland, RBNZ and Lincoln University key dates is submitted to Argus through its asynchronous `/v1/jobs`
 contract. `ArgusExecution` persists the remote Job identity and result, a delayed
@@ -565,12 +563,12 @@ Ticketmaster persists complete five-city listing records directly and sends only
 to its bounded detail frontier. Other public collectors deduplicate references, raw identities and
 normalised identities, use a lightweight touch path for unchanged records and expose avoided-request
 counters. A single development-only runner executes all 17 configured non-OTA public sources twice
-inside one fixed window and checks lineage, governance preservation, disabled schedules and zero
+inside one fixed window and checks lineage, configuration preservation, disabled schedules and zero
 second-pass source/link growth.
 
 **Reason:** Request volume, challenge exposure and duplicate canonical writes are operational risks,
 not just performance details. One bounded runner makes the same persistence and idempotency contract
-observable across transports without conflating local verification with production approval.
+observable across transports without conflating local verification with production activation.
 
 **Verification:** The immutable 2026-07-30 report records 34/34 successful Jobs and CollectionRuns,
 zero second-pass source/link growth and no remaining active acceptance execution. On 2026-08-01 the

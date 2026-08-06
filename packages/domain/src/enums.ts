@@ -40,7 +40,6 @@ export const marketStatusSchema = z.enum(marketStatuses);
 export type MarketStatus = z.infer<typeof marketStatusSchema>;
 
 export const dataSourceStatuses = [
-  "APPROVED",
   "PILOT",
   "SUSPENDED",
   "DISABLED",
@@ -65,14 +64,6 @@ export type SourceType = z.infer<typeof sourceTypeSchema>;
 export const sourceLifecycles = ["RESEARCH", "POC", "PILOT", "PRODUCTION", "SUSPENDED", "BLOCKED"] as const;
 export const sourceLifecycleSchema = z.enum(sourceLifecycles);
 export type SourceLifecycle = z.infer<typeof sourceLifecycleSchema>;
-
-export const internalApprovalStatuses = ["PENDING", "APPROVED", "REJECTED", "SUSPENDED"] as const;
-export const internalApprovalStatusSchema = z.enum(internalApprovalStatuses);
-export type InternalApprovalStatus = z.infer<typeof internalApprovalStatusSchema>;
-
-export const legalRightsStatuses = ["ALLOWED", "REVIEW", "BLOCKED"] as const;
-export const legalRightsStatusSchema = z.enum(legalRightsStatuses);
-export type LegalRightsStatus = z.infer<typeof legalRightsStatusSchema>;
 
 export const operationalStatuses = ["HEALTHY", "DEGRADED", "DOWN", "UNCONFIGURED", "BLOCKED"] as const;
 export const operationalStatusSchema = z.enum(operationalStatuses);
@@ -180,7 +171,6 @@ export const blockingQualityFlags = [
   "UNIT_UNCONFIRMED",
   "FEES_UNKNOWN",
   "COMPARABILITY_FAILURE",
-  "SOURCE_RIGHTS_BLOCKED",
   "SOURCE_UNAVAILABLE",
   "SEVERE_CONFLICT",
   "FRESHNESS_EXPIRED",
@@ -271,7 +261,6 @@ export const collectionFailureCodes = [
   "PARSING_ERROR",
   "DATA_CONFLICT",
   "TIMEOUT",
-  "RIGHTS_BLOCKED",
   "UNKNOWN",
 ] as const;
 export const collectionFailureCodeSchema = z.enum(collectionFailureCodes);

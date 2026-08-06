@@ -12,13 +12,14 @@
   "dependencies": {
     "@tymra/domain": "workspace:*",
     "csv-parse": "^6.1.0",
+    "exceljs": "4.4.0",
     "linkedom": "0.14.26",
     "nodemailer": "^7.0.9",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "typescript": "^5.5.3",
     "@types/nodemailer": "^7.0.4",
+    "typescript": "^5.5.3",
     "vitest": "^3.2.4"
   }
 }

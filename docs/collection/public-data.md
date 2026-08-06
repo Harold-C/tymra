@@ -1,6 +1,6 @@
 # Non-OTA public collection
 
-Last updated: 2026-08-01
+Last updated: 2026-08-06
 
 ## Request strategy
 
@@ -11,27 +11,36 @@ not followed by a detail request when it already contains the fields needed by t
 | --- | --- | --- |
 | Employment NZ holidays | One HTML page, weekly | No detail pages |
 | Ministry of Education school holidays | One HTML page, weekly | No detail pages |
-| GeoNet | One GeoJSON request | No detail requests |
+| GeoNet | Two GeoJSON requests | Earthquakes and volcanic alert levels; no detail requests |
 | MBIE accommodation data | One bounded CSV range request | No detail requests |
+| MBIE Tourism Volumes & Flows | One XLSX request | Latest 13 monthly RTO periods; total-visitor series only |
+| MBIE MRTE | One summary XLSX request | RTO monthly spend and source-published YoY changes |
+| MBIE IVS | One aggregate JSON request | Rolling-annual national spend/visitor context; no microdata download |
 | Stats NZ international travel | One HTML page with embedded data | No detail pages |
 | NZTA Journey Planner | One GeoJSON request | No detail requests |
+| DOC recreation alerts | Fourteen official regional JSON requests | Keep only closures, unsafe/no-access and equivalent accommodation-relevant destination alerts; deduplicate repeated place notices |
+| Interislander | One official service-alert JSON request | Current alerts route to Wellington and Nelson/Tasman; no booking or sailing-detail requests |
+| Official ski seasons | Three official resort HTML pages | Exact season windows for The Remarkables, Mt Hutt and Whakapapa; explicitly weather-dependent |
 | MetService CAP | One RSS index plus changed CAP alerts | Skip an alert detail when its URL, GUID and publication time match the stored version; fetch new or updated versions |
 | RBNZ exchange rates | One Argus browser Job | No detail pages |
+| Auckland Airport monthly passengers | One Argus browser Job | Fixed monthly domestic/international/total contract; no terminal or flight details |
+| Ministry of Transport airline performance | One Argus browser Job | Fixed route/month contract; preserve voluntary and incomplete-coverage caveat |
 | University of Auckland | One JSON event list | The list record is authoritative |
 | Auckland Live | Paginated JSON event search | Performances and dates are expanded from each list record; no show detail page |
-| OurAuckland | One read-only Argus browser listing Job | Date-precision events are persisted from cards; no event detail page |
+| OurAuckland | One read-only Argus browser listing Job plus selected details | Explicit occurrences and field provenance are persisted from the fixed connector contract |
 | ChristchurchNZ | Paginated JSON event list | All sessions are expanded from each list record; no event detail page |
-| Queenstown Airport | Arrivals and departures JSON feeds | No flight detail pages |
+| Queenstown Airport | Arrivals and departures JSON feeds plus public Power BI monthly passengers | No flight detail pages; monthly domestic/international/total series stays separate |
+| Wellington Airport | Server-rendered flight board plus monthly XLSX workbook | No flight detail pages; monthly totals remain a distinct lagged demand series |
 | Port of Auckland cruise schedule | One CSV request | No vessel detail pages |
 | LINZ Gazetteer | One query per configured market term | Reference data only; no event or demand signal is invented |
 
 Eventfinda and Ticketmaster have source-specific browser strategies documented separately.
 
-OurAuckland is the only official calendar in this table that currently requires a browser: ordinary
-HTTP requests from the development container receive a 403, while the official RSS omits event
-occurrence dates. Tymra therefore submits the bounded listing page to Argus and consumes its
-structured, read-only result. This is a source-specific escalation, not a rule to move JSON, CSV,
-RSS or directly accessible HTML transports into Argus.
+Browser escalation remains source-specific. OurAuckland and RBNZ B1 use existing Argus connectors.
+DunedinNZ, Auckland Airport monthly traffic and Ministry of Transport airline on-time performance
+require new Argus connectors because their authoritative pages or report assets return access
+challenges to ordinary HTTP. Tymra's registry, disabled schedules, strict response contracts,
+normalisers, market routing, persistence and price-analysis lineage for all three are already present.
 
 The two holiday calendars change slowly, so their schedules run weekly instead of daily. This
 reduces those requests from 14 to 2 per week. Eventfinda nationwide discovery runs daily instead of
@@ -62,20 +71,17 @@ Collection-run counters expose `requestsAvoided`, `duplicatesSkipped`, `unchange
 ## Retry policy
 
 Transient source, rate-limit, timeout and unknown infrastructure failures may retry within the job's
-attempt budget. Rights, configuration, input, range and parser-contract failures are terminal and are
+attempt budget. Configuration, input, range and parser-contract failures are terminal and are
 not repeated. The Worker also recovers expired job leases periodically while running; recovery no
 longer depends on a process restart.
 
-All schedules remain controlled by source governance and are disabled in local development.
+All schedules remain controlled by source operational state and are hard-disabled in development.
 
 ## Current status
 
-The implementation currently exposes one development-only acceptance runner for all 17 configured
-non-OTA public sources. It fixes one 31-day window, runs each selected source twice with `limit=2`
+The implementation exposes one development-only acceptance runner for the configured non-OTA
+public sources. It fixes one 31-day window, runs each selected source twice with source-specific bounds
 and `maxAttempts=1`, verifies source/canonical lineage, requires zero enabled schedules, checks that
-governance remains unchanged and rejects second-pass source/link growth. Its latest complete real
-run remains the immutable [2026-07-30 acceptance record](../evidence/public-source-acceptance-2026-07-30.md).
-
-On 2026-08-01 the runner code, Worker typecheck, Worker build and unit tests passed, but the real
-17-source runner and database integration suite were not rerun. Therefore external availability and
-two-pass real persistence remain supported by the dated acceptance record, not a fresh live claim.
+source configuration remains unchanged and rejects second-pass source/link growth. The nationwide expansion
+and latest isolated persistence evidence are recorded in the
+[2026-08-06 acceptance record](../evidence/nz-major-market-public-signals-acceptance-2026-08-06.md).

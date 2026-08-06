@@ -1,63 +1,76 @@
-# Argus priority source implementation prompt
+# Argus remaining New Zealand public-signal work
 
-Use this prompt in the Argus project. Do not implement browser execution in Tymra.
+Use this handoff in the Argus project. Tymra already owns source configuration, disabled schedules,
+durable submit/poll/resume, copy-before-ACK evidence retention, strict response validation,
+normalisation, canonical-market routing, persistence and price-analysis lineage. Do not reproduce
+those responsibilities in Argus.
 
-## Task
+## 1. DunedinNZ official events
 
-Implement production-shaped browser collection for three New Zealand event channels, following the
-existing Argus connector/workflow, evidence, challenge, cooldown, circuit-breaker, cancellation,
-restart-recovery and copy-before-ACK conventions.
+- Connector/workflow: `dunedinnz-public / collect_events`.
+- Result contract: `regional-events-public.collect_events@1.0.0`.
+- Allowlist the official upcoming-events page and same-site event details.
+- Return stable event IDs, title, canonical URL, explicit start/end, time precision, venue/address,
+  city/region, category, description, status and field-level provenance.
+- Respect the requested date window and record limit. Never infer missing dates, venues, attendance
+  or accommodation impact.
+- Current evidence: Argus health/readiness are green, but the running service rejects this connector
+  as `INVALID_REQUEST`, so it is not registered yet.
 
-### 1. School Sport NZ and School Sport Canterbury
+## 2. Ticketek detail robustness
 
-Entry points:
+- Existing connectors: `ticketek-public / collect_listing` and `collect_detail`.
+- Keep the fixed `ticketek-public.collect_listing@1.0.0` and
+  `ticketek-public.collect_detail@1.0.0` contracts.
+- Fix the intermittent legitimate detail-page shape retained by the 2026-08-06 Tymra acceptance,
+  or classify the observed response as an Akamai challenge with evidence. Do not return an
+  unclassified `PARSING_ERROR` for a known challenge page.
+- Pass two consecutive real listing/detail runs with no second-pass row growth and verify cooldown,
+  circuit-breaker and evidence ACK behaviour.
 
-- `https://www.sporty.co.nz/SSNZ/Sport-1/Events`
-- `https://www.sporty.co.nz/sscanterbury`
+## 3. Auckland Airport monthly passengers
 
-Both return Cloudflare `403` challenge pages to ordinary HTTP requests. Build a Sporty browser
-connector that keeps `School Sport NZ` and `School Sport Canterbury` as distinct source
-organisations. Prefer listing/calendar extraction and open detail pages only when required fields
-are absent. Deduplicate detail URLs before navigation.
+- Connector/workflow: `auckland-airport-monthly / collect_monthly_traffic`.
+- Result contract: `auckland-airport-monthly.collect_monthly_traffic@1.0.0`.
+- Entry point: the official Auckland Airport monthly traffic updates page and same-site reports.
+- Return `sourceUrl`, `records`, `totalRecords`, `truncated`, `quality`, `warnings` and
+  field-level provenance. Each record must contain:
+  - `period` as `YYYY-MM`;
+  - nullable non-negative `domesticPassengers` and `internationalPassengers`;
+  - non-negative `totalPassengers`;
+  - nullable `annualChangePercent`.
+- Where both components are published, domestic plus international must equal total within rounding
+  tolerance. Retain the page/report download and any challenge evidence.
 
-Return stable series and occurrence IDs plus: title, sport, gender/grade, venue, address/locality,
-region, start/end date and time, status, canonical URL, source organisation, source-updated value,
-image/description when present, and field-level provenance. Explicitly classify Canterbury-hosted
-records. Do not infer missing dates, venues, attendance or accommodation impact.
+## 4. Ministry of Transport airline performance
 
-### 2. Ticketek New Zealand
+- Connector/workflow: `mot-airline-performance / collect_monthly_performance`.
+- Result contract: `mot-airline-performance.collect_monthly_performance@1.0.0`.
+- Entry point: the official airline on-time-performance page and its latest official workbook.
+- Return `reportingBasis="VOLUNTARY_PARTICIPATING_AIRLINES"`, a non-empty `coverageCaveat`, source
+  URL, records, totals, quality, warnings and field-level provenance. Each route/month record must
+  contain:
+  - `period`, three-letter origin/destination airport codes and nullable airport names;
+  - nullable scheduled-flight count;
+  - nullable arrival/departure on-time percentages in `0..100`;
+  - nullable cancellation count and percentage in `0..100`.
+- Preserve the voluntary/incomplete-coverage warning verbatim in structured data. Do not convert
+  missing reporting into zero or infer whole-market performance.
 
-Entry points:
+## Shared operational requirements
 
-- `https://www.ticketek.co.nz/`
-- `https://premier.ticketek.co.nz/shows/whatson.aspx`
+- Read-only navigation and source-specific domain allowlists.
+- Concurrency 1 initially, bounded pages/downloads/records and conservative retry.
+- On challenge/block/unexpected page, retain screenshot, visible text or HTML, final URL, HTTP status,
+  challenge classification, connector version and timestamp before cooldown/circuit breaking.
+- Stable error categories with `retryable`, `cooldownUntil` and circuit state.
+- Cancellation and restart recovery without duplicate completed executions.
+- Keep evidence until Tymra copies and verifies it, and purge only after explicit ACK.
+- Expose connector/workflow IDs and versions through an authenticated inventory endpoint.
 
-Ordinary HTTP currently returns Akamai `403 Access Denied` or no response. Implement browser-based
-listing discovery followed by selective detail enrichment. Return stable event series and explicit
-occurrences with title, date/time, venue, city/region, status including cancelled/postponed,
-ticket state, category, image, canonical URL and field-level provenance. Stop enrichment for a
-cancelled occurrence. Deduplicate shared detail URLs and do not revisit complete unchanged records.
+## Acceptance
 
-### Operational requirements
-
-- Use an allowlist limited to the declared source domains and read-only navigation.
-- Default to the existing Argus production browser mode and persisted session/profile policy.
-- Keep concurrency at 1 per source initially, with human-scale jitter, bounded pages/details and a
-  source-specific daily budget.
-- On every challenge/block/unexpected page, save full-page screenshot, visible text or HTML, final
-  URL, response status, challenge classification, timestamp, browser mode and connector version
-  before applying cooldown or opening the circuit breaker.
-- Return stable error categories and `retryable`, `cooldownUntil` and circuit-breaker state.
-- Support cancellation and restart recovery without duplicate completed executions.
-- Keep evidence until Tymra has copied and hash-verified it; delete/expire only after explicit ACK.
-- Expose connector/workflow IDs, versions and readiness in Argus inventory/health output.
-
-### Acceptance
-
-- Add parser/contract fixtures for normal, empty, cancelled/postponed and challenge pages.
-- Run one bounded real collection per source and retain evidence.
-- Run two identical database/execution passes; the second pass must create no duplicate source,
-  series or occurrence records.
-- Verify challenge evidence, cancellation, restart recovery and ACK cleanup.
-- Report final connector/workflow IDs, exact result schemas and version numbers to the Tymra task;
-  Tymra integration must not begin until those contracts are fixed.
+For each new connector, add normal, empty, partial and challenge fixtures; run one bounded real Job;
+verify the exact v1 schema and retained evidence; then run the same Job twice through Tymra and prove
+zero second-pass source, canonical or lineage growth. Production schedules remain disabled until
+source activation and operational review remain separate.

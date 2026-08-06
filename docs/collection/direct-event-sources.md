@@ -1,6 +1,6 @@
 # Direct event and transport sources
 
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 Tymra directly collects Eventbrite New Zealand, Humanitix New Zealand and Christchurch Airport
 without Argus. All development schedules are seeded disabled.
@@ -17,12 +17,17 @@ without Argus. All development schedules are seeded disabled.
   present. Impact remains `PENDING_EVIDENCE` until attendance or capacity evidence exists.
 - Each accepted listing record reports one avoided detail request for collection-efficiency metrics.
 
-## Christchurch Airport
+## Airport and port transport flow
 
 - Four public JSON views cover arrivals/departures and domestic/international flights.
 - Flight number, airline, route, scheduled/estimated time, gate and status are retained.
 - Arrivals produce positive transport-flow evidence, departures are mixed, and cancellations are
   negative. These are operational signals, not direct causal price claims.
+- Wellington Airport is collected from its official server-rendered arrivals/departures board with
+  bounded day and record limits. Scheduled/estimated time, route, flight, airline, gate and remarks
+  are retained; delays and cancellations become negative disruption-aware flow signals.
+- Queenstown Airport flights are routed to the canonical `queenstown-wanaka` market. Ports of
+  Auckland cruise calls provide the additional Auckland flow layer.
 
 ## Christchurch demand channels
 
@@ -42,6 +47,16 @@ without Argus. All development schedules are seeded disabled.
 
 All five source groups are registered in Data Explorer and collection control. Their development
 schedule definitions are seeded disabled.
+
+## Nationwide regional official calendars
+
+Tymra directly collects official calendars for Wellington, Hamilton/Waikato, Queenstown/Wānaka,
+Taupō, Southland/Fiordland, Hawke's Bay, Taranaki, Nelson/Tasman, Tauranga, Manawatū, Northland and Rotorua.
+They use bounded public HTML, JSON, GraphQL or public APIs discovered from the official calendar.
+Together with the established Auckland and Christchurch sources, direct collection covers 14 of 15
+major accommodation markets. Dunedin requires Argus; the executable definition, live
+evidence and handoff are in
+[`nz-market-public-signal-coverage.md`](nz-market-public-signal-coverage.md).
 
 ## Christchurch priority coverage
 
@@ -67,11 +82,12 @@ fixed contracts through durable Argus Jobs, retains raw connector output, copies
 evidence before ACK, and normalises accepted series and occurrences through the canonical event and
 lineage pipeline. Administrative School Sport rows and rows without an explicit published location
 remain raw; source organisation is never used to invent a Canterbury location. All four development
-schedules are seeded disabled. Tymra safely retains the hidden Ticketek Akamai response and keeps
-listing events when detail enrichment fails. The current Argus build still labels the challenged
-`show.aspx` detail as `PARSING_ERROR` instead of `ACCESS_CHALLENGE`, so detail live acceptance remains
-an upstream blocker and no bypass is attempted; see the
-[2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md).
+schedules are seeded disabled. Tymra safely retains Ticketek evidence and keeps listing events when
+detail enrichment fails. Argus now has the hidden-`show.aspx` Akamai classifier regression, but the
+2026-08-06 real two-pass run was still intermittent: pass one completed, while pass two returned a
+detail `PARSING_ERROR`; both preserved evidence and added no duplicate rows. Real-detail robustness
+therefore remains an Argus item and no bypass is attempted; see
+[`argus-responsibilities.md`](argus-responsibilities.md).
 
 ## Verification
 
@@ -85,6 +101,11 @@ Two-pass database acceptance persisted representative platform events, sports ev
 signals, racing events and airport monthly signals; second passes added zero source, canonical or
 lineage rows. The cruise adapter decoded 69 public dashboard rows in the live probe. Parser failures
 and active Argus executions were zero, and enabled schedule count remained zero.
+
+On 2026-08-06, the Wellington Airport live probe produced 40 bounded Wellington transport-flow
+signals from one request. Isolated acceptance
+`public-sources-2026-08-06T00:30:31.202Z-3880bb97` passed twice: the first pass persisted two current
+signals and the second reported both unchanged with zero new source or lineage rows.
 
 At verification time ChristchurchNZ still labelled the public cruise report `2025/2026 Season`.
 The adapter decoded that report but correctly returned no future cruise occurrences for August

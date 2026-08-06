@@ -5,6 +5,7 @@ import type { PublicEvent } from "@tymra/providers";
 export const SCHOOL_SPORT_NZ_SOURCE_ID = "school_sport_nz";
 export const SCHOOL_SPORT_CANTERBURY_SOURCE_ID = "school_sport_canterbury";
 export const TICKETEK_SOURCE_ID = "ticketek_events";
+export const DUNEDINNZ_EVENTS_SOURCE_ID = "dunedinnz_events";
 
 export const SCHOOL_SPORT_NZ_URL = "https://www.sporty.co.nz/SSNZ/Sport-1/Events";
 export const SCHOOL_SPORT_CANTERBURY_URL = "https://www.sporty.co.nz/sscanterbury";
@@ -14,6 +15,7 @@ export const ARGUS_EVENT_SOURCE_IDS = [
   SCHOOL_SPORT_NZ_SOURCE_ID,
   SCHOOL_SPORT_CANTERBURY_SOURCE_ID,
   TICKETEK_SOURCE_ID,
+  DUNEDINNZ_EVENTS_SOURCE_ID,
 ] as const;
 
 export type ArgusEventSourceId = typeof ARGUS_EVENT_SOURCE_IDS[number];
@@ -371,7 +373,7 @@ function isAdministrativeSchoolSport(title: string, description: string | null):
   return /\b(?:entry|entries|registrations?|nominations?)\s+(?:clos(?:e[sd]?|ing)|due)|\b(?:draw|team list)\s+(?:released|published)|\b(?:agm|meeting|workshop|webinar|trial|training|deadline)\b/iu.test(`${title} ${description ?? ""}`);
 }
 
-function normalisedEnd(startsAt: Date, rawEnd: string | null, precision: "DATE" | "DATETIME") {
+export function normalisedEnd(startsAt: Date, rawEnd: string | null, precision: "DATE" | "DATETIME") {
   const parsed = rawEnd ? parseAucklandDate(rawEnd) : null;
   if (parsed && parsed >= startsAt) return precision === "DATE" ? new Date(parsed.getTime() + 86_399_999) : parsed;
   return precision === "DATE" ? new Date(startsAt.getTime() + 86_399_999) : startsAt;
@@ -383,7 +385,7 @@ function parseOptionalDate(value: string | null) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function parseAucklandDate(value: string): Date | null {
+export function parseAucklandDate(value: string): Date | null {
   const trimmed = value.trim();
   if (!/^20\d{2}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?(?:Z|[+-]\d{2}:\d{2})?$/u.test(trimmed)) return null;
   const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/u.test(trimmed);

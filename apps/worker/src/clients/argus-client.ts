@@ -7,9 +7,12 @@ import {
   ticketekDetailExtractionSchema,
   ticketekListingExtractionSchema,
 } from "../collection/school-sport-ticketek";
+import { regionalArgusEventExtractionSchema } from "../collection/regional-argus-events";
+import { aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionSchema } from "../collection/aviation-argus-signals";
 
-export type ArgusEvidencePointer = {
-  kind: string;
+export type ArgusEvidenceKind = "html" | "screenshot" | "download";
+
+type ArgusEvidencePointerBase = {
   traceId: string;
   relativePath: string;
   storageRef: string;
@@ -19,8 +22,19 @@ export type ArgusEvidencePointer = {
   createdAt: string;
 };
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events";
+export type ArgusEvidencePointer = ArgusEvidencePointerBase & (
+  | { kind: "html" | "screenshot"; evidenceId?: string }
+  | {
+      kind: "download";
+      evidenceId: string;
+      filename: string;
+      contentType: string;
+      sourceUrl: string;
+    }
+);
+
+export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance";
+export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -70,6 +84,18 @@ const argusDataContracts = {
   },
   "ticketek-public:collect_detail": {
     dataSchema: "ticketek-public.collect_detail",
+    schemaVersion: "1.0.0",
+  },
+  "dunedinnz-public:collect_events": {
+    dataSchema: "regional-events-public.collect_events",
+    schemaVersion: "1.0.0",
+  },
+  "auckland-airport-monthly:collect_monthly_traffic": {
+    dataSchema: "auckland-airport-monthly.collect_monthly_traffic",
+    schemaVersion: "1.0.0",
+  },
+  "mot-airline-performance:collect_monthly_performance": {
+    dataSchema: "mot-airline-performance.collect_monthly_performance",
     schemaVersion: "1.0.0",
   },
 } as const satisfies Record<string, ArgusDataContract>;
@@ -158,11 +184,15 @@ export async function downloadArgusEvidence(
   environment: Environment,
   pointer: ArgusEvidencePointer,
 ): Promise<Buffer> {
-  if (pointer.kind !== "html" && pointer.kind !== "screenshot") {
+  if (pointer.kind !== "html" && pointer.kind !== "screenshot" && pointer.kind !== "download") {
     throw new Error(`Argus evidence kind ${pointer.kind} cannot be retained`);
   }
+  const evidenceId = pointer.kind === "download" ? pointer.evidenceId : pointer.evidenceId ?? pointer.kind;
+  if (!/^[a-z][a-z0-9_-]{0,63}$/u.test(evidenceId)) {
+    throw new Error(`Argus evidence ID ${evidenceId} is invalid`);
+  }
   const response = await fetch(
-    new URL(`/v1/event-captures/${encodeURIComponent(pointer.traceId)}/evidence/${pointer.kind}`, environment.ARGUS_API_BASE_URL),
+    new URL(`/v1/event-captures/${encodeURIComponent(pointer.traceId)}/evidence/${encodeURIComponent(evidenceId)}`, environment.ARGUS_API_BASE_URL),
     {
       headers: argusHeaders(environment),
       signal: AbortSignal.timeout(environment.ARGUS_TIMEOUT_MS),
@@ -486,6 +516,12 @@ function assertArgusDataContract(
       ? ticketekListingExtractionSchema
       : connectorId === "ticketek-public" && workflowId === "collect_detail"
         ? ticketekDetailExtractionSchema
+        : connectorId === "dunedinnz-public" && workflowId === "collect_events"
+          ? regionalArgusEventExtractionSchema
+          : connectorId === "auckland-airport-monthly" && workflowId === "collect_monthly_traffic"
+            ? aucklandAirportMonthlyExtractionSchema
+            : connectorId === "mot-airline-performance" && workflowId === "collect_monthly_performance"
+              ? motAirlinePerformanceExtractionSchema
         : null;
   if (sourceSchema) {
     const parsed = sourceSchema.safeParse(data);

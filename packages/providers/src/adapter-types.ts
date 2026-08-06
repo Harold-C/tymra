@@ -1,26 +1,10 @@
 import type {
   AvailabilityStatus,
-  InternalApprovalStatus,
-  LegalRightsStatus,
   OperationalStatus,
-  SourceEnvironment,
-  SourceLifecycle,
   SourceType,
 } from "@tymra/domain";
 
 export type AdapterMode = "fixture" | "live";
-
-export type SourceRights = {
-  internalApprovalStatus: InternalApprovalStatus;
-  legalRightsStatus: LegalRightsStatus;
-  lifecycle: SourceLifecycle;
-  environments: SourceEnvironment[];
-  allowedUsage: string[];
-  displayPermission: boolean;
-  derivedAnalysisPermission: boolean;
-  retentionPolicy: { rawHours: number; parserFailureHours: number; normalizedDays: number | null };
-  basis: string;
-};
 
 export type AdapterMetadata = {
   sourceId: string;
@@ -150,7 +134,6 @@ export interface OtaAdapter {
   fetchAvailability(query: OtaRateQuery, context: AdapterContext): Promise<Pick<OtaRate, "availabilityStatus" | "restrictionReason" | "collectedAt" | "qualityFlags">>;
   fetchPolicies(query: OtaRateQuery, context: AdapterContext): Promise<OtaPolicy>;
   healthCheck(context: AdapterContext): Promise<AdapterHealth>;
-  rightsMetadata(): SourceRights;
 }
 
 export type PublicDiscoveryRequest = { marketScope: string; from: Date; to: Date; limit?: number };
@@ -218,12 +201,11 @@ export interface PublicDataAdapter {
   normalise(records: PublicRawRecord[], context: AdapterContext): Promise<PublicSignal[]>;
   normaliseEvents?(records: PublicRawRecord[], context: AdapterContext): Promise<PublicEvent[]>;
   healthCheck(context: AdapterContext): Promise<AdapterHealth>;
-  rightsMetadata(): SourceRights;
 }
 
 export class AdapterError extends Error {
   constructor(
-    readonly code: "INVALID_INPUT" | "SOURCE_UNAVAILABLE" | "CONFIGURATION_ERROR" | "RIGHTS_BLOCKED" | "PARSING_ERROR" | "TIMEOUT" | "RATE_LIMITED",
+    readonly code: "INVALID_INPUT" | "SOURCE_UNAVAILABLE" | "CONFIGURATION_ERROR" | "PARSING_ERROR" | "TIMEOUT" | "RATE_LIMITED",
     message: string,
     readonly retryable: boolean,
   ) {

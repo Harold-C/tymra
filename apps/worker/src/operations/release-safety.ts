@@ -3,8 +3,6 @@ export type ReleaseSource = {
   enabled: boolean;
   status: string;
   operationalStatus: string;
-  rightsAllowStorage: boolean;
-  rightsAllowDerivedAnalysis: boolean;
 };
 
 export function productionPreflight(input: {
@@ -21,8 +19,7 @@ export function productionPreflight(input: {
     if (!available.has(key)) failures.push(`${key}: source does not exist`);
   }
   for (const source of input.sources) {
-    if (!source.enabled || source.status !== "APPROVED" || source.operationalStatus !== "HEALTHY") failures.push(`${source.key}: source is not enabled, approved and healthy`);
-    if (!source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) failures.push(`${source.key}: storage/derived-analysis rights are incomplete`);
+    if (!source.enabled || source.operationalStatus !== "HEALTHY") failures.push(`${source.key}: source is not enabled and healthy`);
   }
   return { ready: failures.length === 0, failures };
 }
@@ -33,7 +30,7 @@ export function canaryPlan(sourceKeys: string[]) {
     mode: "READ_ONLY_BOUNDED" as const,
     sources: unique,
     passes: 2,
-    stopConditions: ["governance_changed", "schedule_changed", "parser_failure", "lineage_growth_on_repeat", "remote_evidence_remaining"],
+    stopConditions: ["configuration_changed", "schedule_changed", "parser_failure", "lineage_growth_on_repeat", "remote_evidence_remaining"],
     rollback: "disable all schedules and cancel pending collection jobs",
   };
 }
@@ -41,7 +38,7 @@ export function canaryPlan(sourceKeys: string[]) {
 export type CanaryPassResult = {
   sourceKey: string;
   pass: number;
-  governanceUnchanged: boolean;
+  configurationUnchanged: boolean;
   schedulesUnchanged: boolean;
   parserFailures: number;
   repeatRowGrowth: number;
@@ -77,7 +74,7 @@ export async function executeCanary(
 
 function canaryStopReason(result: CanaryPassResult) {
   if (result.error) return `execution_error:${result.error}`;
-  if (!result.governanceUnchanged) return "governance_changed";
+  if (!result.configurationUnchanged) return "configuration_changed";
   if (!result.schedulesUnchanged) return "schedule_changed";
   if (result.parserFailures > 0) return "parser_failure";
   if (result.pass > 1 && result.repeatRowGrowth > 0) return "lineage_growth_on_repeat";

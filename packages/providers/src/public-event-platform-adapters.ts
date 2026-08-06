@@ -1,6 +1,6 @@
 import { parseHTML } from "linkedom";
 
-import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal, SourceRights } from "./adapter-types";
+import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
 const EVENTBRITE_URL = "https://www.eventbrite.co.nz/d/new-zealand/events/";
@@ -59,7 +59,6 @@ class JsonLdEventPlatformAdapter implements PublicDataAdapter {
     return records.flatMap((record) => isRecord(record.payload) && record.payload.kind === "event" && isPublicEvent(record.payload.event) ? [record.payload.event] : []);
   }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return endpointHealth(this.listingUrl, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights(`${this.metadata.sourceName} browser-visible public event listing; production use remains subject to source review`); }
 }
 
 class ChristchurchAirportAdapter implements PublicDataAdapter {
@@ -132,7 +131,6 @@ class ChristchurchAirportAdapter implements PublicDataAdapter {
     });
   }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return endpointHealth(`${CHRISTCHURCH_AIRPORT_ORIGIN}/api/flights?maxFlights=1&flightDirection=Arrive&flightType=Domestic`, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights("Christchurch Airport browser-visible flight JSON endpoint; production use remains subject to source review"); }
 }
 
 export function parsePlatformJsonLdEvents(html: string, finalUrl: string, sourceId: string): PublicEvent[] {
@@ -213,6 +211,5 @@ function assertHost(value: string, allowed: string[]) { let url: URL; try { url 
 function responseError(name: string, status: number) { return new AdapterError(status === 429 ? "RATE_LIMITED" : "SOURCE_UNAVAILABLE", `${name} returned HTTP ${status}`, status === 429 || status >= 500); }
 async function boundedText(response: Response, maxBytes: number) { const length = Number(response.headers.get("content-length") ?? 0); if (length > maxBytes) throw new AdapterError("PARSING_ERROR", "Source response exceeded the configured byte limit", false); const text = await response.text(); if (Buffer.byteLength(text) > maxBytes) throw new AdapterError("PARSING_ERROR", "Source response exceeded the configured byte limit", false); return text; }
 async function endpointHealth(url: string, name: string, context: AdapterContext): Promise<AdapterHealth> { const started = Date.now(); try { const response = await fetch(url, { method: "GET", headers: { accept: "text/html,application/json", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" }, signal: context.signal ?? AbortSignal.timeout(10_000) }); return { status: response.ok ? "HEALTHY" : "DEGRADED", checkedAt: new Date(), message: `${name} returned HTTP ${response.status}`, latencyMs: Date.now() - started, mode: context.mode }; } catch (error) { return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : `${name} health check failed`, latencyMs: Date.now() - started, mode: context.mode }; } }
-function reviewRights(basis: string): SourceRights { return { internalApprovalStatus: "PENDING", legalRightsStatus: "REVIEW", lifecycle: "RESEARCH", environments: ["DEVELOPMENT", "TEST", "PILOT"], allowedUsage: ["HEALTH_CHECK", "FIXTURE_TEST"], displayPermission: false, derivedAnalysisPermission: false, retentionPolicy: { rawHours: 168, parserFailureHours: 720, normalizedDays: null }, basis }; }
 function timezoneOffsetMs(date: Date, timeZone: string) { const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(date); const values = Object.fromEntries(parts.map((part) => [part.type, part.value])); const asUtc = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), Number(values.second)); return asUtc - date.getTime(); }
 function zonedParts(date: Date, timeZone: string) { const values = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date).map((part) => [part.type, part.value])); return { year: Number(values.year), month: Number(values.month), day: Number(values.day), hour: Number(values.hour), minute: Number(values.minute) }; }

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import ExcelJS from "exceljs";
 
-import { AdapterError, changedMetServiceFeedItems, extractEventfindaHttpPage, extractTicketmasterHttpPage, metServiceFeedItemVersion, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseIsaacTheatreRoyalEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseStatsNzInternationalTravel, parseTePaeEvents, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, publicDataAdapters } from "../src";
+import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzMarketKey } from "../src";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };
@@ -33,12 +34,11 @@ describe("OTA adapter contract", () => {
 });
 
 describe("public data adapter contract", () => {
-  it("exposes a complete deterministic contract and rights metadata for every public adapter", async () => {
+  it("exposes a complete deterministic contract for every public adapter", async () => {
     for (const [sourceId, adapter] of Object.entries(publicDataAdapters)) {
       expect(adapter.metadata).toMatchObject({ sourceId, sourceType: "PUBLIC_DATA" });
       expect(adapter.metadata.collectorVersion).toBeTruthy();
       expect(adapter.metadata.parserVersion).toBeTruthy();
-      expect(adapter.rightsMetadata()).toMatchObject({ internalApprovalStatus: expect.any(String), legalRightsStatus: expect.any(String), retentionPolicy: expect.any(Object) });
       expect(typeof adapter.discover).toBe("function");
       expect(typeof adapter.fetch).toBe("function");
       expect(typeof adapter.normalise).toBe("function");
@@ -56,7 +56,24 @@ describe("public data adapter contract", () => {
     const education = parseEducationSchoolHolidays(`<h2>2026 school holidays<a>#</a></h2><h3>Term 1<a>#</a></h3><p>Friday 3 April to Sunday 19 April 2026.</p><h3>Summer holidays<a>#</a></h3><p>Start no later than Saturday 19 December 2026 and run for 5 or 6 weeks.</p><h2>2027 school terms</h2>`);
     expect(education).toEqual([expect.objectContaining({ title: "New Zealand school holiday after Term 1", startsAt: "2026-04-03", endsAt: "2026-04-20" })]);
     expect(publicDataAdapters.public_holidays_nz.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_HTML");
-    expect(publicDataAdapters.school_holidays_nz.rightsMetadata().legalRightsStatus).toBe("ALLOWED");
+  });
+
+  it("normalises browser-delivered aviation depth into market pricing signals", async () => {
+    const auckland = await publicDataAdapters.auckland_airport_monthly.normalise([{
+      sourceId: "auckland_airport_monthly", externalId: "airport-passengers:2026-06",
+      payload: { sourceUrl: "https://corporate.aucklandairport.co.nz/report", record: { period: "2026-06", domesticPassengers: 700000, internationalPassengers: 900000, totalPassengers: 1600000, annualChangePercent: 4.5 } },
+      fetchedAt: new Date(), fixture: false,
+    }], fixtureContext);
+    expect(auckland).toEqual([expect.objectContaining({ marketKey: "auckland", type: "TOURISM_DEMAND", direction: "POSITIVE" })]);
+
+    const performance = await publicDataAdapters.mot_airline_performance.normalise([{
+      sourceId: "mot_airline_performance", externalId: "airline-performance:2026-06:AKL:ZQN",
+      payload: { sourceUrl: "https://www.transport.govt.nz/report.xlsx", record: { period: "2026-06", originAirportCode: "AKL", destinationAirportCode: "ZQN", originName: "Auckland", destinationName: "Queenstown", scheduledFlights: 300, arrivalOnTimePercent: 62, departureOnTimePercent: 68, cancelledFlights: 20, cancellationPercent: 6.7, coverageCaveat: "Voluntary participating-airline reporting; coverage is incomplete." } },
+      fetchedAt: new Date(), fixture: false,
+    }], fixtureContext);
+    expect(performance.map((signal) => signal.marketKey).sort()).toEqual(["auckland", "queenstown-wanaka"]);
+    expect(performance.every((signal) => signal.type === "TRANSPORT_FLOW" && signal.direction === "NEGATIVE")).toBe(true);
+    expect(performance[0]?.metadata).toMatchObject({ voluntaryReporting: true, incompleteCoverageCaveat: expect.stringContaining("incomplete") });
   });
 
   it("uses direct HTTP Ticketmaster listings and reserves Argus for details", async () => {
@@ -71,10 +88,12 @@ describe("public data adapter contract", () => {
     await expect(adapter.fetch("https://www.ticketmaster.co.nz/", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
   });
 
-  it("registers School Sport and Ticketek as fixed Argus-only public sources", async () => {
+  it("registers the remaining fixed Argus-only public sources", async () => {
     expect(publicDataAdapters.school_sport_nz.metadata).toMatchObject({ adapterKey: "public:school_sport_nz:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1 });
     expect(publicDataAdapters.school_sport_canterbury.metadata.supportedDomains).toContain("teamup.com");
     expect(publicDataAdapters.ticketek_events.metadata).toMatchObject({ adapterKey: "public:ticketek_events:argus-v1", dailyBudget: 20 });
+    expect(publicDataAdapters.dunedinnz_events.metadata).toMatchObject({ adapterKey: "public:dunedinnz_events:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY" });
+    expect(publicDataAdapters.rotoruanz_events.metadata).toMatchObject({ adapterKey: "public:rotoruanz_events:rotoruanz-simple-tile-html-v1", accessMethod: "OFFICIAL_PUBLIC_HTML" });
     await expect(publicDataAdapters.school_sport_nz.discover({ marketScope: "christchurch", from: new Date(), to: new Date() }, fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
     await expect(publicDataAdapters.ticketek_events.fetch("https://premier.ticketek.co.nz/shows/whatson.aspx", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
   });
@@ -108,6 +127,195 @@ describe("public data adapter contract", () => {
     expect(publicDataAdapters.eventbrite_events.metadata).toMatchObject({ adapterKey: "public:eventbrite:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED" });
   });
 
+  it("parses official Wellington and Waikato regional event listings", () => {
+    const wellington = parseWellingtonNzEvents(`<a href="/visit/events/beervana" class="featured-item featured-item--event" data-id="1826"><h3 class="featured-item__title">Beervana</h3><span class="featured-item__text--date">21 – 22 August 2026</span><span class="featured-item__text--info">TSB Arena</span></a>`);
+    expect(wellington).toEqual([expect.objectContaining({ externalId: "wellingtonnz:1826", title: "Beervana", city: "Wellington", startsAt: new Date("2026-08-20T12:00:00.000Z"), endsAt: new Date("2026-08-22T11:59:59.999Z") })]);
+
+    const waikato = parseWaikatoNzEvents({ totalResults: 1, totalPages: 1, results: JSON.stringify([{ Id: 31957, Url: "/all-events/stitched-in-time/", Name: "Stitched in Time", Regions: "Te Awamutu", DateSummary: "24 Jul - 20 Oct 2026", Featured: true }]) });
+    expect(waikato.events).toEqual([expect.objectContaining({ externalId: "waikatonz:31957", city: "Te Awamutu", region: "Waikato", startsAt: new Date("2026-07-23T12:00:00.000Z"), endsAt: new Date("2026-10-20T10:59:59.999Z") })]);
+    expect(publicDataAdapters.wellingtonnz_events.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_HTML");
+    expect(publicDataAdapters.waikatonz_events.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_JSON_PAGINATED");
+    const queenstown = parseQueenstownNzEvents({ docs: [{ recid: "3717", title: "NZ Adaptive National champs", startDate: "2026-08-06T00:00:00.000Z", endDate: "2026-08-07T00:00:00.000Z", url: "/event/nz-adaptive-national-champs/3717/", location: "Cardrona Alpine Resort" }] });
+    expect(queenstown).toEqual([expect.objectContaining({ externalId: "queenstownnz:3717", title: "NZ Adaptive National champs", region: "Otago" })]);
+    expect(publicDataAdapters.queenstownnz_events.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_JSON_DISCOVERED");
+    const taupo = parseTaupoNzEvents(`<div class="c-filter-summary">Displaying 1 - 20 of 48</div><a href="/en/events/944033" class="o-event-tile"><span class="o-event-tile__tag">Motorsport</span><span class="o-event-tile__date">06 Aug - 26 Nov</span><h3 class="o-event-tile__heading">Sim Race Club</h3></a><a href="?page=3" class="js-pagination-link">3</a>`, undefined, new Date("2026-08-06T00:00:00Z"));
+    expect(taupo).toMatchObject({ totalPages: 3, events: [expect.objectContaining({ externalId: "tauponz:944033", startsAt: new Date("2026-08-05T12:00:00.000Z") })] });
+    const southland = parseSouthlandNzEvents({ docs: [{ recid: "6038", title: "Hydro Half Marathon", startDate: "2026-08-24T00:00:00Z", endDate: "2026-08-24T03:00:00Z", url: "/event/hydro-half-marathon/6038/", location: "Te Anau" }] });
+    expect(southland).toEqual([expect.objectContaining({ externalId: "southlandnz:6038", region: "Southland" })]);
+    const hawkesBay = parseHawkesBayNzEvents(`<div class="eventItem" data-category="lifestyle" data-dateStart="1789878600" data-dateEnd="1789965000" data-location="Napier"><a data-item="5095" href="/events/example" class="card"><div class="info"><h3>Regional Festival</h3><h5>Sep 20</h5></div></a></div>`);
+    expect(hawkesBay).toEqual([expect.objectContaining({ externalId: "hawkesbaynz:5095", city: "Napier", region: "Hawke's Bay" })]);
+    const taranaki = parseTaranakiNzEvents({ data: { listings: { edges: [{ node: { UUID: "5632000111", Title: "Garden Festival", URLSegment: "garden-festival", FullAddress: "", CurrentStartDate: "2026-10-30 09:00:00", MainCategory: { Title: "Festival" } } }], pageInfo: { hasNextPage: false, totalCount: 1 } } } });
+    expect(taranaki.events).toEqual([expect.objectContaining({ externalId: "taranakienz:5632000111", startsAt: new Date("2026-10-29T20:00:00.000Z") })]);
+    const nelson = parseNelsonTasmanNzEvents(`<div class="ElementalEvents"><div class="group"><h4><a href="/events/example/">Nelson Festival</a></h4><div class="me-2 flex items-start gap-2">13 September 2026 7:00 pm - 11:59 pm</div><div class="flex items-start gap-2">Theatre Royal Nelson, Nelson</div></div></div>`);
+    expect(nelson).toEqual([expect.objectContaining({ externalId: "nelsontasman:example", startsAt: new Date("2026-09-13T07:00:00.000Z") })]);
+    const tauranga = parseTaurangaNzEvents(`<div class="event-search-results-box-carousel"><a class="event-search-results-box-clickable" href="/event-details/?event=123"><h3 class="event-search-results-box-title">Mount Festival</h3><div class="event-search-results-box-details"><p>8 August 2026</p><p>Mount Maunganui</p></div></a></div>`);
+    expect(tauranga).toEqual([expect.objectContaining({ externalId: "tauranga:123", city: "Mount Maunganui" })]);
+    const manawatu = parseManawatuNzEvents(`<div class="event-block"><a href="/events/open-day/"><h3 class="event--title">Open Day</h3><div id="text_block-548-1">9 August 2026</div><div id="text_block-566-1">Te Marae o Hine, Palmerston North</div></a></div><a class="page-numbers">4</a>`);
+    expect(manawatu).toMatchObject({ totalPages: 4, events: [expect.objectContaining({ externalId: "manawatunz:open-day", city: "Palmerston North" })] });
+    const northland = parseNorthlandNzEvents(`<div class="events-list-container"><div class="list-item-container"><article><a href="/Events/Whats-On/Ocean-Ocean"><h2 class="list-item-title">Ocean Ocean</h2><span class="part-date">06</span><span class="part-month">Aug</span><span class="part-year">2026</span><p class="list-item-address">ONEONESIX, Whangārei 0110</p></a></article></div></div>`);
+    expect(northland).toEqual([expect.objectContaining({ externalId: "northland:Ocean-Ocean", city: "Whangārei", venueName: "ONEONESIX" })]);
+    const rotorua = parseRotoruaNzEvents(`<div class="simple-tile"><div class="simple-tile__body"><h4>Blue Lake 24hr Challenge</h4><p>26 – 27 September</p><p>Lake Tikitapu</p><p>Grassroots endurance event.</p><p><a href="https://www.bluelake24hr.com/">More info</a></p></div></div>`, "https://www.rotoruanz.com/whats-on", new Date("2026-08-06T00:00:00Z"));
+    expect(rotorua).toEqual([expect.objectContaining({ title: "Blue Lake 24hr Challenge", city: "Rotorua", region: "Bay of Plenty", venueName: "Lake Tikitapu", startsAt: new Date("2026-09-25T12:00:00.000Z") })]);
+  });
+
+  it("keeps the nationwide completion gate stricter than national aggregator presence", () => {
+    expect(NZ_MAJOR_ACCOMMODATION_MARKETS).toHaveLength(15);
+    const report = assessNzMarketCoverage(new Set(Object.keys(publicDataAdapters)));
+    expect(report.complete).toBe(false);
+    expect(report.markets.find((market) => market.key === "christchurch")?.implemented).toBe(true);
+    expect(report.markets.find((market) => market.key === "wellington")?.implemented).toBe(true);
+    expect(report.markets.find((market) => market.key === "northland")?.implemented).toBe(true);
+    expect(report.implementedMarkets).toBe(14);
+    expect(report.argusRequired.map((market) => market.key)).toEqual(["dunedin"]);
+  });
+
+  it("uses one canonical market key across regional events, schedules and pricing", () => {
+    expect(canonicalNzMarketKey("queenstown_wanaka")).toBe("queenstown-wanaka");
+    expect(resolveNzMarketKey({ city: "Wānaka", region: "Otago" })).toBe("queenstown-wanaka");
+    expect(resolveNzMarketKey({ city: "Dunedin", region: "Otago" })).toBe("dunedin");
+    expect(resolveNzMarketKey({ city: "Mount Maunganui", region: "Bay of Plenty" })).toBe("tauranga");
+    expect(resolveNzMarketKey({ region: "Otago" })).toBeNull();
+    expect(publicSignalSourceIdsForMarket("hawkes_bay")).toContain("hawkesbaynz_events");
+  });
+
+  it("builds the complete on-demand signal plan for every market", () => {
+    for (const market of NZ_MAJOR_ACCOMMODATION_MARKETS) {
+      const plan = publicSignalCollectionPlanForMarket(market.key);
+      expect(plan.map((target) => target.sourceId)).toEqual(publicSignalSourceIdsForMarket(market.key));
+      expect(plan.filter((target) => target.layer === "DISCOVERY")).toHaveLength(5);
+      expect(plan.filter((target) => target.layer === "DEMAND")).toHaveLength(5);
+      expect(plan.filter((target) => target.layer === "DISRUPTION")).toHaveLength(9);
+      expect(plan.filter((target) => ["DISCOVERY", "DEMAND", "DISRUPTION", "SEASONAL"].includes(target.layer)).every((target) => target.marketScope === "new-zealand")).toBe(true);
+      expect(plan.filter((target) => ["OFFICIAL_EVENT", "LOCAL_FLOW"].includes(target.layer)).every((target) => target.marketScope === market.key)).toBe(true);
+    }
+    expect(publicSignalCollectionPlanForMarket("wellington")).toContainEqual({ sourceId: "wellington_airport", marketScope: "wellington", layer: "LOCAL_FLOW" });
+    expect(publicSignalCollectionPlanForMarket("wellington")).toContainEqual({ sourceId: "wellington_airport_monthly", marketScope: "wellington", layer: "LOCAL_FLOW" });
+    expect(publicSignalCollectionPlanForMarket("queenstown-wanaka")).toContainEqual({ sourceId: "queenstown_airport_monthly", marketScope: "queenstown-wanaka", layer: "LOCAL_FLOW" });
+    expect(publicSignalCollectionPlanForMarket("auckland")).toContainEqual({ sourceId: "auckland_airport_monthly", marketScope: "auckland", layer: "LOCAL_FLOW" });
+    expect(publicSignalCollectionPlanForMarket("auckland")).toContainEqual({ sourceId: "mot_airline_performance", marketScope: "new-zealand", layer: "DISRUPTION" });
+    expect(publicSignalCollectionPlanForMarket("dunedin")).toContainEqual({ sourceId: "dunedinnz_events", marketScope: "dunedin", layer: "OFFICIAL_EVENT" });
+    expect(publicSignalCollectionPlanForMarket("taupo")).toContainEqual({ sourceId: "doc_alerts", marketScope: "new-zealand", layer: "DISRUPTION" });
+    expect(publicSignalCollectionPlanForMarket("taupo")).toContainEqual({ sourceId: "ski_seasons_nz", marketScope: "new-zealand", layer: "SEASONAL" });
+    expect(publicSignalCollectionPlanForMarket("wellington")).toContainEqual({ sourceId: "interislander_alerts", marketScope: "new-zealand", layer: "DISRUPTION" });
+  });
+
+  it("parses official ski-season windows as date-specific demand context", async () => {
+    expect(parseSkiSeasonHtml("<main><h4>27 June - 11 October 2026</h4></main>", { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i })).toMatchObject({ opensAt: "2026-06-27T00:00:00.000Z", closesAt: "2026-10-11T00:00:00.000Z" });
+    const signals = await publicDataAdapters.ski_seasons_nz.normalise([{ sourceId: "ski_seasons_nz", externalId: "ski-season:mt-hutt:2026", payload: { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", opensAt: "2026-06-27T00:00:00.000Z", closesAt: "2026-10-11T00:00:00.000Z", sourceUrl: "https://www.mthutt.co.nz/mountain-info" }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signals[0]).toMatchObject({ marketKey: "christchurch", type: "TOURISM_DEMAND", direction: "POSITIVE", confidence: 0.8 });
+    expect(signals[0]!.endsAt.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+  });
+
+  it("parses and routes official ferry and DOC access alerts conservatively", async () => {
+    expect(parseInterislanderAlerts([{ id: 7, title: "Sailings cancelled", summary: "Weather", content: "", start: "2026-08-06", end: null, last_edited: "2026-08-06", version: 3 }])).toHaveLength(1);
+    expect(parseDocAlertGroups([{ name: "Tongariro", staticLink: "/track/", alerts: [{ summary: "Track closed", description: "<p>Unsafe access.</p>", subText: "Reviewed", sortDate: "2026-08-05", displayDate: "5 August 2026", associatedBookingIDs: "" }], isGeneral: false }])).toHaveLength(1);
+    const fetchedAt = new Date("2026-08-06T14:00:00.000Z");
+    const ferry = await publicDataAdapters.interislander_alerts.normalise([{ sourceId: "interislander_alerts", externalId: "service-alert:7", payload: { alert: { id: 7, title: "Sailings cancelled", summary: "Weather", content: "", start: null, end: null, last_edited: null, version: 3 } }, fetchedAt, fixture: false }], fixtureContext);
+    expect(ferry.map((signal) => signal.marketKey)).toEqual(["wellington", "nelson-tasman"]);
+    expect(ferry.every((signal) => signal.direction === "NEGATIVE" && signal.endsAt.toISOString() === "2026-08-08T00:00:00.000Z")).toBe(true);
+    const doc = await publicDataAdapters.doc_alerts.normalise([{ sourceId: "doc_alerts", externalId: "doc-alert:otago:x", payload: { region: { slug: "otago", name: "Otago", guid: "x", markets: ["dunedin", "queenstown-wanaka"] }, group: { name: "Routeburn", staticLink: "/track/", alerts: [], isGeneral: false }, alert: { summary: "Track closed", description: "<p>Unsafe access.</p>", subText: "", sortDate: "2026-08-05", displayDate: "", associatedBookingIDs: "" }, sourceUrl: "https://www.doc.govt.nz/track/" }, fetchedAt, fixture: false }], fixtureContext);
+    expect(doc.map((signal) => signal.marketKey)).toEqual(["dunedin", "queenstown-wanaka"]);
+    expect(doc.every((signal) => signal.type === "WEATHER_OR_ACCESS_DISRUPTION" && signal.direction === "NEGATIVE")).toBe(true);
+  });
+
+  it("routes provincial anniversary days only to their applicable markets", async () => {
+    expect(marketKeysForAnniversaryRegion("Canterbury")).toEqual(["christchurch"]);
+    expect(marketKeysForAnniversaryRegion("Otago")).toEqual(["dunedin", "queenstown-wanaka"]);
+    expect(marketKeysForAnniversaryRegion("Auckland")).toEqual(["auckland", "northland", "waikato", "taupo", "rotorua", "tauranga"]);
+    expect(marketKeysForAnniversaryRegion("Chatham Islands")).toEqual([]);
+    const records = [
+      { sourceId: "public_holidays_nz", externalId: "public", payload: { id: "public", title: "Waitangi Day", region: "New Zealand", startsAt: "2026-02-06", endsAt: "2026-02-07", type: "PUBLIC_HOLIDAY" }, fetchedAt: new Date(), fixture: false },
+      { sourceId: "public_holidays_nz", externalId: "otago", payload: { id: "otago", title: "Otago Anniversary Day", region: "Otago", startsAt: "2026-03-23", endsAt: "2026-03-24", type: "ANNIVERSARY_DAY" }, fetchedAt: new Date(), fixture: false },
+    ];
+    const signals = await publicDataAdapters.public_holidays_nz.normalise(records, fixtureContext);
+    expect(signals.map((signal) => signal.marketKey)).toEqual(["new-zealand", "dunedin", "queenstown-wanaka"]);
+  });
+
+  it("routes disruption area text and coordinates to applicable accommodation markets", () => {
+    expect(nzMarketKeysForAreaText("Bay of Plenty and Rotorua")).toEqual(expect.arrayContaining(["rotorua", "tauranga"]));
+    expect(nzMarketKeysForAreaText("Otago and Clutha")).toEqual(expect.arrayContaining(["dunedin", "queenstown-wanaka"]));
+    expect(nzMarketKeysForAreaText("Hawke's Bay")).toEqual(["hawkes-bay"]);
+    expect(nzMarketKeysForAreaText("Gisborne")).toEqual([]);
+    expect(nearestNzMarketKey(-37.0734, 174.9300)).toBe("auckland");
+    expect(nearestNzMarketKey(-45.0312, 168.6626)).toBe("queenstown-wanaka");
+  });
+
+  it("routes GeoNet earthquakes by locality and affected radius", async () => {
+    const signals = await publicDataAdapters.geonet.normalise([{ sourceId: "geonet", externalId: "quake-1", payload: { properties: { locality: "20 km south of Rotorua", time: "2026-08-06T00:00:00.000Z", mmi: 4, magnitude: 4.2 }, geometry: { type: "Point", coordinates: [176.25, -38.31] } }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signals.map((signal) => signal.marketKey)).toEqual(expect.arrayContaining(["rotorua", "tauranga", "taupo"]));
+    expect(signals.every((signal) => signal.marketKey !== "new-zealand")).toBe(true);
+  });
+
+  it("routes active GeoNet volcanic alert levels and drops level zero", async () => {
+    const records = [
+      { sourceId: "geonet", externalId: "volcano-alert:whiteisland", payload: { sourceKind: "volcano_alert_level", properties: { volcanoID: "whiteisland", volcanoTitle: "White Island", level: 2, acc: "Yellow", activity: "Heightened unrest", hazards: "Potential eruption hazards" }, geometry: { type: "Point", coordinates: [177.183, -37.521] } }, fetchedAt: new Date("2026-08-06T12:00:00.000Z"), fixture: false },
+      { sourceId: "geonet", externalId: "volcano-alert:auckland", payload: { sourceKind: "volcano_alert_level", properties: { volcanoID: "auckland", volcanoTitle: "Auckland Volcanic Field", level: 0, acc: "Green" }, geometry: { type: "Point", coordinates: [174.77, -36.985] } }, fetchedAt: new Date("2026-08-06T12:00:00.000Z"), fixture: false },
+    ];
+    const signals = await publicDataAdapters.geonet.normalise(records, fixtureContext);
+    expect(signals.map((signal) => signal.marketKey)).toEqual(expect.arrayContaining(["tauranga", "rotorua"]));
+    expect(signals.every((signal) => signal.title.includes("White Island") && signal.direction === "NEGATIVE")).toBe(true);
+    expect(signals[0]?.metadata).toMatchObject({ hazardKind: "VOLCANIC_ALERT_LEVEL", level: 2, aviationColourCode: "Yellow" });
+  });
+
+  it("requires fresh independent signal layers before calling a market operationally stable", () => {
+    const now = new Date("2026-08-06T00:00:00.000Z");
+    const evidence = Object.keys(publicDataAdapters).map((sourceId) => ({
+      sourceId, lastSuccessAt: now, successfulRuns72h: 6, failedRuns72h: 0, successfulRunDays: 3, enabled: true, available: true,
+      ...(["mbie", "mbie_tourism_flows", "mbie_mrte"].includes(sourceId) ? { marketKeys: NZ_MAJOR_ACCOMMODATION_MARKETS.map((market) => market.key) } : {}),
+      ...(["stats_nz", "mbie_ivs"].includes(sourceId) ? { marketKeys: ["new-zealand"] } : {}),
+    }));
+    const report = assessNzMarketOperationalCoverage(evidence, now);
+    expect(report.stableMarkets).toBe(14);
+    expect(report.markets.find((market) => market.key === "wellington")?.stable).toBe(true);
+    expect(report.markets.find((market) => market.key === "rotorua")?.stable).toBe(true);
+    expect(report.markets.find((market) => market.key === "dunedin")?.stable).toBe(false);
+
+    const staleWellington = evidence.map((item) => item.sourceId === "wellingtonnz_events" ? { ...item, lastSuccessAt: "2026-08-04T00:00:00.000Z" } : item);
+    expect(assessNzMarketOperationalCoverage(staleWellington, now).markets.find((market) => market.key === "wellington")?.layers.officialRegional).toBe(false);
+
+    const missingLocalDemand = evidence.map((item) => item.sourceId === "mbie" ? { ...item, marketKeys: item.marketKeys?.filter((key) => key !== "taupo") } : item);
+    expect(assessNzMarketOperationalCoverage(missingLocalDemand, now).markets.find((market) => market.key === "taupo")?.layers.accommodationDemand).toBe(false);
+
+    const sameDayOnly = evidence.map((item) => item.sourceId === "mbie" ? { ...item, successfulRunDays: 1 } : item);
+    expect(assessNzMarketOperationalCoverage(sameDayOnly, now).markets.find((market) => market.key === "auckland")?.stable).toBe(false);
+
+    const staleSkiSeason = evidence.map((item) => item.sourceId === "ski_seasons_nz" ? { ...item, lastSuccessAt: "2026-07-20T00:00:00.000Z" } : item);
+    expect(assessNzMarketOperationalCoverage(staleSkiSeason, now).markets.find((market) => market.key === "queenstown-wanaka")?.layers.seasonal).toBe(false);
+    expect(assessNzMarketOperationalCoverage(staleSkiSeason, now).markets.find((market) => market.key === "auckland")?.layers.seasonal).toBeNull();
+  });
+
+  it("treats a valid regional feed with no events in the requested window as a successful empty collection", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ data: { listings: { edges: [{ node: { UUID: "5632000111", Title: "Garden Festival", URLSegment: "garden-festival", FullAddress: "", CurrentStartDate: "2026-10-30 09:00:00", MainCategory: { Title: "Festival" } } }], pageInfo: { hasNextPage: false, totalCount: 1 } } } }), { status: 200, headers: { "content-type": "application/json" } }));
+    try {
+      const records = await publicDataAdapters.taranakienz_events.fetch("https://listings.venture.org.nz/api", {
+        ...liveContext,
+        collectionRange: { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-01T00:00:00Z") },
+        collectionLimits: { maxRequests: 1, maxRecords: 20, maxBytes: 2_000_000, timeoutMs: 10_000 },
+      });
+      expect(records).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it("unions University of Auckland responses from bounded backend replicas", async () => {
+    const event = (eventId: string, hour: string) => ({ eventId, name: `Event ${eventId}`, startDateTime: `2026-08-20T${hour}:00:00`, endDateTime: `2026-08-20T${hour}:30:00`, location: { city: "Auckland", displayName: "City Campus" } });
+    const responses = [[event("a", "09")], [event("a", "09"), event("b", "10")], [event("b", "10"), event("c", "11")]];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify(responses.shift() ?? []), { status: 200, headers: { "content-type": "application/json" } }));
+    try {
+      const records = await publicDataAdapters.university_calendars.fetch("https://apis.auckland.ac.nz/events-portal-access/v1/events", {
+        ...liveContext,
+        collectionRange: { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-01T00:00:00Z") },
+        collectionLimits: { maxRequests: 3, maxRecords: 50, maxBytes: 2_000_000, timeoutMs: 30_000 },
+      });
+      expect(records.map((record) => record.externalId)).toEqual(["uoa:a", "uoa:b", "uoa:c"]);
+      expect(records.reduce((sum, record) => sum + record.networkRequestCount, 0)).toBe(3);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("parses Christchurch official sports fixtures", () => {
     const crusaders = parseChristchurchSports(`<div class="c-opta-data-block__heading"><h1>2026 Super Rugby Pacific Draw</h1></div><table class="c-fixture-table"><tbody><tr><td>13</td><td>Fri 8 May | 07:05 PM</td><td>Crusaders V Blues</td><td>One NZ Stadium, Christchurch</td><td></td></tr><tr><td>14</td><td>Fri 15 May | 07:05 PM</td><td>Crusaders V Force</td><td>Perth Stadium</td><td></td></tr></tbody></table>`, "https://www.crusaders.co.nz/fixtures/draw/");
     expect(crusaders.events).toEqual([expect.objectContaining({ title: "Crusaders V Blues", city: "Christchurch", category: "Sport", startsAt: new Date("2026-05-08T07:05:00.000Z") })]);
@@ -128,11 +336,43 @@ describe("public data adapter contract", () => {
     expect(riccarton.events?.map((event) => event.externalId)).toEqual(["riccarton-cup-week:2026-7", "riccarton-cup-week:2026-11", "riccarton-cup-week:2026-14"]);
   });
 
-  it("tracks the official cruise dashboard boundary and airport monthly passenger totals", () => {
+  it("tracks the official cruise dashboard boundary and airport monthly passenger trends", () => {
     const cruise = parseCruiseDashboard(`<iframe title="Christchurch Cruise schedule 2025_26" src="https://app.powerbi.com/view?r=public-token"></iframe>`, "https://www.christchurchnz.com/visit/plan-your-visit/cruise/christchurch-cruise-schedule");
     expect(cruise.metadata).toMatchObject({ publisher: "ChristchurchNZ", underlyingSource: "New Zealand Cruise Association", extractionBoundary: "DIRECT_PUBLIC_POWERBI_JSON" });
-    const airport = parseAirportMonthlyPassengers(`<h4>2026</h4><table><tr><td>Month</td><td>Domestic</td><td>International</td><td>Total</td></tr><tr><td>June</td><td>361,510</td><td>108,278</td><td>469,788</td></tr></table>`, "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/");
-    expect(airport.signals?.[0]).toMatchObject({ type: "AIRPORT_MONTHLY_CAPACITY", startsAt: new Date("2026-05-31T12:00:00.000Z"), metadata: { domesticPassengers: 361510, internationalPassengers: 108278, totalPassengers: 469788 } });
+    const airport = parseAirportMonthlyPassengers(`<h4>2025</h4><table><tr><td>June</td><td>300,000</td><td>100,000</td><td>400,000</td></tr></table><h4>2026</h4><table><tr><td>June</td><td>361,510</td><td>108,278</td><td>469,788</td></tr></table>`, "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/");
+    expect(airport.signals?.[1]).toMatchObject({ type: "TOURISM_DEMAND", direction: "POSITIVE", startsAt: new Date("2026-05-31T12:00:00.000Z"), metadata: { contextSeriesKey: "airport-monthly-passengers", domesticPassengers: 361510, internationalPassengers: 108278, totalPassengers: 469788, annualChangePercent: 17.447 } });
+  });
+
+  it("discovers and parses Wellington Airport monthly passenger workbook", async () => {
+    expect(findWellingtonAirportWorkbookUrl(`<a href="/documents/latest.xlsx">Monthly Traffic Statistics</a>`)).toBe("https://www.wellingtonairport.co.nz/documents/latest.xlsx");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Monthly Traffic Stats");
+    sheet.getCell("B6").value = "April"; sheet.getCell("D6").value = 25; sheet.getCell("F6").value = 60_000; sheet.getCell("H6").value = 340_000; sheet.getCell("J6").value = { formula: "F6+H6", result: 400_000 };
+    sheet.getCell("B7").value = "April"; sheet.getCell("D7").value = 26; sheet.getCell("F7").value = 71_084; sheet.getCell("H7").value = 328_262; sheet.getCell("J7").value = { formula: "F7+H7", result: 399_346 };
+    const records = await parseWellingtonAirportMonthlyPassengers(new Uint8Array(await workbook.xlsx.writeBuffer()));
+    expect(records).toEqual([
+      expect.objectContaining({ year: 2025, month: 3, totalPassengers: 400000, annualChangePercent: null }),
+      expect.objectContaining({ year: 2026, month: 3, domesticPassengers: 328262, internationalPassengers: 71084, totalPassengers: 399346, annualChangePercent: -0.1635 }),
+    ]);
+    const signals = await publicDataAdapters.wellington_airport_monthly.normalise([{ sourceId: "wellington_airport_monthly", externalId: "airport-passengers:2026-04", payload: { record: records[1], sourceUrl: "https://www.wellingtonairport.co.nz/documents/latest.xlsx" }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signals[0]).toMatchObject({ marketKey: "wellington", type: "TOURISM_DEMAND", direction: "MIXED", metadata: { contextSeriesKey: "airport-monthly-passengers", temporalUse: "LAGGED_TREND_CONTEXT" } });
+  });
+
+  it("discovers, combines and normalises Queenstown Airport monthly passenger matrices", async () => {
+    expect(findQueenstownAirportDashboardUrl(`<iframe src="https://app.powerbi.com/view?r=public-report"></iframe>`)).toBe("https://app.powerbi.com/view?r=public-report");
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const matrix = (previous: number, current: number) => ({ results: [{ result: { data: { dsr: { DS: [{ SH: [{ DM2: [{ G1: 2025 }, { G1: 2026 }] }], PH: [{ DM0: [] }, { DM1: [{ G0: 0, X: [{ M0: previous }, { M0: current }] }] }], ValueDicts: { D0: months } }] } } } }] });
+    const records = combineQueenstownPassengerMatrices(
+      decodeQueenstownPassengerMatrix(matrix(60, 66)),
+      decodeQueenstownPassengerMatrix(matrix(40, 44)),
+      decodeQueenstownPassengerMatrix(matrix(100, 110)),
+    );
+    expect(records).toEqual([
+      expect.objectContaining({ year: 2025, month: 0, domesticPassengers: 60, internationalPassengers: 40, totalPassengers: 100, annualChangePercent: null }),
+      expect.objectContaining({ year: 2026, month: 0, domesticPassengers: 66, internationalPassengers: 44, totalPassengers: 110, annualChangePercent: 10 }),
+    ]);
+    const [signal] = await publicDataAdapters.queenstown_airport_monthly.normalise([{ sourceId: "queenstown_airport_monthly", externalId: "airport-passengers:2026-01", payload: { record: records[1] }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signal).toMatchObject({ marketKey: "queenstown-wanaka", type: "TOURISM_DEMAND", direction: "POSITIVE", metadata: { contextSeriesKey: "airport-monthly-passengers", totalPassengers: 110, annualChangePercent: 10 } });
   });
 
   it("parses and groups the latest MBIE ADP accommodation measures", async () => {
@@ -145,7 +385,71 @@ describe("public data adapter contract", () => {
       { sourceId: "mbie", externalId: records[0].id, payload: records[0], fetchedAt: new Date(), fixture: false },
     ], fixtureContext);
     expect(signals[0]).toMatchObject({ type: "TOURISM_DEMAND", marketKey: "auckland", direction: "MIXED", confidence: 0.9, metadata: { period: "2026-05-01", measures: { "Occupancy rate": { value: 0.619, flag: null } } } });
-    expect(publicDataAdapters.mbie.metadata).toMatchObject({ adapterKey: "public:mbie:adp-csv-v1", accessMethod: "OFFICIAL_PUBLIC_CSV_RANGE" });
+    expect(publicDataAdapters.mbie.metadata).toMatchObject({ adapterKey: "public:mbie:adp-csv-v2", accessMethod: "OFFICIAL_PUBLIC_CSV_RANGE" });
+  });
+
+  it("maps real MBIE RTO and territorial-authority names to every canonical accommodation market", async () => {
+    const expected = new Map([
+      ["Auckland RTO", ["auckland"]], ["Wellington City", ["wellington"]], ["Canterbury RTO", ["christchurch"]],
+      ["Queenstown-Lakes District", ["queenstown-wanaka"]], ["Rotorua District", ["rotorua"]],
+      ["Tauranga City", ["tauranga"]], ["Waikato RTO", ["waikato"]], ["Lake Taupo RTO", ["taupo"]],
+      ["Dunedin City", ["dunedin"]], ["Nelson Tasman RTO", ["nelson-tasman"]],
+      ["Hawke's Bay RTO", ["hawkes-bay"]], ["Taranaki RTO", ["taranaki"]], ["Northland RTO", ["northland"]],
+      ["Palmerston North City", ["manawatu"]], ["Fiordland RTO", ["southland-fiordland"]],
+      ["Bay of Plenty RTO", ["rotorua", "tauranga"]], ["Total New Zealand", ["new-zealand"]],
+    ]);
+    for (const [area, markets] of expected) expect(marketKeysForMbieArea(area)).toEqual(markets);
+    expect(marketKeysForMbieArea("West Coast RTO")).toEqual([]);
+
+    const record = parseMbieAccommodationTail("Month,Area type,Area,Property,Measure,Value,Flag\n1/05/2026,RTO,Bay of Plenty RTO,Total,Occupancy rate,0.72,\n1/05/2026,RTO,Bay of Plenty RTO,Total,Quality indicator,High,")[0]!;
+    const signals = await publicDataAdapters.mbie.normalise([{ sourceId: "mbie", externalId: record.id, payload: record, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signals.map((signal) => signal.marketKey)).toEqual(["rotorua", "tauranga"]);
+    expect(new Set(signals.map((signal) => signal.externalId)).size).toBe(2);
+  });
+
+  it("parses and normalises MBIE Tourism Volumes & Flows RTO visitor trends", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Sheet 1");
+    sheet.addRow(["Geographic_level_destination", "Destination", "Destination_code", "Population_segment", "Date", "Monthly_unique_counts"]);
+    sheet.addRow(["RTO", "Queenstown RTO", "RTO_2025_36", "Total visitor", "2025-06-30", 100_000]);
+    sheet.addRow(["RTO", "Queenstown RTO", "RTO_2025_36", "Domestic visitor", "2026-06-30", 70_000]);
+    sheet.addRow(["RTO", "Queenstown RTO", "RTO_2025_36", "Total visitor", "2026-06-30", 110_000]);
+    const records = await parseTourismFlowsMonthly(new Uint8Array(await workbook.xlsx.writeBuffer()));
+    expect(records).toEqual([
+      expect.objectContaining({ destination: "Queenstown RTO", period: "2025-06-01", monthlyUniqueCount: 100_000, annualChangePercent: null }),
+      expect.objectContaining({ destination: "Queenstown RTO", period: "2026-06-01", monthlyUniqueCount: 110_000, annualChangePercent: 10 }),
+    ]);
+    const signals = await publicDataAdapters.mbie_tourism_flows.normalise(records.map((record) => ({ sourceId: "mbie_tourism_flows", externalId: `tvf:${record.destinationCode}:${record.period}`, payload: { record }, fetchedAt: new Date(), fixture: false })), fixtureContext);
+    expect(signals.at(-1)).toMatchObject({ marketKey: "queenstown-wanaka", type: "TOURISM_DEMAND", direction: "POSITIVE", metadata: { contextSeriesKey: "tvf-monthly-unique:RTO_2025_36", monthlyUniqueVisitors: 110_000, temporalUse: "LAGGED_TREND_CONTEXT" } });
+  });
+
+  it("parses and normalises MBIE MRTE regional tourism spend", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("RTO table");
+    sheet.getCell("A6").value = "June-2026 RTO Summary Table";
+    sheet.addRow([]); sheet.addRow([]); sheet.addRow([]);
+    sheet.getRow(10).values = ["Destination Great Lake Taupo", 20, 5, 0.1, -0.1];
+    sheet.getRow(11).values = ["RotoruaNZ", "", "", "", ""];
+    const records = await parseMrteSummary(new Uint8Array(await workbook.xlsx.writeBuffer()));
+    expect(records[0]).toMatchObject({ rto: "Destination Great Lake Taupo", period: "2026-06-01", domesticSpendMillions: 20, internationalSpendMillions: 5, totalSpendMillions: 25 });
+    expect(records[0]!.annualChangePercent).toBeCloseTo(5.32, 1);
+    const [signal] = await publicDataAdapters.mbie_mrte.normalise([{ sourceId: "mbie_mrte", externalId: "mrte:taupo:2026-06-01", payload: { record: records[0] }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signal).toMatchObject({ marketKey: "taupo", type: "TOURISM_DEMAND", direction: "POSITIVE", metadata: { contextSeriesKey: "mrte-monthly-spend:destination-great-lake-taupo", totalSpendMillions: 25, unit: "NZD millions" } });
+  });
+
+  it("parses and normalises the MBIE IVS rolling annual summary", async () => {
+    const country = (value: number) => ({ Country: [{ Category: "All countries", Value: value }] });
+    const records = parseIvsAnnualSummary([
+      { publisher: "MBIE", publishingDate: "2026-06-02 11:00:00" },
+      { data: {
+        "Total spend": { "2025-03-31": country(10_000_000_000), "2026-03-31": country(11_000_000_000) },
+        "Mean spend per visitor": { "2026-03-31": country(3_030) },
+        "Median length of stay": { "2026-03-31": country(11) },
+      } },
+    ]);
+    expect(records.at(-1)).toMatchObject({ periodEnd: "2026-03-31", totalSpendNzd: 11_000_000_000, meanSpendPerVisitorNzd: 3_030, medianLengthOfStayDays: 11, annualChangePercent: 10, publishedAt: "2026-06-02 11:00:00" });
+    const [signal] = await publicDataAdapters.mbie_ivs.normalise([{ sourceId: "mbie_ivs", externalId: "ivs-annual:2026-03-31", payload: { record: records.at(-1) }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(signal).toMatchObject({ marketKey: "new-zealand", type: "TOURISM_DEMAND", direction: "POSITIVE", startsAt: new Date("2025-04-01T00:00:00.000Z"), endsAt: new Date("2026-04-01T00:00:00.000Z"), metadata: { contextSeriesKey: "ivs-rolling-annual-total-spend", temporalUse: "LAGGED_TREND_CONTEXT" } });
   });
 
   it("routes RBNZ B1 through Argus", async () => {
@@ -166,13 +470,13 @@ describe("public data adapter contract", () => {
   it("parses, prioritises and normalises NZTA Journey Planner GeoJSON", async () => {
     const records = parseNztaDelays({ type: "FeatureCollection", features: [
       { type: "Feature", properties: { ExternalId: 11, Status: "Active", Name: "Area Warning: SH 1", EventType: "Area Warning", StartDate: "2026-07-20 18:30:00", EndDate: "2026-07-23 02:00:00", Impact: "Caution", EventIsland: "South Island", IsCritical: 0 }, geometry: { type: "Point", coordinates: [172, -43] } },
-      { type: "Feature", properties: { ExternalId: 12, Status: "Active", Name: "Road Closure: SH 2", EventType: "Road Closure", StartDate: "2026-07-21 09:00:00", EndDate: "2026-07-22 09:00:00", Impact: "Road Closed", EventIsland: "North Island", IsCritical: 1 }, geometry: null },
+      { type: "Feature", properties: { ExternalId: 12, Status: "Active", Name: "Road Closure: SH 2 near Papakura", LocationArea: "Papakura", EventType: "Road Closure", StartDate: "2026-07-21 09:00:00", EndDate: "2026-07-22 09:00:00", Impact: "Road Closed", EventIsland: "North Island", IsCritical: 1 }, geometry: { type: "Point", coordinates: [174.9300, -37.0734] } },
       { type: "Feature", properties: { ExternalId: 13, Status: "Resolved", Name: "Old event" }, geometry: null },
     ] }, { from: new Date("2026-07-20T00:00:00.000Z"), to: new Date("2026-07-24T00:00:00.000Z") });
     expect(records.map((record) => record.id)).toEqual(["nzta-road-event:12", "nzta-road-event:11"]);
     expect(records[0]).toMatchObject({ startsAt: "2026-07-20T21:00:00.000Z", endsAt: "2026-07-21T21:00:00.000Z", feature: { properties: { Impact: "Road Closed" } } });
     const [signal] = await publicDataAdapters.nzta.normalise([{ sourceId: "nzta", externalId: records[0].id, payload: records[0], fetchedAt: new Date(), fixture: false }], fixtureContext);
-    expect(signal).toMatchObject({ type: "WEATHER_OR_ACCESS_DISRUPTION", direction: "NEGATIVE", confidence: 0.95, region: "North Island", metadata: { isCritical: true, geometry: null } });
+    expect(signal).toMatchObject({ marketKey: "auckland", type: "WEATHER_OR_ACCESS_DISRUPTION", direction: "NEGATIVE", confidence: 0.95, region: "North Island", metadata: { isCritical: true, geometry: { type: "Point" } } });
     expect(publicDataAdapters.nzta.metadata).toMatchObject({ adapterKey: "public:nzta:journey-planner-delays-v1", accessMethod: "OFFICIAL_PUBLIC_GEOJSON" });
   });
 
@@ -185,7 +489,7 @@ describe("public data adapter contract", () => {
     expect(alert).toMatchObject({ identifier: "urn:oid:2.49.0.1.554.0.test", sent: "2026-07-21T02:55:00.000Z", references: "old-alert", infos: [{ severity: "Severe", certainty: "Likely", parameters: { ColourCode: ["Orange"], ColourCodeHex: ["#f58220"] }, areas: [{ areaDesc: "Canterbury High Country", polygons: ["-43.0,171.0 -44.0,172.0 -43.0,171.0"] }] }] });
 
     const [signal] = await publicDataAdapters.metservice.normalise([{ sourceId: "metservice", externalId: `cap-alert:${alert.identifier}`, payload: { kind: "cap_alert", sourceUrl: alertUrl, feedItem: feed.items[0], alert }, fetchedAt: new Date("2026-07-21T03:00:00.000Z"), fixture: false }], fixtureContext);
-    expect(signal).toMatchObject({ type: "WEATHER_OR_ACCESS_DISRUPTION", title: "Heavy Rain Warning - Canterbury", region: "Canterbury High Country", startsAt: new Date("2026-07-21T06:00:00.000Z"), endsAt: new Date("2026-07-21T21:00:00.000Z"), direction: "NEGATIVE", confidence: 0.95, metadata: { sourceFormat: "OASIS CAP 1.2", attribution: "MetService New Zealand" } });
+    expect(signal).toMatchObject({ marketKey: "christchurch", type: "WEATHER_OR_ACCESS_DISRUPTION", title: "Heavy Rain Warning - Canterbury", region: "Canterbury High Country", startsAt: new Date("2026-07-21T06:00:00.000Z"), endsAt: new Date("2026-07-21T21:00:00.000Z"), direction: "NEGATIVE", confidence: 0.95, metadata: { sourceFormat: "OASIS CAP 1.2", attribution: "MetService New Zealand" } });
     expect(publicDataAdapters.metservice.metadata).toMatchObject({ adapterKey: "public:metservice:cap-rss-v1", accessMethod: "OFFICIAL_PUBLIC_CAP_RSS", dailyBudget: 288 });
   });
 
@@ -350,7 +654,15 @@ describe("public data adapter contract", () => {
   it("parses Queenstown Airport flights into transport-flow facts", async () => {
     const flight = parseQueenstownAirportFlights([{ flightList: ["NZ659"], from: "Christchurch", destination: "Queenstown", schTime: "09:40:00", schDate: "2026-07-21", status: "On Time", orderByDate: "2026-07-21T09:40:00+12:00", isDomestic: true, flightType: "Arrival" }])[0];
     const signals = await publicDataAdapters.airport_data.normalise([{ sourceId: "airport_data", externalId: "queenstown-airport:arrival:NZ659:2026-07-21T09:40:00+12:00", payload: { provider: "Queenstown Airport", flight }, fetchedAt: new Date(), fixture: false }], fixtureContext);
-    expect(signals[0]).toMatchObject({ type: "TRANSPORT_FLOW", marketKey: "queenstown", direction: "POSITIVE", startsAt: new Date("2026-07-20T21:40:00.000Z"), confidence: 0.75 });
+    expect(signals[0]).toMatchObject({ type: "TRANSPORT_FLOW", marketKey: "queenstown-wanaka", direction: "POSITIVE", startsAt: new Date("2026-07-20T21:40:00.000Z"), confidence: 0.75 });
+  });
+
+  it("parses Wellington Airport's official flight board into disruption-aware transport flow", async () => {
+    const html = `<div class="flights-board__items-wrapper"><div class="flights-board__item--body-row"><div class="flights-board__scheduled-time"><span>Scheduled time: </span>11:45</div><div class="flights-board__estimated-time"><span>Estimated time: </span>11:55</div><div class="flights-board__place"><span>From: </span>Napier</div><div class="flights-board__flight-number"><span>Flight number: </span>NZ5885</div><span class="flights-board__airline-name">Air New Zealand</span><div class="flights-board__gate"><strong>9</strong></div><div class="flights-board__remarks">Delayed</div></div></div>`;
+    const [flight] = parseWellingtonAirportFlights(html, "2026-07-21", "arrival");
+    expect(flight).toMatchObject({ flightNumber: "NZ5885", place: "Napier", scheduledAt: "2026-07-20T23:45:00.000Z", estimatedAt: "2026-07-20T23:55:00.000Z", status: "Delayed" });
+    const signals = await publicDataAdapters.wellington_airport.normalise([{ sourceId: "wellington_airport", externalId: "wellington-airport:arrival:nz5885:2026", payload: { provider: "Wellington Airport", flight }, fetchedAt: new Date(), fixture: false }], { ...fixtureContext, collectionRange: { from: new Date("2026-07-20T00:00:00Z"), to: new Date("2026-07-22T00:00:00Z") } });
+    expect(signals[0]).toMatchObject({ marketKey: "wellington", type: "TRANSPORT_FLOW", direction: "NEGATIVE", confidence: 0.9 });
   });
 
   it("parses Port of Auckland cruise CSV into Auckland transport-flow facts", async () => {
@@ -439,4 +751,18 @@ describe.skipIf(process.env.LIVE_SOURCE_PROBE !== "1")("Christchurch live source
     const [record] = await cruise.fetch(reference, context);
     expect(record.payload).toMatchObject({ kind: "event", value: { category: "Cruise ship", city: "Christchurch" } });
   }, 60_000);
+
+  it("collects bounded Wellington Airport transport flow through direct HTTP", async () => {
+    const from = new Date();
+    const to = new Date(from.getTime() + 2 * 86_400_000);
+    const context = { ...liveContext, collectionRange: { from, to }, collectionLimits: { maxRequests: 4, maxRecords: 40, timeoutMs: 30_000, maxBytes: 2_000_000 } };
+    const adapter = publicDataAdapters.wellington_airport;
+    const references = await adapter.discover({ marketScope: "wellington", from, to }, context);
+    const records = (await Promise.all(references.map((reference) => adapter.fetch(reference, context)))).flat();
+    const signals = await adapter.normalise(records, context);
+    expect(records.length).toBeGreaterThan(0);
+    expect(signals.length).toBeGreaterThan(0);
+    expect(signals.every((signal) => signal.marketKey === "wellington" && signal.type === "TRANSPORT_FLOW")).toBe(true);
+    expect(records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0)).toBeLessThanOrEqual(4);
+  }, 30_000);
 });

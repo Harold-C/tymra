@@ -29,10 +29,9 @@ evidence layers; it does not relax the OTA-input or abuse-control rules.
 - Argus owns every source that requires JavaScript rendering, browser cookies, interactive
   navigation, challenge handling or screenshot evidence. Tymra has no Browser Worker or browser
   fallback.
-- Tymra owns source governance, schedules, budgets, orchestration, evidence copy and hash
+- Tymra owns source configuration, schedules, budgets, orchestration, evidence copy and hash
   verification, ACK, normalisation, deduplication, monitoring and Data Explorer presentation.
-- Development schedules remain disabled. Production schedule enablement is a separate operational
-  and rights decision.
+- Development schedules remain disabled. Production schedule enablement is a separate operational decision.
 - Event discovery does not by itself prove accommodation demand. Events without auditable capacity,
   attendance or corroborating-demand evidence remain `PENDING_EVIDENCE` under the
   [`event-impact-data-contract.md`](../collection/event-impact-data-contract.md).
@@ -57,7 +56,7 @@ collection of disconnected dashboards. Its non-OTA operating surfaces include:
 
 - Data Explorer across raw evidence, parsed source records, canonical records, lineage and crawl
   frontiers;
-- data-source controls and health, including enabled/paused state, rights and operational status,
+- data-source controls and health, including enabled/paused state and operational status,
   budgets, cooldown and latest success/failure information;
 - collection run history and a run workspace with overview, evidence, output, configuration and
   audit views;
@@ -181,7 +180,7 @@ Acceptance `public-sources-2026-08-05T09:23:46.485Z-0f8aebe9` reran only
   event and four occurrences beyond the earlier listing-only baseline;
 - pass two added zero source, canonical or lineage rows and reported
   `unchangedSkipped: 11`;
-- governance snapshots were unchanged and enabled schedules stayed at zero.
+- source-configuration snapshots were unchanged and enabled schedules stayed at zero.
 
 ## Completed Tymra work
 
@@ -201,7 +200,7 @@ completed two passes with 20 raw records and six promoted events; School Sport C
 two passes with 13 raw records and correctly promoted zero unresolved/administrative rows. Each
 School Sport pass used one Argus execution, retained HTML/screenshot evidence locally, left zero
 remote evidence references and added no rows on the second pass. Ticketek listing/detail also
-preserved second-pass idempotency after the umbrella parser fix. Governance snapshots were
+preserved second-pass idempotency after the umbrella parser fix. Source-configuration snapshots were
 unchanged and all related schedules remained disabled.
 
 After the multi-execution evidence fix, 102 root tests (four live probes skipped), 53 Worker unit
@@ -214,7 +213,7 @@ durable Argus orchestration suite.
 Christchurch now has broad coverage across council events, major venues, public event platforms,
 sports, university and Ara dates, racing, cruise, airport demand and selected independent annual
 events. Lincoln, School Sport and Ticketek listing/detail are integrated through Argus. Production
-rights approval and schedule enablement remain separate gates;
+source activation and schedule enablement remain separate gates;
 they are not implied by the completed development and database acceptance.
 
 ## Archive boundary

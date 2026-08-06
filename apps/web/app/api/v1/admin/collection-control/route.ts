@@ -9,7 +9,6 @@ const messages: Record<string, [number, string]> = {
   WORKFLOW_HAS_NO_SOURCE: [409, "This workflow is not attached to a data source."],
   SOURCE_NOT_CONTROLLABLE: [404, "The source is not an eligible non-OTA collection source."],
   SOURCE_PAUSED: [409, "Resume the source before starting collection."],
-  SOURCE_GOVERNANCE_BLOCKED: [409, "The source is not approved for this environment and collection mode."],
   COLLECTION_ALREADY_ACTIVE: [409, "This collection workflow already has a pending or running job."],
   COLLECTION_COOLDOWN: [429, "This workflow was run recently. Wait for its manual cooldown before trying again."],
   SCHEDULER_RUNTIME_DISABLED: [409, "The global scheduler is disabled by the runtime environment."],

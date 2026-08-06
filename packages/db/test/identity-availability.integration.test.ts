@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { prisma } from "../src";
 
-describe("identity history and provider publication rights", () => {
+describe("identity history and source availability", () => {
   afterAll(async () => {
     await prisma.$disconnect();
   });
@@ -23,17 +23,13 @@ describe("identity history and provider publication rights", () => {
     });
   });
 
-  it("does not treat an approved source as publishable when its rights are blocked", async () => {
+  it("does not treat an operationally blocked source as available", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({
-      where: { key: "development-rights-blocked" },
+      where: { key: "development-operational-blocked" },
     });
-    const mayPublish = source.status === "APPROVED"
-      && source.enabled
-      && source.rightsAllowStorage
-      && source.rightsAllowDerivedAnalysis
-      && source.rightsAllowDisplay;
+    const mayPublish = source.enabled && source.operationalStatus === "HEALTHY";
 
-    expect(source.status).toBe("APPROVED");
+    expect(source.operationalStatus).toBe("BLOCKED");
     expect(mayPublish).toBe(false);
   });
 });

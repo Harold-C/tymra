@@ -127,7 +127,6 @@ async function applyAction(priceCheckId: string, action: ExceptionAction, payloa
           collectorVersion: original.collectorVersion,
           parserVersion: original.parserVersion,
           qualityFlags: ["ADMIN_CORRECTION", `SUPERSEDES:${original.id}`],
-          legalRightsStatus: original.legalRightsStatus,
           operationalStatus: original.operationalStatus,
           collectedAt: new Date(),
           rawDataStored: original.rawDataStored,

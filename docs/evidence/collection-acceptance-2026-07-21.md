@@ -8,16 +8,13 @@ architecture documents may add stricter controls, but they must not weaken this 
 acceptance result proves the implementation and its safeguards under a bounded development run; it
 does not activate production collection or prove nationwide completeness or multi-day stability.
 
-## Environment and governance boundary
+## Environment and configuration boundary
 
 - A dedicated `localAcceptance` mode is available only when `NODE_ENV=development`.
-- It refuses to run while the scheduler is enabled. Local acceptance never enables or edits a
-  schedule.
-- The source must be enabled for `DEVELOPMENT`, but local acceptance does not require or write
-  `approved-by` or `license-basis`.
-- The run must leave source approval, rights, lifecycle, operational and health state unchanged.
-- Local acceptance is not production source approval. Production activation remains a separate,
-  deliberate operational decision outside this workflow.
+- Development hard-disables scheduler execution. Local acceptance never enables or edits a schedule.
+- The source must be enabled for `DEVELOPMENT`.
+- The run must leave source configuration, lifecycle, operational and health state unchanged.
+- Production activation remains a separate, deliberate operational decision outside this workflow.
 
 ## Bounded real-source contract
 
@@ -60,7 +57,7 @@ The acceptance record must report at least:
 - rows created on the second pass, which must be zero for stable identities;
 - rows updated by the second run, where refresh is expected;
 - raw-evidence counts, parser-failure flags and configured TTL class;
-- source governance before and after the runs;
+- source configuration before and after the runs;
 - schedule state and runtime health.
 
 ## Automated acceptance gates
@@ -72,10 +69,10 @@ Every source implementation must include or reuse automated tests for:
 3. success and failure evidence-retention selection plus time-advanced cleanup;
 4. partial-discovery safety and rate-limit/challenge stop behaviour where applicable;
 5. rejection of `localAcceptance` in `test` and `production`;
-6. rejection of `localAcceptance` when the scheduler is enabled;
+6. hard-disabled scheduler execution in development;
 7. Redis source-lock contention, release and reacquisition;
 8. job lease recovery only after expiry, followed by a claim from another worker;
-9. source governance and schedules remaining unchanged;
+9. source configuration and schedules remaining unchanged;
 10. the repository's complete `pnpm verify` gate: lint, typecheck, unit tests, integration tests and
     production builds.
 
@@ -106,15 +103,15 @@ transport did not complete. A placeholder is not an implementation.
 | `browser-neutral-fixture` | Browser contract | controlled local page | control fixture | not applicable | fixtures cannot prove a real source | not applicable |
 | `development-degraded` | Failure control | deterministic fixture | control fixture | not applicable | intentional degraded state | not applicable |
 | `development-down` | Failure control | deterministic fixture | control fixture | not applicable | intentional down state | not applicable |
-| `development-rights-blocked` | Rights control | deterministic fixture | control fixture | not applicable | intentional rights block | not applicable |
+| `development-operational-blocked` | Operational control | deterministic fixture | control fixture | not applicable | intentional operational block | not applicable |
 | `manual-import` | Operator rate rows | validated CSV/JSON upload | dedicated bounded local path, evidence and idempotent persistence implemented | automated fixture/database path passed; no genuine operator export run | genuine operator file and two-pass real-file DB evidence | implemented_not_verified |
-| `booking` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
-| `airbnb` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | browser extractor; source is also explicitly rights-blocked | blocked / not_verified |
-| `expedia` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
-| `hotels` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
-| `agoda` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
-| `trip` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
-| `google_hotels` | Meta-search rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor, Browser Worker rate capture and approved test listing | placeholder / not_verified |
+| `booking` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
+| `airbnb` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | browser extractor and live transport configuration | placeholder / not_verified |
+| `expedia` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
+| `hotels` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
+| `agoda` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
+| `trip` | OTA accommodation/rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
+| `google_hotels` | Meta-search rates | read-only public browser | URL parser plus deterministic fixture only | no | source extractor and Browser Worker rate capture | placeholder / not_verified |
 | `public_holidays_nz` | National and anniversary holidays | Employment NZ public HTML | real bounded fetch/parser plus signal lineage | two passes succeeded | nationwide/full-year is outside this bounded result | locally verified |
 | `school_holidays_nz` | School holidays | Ministry of Education public HTML | real bounded fetch/parser plus signal lineage | two passes succeeded | uncertain summer end is deliberately omitted | locally verified |
 | `geonet` | Earthquake disruption | GeoNet open GeoJSON API | real bounded API/parser plus signal lineage | two passes succeeded | attribution/production activation is separate | locally verified |
@@ -140,7 +137,7 @@ The original three signal-channel acceptance runs enforced one request, at most 
 limit. Later source-specific adapters use the same shared guard and evidence contract with their own
 explicit request, page, record and response-size bounds.
 
-| Source | Run 1 | Run 2 | Source / canonical / links | Second-pass new rows | Raw evidence | Governance / schedule |
+| Source | Run 1 | Run 2 | Source / canonical / links | Second-pass new rows | Raw evidence | Configuration / schedule |
 | --- | --- | --- | --- | --- | --- | --- |
 | GeoNet | `cmrt9muus0001nv0mxd18i6zd` | `cmrt9n2c90001qr0nrd60nkb5` | 2 / 2 / 2 | 0 | 2 + 2, success TTL 72h | unchanged; schedule disabled |
 | Employment NZ holidays | `cmrt9nck20001p40n1ghtcqqd` | `cmrt9niqz0001la0ma2rm452y` | 2 / 2 / 2 | 0 | 2 + 2, success TTL 72h | unchanged; schedule disabled |
@@ -168,7 +165,7 @@ than duplicated per adapter.
 
 The 2026-07-21 regression reran every implemented channel except Ticketmaster and the unimplemented
 OTA placeholders. Each pair below is the source's final two bounded real `localAcceptance` runs.
-All 32 runs succeeded with zero failures, `governanceUnchanged=true`,
+All 32 runs succeeded with zero failures, `configurationUnchanged=true`,
 `schedulesUnchanged=true` and no enabled schedule. Retained success evidence has a 72-hour TTL and
 `parserFailure=false`.
 

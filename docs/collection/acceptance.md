@@ -9,8 +9,8 @@ Last updated: 2026-08-06
 ## 环境边界
 
 - `localAcceptance` 只允许在 `NODE_ENV=development` 下运行。
-- Scheduler 必须关闭；验收不得创建、启用或修改计划任务。
-- 数据源需在开发环境启用，但本地验收不要求或写入 `approved-by`、`license-basis`，也不得改变审批、权利、生命周期、健康或运行状态。
+- 开发环境会硬性禁止 Scheduler 执行；验收不得创建、启用或修改计划任务。
+- 数据源需在开发环境启用，本地验收不得改变来源配置、生命周期、健康或运行状态。
 - 生产启用是独立的运维决策，不由本地验收自动触发。最新统一 34 来源、68 pass 结果见
   [2026-08-06 operational hardening acceptance](../evidence/operational-hardening-acceptance-2026-08-06.md)。
 
@@ -34,7 +34,7 @@ Last updated: 2026-08-06
 
 同一有边界的真实采集必须连续运行两次：第一次证明发现、解析、标准化、持久化和链路；第二次证明稳定标识的幂等 upsert。
 
-验收至少记录：运行 ID 与范围、请求/页面/发现/详情/成功/失败数、两次运行后的来源与 canonical 行数、第二次新增与更新行数、证据和 TTL、运行前后治理状态、计划任务状态和运行时健康。
+验收至少记录：运行 ID 与范围、请求/页面/发现/详情/成功/失败数、两次运行后的来源与 canonical 行数、第二次新增与更新行数、证据和 TTL、运行前后来源配置、计划任务状态和运行时健康。
 
 ## 自动化门槛
 
@@ -44,10 +44,10 @@ Last updated: 2026-08-06
 2. 持久化、来源到 canonical 的链路和两次运行幂等性；
 3. 成功/失败证据的 TTL 选择及时间推进清理；
 4. 部分发现安全，以及适用时的限流/挑战停止逻辑；
-5. `test`、`production` 和 Scheduler 开启时拒绝本地验收；
+5. `test`、`production` 拒绝本地验收，并验证开发环境硬性禁止 Scheduler 执行；
 6. Redis 来源锁的竞争、释放和重获；
 7. Job 租约过期后才能回收；
-8. 来源治理和计划任务保持不变；
+8. 来源配置和计划任务保持不变；
 9. 完整 `pnpm verify`：lint、typecheck、unit、integration 和 production build。
 
 只有上述适用门槛都有实际证据时才使用 `locally verified`。未适用项必须明确说明，不能把本地成功扩大成生产或长期稳定性结论。

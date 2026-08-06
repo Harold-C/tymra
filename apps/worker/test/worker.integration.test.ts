@@ -75,16 +75,20 @@ describe("Worker baseline pipeline", () => {
     const plan = await prisma.queryPlan.findFirstOrThrow({ where: { analysisRequestId: request!.id }, orderBy: { version: "desc" } });
     const checkIn = (plan.dateBasket as unknown as Array<{ checkIn: string }>)[0].checkIn;
     const signalId = `${prefix}:formal-market-signal`;
+    const demandSignalId = `${prefix}:formal-demand-signal`;
     const startsAt = new Date(`${checkIn}T00:00:00.000Z`);
     await prisma.marketSignal.create({ data: { id: signalId, marketKey: "christchurch", type: "MAJOR_EVENT", region: "Christchurch", startsAt, endsAt: new Date(startsAt.getTime() + 86_400_000), status: "CONFIRMED", evidence: { regression: true }, isDemo: true } });
+    await prisma.marketSignal.create({ data: { id: demandSignalId, marketKey: "christchurch", type: "TOURISM_DEMAND", region: "Christchurch", startsAt: new Date(startsAt.getTime() - 50 * 86_400_000), endsAt: new Date(startsAt.getTime() - 20 * 86_400_000), status: "CONFIRMED", evidence: { title: "Latest MBIE market context", direction: "POSITIVE", confidence: 0.9 }, isDemo: true } });
     try {
       await drainRequest(request!.id);
       const result = await service.getResult(request!.id);
       expect(result?.resultVersions[0]).toMatchObject({ status: "PUBLISHED", outcome: "PUBLISHED", isDemo: true });
       expect(result?.marketSnapshots[0].dateSnapshots).toHaveLength(30);
       expect(result?.priceAnalyses[0].eventImpact).not.toBeNull();
-      expect(result?.priceAnalyses[0].eventEvidence).toMatchObject({ causalClaim: false, policyVersion: "event-impact-v1" });
-      expect(result?.marketSnapshots[0].dateSnapshots.some((snapshot) => Object.keys(snapshot.eventEvidence as object).length > 0)).toBe(true);
+      expect(result?.priceAnalyses[0].eventEvidence).toMatchObject({ causalClaim: false, policyVersion: "event-impact-v2", signalIds: [signalId], publicSignalCoverage: { complete: false } });
+      expect(result?.marketSnapshots[0].marketScope).toMatchObject({ market: "christchurch", country: "NZ" });
+      expect(result?.marketSnapshots[0].dateSnapshots.some((snapshot) => (snapshot.eventEvidence as { signalIds?: string[] }).signalIds?.includes(signalId))).toBe(true);
+      expect(result?.marketSnapshots[0].dateSnapshots.every((snapshot) => (snapshot.eventEvidence as { signalIds?: string[] }).signalIds?.includes(demandSignalId))).toBe(true);
       expect(result?.priceAnalyses[0].demandPressure).toBeGreaterThan(0);
       await waitForEmailDelivery(request!.id);
       const deliveries = await prisma.emailDelivery.findMany({ where: { analysisRequestId: request!.id } });
@@ -92,9 +96,9 @@ describe("Worker baseline pipeline", () => {
       expect(deliveries[0]).toMatchObject({ type: "RESULT_READY", status: "SENT" });
       const signalRuns = await prisma.collectionRun.findMany({ where: { analysisRequestId: request!.id }, include: { dataSource: true } });
       expect(signalRuns.some((run) => run.dataSource.key === "public_holidays_nz" && run.status === "SUCCEEDED")).toBe(true);
-      expect(signalRuns.some((run) => run.dataSource.key === "eventfinda" && run.status === "FAILED" && run.errorCode === "RIGHTS_BLOCKED")).toBe(true);
+      expect(signalRuns.some((run) => run.dataSource.key === "eventfinda")).toBe(true);
     } finally {
-      await prisma.marketSignal.deleteMany({ where: { id: signalId } });
+      await prisma.marketSignal.deleteMany({ where: { id: { in: [signalId, demandSignalId] } } });
     }
   });
 
@@ -129,17 +133,17 @@ describe("Worker baseline pipeline", () => {
     expect(await prisma.resultVersion.count({ where: { analysisRequestId: request!.id } })).toBe(0);
   });
 
-  it("returns SOURCE_UNAVAILABLE without publishing when the approved rate source is suspended", async () => {
+  it("returns SOURCE_UNAVAILABLE without publishing when the rate source is unavailable", async () => {
     const request = await service.createFormalAnalysis({ input: `https://www.booking.com/hotel/nz/source-suspended-${prefix.slice(-8)}.html`, email: `suspended-${prefix.slice(-8)}@tymra.test`, serviceConsent: true, idempotencyKey: `${prefix}:source-suspended`, locale: "en", deviceId: `${prefix}:source-suspended-device`, ipAddress: testIp(28) });
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "development-demo" } });
     try {
-      await prisma.dataSource.update({ where: { id: source.id }, data: { internalApprovalStatus: "SUSPENDED", legalRightsStatus: "BLOCKED", operationalStatus: "BLOCKED" } });
+      await prisma.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "BLOCKED" } });
       await drainRequest(request!.id);
       expect(await service.getAnalysis(request!.id)).toMatchObject({ status: "SOURCE_UNAVAILABLE", failureCode: "SOURCE_UNAVAILABLE" });
       expect(await prisma.resultVersion.count({ where: { analysisRequestId: request!.id } })).toBe(0);
       expect(await prisma.emailDelivery.count({ where: { analysisRequestId: request!.id } })).toBe(0);
     } finally {
-      await prisma.dataSource.update({ where: { id: source.id }, data: { internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, operationalStatus: source.operationalStatus, enabled: source.enabled, lifecycle: source.lifecycle } });
+      await prisma.dataSource.update({ where: { id: source.id }, data: { operationalStatus: source.operationalStatus, enabled: source.enabled, lifecycle: source.lifecycle } });
     }
   });
 
@@ -148,37 +152,110 @@ describe("Worker baseline pipeline", () => {
     await expect(liveService.createPreview({ input: `https://www.booking.com/hotel/nz/production-no-fallback-${prefix.slice(-8)}.html`, idempotencyKey: `${prefix}:production-no-fallback`, locale: "en", deviceId: `${prefix}:production-device`, ipAddress: testIp(27) })).rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
   });
 
-  it("restricts Eventfinda local acceptance to development with the scheduler disabled", async () => {
+  it("restricts Eventfinda local acceptance to development", async () => {
     for (const NODE_ENV of ["test", "production"] as const) {
       const guardedService = new WorkerService({ ...environment, NODE_ENV, SCHEDULER_ENABLED: false });
       await expect(guardedService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", localAcceptance: true }))
-        .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Local Eventfinda acceptance is restricted to the development environment" });
+        .rejects.toMatchObject({ code: "CONFIGURATION_ERROR", message: "Local Eventfinda acceptance is restricted to the development environment" });
     }
-
-    const scheduledService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: true });
-    await expect(scheduledService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", localAcceptance: true }))
-      .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Disable the scheduler before local Eventfinda acceptance" });
 
     const productionBootstrap = new WorkerService({ ...environment, NODE_ENV: "production", SCHEDULER_ENABLED: false });
     await expect(productionBootstrap.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", developmentBootstrap: true }))
-      .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Eventfinda development bootstrap is restricted to the development environment" });
-    const scheduledBootstrap = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: true });
-    await expect(scheduledBootstrap.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", developmentBootstrap: true }))
-      .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Disable the scheduler before Eventfinda development bootstrap" });
+      .rejects.toMatchObject({ code: "CONFIGURATION_ERROR", message: "Eventfinda development bootstrap is restricted to the development environment" });
     const developmentService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false });
     await expect(developmentService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", localAcceptance: true, developmentBootstrap: true }))
       .rejects.toMatchObject({ code: "INVALID_COLLECTION_MODE" });
   });
 
-  it("applies shared local-acceptance guards to public sources", async () => {
+  it("enables source-bound schedules only for an enabled healthy source", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "mot_airline_performance" } });
+    const schedules = await prisma.scheduleDefinition.findMany({ where: { key: "mot-airline-performance-daily" } });
+    expect(schedules).toHaveLength(1);
+    try {
+      await prisma.dataSource.update({ where: { id: source.id }, data: {
+        enabled: false,
+        operationalStatus: "DEGRADED",
+      } });
+      expect(await service.sourceSchedulePlan([source.key])).toMatchObject({
+        ready: false,
+        sources: [{ sourceId: source.key, schedules: [{ key: "mot-airline-performance-daily", enabled: false }] }],
+        mutationPerformed: false,
+      });
+      await expect(service.configureSourceSchedules([source.key], { enabled: true, reason: "integration source gate" }))
+        .rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE" });
+
+      await prisma.dataSource.update({ where: { id: source.id }, data: {
+        enabled: true,
+        operationalStatus: "HEALTHY",
+      } });
+      expect(await service.sourceSchedulePlan([source.key])).toMatchObject({ ready: true });
+      expect(await service.configureSourceSchedules([source.key], { enabled: true, reason: "integration source ready" })).toMatchObject({
+        enabled: true,
+        sources: [source.key],
+        schedules: [{ key: "mot-airline-performance-daily", enabled: true }],
+        mutationPerformed: true,
+      });
+      expect(await service.configureSourceSchedules([source.key], { enabled: false, reason: "integration rollback check" })).toMatchObject({
+        enabled: false,
+        schedules: [{ key: "mot-airline-performance-daily", enabled: false }],
+      });
+      expect(await prisma.auditEvent.count({ where: { entityType: "CollectionRuntime", entityId: source.key, eventType: { in: ["source_schedules_enabled", "source_schedules_disabled"] } } })).toBe(2);
+    } finally {
+      await prisma.dataSource.update({ where: { id: source.id }, data: {
+        enabled: source.enabled,
+        operationalStatus: source.operationalStatus,
+      } });
+      await Promise.all(schedules.map((schedule) => prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: schedule.enabled, nextRunAt: schedule.nextRunAt } })));
+    }
+  });
+
+  it("activates a healthy source in every environment", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "mot_airline_performance" } });
+    const startedAt = new Date();
+    const adapter: PublicDataAdapter = {
+      metadata: { sourceId: source.key, sourceName: source.name, sourceType: "PUBLIC_DATA", supportedDomains: ["www.transport.govt.nz"], adapterKey: "integration:development-activation", accessMethod: "PUBLIC_WEB", concurrencyLimit: 1, dailyBudget: 1, collectorVersion: "test", parserVersion: "test" },
+      async discover() { return []; },
+      async fetch() { return []; },
+      async normalise() { return []; },
+      async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "integration healthy", latencyMs: 0, mode: "live" }; },
+    };
+    const developmentService = new WorkerService({ ...environment, NODE_ENV: "development" }, { [source.key]: adapter });
+    const productionService = new WorkerService({ ...environment, NODE_ENV: "production" }, { [source.key]: adapter });
+    try {
+      await prisma.dataSource.update({ where: { id: source.id }, data: {
+        enabled: true,
+        lifecycle: "RESEARCH",
+        operationalStatus: "DEGRADED",
+      } });
+      const activated = await developmentService.activateSource(source.key);
+      expect(activated).toMatchObject({
+        enabled: true,
+        operationalStatus: "HEALTHY",
+        metadata: { activation: { environment: "development" } },
+      });
+      await expect(productionService.activateSource(source.key)).resolves.toMatchObject({ enabled: true, operationalStatus: "HEALTHY" });
+    } finally {
+      await prisma.sourceHealthCheck.deleteMany({ where: { dataSourceId: source.id, checkedAt: { gte: startedAt } } });
+      await prisma.dataSource.update({ where: { id: source.id }, data: {
+        enabled: source.enabled,
+        lifecycle: source.lifecycle,
+        operationalStatus: source.operationalStatus,
+        status: source.status,
+        healthStatus: source.healthStatus,
+        lastReviewedAt: source.lastReviewedAt,
+        lastSuccessAt: source.lastSuccessAt,
+        healthSummary: source.healthSummary as Prisma.InputJsonValue,
+        metadata: source.metadata as Prisma.InputJsonValue,
+      } });
+    }
+  });
+
+  it("applies the shared development-only local-acceptance guard to public sources", async () => {
     for (const NODE_ENV of ["test", "production"] as const) {
       const guardedService = new WorkerService({ ...environment, NODE_ENV, SCHEDULER_ENABLED: false });
       await expect(guardedService.collectSource("geonet", "new-zealand", undefined, { localAcceptance: true }))
-        .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Local source acceptance is available only in development" });
+        .rejects.toMatchObject({ code: "CONFIGURATION_ERROR", message: "Local source acceptance is available only in development" });
     }
-    const scheduledService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: true });
-    await expect(scheduledService.collectSource("geonet", "new-zealand", undefined, { localAcceptance: true }))
-      .rejects.toMatchObject({ code: "RIGHTS_BLOCKED", message: "Disable the scheduler before local source acceptance" });
   });
 
   it("persists generic source signals, canonical signals and lineage idempotently", async () => {
@@ -190,7 +267,6 @@ describe("Worker baseline pipeline", () => {
       async fetch() { return [0, 1, 2].map((index) => ({ sourceId: "geonet", externalId: `${externalPrefix}:${index}`, payload: { publicID: `${externalPrefix}:${index}`, token: "must-redact" }, fetchedAt: new Date(), fixture: false })); },
       async normalise(records) { return records.map((record, index) => ({ sourceId: "geonet", externalId: record.externalId, marketKey: "new-zealand", type: "WEATHER_OR_ACCESS_DISRUPTION", title: `Integration quake ${index}`, region: "New Zealand", startsAt: new Date("2026-08-01T00:00:00Z"), endsAt: new Date("2026-08-02T00:00:00Z"), direction: "UNKNOWN", confidence: 0.5, evidenceRef: `https://api.geonet.org.nz/quake/${index}`, metadata: { magnitude: 4.2, sequence: index }, fixture: false })); },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "fixture transport", latencyMs: 0, mode: "live" }; },
-      rightsMetadata() { return { internalApprovalStatus: "APPROVED", legalRightsStatus: "ALLOWED", lifecycle: "PILOT", environments: ["DEVELOPMENT", "TEST"], allowedUsage: ["COLLECTION"], displayPermission: true, derivedAnalysisPermission: true, retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null }, basis: "integration" }; },
     };
     const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false }, { geonet: adapter });
     const runIds: string[] = [];
@@ -210,8 +286,8 @@ describe("Worker baseline pipeline", () => {
       expect(await prisma.marketSignalSourceLink.count({ where: { sourceMarketSignalId: { in: sourceSignals.map((signal) => signal.id) } } })).toBe(2);
       expect(await prisma.rawArtifact.count({ where: { collectionRunId: { in: runIds } } })).toBe(4);
       const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
-      expect(run.scope).toMatchObject({ localAcceptance: true, effective: { limit: 2 }, limits: { maxRequests: 1, maxRecords: 2, maxWindowDays: 31 }, governanceUnchanged: true, schedulesUnchanged: true });
-      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
+      expect(run.scope).toMatchObject({ localAcceptance: true, effective: { limit: 2 }, limits: { maxRequests: 2, maxRecords: 2, maxWindowDays: 31 }, configurationUnchanged: true, schedulesUnchanged: true });
+      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
     } finally {
       await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } } });
       await prisma.marketSignal.deleteMany({ where: { id: { in: canonicalIds } } });
@@ -250,7 +326,6 @@ describe("Worker baseline pipeline", () => {
       async normaliseEvents() { return events; },
       async normalise() { return []; },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "integration", latencyMs: 0, mode: "live" }; },
-      rightsMetadata() { return { internalApprovalStatus: "APPROVED", legalRightsStatus: "ALLOWED", lifecycle: "PILOT", environments: ["DEVELOPMENT", "TEST"], allowedUsage: ["COLLECTION"], displayPermission: true, derivedAnalysisPermission: true, retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null }, basis: "integration" }; },
     };
     const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false }, { [source.key]: adapter });
 
@@ -272,11 +347,15 @@ describe("Worker baseline pipeline", () => {
       expect(promoted.impactStatus).toBe("PROMOTED");
       expect(promoted.impactScore).toBeGreaterThan(0.75);
       expect(promoted.impactEvidence).toMatchObject({ items: [expect.objectContaining({ evidenceType: "EXPECTED_ATTENDANCE", value: 70_000 })] });
+      const majorSignal = await prisma.marketSignal.findFirst({ where: { eventOccurrenceId: promoted.canonicalLinks[0]?.eventOccurrence.id } });
+      expect(majorSignal).toMatchObject({ marketKey: "christchurch", type: "MAJOR_EVENT", status: "CONFIRMED" });
     } finally {
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: { in: externalIds } }, select: { id: true } });
       const sourceOccurrences = await prisma.sourceEventOccurrence.findMany({ where: { dataSourceId: source.id, externalId: { in: externalIds } }, include: { canonicalLinks: true } });
       const occurrenceIds = sourceOccurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId));
       const canonicalOccurrences = await prisma.eventOccurrence.findMany({ where: { id: { in: occurrenceIds } }, select: { id: true, canonicalEventId: true, venueId: true } });
+      await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: "event:" } } });
+      await prisma.marketSignal.deleteMany({ where: { eventOccurrenceId: { in: occurrenceIds } } });
       await prisma.eventOccurrenceSourceLink.deleteMany({ where: { sourceEventOccurrenceId: { in: sourceOccurrences.map((occurrence) => occurrence.id) } } });
       await prisma.eventSourceLink.deleteMany({ where: { sourceEventId: { in: sourceEvents.map((event) => event.id) } } });
       await prisma.sourceEventOccurrence.deleteMany({ where: { id: { in: sourceOccurrences.map((occurrence) => occurrence.id) } } });
@@ -284,6 +363,63 @@ describe("Worker baseline pipeline", () => {
       await prisma.eventOccurrence.deleteMany({ where: { id: { in: canonicalOccurrences.map((occurrence) => occurrence.id) } } });
       await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalOccurrences.map((occurrence) => occurrence.canonicalEventId) } } });
       for (const venueId of canonicalOccurrences.flatMap((occurrence) => occurrence.venueId ? [occurrence.venueId] : [])) {
+        if (await prisma.eventOccurrence.count({ where: { venueId } }) === 0) await prisma.canonicalVenue.deleteMany({ where: { id: venueId } });
+      }
+    }
+  });
+
+  it("merges independent event-impact evidence into one canonical major-event signal", async () => {
+    const officialSource = await prisma.dataSource.findUniqueOrThrow({ where: { key: "canterbury_major_annual_events" } });
+    const demandSource = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
+    const observedAt = new Date("2026-08-05T00:00:00.000Z");
+    const title = `Integration Regional Major Event ${prefix}`;
+    const base = {
+      title, category: "Festival", subcategory: null, venueName: "Integration Regional Park", address: null,
+      city: "Christchurch", region: "Canterbury", territorialAuthority: "Christchurch City", postcode: null,
+      countryCode: "NZ", latitude: null, longitude: null, timezone: "Pacific/Auckland", timePrecision: "DATE" as const,
+      startsAt: new Date("2026-12-05T00:00:00.000Z"), endsAt: new Date("2026-12-06T00:00:00.000Z"),
+      status: "SCHEDULED" as const, ticketStatus: null, impactStatus: "PENDING_EVIDENCE" as const,
+      impactScore: null, impactConfidence: null, sourceUpdatedAt: null, observedAt, fixture: false, metadata: {},
+    };
+    const officialEvent = {
+      ...base, sourceId: officialSource.key, externalId: `${prefix}:official-scale`, sourceUrl: "https://event.ccc.govt.nz/major-event",
+      impactEvidence: { ...emptyEventImpactEvidence(), items: [{ evidenceType: "OFFICIAL_SCALE_LABEL" as const, value: "MAJOR" as const, sourceUrl: "https://event.ccc.govt.nz/major-event", observedAt: observedAt.toISOString(), confidence: 0.94 }] },
+    };
+    const demandEvent = {
+      ...base, sourceId: demandSource.key, externalId: `${prefix}:demand-corroboration`, sourceUrl: "https://www.eventfinda.co.nz/major-event",
+      impactEvidence: { ...emptyEventImpactEvidence(), items: [{ evidenceType: "CORROBORATING_DEMAND" as const, value: "HIGH" as const, sourceUrl: "https://www.eventfinda.co.nz/major-event-demand", observedAt: observedAt.toISOString(), confidence: 0.88 }] },
+    };
+    const runs = await Promise.all([officialSource, demandSource, officialSource].map((source, index) => prisma.collectionRun.create({
+      data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "RUNNING", scope: { integration: true, index }, startedAt: new Date(), attemptCount: 1, isDemo: true },
+    })));
+    let occurrenceId: string | undefined;
+    try {
+      const first = await service.persistNormalisedEvent(officialEvent, officialSource.id, runs[0]!.id);
+      expect(first.eventOccurrence.impactStatus).toBe("PENDING_EVIDENCE");
+      const second = await service.persistNormalisedEvent(demandEvent, demandSource.id, runs[1]!.id);
+      expect(second.eventOccurrence).toMatchObject({ impactStatus: "PROMOTED", impactConfidence: 0.88 });
+      occurrenceId = second.eventOccurrence.id;
+      await service.persistNormalisedEvent(officialEvent, officialSource.id, runs[2]!.id);
+
+      const occurrence = await prisma.eventOccurrence.findUniqueOrThrow({ where: { id: occurrenceId }, include: { sourceLinks: true, marketSignals: { include: { sourceLinks: true } } } });
+      expect(occurrence.sourceLinks).toHaveLength(2);
+      expect(occurrence.impactEvidence).toMatchObject({ policyVersion: "event-impact-promotion-v2", items: expect.arrayContaining([
+        expect.objectContaining({ evidenceType: "OFFICIAL_SCALE_LABEL", value: "MAJOR" }),
+        expect.objectContaining({ evidenceType: "CORROBORATING_DEMAND", value: "HIGH" }),
+      ]) });
+      expect(occurrence.marketSignals).toHaveLength(1);
+      expect(occurrence.marketSignals[0]).toMatchObject({ type: "MAJOR_EVENT", status: "CONFIRMED", marketKey: "christchurch" });
+      expect(occurrence.marketSignals[0]!.sourceLinks).toHaveLength(2);
+    } finally {
+      const sourceOccurrences = await prisma.sourceEventOccurrence.findMany({ where: { externalId: { in: [officialEvent.externalId, demandEvent.externalId] } }, include: { canonicalLinks: true } });
+      const occurrenceIds = [...new Set(sourceOccurrences.flatMap((item) => item.canonicalLinks.map((link) => link.eventOccurrenceId)))];
+      const canonicalOccurrences = await prisma.eventOccurrence.findMany({ where: { id: { in: occurrenceIds } }, select: { canonicalEventId: true, venueId: true } });
+      await prisma.sourceMarketSignal.deleteMany({ where: { externalId: { in: [`event:${officialEvent.externalId}`, `event:${demandEvent.externalId}`] } } });
+      await prisma.marketSignal.deleteMany({ where: { eventOccurrenceId: { in: occurrenceIds } } });
+      await prisma.sourceEvent.deleteMany({ where: { dataSourceId: { in: [officialSource.id, demandSource.id] }, externalId: { in: [officialEvent.externalId, demandEvent.externalId] } } });
+      await prisma.eventOccurrence.deleteMany({ where: { id: { in: occurrenceIds } } });
+      await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalOccurrences.map((item) => item.canonicalEventId) } } });
+      for (const venueId of canonicalOccurrences.flatMap((item) => item.venueId ? [item.venueId] : [])) {
         if (await prisma.eventOccurrence.count({ where: { venueId } }) === 0) await prisma.canonicalVenue.deleteMany({ where: { id: venueId } });
       }
     }
@@ -298,7 +434,6 @@ describe("Worker baseline pipeline", () => {
       async fetch() { return [{ sourceId: "geonet", externalId, payload: { malformed: true }, fetchedAt: new Date(), fixture: false }]; },
       async normalise() { throw new AdapterError("PARSING_ERROR", "Integration parser failure", false); },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "fixture transport", latencyMs: 0, mode: "live" }; },
-      rightsMetadata() { return { internalApprovalStatus: "APPROVED", legalRightsStatus: "ALLOWED", lifecycle: "PILOT", environments: ["DEVELOPMENT", "TEST"], allowedUsage: ["COLLECTION"], displayPermission: true, derivedAnalysisPermission: true, retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null }, basis: "integration" }; },
     };
     const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 }, { geonet: adapter });
     const startedAt = new Date();
@@ -382,7 +517,7 @@ describe("Worker baseline pipeline", () => {
     }
   });
 
-  it("idempotently persists direct Ticketmaster listings and Argus details without changing governance", async () => {
+  it("idempotently persists direct Ticketmaster listings and Argus details without changing configuration", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "ticketmaster" } });
     const externalId = `tm-${prefix.replace(/[^a-z0-9]/gi, "").slice(-12)}`;
     const sourceUrl = `https://www.ticketmaster.co.nz/integration-auckland-16-08-2026/event/${externalId}`;
@@ -453,11 +588,8 @@ describe("Worker baseline pipeline", () => {
       expect(successArtifacts).toHaveLength(1);
       expect(successArtifacts.every((artifact) => !artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 71 * 3_600_000)).toBe(true);
       const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
-      expect(secondRun.scope).toMatchObject({ localAcceptance: true, governanceUnchanged: true, schedulesUnchanged: true, limits: { maxRequests: 1, maxPages: 1, maxDetails: 1, maxRecords: 2, maxWindowDays: 31 } });
-      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
-      await expect(acceptanceService.setTicketmasterSchedules(true)).rejects.toMatchObject({ code: "RIGHTS_BLOCKED" });
-      expect(await acceptanceService.setTicketmasterSchedules(false)).toMatchObject([{ key: "ticketmaster-details-six-hour", enabled: false }, { key: "ticketmaster-discovery-daily", enabled: false }]);
-
+      expect(secondRun.scope).toMatchObject({ localAcceptance: true, configurationUnchanged: true, schedulesUnchanged: true, limits: { maxRequests: 1, maxPages: 1, maxDetails: 1, maxRecords: 2, maxWindowDays: 31 } });
+      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
       listingComplete = false;
       const incompleteDiscovery = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined, { ...range, phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(incompleteDiscovery.runId);
@@ -587,7 +719,7 @@ describe("Worker baseline pipeline", () => {
         expect(second.counters.unchangedSkipped).toBeGreaterThanOrEqual(1);
         expect(second.events).toBeGreaterThanOrEqual(1);
         const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
-        expect(secondRun.scope).toMatchObject({ governanceUnchanged: true, schedulesUnchanged: true });
+        expect(secondRun.scope).toMatchObject({ configurationUnchanged: true, schedulesUnchanged: true });
       }
       ticketekDetailChallenge = true;
       const ticketekCountsBeforeChallenge = await counts(sourceByKey.get("ticketek_events")!.id);
@@ -654,7 +786,7 @@ describe("Worker baseline pipeline", () => {
       canonicalIds = sourceSignals.flatMap((signal) => signal.canonicalLink ? [signal.canonicalLink.marketSignalId] : []);
       expect(await prisma.rawArtifact.count({ where: { collectionRunId: { in: runIds } } })).toBe(4);
       const secondRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
-      expect(secondRun.scope).toMatchObject({ localAcceptance: true, governanceUnchanged: true, schedulesUnchanged: true, effective: { limit: 2 }, limits: { maxRequests: 1, maxPages: 1, maxRecords: 2, maxWindowDays: 31 } });
+      expect(secondRun.scope).toMatchObject({ localAcceptance: true, configurationUnchanged: true, schedulesUnchanged: true, effective: { limit: 2 }, limits: { maxRequests: 1, maxPages: 1, maxRecords: 2, maxWindowDays: 31 } });
     } finally {
       await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
       await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: "rbnz-b1:2026-07-20:" } } });
@@ -726,7 +858,7 @@ describe("Worker baseline pipeline", () => {
       venueIds = canonicalEvents[0].occurrences.flatMap((occurrence) => occurrence.venueId ? [occurrence.venueId] : []);
 
       const unchangedSource = await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } });
-      expect(unchangedSource).toMatchObject({ internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, rightsAllowStorage: source.rightsAllowStorage, rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis });
+      expect(unchangedSource).toMatchObject({ lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
     } finally {
       await prisma.sourceEvent.deleteMany({ where: { dataSourceId: source.id, externalId: eventId } });
       await prisma.eventOccurrence.deleteMany({ where: { id: { in: eventOccurrenceIds } } });
@@ -832,7 +964,7 @@ describe("Worker baseline pipeline", () => {
       const failureArtifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: challenged.runId } });
       expect(failureArtifacts).toHaveLength(0);
       expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ status: "RATE_LIMITED", consecutiveFailures: 1 });
-      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus, rightsAllowStorage: source.rightsAllowStorage, rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis, metadata: { collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } });
+      expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ operationalStatus: source.operationalStatus, healthStatus: source.healthStatus, metadata: { collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } });
     } finally {
       await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: eventId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
@@ -844,7 +976,7 @@ describe("Worker baseline pipeline", () => {
       await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalEventIds } } });
       await prisma.canonicalVenue.deleteMany({ where: { id: { in: venueIds } } });
       await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });
-      await prisma.dataSource.update({ where: { id: source.id }, data: { lifecycle: source.lifecycle, internalApprovalStatus: source.internalApprovalStatus, legalRightsStatus: source.legalRightsStatus, operationalStatus: source.operationalStatus, status: source.status, healthStatus: source.healthStatus, enabled: source.enabled, rightsAllowStorage: source.rightsAllowStorage, rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis, lastSuccessAt: source.lastSuccessAt, errorRate: source.errorRate, metadata: source.metadata as Prisma.InputJsonValue } });
+      await prisma.dataSource.update({ where: { id: source.id }, data: { lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, status: source.status, healthStatus: source.healthStatus, enabled: source.enabled, lastSuccessAt: source.lastSuccessAt, errorRate: source.errorRate, metadata: source.metadata as Prisma.InputJsonValue } });
     }
   });
 });

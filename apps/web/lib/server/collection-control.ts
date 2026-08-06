@@ -13,12 +13,10 @@ export const collectionControlActionSchema = z.discriminatedUnion("action", [
 
 export type CollectionControlAction = z.infer<typeof collectionControlActionSchema>;
 
-type CollectionSourceGovernance = {
+type CollectionSourceState = {
   key: string;
-  internalApprovalStatus: string;
-  legalRightsStatus: string;
-  rightsAllowStorage: boolean;
-  rightsAllowDerivedAnalysis: boolean;
+  enabled?: boolean;
+  operationalStatus: string;
 };
 
 const collectionJobTypes = new Set<JobType>([
@@ -118,9 +116,9 @@ async function setCollectionScheduleEnabled(adminId: string, scheduleKey: string
   if (!sourceKey) throw new CollectionControlError("WORKFLOW_HAS_NO_SOURCE");
   const source = await findControllableSource(sourceKey);
   if (enabled) {
-    if (!environment.SCHEDULER_ENABLED) throw new CollectionControlError("SCHEDULER_RUNTIME_DISABLED");
+    if (environment.NODE_ENV === "development" || !environment.SCHEDULER_ENABLED) throw new CollectionControlError("SCHEDULER_RUNTIME_DISABLED");
     if (!source.enabled) throw new CollectionControlError("SOURCE_PAUSED");
-    assertProductionCollectionAllowed(source);
+    assertCollectionAvailable(source);
   }
   const updated = await prisma.scheduleDefinition.update({
     where: { id: schedule.id },
@@ -147,7 +145,7 @@ async function cancelCollectionJob(adminId: string, jobId: string, environment: 
 }
 
 export function buildControlledCollectionPayload(
-  source: CollectionSourceGovernance,
+  source: CollectionSourceState,
   scheduleKey: string,
   basePayload: Record<string, Prisma.JsonValue>,
   environment: Pick<Environment, "NODE_ENV">,
@@ -170,7 +168,7 @@ export function buildControlledCollectionPayload(
     if (basePayload.phase === "details") payload.maxDetails = 1;
   }
   if (source.key === "school_sport_nz" || source.key === "school_sport_canterbury") payload.limit = 20;
-  if (environment.NODE_ENV === "development" && !productionCollectionAllowed(source)) {
+  if (environment.NODE_ENV === "development") {
     if (source.key === "eventfinda" || source.key === "ticketmaster") payload.developmentBootstrap = true;
     else payload.localAcceptance = true;
     payload.limit = 2;
@@ -179,21 +177,16 @@ export function buildControlledCollectionPayload(
 }
 
 function assertManualRunAllowed(source: Awaited<ReturnType<typeof findControllableSource>>, environment: Environment) {
-  if (productionCollectionAllowed(source)) return;
-  if (environment.NODE_ENV !== "development" || environment.SCHEDULER_ENABLED || !source.environments.includes("DEVELOPMENT")) {
-    throw new CollectionControlError("SOURCE_GOVERNANCE_BLOCKED");
-  }
+  if (!collectionAvailable(source)) throw new CollectionControlError("SOURCE_UNAVAILABLE");
+  if (environment.NODE_ENV === "development") return;
 }
 
-function assertProductionCollectionAllowed(source: Awaited<ReturnType<typeof findControllableSource>>) {
-  if (!productionCollectionAllowed(source)) throw new CollectionControlError("SOURCE_GOVERNANCE_BLOCKED");
+function assertCollectionAvailable(source: Awaited<ReturnType<typeof findControllableSource>>) {
+  if (!collectionAvailable(source)) throw new CollectionControlError("SOURCE_UNAVAILABLE");
 }
 
-function productionCollectionAllowed(source: CollectionSourceGovernance) {
-  return source.internalApprovalStatus === "APPROVED"
-    && source.legalRightsStatus === "ALLOWED"
-    && source.rightsAllowStorage
-    && source.rightsAllowDerivedAnalysis;
+function collectionAvailable(source: CollectionSourceState) {
+  return source.enabled !== false && ["HEALTHY", "DEGRADED"].includes(source.operationalStatus);
 }
 
 async function findControllableSource(sourceKey: string) {
@@ -207,10 +200,7 @@ async function findControllableSource(sourceKey: string) {
       sourceType: true,
       enabled: true,
       environments: true,
-      internalApprovalStatus: true,
-      legalRightsStatus: true,
-      rightsAllowStorage: true,
-      rightsAllowDerivedAnalysis: true,
+      operationalStatus: true,
     },
   });
   if (!source || source.providerType !== "PUBLIC" || source.sourceType !== "PUBLIC_DATA") throw new CollectionControlError("SOURCE_NOT_CONTROLLABLE");

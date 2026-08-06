@@ -45,8 +45,6 @@ export type PublicationInput = {
   propertyConfirmed: boolean;
   unitConfirmed: boolean;
   targetRatePresent: boolean;
-  sourceApproved: boolean;
-  rightsAllowPublication: boolean;
   dataAgeHours: number | null;
   competitorCount: number;
   feeCompleteness: FeeCompleteness;
@@ -75,8 +73,6 @@ export function decidePublication(input: PublicationInput): PublicationDecision 
     !input.propertyConfirmed ||
     !input.unitConfirmed ||
     !input.targetRatePresent ||
-    !input.sourceApproved ||
-    !input.rightsAllowPublication ||
     input.dataAgeHours === null ||
     input.dataAgeHours > 72 ||
     input.competitorCount < 3 ||
@@ -105,4 +101,3 @@ export function decidePublication(input: PublicationInput): PublicationDecision 
 
   return "AUTO_RETURN";
 }
-

@@ -91,7 +91,7 @@ async function collectionRunDiagnostics(runId: string, db: Prisma.TransactionCli
 }
 
 function severityFor(run: Pick<CollectionRun, "status" | "errorCode">): "P1" | "P2" | "P3" {
-  if (["RATE_LIMITED", "MANUAL_REQUIRED", "PARSING_ERROR", "RIGHTS_BLOCKED"].includes(run.errorCode ?? "")) return "P1";
+  if (["RATE_LIMITED", "MANUAL_REQUIRED", "PARSING_ERROR"].includes(run.errorCode ?? "")) return "P1";
   return run.status === "FAILED" ? "P2" : "P3";
 }
 

@@ -39,7 +39,6 @@ enum MarketStatus {
 }
 
 enum DataSourceStatus {
-  APPROVED
   PILOT
   SUSPENDED
   DISABLED
@@ -75,19 +74,6 @@ enum SourceLifecycle {
   PILOT
   PRODUCTION
   SUSPENDED
-  BLOCKED
-}
-
-enum InternalApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  SUSPENDED
-}
-
-enum LegalRightsStatus {
-  ALLOWED
-  REVIEW
   BLOCKED
 }
 
@@ -656,7 +642,6 @@ model Listing {
   onlineStatus      String                  @default("UNKNOWN")
   listingStatus     String                  @default("UNKNOWN")
   matchConfidence   Float                   @default(0)
-  legalRightsStatus LegalRightsStatus       @default(REVIEW)
   operationalStatus OperationalStatus       @default(UNCONFIGURED)
   metadata          Json                    @default("{}")
   createdAt         DateTime                @default(now())
@@ -1049,17 +1034,10 @@ model DataSource {
   adapterKey                 String?
   environments               SourceEnvironment[]     @default([DEVELOPMENT])
   accessMethod               String?
-  allowedUsage               Json                    @default("[]")
-  displayPermission          Boolean                 @default(false)
-  derivedAnalysisPermission  Boolean                 @default(false)
   retentionPolicy            Json                    @default("{}")
   concurrencyLimit           Int                     @default(1)
   dailyBudget                Int                     @default(0)
-  internalApprovalStatus     InternalApprovalStatus  @default(PENDING)
-  legalRightsStatus          LegalRightsStatus       @default(REVIEW)
   operationalStatus          OperationalStatus       @default(UNCONFIGURED)
-  approvedBy                 String?
-  approvedAt                 DateTime?
   lastReviewedAt             DateTime?
   healthSummary              Json                    @default("{}")
   metadata                   Json                    @default("{}")
@@ -1067,10 +1045,6 @@ model DataSource {
   healthStatus               SourceHealthStatus      @default(DOWN)
   enabled                    Boolean                 @default(false)
   acquisitionMethod          String
-  licenseBasis               String?
-  rightsAllowStorage         Boolean                 @default(false)
-  rightsAllowDerivedAnalysis Boolean                 @default(false)
-  rightsAllowDisplay         Boolean                 @default(false)
   retentionDays              Int?
   owner                      String?
   lastSuccessAt              DateTime?
@@ -1234,7 +1208,6 @@ model RateObservation {
   collectorVersion           String
   parserVersion              String
   qualityFlags               Json
-  legalRightsStatus          LegalRightsStatus
   operationalStatus          OperationalStatus
   collectedAt                DateTime
   rawDataStored              Boolean            @default(false)
@@ -1869,7 +1842,6 @@ model ManualImport {
   format         String
   filename       String
   collectedAt    DateTime
-  rightsMetadata Json
   rowCount       Int          @default(0)
   validRowCount  Int          @default(0)
   errorRowCount  Int          @default(0)

@@ -2043,7 +2043,6 @@ a {
 .pill-published,
 .pill-succeeded,
 .pill-healthy,
-.pill-approved,
 .pill-resolved {
   border-color: #bbf7d0;
   background: var(--success-soft);

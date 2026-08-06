@@ -178,6 +178,60 @@ describe("Argus async Job client", () => {
     assert.equal(capture.max_records, 20);
   });
 
+  it("submits and validates the shared regional event contract", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      return regionalEventResult();
+    });
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "dunedinnz-test",
+      connectorId: "dunedinnz-public",
+      workflowId: "collect_events",
+      url: "https://www.dunedinnz.com/visit/dunedin-events/upcoming-events",
+      startDate: "2026-08-01",
+      endDate: "2026-11-01",
+      maxRecords: 100,
+    });
+
+    assert.equal(response.ok, true);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.connector_id, "dunedinnz-public");
+    assert.equal(capture.workflow_id, "collect_events");
+  });
+
+  it("accepts the Auckland Airport monthly passenger contract", async () => {
+    server = jobServer(async () => aucklandAirportMonthlyResult());
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "auckland-airport-monthly-test",
+      connectorId: "auckland-airport-monthly",
+      workflowId: "collect_monthly_traffic",
+      url: "https://corporate.aucklandairport.co.nz/news/publications/monthly-traffic-updates",
+      maxRecords: 13,
+    });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal((response.payload.extracted as { records: unknown[] }).records.length, 1);
+  });
+
+  it("preserves the voluntary-coverage caveat in the Ministry of Transport contract", async () => {
+    server = jobServer(async () => motAirlinePerformanceResult());
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "mot-airline-performance-test",
+      connectorId: "mot-airline-performance",
+      workflowId: "collect_monthly_performance",
+      url: "https://www.transport.govt.nz/area-of-interest/air-transport/airline-on-time-performance",
+      maxRecords: 100,
+    });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.match((response.payload.extracted as { coverageCaveat: string }).coverageCaveat, /voluntary|participating/iu);
+  });
+
   it("accepts Ticketek listing/detail contracts and rejects internal identity drift", async () => {
     const invalid = ticketekDetailResult();
     const data = invalid.data as { occurrences: Array<Record<string, unknown>> };
@@ -279,6 +333,40 @@ describe("Argus async Job client", () => {
       sizeBytes: evidence.byteLength,
       containsSensitiveData: false,
       createdAt: "2026-08-02T00:00:00.000Z",
+    });
+
+    assert.deepEqual(content, evidence);
+  });
+
+  it("downloads named workbook evidence with the same integrity checks", async () => {
+    const evidence = Buffer.from("synthetic workbook bytes", "utf8");
+    const sha256 = createHash("sha256").update(evidence).digest("hex");
+    server = http.createServer((request, response) => {
+      assert.equal(request.headers.authorization, "Bearer argus-test-token-with-at-least-32-characters");
+      if (request.method === "GET" && request.url === "/v1/event-captures/trace-download/evidence/report") {
+        response.writeHead(200, {
+          "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "x-argus-content-sha256": sha256,
+        });
+        return response.end(evidence);
+      }
+      json(response, 404, { error: "NOT_FOUND" });
+    });
+    const environment = await listenEnvironment();
+
+    const content = await downloadArgusEvidence(environment, {
+      kind: "download",
+      evidenceId: "report",
+      filename: "airport-monthly.xlsx",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sourceUrl: "https://example.test/airport-monthly.xlsx",
+      traceId: "trace-download",
+      relativePath: "results/argus/trace-download/airport-monthly.xlsx",
+      storageRef: "argus-evidence:results/argus/trace-download/airport-monthly.xlsx",
+      sha256,
+      sizeBytes: evidence.byteLength,
+      containsSensitiveData: false,
+      createdAt: "2026-08-06T00:00:00.000Z",
     });
 
     assert.deepEqual(content, evidence);
@@ -467,6 +555,65 @@ function sportyResult(): Record<string, unknown> {
       missingFields: [],
       warnings: [],
       fieldSources: { series: "fixture", occurrences: "fixture" },
+    },
+  };
+}
+
+function regionalEventResult(): Record<string, unknown> {
+  const canonicalUrl = "https://www.dunedinnz.com/visit/dunedin-events/upcoming-events/example";
+  return {
+    ...baseResult("dunedinnz-test", "collect_events", "dunedinnz-public"),
+    data: {
+      data_schema: "regional-events-public.collect_events",
+      schema_version: "1.0.0",
+      extractor: "regional_events",
+      kind: "event_listing",
+      title: "Dunedin events",
+      canonicalUrl: "https://www.dunedinnz.com/visit/dunedin-events/upcoming-events",
+      market: "Dunedin",
+      events: [{ eventId: "dunedinnz:example", title: "Dunedin Festival", canonicalUrl, startsAt: "2026-08-20", endsAt: "2026-08-20", timePrecision: "DATE", venue: null, address: null, city: "Dunedin", region: "Otago", category: "Festival", description: null, status: "SCHEDULED", fieldSources: { title: "event card" } }],
+      totalEvents: 1,
+      truncated: false,
+      quality: "partial",
+      missingFields: ["events[0].venue"],
+      warnings: [],
+      fieldSources: { events: "listing page" },
+    },
+  };
+}
+
+function aucklandAirportMonthlyResult(): Record<string, unknown> {
+  return {
+    ...baseResult("auckland-airport-monthly-test", "collect_monthly_traffic", "auckland-airport-monthly"),
+    data: {
+      data_schema: "auckland-airport-monthly.collect_monthly_traffic",
+      schema_version: "1.0.0",
+      sourceUrl: "https://corporate.aucklandairport.co.nz/monthly-report.pdf",
+      records: [{ period: "2026-06", domesticPassengers: 700000, internationalPassengers: 900000, totalPassengers: 1600000, annualChangePercent: 4.5, fieldSources: { totalPassengers: "monthly report table" } }],
+      totalRecords: 1,
+      truncated: false,
+      quality: "complete",
+      warnings: [],
+      fieldSources: { records: "monthly report table" },
+    },
+  };
+}
+
+function motAirlinePerformanceResult(): Record<string, unknown> {
+  return {
+    ...baseResult("mot-airline-performance-test", "collect_monthly_performance", "mot-airline-performance"),
+    data: {
+      data_schema: "mot-airline-performance.collect_monthly_performance",
+      schema_version: "1.0.0",
+      sourceUrl: "https://www.transport.govt.nz/airline-performance.xlsx",
+      reportingBasis: "VOLUNTARY_PARTICIPATING_AIRLINES",
+      coverageCaveat: "Voluntary participating-airline reporting; coverage is incomplete.",
+      records: [{ period: "2026-06", originAirportCode: "AKL", destinationAirportCode: "ZQN", originName: "Auckland", destinationName: "Queenstown", scheduledFlights: 300, arrivalOnTimePercent: 78, departureOnTimePercent: 76, cancelledFlights: 5, cancellationPercent: 1.7, fieldSources: { arrivalOnTimePercent: "workbook route row" } }],
+      totalRecords: 1,
+      truncated: false,
+      quality: "complete",
+      warnings: [],
+      fieldSources: { records: "official workbook" },
     },
   };
 }

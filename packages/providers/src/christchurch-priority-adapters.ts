@@ -10,7 +10,6 @@ import type {
   PublicEvent,
   PublicRawRecord,
   PublicSignal,
-  SourceRights,
 } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
@@ -63,7 +62,6 @@ class ChristchurchCouncilEventsAdapter implements PublicDataAdapter {
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> { return rawEvents(records); }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(CCC_EVENTS_URL, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights("Christchurch City Council public What's On listing; list pages are paged without opening each event detail"); }
 }
 
 class AraAcademicCalendarAdapter implements PublicDataAdapter {
@@ -79,7 +77,6 @@ class AraAcademicCalendarAdapter implements PublicDataAdapter {
   }
   async normalise(records: PublicRawRecord[]): Promise<PublicSignal[]> { return rawSignals(records); }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(ARA_CALENDAR_URL, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights("Ara official academic calendar; only accommodation-demand-relevant semester, break and Christchurch graduation dates are retained"); }
 }
 
 class CanterburyMajorAnnualEventsAdapter implements PublicDataAdapter {
@@ -103,7 +100,6 @@ class CanterburyMajorAnnualEventsAdapter implements PublicDataAdapter {
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> { return rawEvents(records); }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(CANTERBURY_SHOW_URL, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewRights("Official pages for selected independent annual events with stable dates and published demand evidence"); }
 }
 
 export function parseChristchurchCouncilEventsPage(html: string, finalUrl = CCC_EVENTS_URL): CccPage {
@@ -350,7 +346,6 @@ async function health(url: string, name: string, context: AdapterContext): Promi
     return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : `${name} health check failed`, latencyMs: Date.now() - started, mode: context.mode };
   }
 }
-function reviewRights(basis: string): SourceRights { return { internalApprovalStatus: "PENDING", legalRightsStatus: "REVIEW", lifecycle: "RESEARCH", environments: ["DEVELOPMENT", "TEST", "PILOT"], allowedUsage: ["HEALTH_CHECK", "FIXTURE_TEST"], displayPermission: false, derivedAnalysisPermission: false, retentionPolicy: { rawHours: 168, parserFailureHours: 720, normalizedDays: null }, basis }; }
 function assertAllowed(value: string, domains: string[]) { let url: URL; try { url = new URL(value); } catch { throw new AdapterError("INVALID_INPUT", "Source reference is not a URL", false); } if (url.protocol !== "https:" || !domains.includes(url.hostname.toLowerCase())) throw new AdapterError("INVALID_INPUT", `Unsupported source host ${url.hostname}`, false); }
 function overlaps(start: Date, end: Date, context: AdapterContext) { return !context.collectionRange || (end >= context.collectionRange.from && start <= context.collectionRange.to); }
 function safeUrl(value: string | null, base: string) { try { return value ? new URL(value, base).href : null; } catch { return null; } }

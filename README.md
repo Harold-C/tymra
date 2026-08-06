@@ -192,14 +192,11 @@ part of the production Compose file. `www.tymra.nz` permanently redirects to `ty
 ## Manual Import
 
 Sign in to Admin, open **Data Sources**, and use **Manual rate import**. Download the CSV template,
-preview it, review row errors and rights metadata, then import. Only an approved source with
-storage, analysis and display rights can participate in automatic publication.
+preview it, review row errors, then import. The source must be enabled and operationally available.
 
-The Admin API also accepts explicit `localAcceptance=true` in development while the scheduler is
-disabled. That path is fixed at 256 KB and two valid rows, retains short-lived hashed evidence and
-does not read production approval/license identity or mutate source governance. Its code and
-database regression are verified; a genuine operator export has not been supplied, so real-file
-acceptance remains `not_verified`.
+The Admin API also accepts explicit `localAcceptance=true` in development. That path is fixed at
+256 KB and two valid rows, retains short-lived hashed evidence and does not mutate source
+configuration. Development scheduling is hard-disabled independently of runtime configuration.
 
 ## Verification
 
@@ -237,10 +234,10 @@ development data. E2E expects `https://tymra.test` to be running.
 Every generated fixture is marked `Development Demo Data` and `Not real market data`. Seed data
 covers published high/medium confidence, partial low confidence, insufficient data, unavailable
 source, unsupported market, property and unit confirmation, exception types, expired links,
-withdrawn links and superseded result versions. No unapproved OTA scraping or live credentials are
+withdrawn links and superseded result versions. No live OTA scraping or credentials are
 used. Booking, Airbnb, Expedia, Hotels.com, Agoda, Trip.com and Google Hotels adapters are research
-and deterministic record/replay implementations only; they do not claim production collection
-rights. All configured non-OTA public source IDs now have concrete transports and parsers. Most
-remain pending source/legal review and production activation; category IDs such as venues,
+and deterministic record/replay implementations only. All configured non-OTA public source IDs now
+have concrete transports and parsers. Most remain pending operational validation and production
+activation; category IDs such as venues,
 councils, universities, RTOs, airports and ports currently implement one named first provider
 rather than every New Zealand institution.

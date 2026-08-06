@@ -15,7 +15,11 @@ import {
   buildServiceEmail,
   DemoProvider,
   LogEmailProvider,
+  NZ_MAJOR_ACCOMMODATION_MARKETS,
   SmtpEmailProvider,
+  assessNzMarketOperationalCoverage,
+  publicSignalSourceIdsForMarket,
+  resolveNzMarketKey,
   type EmailProvider,
 } from "@tymra/providers";
 import { WorkerService } from "../services/worker-service";
@@ -151,6 +155,11 @@ async function handlePublicCollection(
     if (error instanceof DeferredJobError) throw error;
     const run = await prisma.collectionRun.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
     if (run) await syncIncidentSafely(run.id);
+    try {
+      await acknowledgePersistedArgusResults(environment, job.id);
+    } catch (retentionError) {
+      process.stderr.write(`${JSON.stringify({ service: "tymra-worker", event: "argus_failure_evidence_retention_failed", jobId: job.id, message: retentionError instanceof Error ? retentionError.message : "Unknown evidence retention failure" })}\n`);
+    }
     throw error;
   }
 }
@@ -171,10 +180,7 @@ async function collectRates(priceCheckId: string, jobId: string, environment: En
   if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
   const isDemo = environment.PROVIDER_MODE === "demo";
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: isDemo ? "development-demo" : "manual-import" } });
-  if (!source.enabled || source.status !== "APPROVED") throw new Error("The configured data source is not approved and enabled");
-  if (!source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis || !source.rightsAllowDisplay) {
-    throw new Error("The configured data source rights do not permit analysis and display");
-  }
+  if (!source.enabled || source.operationalStatus !== "HEALTHY") throw new Error("The configured data source is not enabled and healthy");
   await setCheckStatus(priceCheckId, "COLLECTING", "collection_started");
   const collectionRun = await prisma.collectionRun.create({
     data: {
@@ -289,7 +295,6 @@ async function collectRates(priceCheckId: string, jobId: string, environment: En
         collectorVersion: isDemo ? "fixture-collector-v1" : "manual-import-v1",
         parserVersion: isDemo ? "fixture-parser-v1" : "manual-import-parser-v1",
         qualityFlags: [],
-        legalRightsStatus: source.legalRightsStatus,
         operationalStatus: source.operationalStatus,
         collectedAt: rate.collectedAt,
         idempotencyKey: `${jobId}:${listing.id}:${check.stayQueryId}`,
@@ -399,8 +404,6 @@ async function autoValidate(priceCheckId: string, sourceJobId: string, environme
     propertyConfirmed: Boolean(check.propertyId),
     unitConfirmed: Boolean(check.unitId),
     targetRatePresent: observations.length > 0,
-    sourceApproved: source.status === "APPROVED" && source.enabled,
-    rightsAllowPublication: source.rightsAllowDerivedAnalysis && source.rightsAllowDisplay,
     dataAgeHours: observations.length ? 1 : null,
     competitorCount: observations.length,
     feeCompleteness: observations.every((item) => item.feeCompleteness === "COMPLETE") ? "COMPLETE" : "PARTIAL",
@@ -695,22 +698,94 @@ async function ensureWorkerException(priceCheckId: string, type: "PROPERTY_MATCH
 }
 
 async function refreshMarketCoverage() {
-  const [propertyCount, unitCount, recentRuns, successfulRuns] = await Promise.all([
-    prisma.property.count({ where: { city: "Christchurch", mergedIntoId: null } }),
-    prisma.sellableUnit.count({ where: { property: { city: "Christchurch" }, status: "ACTIVE", mergedIntoId: null } }),
-    prisma.collectionRun.count({ where: { createdAt: { gte: new Date(Date.now() - 72 * 3_600_000) } } }),
-    prisma.collectionRun.count({ where: { createdAt: { gte: new Date(Date.now() - 72 * 3_600_000) }, status: "SUCCEEDED" } }),
+  const measuredAt = new Date();
+  const since72h = new Date(measuredAt.getTime() - 72 * 3_600_000);
+  const since216h = new Date(measuredAt.getTime() - 216 * 3_600_000);
+  const [properties, units, recentRuns, recentSignals, coverageRows, dataSources] = await Promise.all([
+    prisma.property.findMany({ where: { status: "ACTIVE", mergedIntoId: null }, select: { id: true, city: true, region: true, territorialAuthority: true, rto: true } }),
+    prisma.sellableUnit.findMany({ where: { status: "ACTIVE", mergedIntoId: null, property: { status: "ACTIVE", mergedIntoId: null } }, select: { id: true, property: { select: { city: true, region: true, territorialAuthority: true, rto: true } } } }),
+    prisma.collectionRun.findMany({ where: { createdAt: { gte: since216h } }, select: { status: true, scope: true, createdAt: true, finishedAt: true, dataSource: { select: { key: true } } } }),
+    prisma.sourceMarketSignal.findMany({ where: { lastSeenAt: { gte: since216h } }, select: { marketKey: true, dataSource: { select: { key: true } } } }),
+    prisma.marketCoverage.findMany({ select: { key: true, region: true } }),
+    prisma.dataSource.findMany({ select: { key: true, enabled: true, operationalStatus: true } }),
   ]);
-  await prisma.marketCoverage.update({
-    where: { key: "christchurch" },
-    data: {
-      knownPropertyCount: propertyCount,
-      knownUnitCount: unitCount,
-      collectionSuccessRate: recentRuns > 0 ? successfulRuns / recentRuns : 0,
-      sourceFailureRate: recentRuns > 0 ? (recentRuns - successfulRuns) / recentRuns : 0,
-      lastHealthAt: new Date(),
-    },
-  });
+  const coverageByKey = new Map(coverageRows.map((row) => [row.key, row]));
+  const operationalReport = assessNzMarketOperationalCoverage(dataSources.map((source) => {
+    const sourceRuns = recentRuns.filter((run) => run.dataSource.key === source.key);
+    const runs72h = sourceRuns.filter((run) => run.createdAt >= since72h);
+    const marketKeys = marketKeysForOperationalEvidence(source.key, recentSignals);
+    return {
+      sourceId: source.key,
+      lastSuccessAt: latestDate(sourceRuns.filter((run) => run.status === "SUCCEEDED").map((run) => run.finishedAt ?? run.createdAt)),
+      successfulRuns72h: runs72h.filter((run) => run.status === "SUCCEEDED").length,
+      failedRuns72h: runs72h.filter((run) => run.status === "FAILED").length,
+      successfulRunDays: new Set(sourceRuns.filter((run) => run.status === "SUCCEEDED").map((run) => run.createdAt.toISOString().slice(0, 10))).size,
+      enabled: source.enabled,
+      available: sourceAvailableForOperationalCoverage(source),
+      ...(marketKeys.length ? { marketKeys } : {}),
+    };
+  }), measuredAt);
+  for (const market of NZ_MAJOR_ACCOMMODATION_MARKETS) {
+    const sourceIds = new Set(publicSignalSourceIdsForMarket(market.key));
+    const marketRuns = recentRuns.filter((run) => run.createdAt >= since72h && (() => {
+      if (!sourceIds.has(run.dataSource.key)) return false;
+      const scope = jsonObject(run.scope);
+      return scope.marketScope === market.key || scope.marketScope === "new-zealand";
+    })());
+    const successfulRuns = marketRuns.filter((run) => run.status === "SUCCEEDED").length;
+    const lastHealthAt = latestDate(marketRuns.flatMap((run) => run.finishedAt ?? run.createdAt));
+    const existing = coverageByKey.get(market.key);
+    const operational = operationalReport.markets.find((item) => item.key === market.key)!;
+    await prisma.marketCoverage.updateMany({
+      where: { key: market.key },
+      data: {
+        knownPropertyCount: properties.filter((property) => resolveNzMarketKey(property) === market.key).length,
+        knownUnitCount: units.filter((unit) => resolveNzMarketKey(unit.property) === market.key).length,
+        collectionSuccessRate: marketRuns.length ? successfulRuns / marketRuns.length : 0,
+        sourceFailureRate: marketRuns.length ? (marketRuns.length - successfulRuns) / marketRuns.length : 0,
+        lastHealthAt,
+        region: {
+          ...jsonObject(existing?.region),
+          publicSignalOperations: {
+            windowHours: 72,
+            minimumSuccessfulRunDays: 2,
+            requiredSourceCount: sourceIds.size,
+            runCount: marketRuns.length,
+            successfulRunCount: successfulRuns,
+            measuredAt: measuredAt.toISOString(),
+            stable: operational.stable,
+            layers: operational.layers,
+            healthySources: operational.healthySources,
+            staleOrMissingSources: operational.staleOrMissingSources,
+          },
+        },
+      },
+    });
+  }
+}
+
+export function marketKeysForOperationalEvidence(
+  sourceId: string,
+  recentSignals: readonly { marketKey: string; dataSource: { key: string } }[],
+) {
+  return [...new Set(recentSignals
+    .filter((signal) => signal.dataSource.key === sourceId)
+    .map((signal) => signal.marketKey))];
+}
+
+export function sourceAvailableForOperationalCoverage(source: {
+  enabled?: boolean;
+  operationalStatus: string;
+}) {
+  return source.enabled === true && !["BLOCKED", "DOWN", "UNCONFIGURED"].includes(source.operationalStatus);
+}
+
+function jsonObject(value: Prisma.JsonValue | undefined | null): Record<string, Prisma.JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Prisma.JsonValue> : {};
+}
+
+function latestDate(values: Date[]) {
+  return values.length ? new Date(Math.max(...values.map((value) => value.getTime()))) : null;
 }
 
 function asObject(value: Prisma.JsonValue): JsonObject {

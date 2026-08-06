@@ -34,6 +34,7 @@
 - [Eventfinda](./collection/eventfinda.md)
 - [Ticketmaster](./collection/ticketmaster.md)
 - [直连事件与机场来源](./collection/direct-event-sources.md)
+- [全国主要住宿市场公开信号覆盖](./collection/nz-market-public-signal-coverage.md)
 - [Argus 任务职责](./collection/argus-responsibilities.md)
 - [手工导入](./collection/manual-import.md)
 - [2026-07-21 本地采集验收快照](./evidence/collection-acceptance-2026-07-21.md)

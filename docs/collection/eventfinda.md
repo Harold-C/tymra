@@ -10,7 +10,7 @@ unattended evidence remain separate operating gates.
 
 Tymra is intended to collect the complete set of currently published New Zealand events discoverable from Eventfinda's nationwide event listing. Historical Eventfinda archives are not bulk-crawled. A recurring event is stored as one source series with one source occurrence per advertised time, then linked into canonical event and occurrence records so accommodation analysis can match the exact affected dates.
 
-The source remains blocked from scheduled collection while production approval and stability gates
+The source remains blocked from scheduled collection while production operational and stability gates
 are outstanding. Collection now uses ordinary read-only HTTP for both listing and detail pages;
 Eventfinda is no longer an Argus responsibility. `robots.txt` remains a technical crawl control.
 
@@ -32,7 +32,7 @@ records only Eventfinda-specific limits, behaviour and evidence.
 
 ## Read-only HTTP contract
 
-Tymra sends only bounded `GET` requests to approved Eventfinda hosts. It does not execute page
+Tymra sends only bounded `GET` requests to configured Eventfinda hosts. It does not execute page
 JavaScript, type, log in, solve challenges, buy tickets, or change remote state.
 
 The extractor supports:
@@ -104,11 +104,10 @@ Production values can be reduced using `PROD_EVENTFINDA_MIN_DELAY_MS`, `PROD_EVE
 
 ## Local bounded acceptance
 
-Local development acceptance does not activate the source or require `approved-by` and
-`license-basis`. The dedicated mode is restricted to `NODE_ENV=development`, refuses to run while
-the scheduler is enabled, caps each run at one listing page and two detail pages and records
-`localAcceptance=true` in `CollectionRun.scope`. It leaves the source's approval, rights and
-operational state unchanged.
+Local development acceptance does not activate the source. The dedicated mode is restricted to
+`NODE_ENV=development`, caps each run at one listing page and two detail pages and records
+`localAcceptance=true` in `CollectionRun.scope`. It leaves source configuration and operational
+state unchanged. Development hard-disables scheduler execution regardless of configuration.
 
 Run the same bounded full pass twice to verify real-page persistence and idempotency:
 
@@ -119,16 +118,14 @@ pnpm --filter @tymra/worker cli collect:events \
   --phase full --max-pages 1 --max-details 2 --local-acceptance
 ```
 
-This mode is not available in test or production environments, cannot enable a schedule and does
-not constitute production source approval.
+This mode is not available in test or production environments and cannot enable a schedule.
 
 ## Development Bootstrap
 
 `--development-bootstrap` is the explicit full-data development mode. It is allowed only when
-`NODE_ENV=development`, the scheduler is disabled and the source allows the DEVELOPMENT environment.
-It does not require or write production approval fields, does not change legal-rights or operational
-status, and records `developmentBootstrap=true` plus before/after governance and schedule snapshots
-on the collection run.
+`NODE_ENV=development` and the source allows the DEVELOPMENT environment. It does not change source
+configuration or operational status, and records `developmentBootstrap=true` plus before/after
+configuration and schedule snapshots on the collection run.
 
 Unlike `--local-acceptance`, this mode may use the configured nationwide 250-page discovery bound
 and detail batches up to 500 targets. It does not relax source protection: the Redis source lock,
@@ -149,7 +146,7 @@ The 2026-07-21 development bootstrap completed all 187 advertised nationwide lis
 `cmrtgk94f0001p12abpvktwir`. It made 187 requests with no retry, failure, rate limit or challenge,
 verified the pagination boundary and upserted 2,821 unique detail targets. Run
 `cmrth8ak10001p1mfjq41lue7` then fetched five due targets and persisted 51 advertised event
-occurrences with no failure. Both runs recorded unchanged governance and schedule snapshots. The
+occurrences with no failure. Both runs recorded unchanged configuration and schedule snapshots. The
 remaining frontier is intentionally processed in bounded batches so the acceptance run does not
 replace the normal 4-7 second pacing with a one-off bulk crawl.
 
@@ -159,7 +156,7 @@ and parsed 126 advertised occurrence inputs without a request failure, rate limi
 Source uniqueness collapsed six repeated date inputs to 120 stored occurrences. The database
 retained two source series, two canonical events, two venues, 120 canonical occurrences and complete
 event and occurrence source links. The second pass created zero new source occurrences, canonical
-occurrences or links. Source governance remained `PENDING` / `REVIEW` / `UNCONFIGURED` throughout.
+occurrences or links. Source configuration remained unchanged throughout.
 
 The first attempt exposed real JSON-LD `SportsEvent` and `Festival` types that the original extractor
 did not classify as event occurrences. The extractor now accepts schema event subtypes; the failed
@@ -169,7 +166,7 @@ failure TTL. Successful evidence uses the 72-hour TTL.
 ### HTTP cutover verification (2026-08-03)
 
 - Bounded two-pass discovery acceptance retained one direct HTML artifact per pass, with zero parser
-  failures, zero Argus executions, unchanged governance and unchanged schedules.
+  failures, zero Argus executions, unchanged configuration and unchanged schedules.
 - Bounded full run `cmsd6ghl60001pp2a0jqgbwi0` made three direct HTTP requests, scanned one of 194
   listing pages, fetched two detail pages and persisted 34 occurrences with zero failures.
 - Subsequent bounded full run `cmsd6gw9n0001pp3ucnn2if3v` also fetched two details without failure.
@@ -184,7 +181,7 @@ All gates that can be completed in the local development environment have now pa
 - Redis rejected a competing source-lock holder and allowed reacquisition after release.
 - A durable job was not recovered before lease expiry, then was recovered and claimed by a second
   worker after expiry.
-- `localAcceptance` was rejected in `test`, `production` and development with the scheduler enabled.
+- `localAcceptance` was rejected in `test` and `production`; development scheduler execution remained hard-disabled.
 - Partial discovery, challenge stop/cooldown, two-pass idempotency, source/canonical lineage and
   72/168-hour retention selection and time-advanced cleanup passed automated regression.
 - The full repository verification passed: 81 TypeScript unit/component tests, 34 browser
@@ -192,7 +189,7 @@ All gates that can be completed in the local development environment have now pa
   production build and all four Worker entrypoint builds.
 - A final read-only database check reconfirmed the bounded and nationwide real runs as `SUCCEEDED`,
   all 120 bounded source occurrences, the 2,821-target nationwide frontier, disabled schedules and
-  unchanged source governance.
+  unchanged source configuration.
 - Historical pre-Argus Browser Worker health returned `healthy=true`, `activeTasks=0` and `concurrency=1`.
 
 Real elapsed 72/168-hour deletion and multi-day unattended stability are not local completion gates
@@ -210,15 +207,14 @@ The hourly detail pass does not imply that every known event is opened hourly. I
 targets whose `nextDetailFetchAt` is due; unchanged detail pages back off progressively according to
 event proximity. This keeps near-term changes responsive without repeatedly opening stable pages.
 
-The scheduler refuses to enqueue a source job unless the source is enabled and approved for storage and derived analysis. After all remaining completion gates pass, activation uses these deliberate steps:
+The scheduler refuses to enqueue a source job unless the source is enabled and operationally healthy.
+Development never enqueues scheduled jobs. After all remaining completion gates pass, activation uses these deliberate steps:
 
 ```bash
 pnpm --filter @tymra/db db:deploy
 pnpm --filter @tymra/db db:seed
 pnpm --filter @tymra/worker cli source:health eventfinda
-pnpm --filter @tymra/worker cli source:activate eventfinda \
-  --approved-by "<operator>" \
-  --license-basis "<internal production browser-collection decision reference>"
+pnpm --filter @tymra/worker cli source:activate eventfinda
 pnpm --filter @tymra/worker cli collect:events \
   --phase full --max-pages 1 --max-details 2 --dry-run
 pnpm --filter @tymra/worker cli schedule:eventfinda:enable
@@ -239,15 +235,15 @@ not fixed contractual totals.
 
 ### Production canary and rollback gate
 
-Activation is not one step. In the approved target environment, keep both schedules disabled while
+Activation is not one step. In the target environment, keep both schedules disabled while
 running one bounded dry run and one bounded persisted pass. Confirm the source lock, request budget,
 raw evidence, parser-failure rate, duplicate rate, queue depth, lease renewal, canonical-link growth
 and source cooldown before enabling discovery only. Enable the hourly detail schedule only after one
 successful daily discovery interval and an operator review of the new frontier.
 
 Rollback is deliberately independent of a deployment: disable both Eventfinda schedules first, then
-leave the source registry and accumulated frontier intact for audit and later recovery. If remote
-rights or operational approval is withdrawn, also deactivate the source through the audited CLI.
+leave the source registry and accumulated frontier intact for audit and later recovery. If source
+access or operational health is lost, also deactivate the source through the audited CLI.
 Never delete the frontier, immutable collection runs or evidence as part of rollback. A canary is
 accepted only after disable/re-enable has been exercised in the target environment and no collection
 job or source lock remains active after disable.

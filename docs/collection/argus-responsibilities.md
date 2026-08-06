@@ -4,7 +4,7 @@
 
 Tymra has no browser runtime. Tymra may collect a source only when the required data is available through ordinary read-only HTTP requests and can be parsed without executing page JavaScript. Any source requiring browser rendering, browser cookies, interactive navigation, challenge handling, or screenshot evidence belongs in Argus.
 
-Argus returns source-specific raw evidence. Tymra owns source governance, job orchestration, raw-artifact retention after transfer, normalisation, lineage, deduplication, monitoring, and application-facing standard tables.
+Argus returns source-specific raw evidence. Tymra owns source configuration, job orchestration, raw-artifact retention after transfer, normalisation, lineage, deduplication, monitoring, and application-facing standard tables.
 
 ## P0: platform readiness
 
@@ -49,12 +49,13 @@ Ordinary HTTP verification on 2026-08-04 returned an Akamai `403 Access Denied` 
 Ticketek therefore must not be implemented as a Tymra HTTP adapter or browser fallback.
 
 The embedded-performance parser regression passed against a retained real page, including four
-separate performances with time and location. A fresh cross-service run on 2026-08-05 found that the
-current Argus classifier recognises the Akamai shape only after navigation to `detection.aspx`; the
-real challenged detail retained `show.aspx` as its final URL and was therefore still returned as
-`PARSING_ERROR`. Tymra preserves the ten listing records and seven canonical events, marks the run
-`PARTIAL`, retains both executions' HTML/screenshots before ACK, and never attempts a bypass. Detail
-live acceptance remains blocked on the Argus classification fix. Production schedules remain disabled.
+separate performances with time and location. Argus now also has a regression for hidden Akamai
+content whose final URL remains `show.aspx`. In Tymra's 2026-08-06 isolated real run, the first
+listing/detail pass completed, persisted 15 records and 11 occurrences, copied four evidence objects
+and ACKed them. The second listing still completed, but its selected detail intermittently returned
+`PARSING_ERROR`; it retained the HTML/screenshot and the overall run correctly became `PARTIAL` with
+zero row growth. The remaining work is therefore real-page robustness, not the earlier single URL
+classifier case. Production schedules remain disabled.
 
 ### School Sport NZ and School Sport Canterbury
 
@@ -94,7 +95,17 @@ Lincoln University key dates were integrated on 2026-08-04. Tymra submits the fi
 
 Lincoln evidence follows the shared copy-before-ACK lifecycle. The bounded database acceptance requires one Argus execution per pass, at least one local `tymra-evidence:` artifact, zero remaining remote `argus-evidence:` references, at least one Lincoln signal, and zero second-pass source or lineage growth.
 
-Tymra directly handles Christchurch sports fixtures, UC dates, Addington/Riccarton dates, the ChristchurchNZ public Power BI cruise report, and Christchurch Airport monthly passenger tables.
+DunedinNZ is a fixed Argus responsibility. Tymra owns the registered `dunedinnz_events` source and
+submits `collect_events` Jobs to `dunedinnz-public`. The connector must return
+`regional-events-public.collect_events@1.0.0`; the full fields, bounds and acceptance conditions are
+defined in [`nz-market-public-signal-coverage.md`](nz-market-public-signal-coverage.md). RotoruaNZ
+moved its official calendar to an ordinary-HTTP `/whats-on` page on 2026-08-06 and is now collected
+directly by Tymra.
+
+Tymra directly handles Christchurch sports fixtures, UC dates, Addington/Riccarton dates, the
+ChristchurchNZ public Power BI cruise report, Christchurch, Wellington and Queenstown Airport monthly
+passenger data, DOC regional closures, Interislander service alerts, official ski-season windows,
+and MBIE ADP, Tourism Volumes & Flows, MRTE and IVS aggregate data.
 
 ## Argus response contract
 
@@ -118,7 +129,16 @@ The following do not require Argus unless their delivery changes materially:
 - Eventbrite New Zealand listing JSON-LD.
 - Humanitix New Zealand listing JSON-LD.
 - Christchurch Airport arrivals/departures JSON.
+- Wellington Airport server-rendered arrivals/departures board.
+- Queenstown Airport arrivals/departures JSON.
+- Ports of Auckland cruise schedule CSV.
 - Christchurch Airport monthly passenger HTML table.
+- Wellington Airport monthly passenger workbook.
+- Queenstown Airport public Power BI monthly passenger matrices.
+- DOC regional recreation-alert JSON.
+- Interislander service-alert JSON.
+- The Remarkables, Mt Hutt and Whakapapa official season-date HTML.
+- MBIE ADP CSV, Tourism Volumes & Flows XLSX, MRTE summary XLSX and IVS aggregate JSON.
 - Crusaders, Mainland Tactix and Canterbury Cricket official fixture pages.
 - University of Canterbury key dates.
 - Addington race dates and Riccarton Park Cup Week dates.
@@ -131,4 +151,20 @@ The following do not require Argus unless their delivery changes materially:
 - Canterbury A&P Show and Christchurch Marathon official event pages.
 - Existing ordinary-HTTP government, weather, transport, university, venue, airport, port, and cruise adapters.
 
-All schedule definitions remain disabled in development. Production schedules require a separate rights and operational review before they are enabled.
+All schedule definitions remain disabled in development. Production schedules require an operational review before they are enabled.
+
+## Current Argus follow-up
+
+The three national-signal connectors are registered and passed Tymra integration. DunedinNZ and
+Ministry of Transport passed real two-pass collection; Ticketek classifies the retained hidden HTTP
+200 Akamai page as a retryable challenge instead of `PARSING_ERROR`; Auckland Airport passed two
+real browser-click Jobs with 13 bounded monthly records per pass and zero repeat growth. No additional
+Tymra contract work is pending for these connectors.
+
+Auckland Airport's final workbook row is published as `2006-06` while the sheet title says June 2026.
+Argus and Tymra deliberately exclude that row instead of inferring a corrected period. The latest
+trusted month is therefore `2026-05` until the official source corrects or republishes the date.
+
+Tymra-side contracts, durable submission/polling, schema validation, named-download copy-before-ACK,
+retry-safe evidence retention, normalisation, canonicalisation, event-impact evaluation and
+price-analysis lineage are implemented.

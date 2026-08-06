@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   executionUpdate: vi.fn(),
   parentFind: vi.fn(),
   parentUpdateMany: vi.fn(),
+  collectionRunFindMany: vi.fn(),
   collectionRunUpdateMany: vi.fn(),
   rawArtifactFindMany: vi.fn(),
   rawArtifactCount: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("@tymra/db", () => ({
       updateMany: mocks.parentUpdateMany,
     },
     collectionRun: {
+      findMany: mocks.collectionRunFindMany,
       updateMany: mocks.collectionRunUpdateMany,
     },
     rawArtifact: {
@@ -91,6 +93,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.rawArtifactFindMany.mockResolvedValue([]);
   mocks.rawArtifactCount.mockResolvedValue(0);
+  mocks.collectionRunFindMany.mockResolvedValue([]);
 });
 
 afterEach(async () => {
@@ -224,10 +227,14 @@ describe("durable Argus orchestration", () => {
     const content = Buffer.from("verified evidence", "utf8");
     const sha256 = "d".repeat(64);
     const pointer = {
-      kind: "html",
+      kind: "download" as const,
+      evidenceId: "report",
+      filename: "airport-monthly.xlsx",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sourceUrl: "https://example.test/airport-monthly.xlsx",
       traceId: input.traceId,
-      relativePath: `${input.traceId}/page.html`,
-      storageRef: `argus-evidence:${input.traceId}/page.html`,
+      relativePath: `results/argus/${input.traceId}/airport-monthly.xlsx`,
+      storageRef: `argus-evidence:results/argus/${input.traceId}/airport-monthly.xlsx`,
       sha256,
       sizeBytes: content.byteLength,
       containsSensitiveData: false,
@@ -243,10 +250,41 @@ describe("durable Argus orchestration", () => {
 
     await acknowledgePersistedArgusResults({ ...environment, ARGUS_EVIDENCE_ROOT: root }, "parent-1");
 
-    assert.deepEqual(await readFile(path.join(root, input.traceId, "page.html")), content);
-    assert.equal(mocks.rawArtifactUpdateMany.mock.calls[0]?.[0].data.storageRef, `tymra-evidence:${input.traceId}/page.html`);
+    assert.deepEqual(await readFile(path.join(root, input.traceId, "downloads", "airport-monthly.xlsx")), content);
+    assert.equal(mocks.rawArtifactUpdateMany.mock.calls[0]?.[0].data.storageRef, `tymra-evidence:${input.traceId}/downloads/airport-monthly.xlsx`);
     assert.ok(mocks.rawArtifactUpdateMany.mock.invocationCallOrder[0]! < mocks.acknowledge.mock.invocationCallOrder[0]!);
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("resumes evidence acknowledgement across retry collection runs", async () => {
+    const pointer = {
+      kind: "html" as const,
+      traceId: input.traceId,
+      relativePath: `results/argus/${input.traceId}/page.html`,
+      storageRef: `argus-evidence:results/argus/${input.traceId}/page.html`,
+      sha256: "e".repeat(64),
+      sizeBytes: 8,
+      containsSensitiveData: false,
+      createdAt: "2026-08-02T00:00:00.000Z",
+    };
+    const result = completedJob();
+    result.items[0]!.result.evidence = [pointer];
+    const localStorageRef = `tymra-evidence:${input.traceId}/page.html`;
+    mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result }]);
+    mocks.collectionRunFindMany.mockResolvedValue([{ id: "run-1" }, { id: "run-2" }]);
+    mocks.rawArtifactFindMany.mockResolvedValue([
+      { id: "artifact-1", storageRef: localStorageRef, contentHash: pointer.sha256 },
+      { id: "artifact-2", storageRef: pointer.storageRef, contentHash: pointer.sha256 },
+    ]);
+    mocks.downloadEvidence.mockResolvedValue(Buffer.from("evidence"));
+    mocks.rawArtifactUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.acknowledge.mockResolvedValue({ ok: true });
+
+    await acknowledgePersistedArgusResults(environment, "parent-1");
+
+    assert.equal(mocks.downloadEvidence.mock.calls.length, 0);
+    assert.deepEqual(mocks.rawArtifactUpdateMany.mock.calls[0]?.[0].where.id.in, ["artifact-2"]);
+    assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
   });
 
   it("retains each execution's evidence independently before acknowledging a multi-capture run", async () => {
@@ -289,7 +327,10 @@ describe("durable Argus orchestration", () => {
 
     assert.deepEqual(
       mocks.rawArtifactFindMany.mock.calls.map(([query]) => query.where.storageRef.in),
-      [[listingPointer.storageRef], [detailPointer.storageRef]],
+      [
+        [listingPointer.storageRef, "tymra-evidence:listing-trace/page.html"],
+        [detailPointer.storageRef, "tymra-evidence:detail-trace/page.html"],
+      ],
     );
     assert.deepEqual(mocks.acknowledge.mock.calls.map((call) => call[1]), ["argus-listing", "argus-detail"]);
     assert.ok(mocks.rawArtifactUpdateMany.mock.invocationCallOrder.at(-1)! < mocks.acknowledge.mock.invocationCallOrder[0]!);

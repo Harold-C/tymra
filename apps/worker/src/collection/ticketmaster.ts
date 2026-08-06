@@ -85,7 +85,7 @@ export function isTicketmasterDetailUrl(value: string) {
 
 export function canonicalTicketmasterUrl(value: string) {
   const url = new URL(value);
-  if (!TICKETMASTER_ALLOWED_HOSTS.includes(url.hostname.toLowerCase() as typeof TICKETMASTER_ALLOWED_HOSTS[number])) throw new Error("URL is not an approved Ticketmaster URL");
+  if (!TICKETMASTER_ALLOWED_HOSTS.includes(url.hostname.toLowerCase() as typeof TICKETMASTER_ALLOWED_HOSTS[number])) throw new Error("URL is not an allowed Ticketmaster URL");
   url.protocol = "https:";
   url.hostname = "www.ticketmaster.co.nz";
   url.search = "";

@@ -5,7 +5,6 @@ export type QualityGateInput = {
   unitConfirmed: boolean;
   feesKnown: boolean;
   comparable: boolean;
-  sourceRightsAllowed: boolean;
   sourceAvailable: boolean;
   severeConflict: boolean;
   freshnessExpired: boolean;
@@ -19,7 +18,6 @@ export function evaluateBlockingQualityGates(input: QualityGateInput): BlockingQ
   if (!input.unitConfirmed) flags.push("UNIT_UNCONFIRMED");
   if (!input.feesKnown) flags.push("FEES_UNKNOWN");
   if (!input.comparable) flags.push("COMPARABILITY_FAILURE");
-  if (!input.sourceRightsAllowed) flags.push("SOURCE_RIGHTS_BLOCKED");
   if (!input.sourceAvailable) flags.push("SOURCE_UNAVAILABLE");
   if (input.severeConflict) flags.push("SEVERE_CONFLICT");
   if (input.freshnessExpired) flags.push("FRESHNESS_EXPIRED");

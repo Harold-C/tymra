@@ -8,7 +8,7 @@ stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
 
 ## Responsibility split
 
-- Tymra owns scheduling, source governance, request budgets, locking, circuit state, persistence, canonicalisation and acceptance reporting.
+- Tymra owns scheduling, source configuration, request budgets, locking, circuit state, persistence, canonicalisation and acceptance reporting.
 - Argus owns Patchright navigation, challenge detection, source extraction and browser evidence.
 - Tymra submits one read-only capture to `POST /v1/jobs`, persists the returned Job ID in
   `ArgusExecution`, parks the parent collection Job and releases its Worker lease.
@@ -170,4 +170,4 @@ second pass added zero source, canonical or lineage rows. After the Argus umbrel
 fix, Ticketek completed two listing/detail passes (15 raw records and 11 events per pass), retained
 all listing/detail evidence locally before ACK, and added zero rows on pass two. See the
 [2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md) for Job IDs and
-hashes. This is development evidence, not production schedule approval.
+hashes. This is development evidence, not production schedule activation.

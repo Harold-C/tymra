@@ -125,7 +125,7 @@ export function isEventfindaDetailUrl(value: string) {
 
 export function canonicalEventfindaUrl(value: string) {
   const url = new URL(value);
-  if (!EVENTFINDA_ALLOWED_HOSTS.includes(url.hostname.toLowerCase() as typeof EVENTFINDA_ALLOWED_HOSTS[number])) throw new Error("URL is not an approved Eventfinda URL");
+  if (!EVENTFINDA_ALLOWED_HOSTS.includes(url.hostname.toLowerCase() as typeof EVENTFINDA_ALLOWED_HOSTS[number])) throw new Error("URL is not an allowed Eventfinda URL");
   url.protocol = "https:";
   url.hostname = "www.eventfinda.co.nz";
   url.search = "";

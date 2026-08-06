@@ -10,7 +10,6 @@ import type {
   PublicEvent,
   PublicRawRecord,
   PublicSignal,
-  SourceRights,
 } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
@@ -20,6 +19,7 @@ const OUR_AUCKLAND_URL = "https://ourauckland.aucklandcouncil.govt.nz/events/?pa
 const CHRISTCHURCH_NZ_EVENTS_URL = "https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all";
 const QUEENSTOWN_AIRPORT_ARRIVALS_URL = "https://www.queenstownairport.co.nz/api/flights/arrivals";
 const QUEENSTOWN_AIRPORT_DEPARTURES_URL = "https://www.queenstownairport.co.nz/api/flights/departures";
+const WELLINGTON_AIRPORT_FLIGHTS_URL = "https://www.wellingtonairport.co.nz/flights/";
 const POAL_CRUISE_CSV_URL = "https://poal.co.nz/operations/schedules/cruises/download";
 const LINZ_GAZETTEER_SEARCH_URL = "https://gazetteer.linz.govt.nz/api/search";
 
@@ -38,7 +38,6 @@ class OfficialEndpointAdapter implements PublicDataAdapter {
     private readonly collector: Collector,
     private readonly eventNormaliser: EventNormaliser = () => [],
     private readonly signalNormaliser: SignalNormaliser = () => [],
-    private readonly rightsBasis = `${metadata.sourceName} official public read-only endpoint; production use remains subject to source review`,
   ) {
     this.metadata = metadata;
   }
@@ -66,9 +65,6 @@ class OfficialEndpointAdapter implements PublicDataAdapter {
     return endpointHealth(this.references[0]!, this.metadata.sourceName, context);
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights(this.rightsBasis);
-  }
 }
 
 export function parseUniversityEvents(payload: unknown): JsonRecord[] {
@@ -77,8 +73,13 @@ export function parseUniversityEvents(payload: unknown): JsonRecord[] {
 }
 
 async function collectUniversityEvents(reference: string, context: AdapterContext) {
-  const payload = await fetchJson(reference, context, "University of Auckland events");
-  const entries = parseUniversityEvents(payload)
+  const maxRequests = Math.min(3, Math.max(1, context.collectionLimits?.maxRequests ?? 1));
+  const eventsById = new Map<string, JsonRecord>();
+  for (let request = 0; request < maxRequests; request += 1) {
+    const payload = await fetchJson(reference, context, "University of Auckland events");
+    for (const event of parseUniversityEvents(payload)) eventsById.set(stringValue(event.eventId), event);
+  }
+  const entries = [...eventsById.values()]
     .filter((event) => {
       const location = jsonRecord(event.location);
       const startsAt = parseNzDateTime(stringValue(event.startDateTime));
@@ -88,7 +89,7 @@ async function collectUniversityEvents(reference: string, context: AdapterContex
     .sort((left, right) => stableEventOrder(left, right, "startDateTime", "eventId"))
     .slice(0, maxRecords(context))
     .map((event) => ({ externalId: `uoa:${stringValue(event.eventId)}`, payload: { provider: "University of Auckland", event } }));
-  return rawRecords("university_calendars", entries, 1);
+  return rawRecords("university_calendars", entries, maxRequests);
 }
 
 function normaliseUniversityEvents(records: PublicRawRecord[], context: AdapterContext) {
@@ -498,6 +499,96 @@ export function parseQueenstownAirportFlights(payload: unknown): JsonRecord[] {
   return payload.filter((flight): flight is JsonRecord => isRecord(flight) && Array.isArray(flight.flightList) && Boolean(stringValue(flight.orderByDate)));
 }
 
+export type WellingtonAirportFlight = {
+  direction: "arrival" | "departure";
+  scheduledAt: string;
+  estimatedAt: string | null;
+  place: string;
+  flightNumber: string;
+  airline: string | null;
+  gate: string | null;
+  status: string | null;
+};
+
+export function parseWellingtonAirportFlights(html: string, date: string, direction: "arrival" | "departure") {
+  const { document } = parseHTML(html);
+  const board = document.querySelector(".flights-board__items-wrapper");
+  if (!board) throw new Error("Wellington Airport page has no flight board");
+  return [...board.querySelectorAll(".flights-board__item--body-row")].flatMap((row): WellingtonAirportFlight[] => {
+    const scheduled = cleanText(row.querySelector(".flights-board__scheduled-time")?.textContent ?? "").replace(/^Scheduled time:\s*/i, "");
+    const estimated = cleanText(row.querySelector(".flights-board__estimated-time")?.textContent ?? "").replace(/^Estimated time:\s*/i, "");
+    const place = cleanText(row.querySelector(".flights-board__place")?.textContent ?? "").replace(/^(?:From|To):\s*/i, "");
+    const flightNumber = cleanText(row.querySelector(".flights-board__flight-number")?.textContent ?? "").replace(/^(?:Fight|Flight) number:\s*/i, "");
+    const airline = nullableString(cleanText(row.querySelector(".flights-board__airline-name")?.textContent ?? ""));
+    const gate = nullableString(cleanText(row.querySelector(".flights-board__gate strong")?.textContent ?? ""));
+    const status = nullableString(cleanText(row.querySelector(".flights-board__remarks")?.textContent ?? ""));
+    const scheduledAt = parseNzDateTime(`${date}T${scheduled}:00`);
+    const estimatedAt = /^\d{2}:\d{2}$/.test(estimated) ? parseNzDateTime(`${date}T${estimated}:00`) : null;
+    if (!scheduledAt || !place || !flightNumber) return [];
+    return [{ direction, scheduledAt: scheduledAt.toISOString(), estimatedAt: estimatedAt?.toISOString() ?? null, place, flightNumber, airline, gate, status }];
+  });
+}
+
+async function collectWellingtonAirport(reference: string, context: AdapterContext) {
+  const from = context.collectionRange?.from ?? new Date();
+  const to = context.collectionRange?.to ?? new Date(from.getTime() + 7 * 86_400_000);
+  const firstDate = nzDate(from);
+  const requestedDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+  const days = Math.min(7, requestedDays);
+  const requestLimit = Math.min(maxRequests(context, 14), days * 2);
+  const flights = new Map<string, WellingtonAirportFlight>();
+  let requests = 0;
+  for (let day = 0; day < days && requests < requestLimit; day += 1) {
+    const date = isoDate(new Date(firstDate.getTime() + day * 86_400_000));
+    for (const direction of ["arrival", "departure"] as const) {
+      if (requests >= requestLimit || flights.size >= maxRecords(context)) break;
+      const url = new URL(reference);
+      url.searchParams.set("day", date);
+      url.searchParams.set("time", "0");
+      if (direction === "departure") url.searchParams.set("direction", "D");
+      else url.searchParams.set("flight_type", "arrivals");
+      const html = await fetchText(url.href, context, "Wellington Airport flights", "text/html,application/xhtml+xml");
+      requests += 1;
+      for (const flight of parseWellingtonAirportFlights(html, date, direction)) {
+        const key = `${flight.direction}:${flight.flightNumber}:${flight.scheduledAt}`;
+        flights.set(key, flight);
+        if (flights.size >= maxRecords(context)) break;
+      }
+    }
+  }
+  const entries = [...flights.values()].map((flight) => ({
+    externalId: `wellington-airport:${flight.direction}:${slug(flight.flightNumber)}:${flight.scheduledAt}`,
+    payload: { provider: "Wellington Airport", flight },
+  }));
+  return rawRecords("wellington_airport", entries, requests);
+}
+
+function normaliseWellingtonAirport(records: PublicRawRecord[], context: AdapterContext) {
+  return records.flatMap((record): PublicSignal[] => {
+    const flight = jsonRecord(jsonRecord(record.payload).flight);
+    const startsAt = parseIsoDateTime(stringValue(flight.scheduledAt));
+    if (!startsAt || !overlaps(startsAt, new Date(startsAt.getTime() + 3_600_000), context)) return [];
+    const direction = stringValue(flight.direction);
+    const status = stringValue(flight.status);
+    const disrupted = /cancel|divert|delay|late/i.test(status);
+    return [{
+      sourceId: "wellington_airport",
+      externalId: record.externalId,
+      marketKey: "wellington",
+      type: "TRANSPORT_FLOW",
+      title: `${direction === "arrival" ? "Arrival" : "Departure"} ${stringValue(flight.flightNumber)} ${direction === "arrival" ? "from" : "to"} ${stringValue(flight.place)}`,
+      region: "Wellington",
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 3_600_000),
+      direction: disrupted ? "NEGATIVE" : direction === "arrival" ? "POSITIVE" : "MIXED",
+      confidence: disrupted ? 0.9 : 0.75,
+      evidenceRef: WELLINGTON_AIRPORT_FLIGHTS_URL,
+      metadata: { ...flight, sourceFormat: "Wellington Airport public flight board HTML" },
+      fixture: false,
+    }];
+  }).slice(0, maxRecords(context));
+}
+
 async function collectQueenstownAirport(reference: string, context: AdapterContext) {
   const payload = await fetchJson(reference, context, "Queenstown Airport flights");
   const entries = parseQueenstownAirportFlights(payload)
@@ -527,7 +618,7 @@ function normaliseQueenstownAirport(records: PublicRawRecord[], context: Adapter
     return [{
       sourceId: "airport_data",
       externalId: record.externalId,
-      marketKey: "queenstown",
+      marketKey: "queenstown-wanaka",
       type: "TRANSPORT_FLOW",
       title: `${flightType || "Flight"} ${codes.join("/") || "unknown"}: ${stringValue(flight.from)} to ${stringValue(flight.destination)}`,
       region: "Queenstown",
@@ -639,7 +730,6 @@ class LinzGazetteerAdapter implements PublicDataAdapter {
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(): Promise<PublicEvent[]> { return []; }
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return endpointHealth(`${LINZ_GAZETTEER_SEARCH_URL}?term=Auckland`, this.metadata.sourceName, context); }
-  rightsMetadata(): SourceRights { return reviewPublicRights("Official LINZ Gazetteer place-name reference endpoint; no address or demand signal is inferred from a place-name result"); }
 }
 
 export const officialNzSourceAdapters: Record<string, PublicDataAdapter> = {
@@ -666,9 +756,14 @@ export const officialNzSourceAdapters: Record<string, PublicDataAdapter> = {
   }, [CHRISTCHURCH_NZ_EVENTS_URL], collectChristchurchNz, normaliseChristchurchNzEvents),
   airport_data: new OfficialEndpointAdapter({
     sourceId: "airport_data", sourceName: "Queenstown Airport flights", sourceType: "PUBLIC_DATA",
-    supportedDomains: ["www.queenstownairport.co.nz"], adapterKey: "public:airport-data:queenstown-flights-v1", accessMethod: "OFFICIAL_PUBLIC_JSON",
-    concurrencyLimit: 1, dailyBudget: 96, collectorVersion: "queenstown-airport-fetch-v1", parserVersion: "queenstown-airport-json-v1",
+    supportedDomains: ["www.queenstownairport.co.nz"], adapterKey: "public:airport-data:queenstown-flights-v2", accessMethod: "OFFICIAL_PUBLIC_JSON",
+    concurrencyLimit: 1, dailyBudget: 96, collectorVersion: "queenstown-airport-fetch-v1", parserVersion: "queenstown-airport-canonical-market-v2",
   }, [QUEENSTOWN_AIRPORT_ARRIVALS_URL, QUEENSTOWN_AIRPORT_DEPARTURES_URL], collectQueenstownAirport, () => [], normaliseQueenstownAirport),
+  wellington_airport: new OfficialEndpointAdapter({
+    sourceId: "wellington_airport", sourceName: "Wellington Airport flights", sourceType: "PUBLIC_DATA",
+    supportedDomains: ["www.wellingtonairport.co.nz"], adapterKey: "public:wellington-airport:flight-board-html-v1", accessMethod: "OFFICIAL_PUBLIC_HTML",
+    concurrencyLimit: 1, dailyBudget: 96, collectorVersion: "wellington-airport-flight-board-v1", parserVersion: "wellington-airport-flight-board-html-v1",
+  }, [WELLINGTON_AIRPORT_FLIGHTS_URL], collectWellingtonAirport, () => [], normaliseWellingtonAirport),
   port_and_cruise: new OfficialEndpointAdapter({
     sourceId: "port_and_cruise", sourceName: "Port of Auckland cruise schedule", sourceType: "PUBLIC_DATA",
     supportedDomains: ["poal.co.nz"], adapterKey: "public:port-and-cruise:poal-csv-v1", accessMethod: "OFFICIAL_PUBLIC_CSV",
@@ -880,6 +975,13 @@ function timeZoneOffsetMs(value: Date, timeZone: string) {
   return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
 }
 
+function nzDate(value: Date) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
 function overlaps(startsAt: Date, endsAt: Date, context: AdapterContext) {
   const from = context.collectionRange?.from.getTime() ?? Number.NEGATIVE_INFINITY;
   const to = context.collectionRange?.to.getTime() ?? Number.POSITIVE_INFINITY;
@@ -915,20 +1017,6 @@ function safeHttpsUrl(value: string) {
   if (!value) return null;
   try { return new URL(value).protocol === "https:" ? value : null; }
   catch { return null; }
-}
-
-function reviewPublicRights(basis: string): SourceRights {
-  return {
-    internalApprovalStatus: "PENDING",
-    legalRightsStatus: "REVIEW",
-    lifecycle: "RESEARCH",
-    environments: ["DEVELOPMENT", "TEST"],
-    allowedUsage: ["HEALTH_CHECK", "FIXTURE_CONTRACT_TEST"],
-    displayPermission: false,
-    derivedAnalysisPermission: false,
-    retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null },
-    basis,
-  };
 }
 
 function jsonRecord(value: unknown): JsonRecord { return isRecord(value) ? value : {}; }

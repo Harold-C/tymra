@@ -4,7 +4,6 @@ import type {
   ProviderContext,
   ProviderHealth,
   ProviderRate,
-  ProviderRightsMetadata,
   RateRequest,
   UnitCandidate,
 } from "./index";
@@ -120,14 +119,4 @@ export class DemoProvider implements DataProvider {
     };
   }
 
-  async rightsMetadata(_context: ProviderContext): Promise<ProviderRightsMetadata> {
-    return {
-      status: "APPROVED",
-      allowStorage: true,
-      allowDerivedAnalysis: true,
-      allowDisplay: true,
-      retentionDays: null,
-      basis: "Development Demo Data - Not real market data",
-    };
-  }
 }

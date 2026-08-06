@@ -1,5 +1,6 @@
 import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma, type Prisma } from "@tymra/db";
+import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -7,10 +8,11 @@ let stopping = false;
 process.on("SIGTERM", () => { stopping = true; });
 process.on("SIGINT", () => { stopping = true; });
 
-process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "scheduler_started", enabled: environment.SCHEDULER_ENABLED })}\n`);
+const schedulingAllowed = automaticSchedulingAllowed(environment.NODE_ENV, environment.SCHEDULER_ENABLED);
+process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "scheduler_started", enabled: schedulingAllowed, configuredEnabled: environment.SCHEDULER_ENABLED, environment: environment.NODE_ENV })}\n`);
 
 while (!stopping) {
-  if (environment.SCHEDULER_ENABLED) await enqueueDueSchedules();
+  if (schedulingAllowed) await enqueueDueSchedules();
   await wait(30_000);
 }
 
@@ -23,7 +25,7 @@ async function enqueueDueSchedules(now = new Date()) {
     const payload = schedule.payload as Prisma.JsonObject;
     if (typeof payload.sourceId === "string") {
       const source = await prisma.dataSource.findUnique({ where: { key: payload.sourceId } });
-      if (!source?.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) continue;
+      if (!source || sourceCollectionBlockers(source, environment.NODE_ENV).length) continue;
     }
     const intervalMs = intervalMsFor(schedule.cronExpression);
     const bucket = Math.floor(now.getTime() / intervalMs);

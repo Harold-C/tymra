@@ -7,7 +7,6 @@ const terminalCodes = new Set([
   "INVALID_COLLECTION_RANGE",
   "INVALID_MARKET_SCOPE",
   "PARSING_ERROR",
-  "RIGHTS_BLOCKED",
   "SOURCE_NOT_FOUND",
 ]);
 

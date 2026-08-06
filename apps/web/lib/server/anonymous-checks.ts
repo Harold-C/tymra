@@ -125,7 +125,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
         ...rough,
         limitations: [
           "Preliminary result based on the listing's observed default display context.",
-          "The formal report checks a broader approved evidence set after email verification.",
+          "The formal report checks a broader evidence set after email verification.",
         ],
         isDemo: environment.PROVIDER_MODE === "demo",
       },
@@ -159,8 +159,7 @@ async function resolveListingRecord(platform: string, listingId: string) {
     where: { platform: { equals: platform, mode: "insensitive" }, externalId: listingId, onlineStatus: "ONLINE" },
     include: { unit: { include: { property: true } }, dataSource: true },
   });
-  if (!direct || !direct.dataSource.enabled || direct.dataSource.status !== "APPROVED") return null;
-  if (!direct.dataSource.rightsAllowDerivedAnalysis || !direct.dataSource.rightsAllowDisplay) return null;
+  if (!direct || !direct.dataSource.enabled || !["HEALTHY", "DEGRADED"].includes(direct.dataSource.operationalStatus)) return null;
   return {
     propertyId: direct.unit.propertyId,
     unitId: direct.unitId,

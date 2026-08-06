@@ -47,7 +47,7 @@ type PassReport = {
   countsBefore: SourceCounts;
   countsAfter: SourceCounts;
   newSourceRows: SourceCounts;
-  governanceUnchanged: boolean;
+  configurationUnchanged: boolean;
   schedulesUnchanged: boolean;
   failures: string[];
 };
@@ -65,12 +65,28 @@ const sources: SourceSpec[] = [
   { key: "school_holidays_nz", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
   { key: "geonet", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
   { key: "linz", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
-  { key: "mbie", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
+  { key: "mbie", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 100 } },
   { key: "stats_nz", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
+  { key: "mbie_tourism_flows", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 250 } },
+  { key: "mbie_mrte", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 100 } },
+  { key: "mbie_ivs", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 10 } },
   { key: "venue_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "council_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "university_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "rto_calendars", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
+  { key: "wellingtonnz_events", jobType: "EVENT_COLLECTION", marketScope: "wellington" },
+  { key: "waikatonz_events", jobType: "EVENT_COLLECTION", marketScope: "waikato" },
+  { key: "queenstownnz_events", jobType: "EVENT_COLLECTION", marketScope: "queenstown-wanaka" },
+  { key: "tauponz_events", jobType: "EVENT_COLLECTION", marketScope: "taupo" },
+  { key: "southlandnz_events", jobType: "EVENT_COLLECTION", marketScope: "southland-fiordland" },
+  { key: "hawkesbaynz_events", jobType: "EVENT_COLLECTION", marketScope: "hawkes-bay" },
+  { key: "taranakienz_events", jobType: "EVENT_COLLECTION", marketScope: "taranaki" },
+  { key: "nelsontasman_events", jobType: "EVENT_COLLECTION", marketScope: "nelson-tasman" },
+  { key: "tauranga_events", jobType: "EVENT_COLLECTION", marketScope: "tauranga" },
+  { key: "manawatunz_events", jobType: "EVENT_COLLECTION", marketScope: "manawatu" },
+  { key: "northland_events", jobType: "EVENT_COLLECTION", marketScope: "northland" },
+  { key: "rotoruanz_events", jobType: "EVENT_COLLECTION", marketScope: "rotorua" },
+  { key: "dunedinnz_events", jobType: "EVENT_COLLECTION", marketScope: "dunedin", payload: { phase: "full", limit: 20 } },
   { key: "te_pae_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
   { key: "venues_otautahi_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
   { key: "isaac_theatre_royal_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
@@ -84,7 +100,15 @@ const sources: SourceSpec[] = [
   { key: "ticketek_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand", payload: { phase: "full", limit: 10, maxDetails: 1 } },
   { key: "metservice", jobType: "WEATHER_COLLECTION", marketScope: "new-zealand" },
   { key: "nzta", jobType: "TRANSPORT_COLLECTION", marketScope: "new-zealand" },
-  { key: "airport_data", jobType: "TRANSPORT_COLLECTION", marketScope: "queenstown" },
+  { key: "doc_alerts", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 300 } },
+  { key: "interislander_alerts", jobType: "TRANSPORT_COLLECTION", marketScope: "new-zealand", payload: { limit: 20 } },
+  { key: "ski_seasons_nz", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand", payload: { limit: 3 } },
+  { key: "airport_data", jobType: "TRANSPORT_COLLECTION", marketScope: "queenstown-wanaka" },
+  { key: "queenstown_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "queenstown-wanaka" },
+  { key: "auckland_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "auckland" },
+  { key: "mot_airline_performance", jobType: "TRANSPORT_COLLECTION", marketScope: "new-zealand", payload: { limit: 100 } },
+  { key: "wellington_airport", jobType: "TRANSPORT_COLLECTION", marketScope: "wellington" },
+  { key: "wellington_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "wellington" },
   { key: "christchurch_airport", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch" },
   { key: "christchurch_sports", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(1, 32) },
   { key: "christchurch_university_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: { from: "2026-08-01T00:00:00.000Z", to: "2026-09-01T00:00:00.000Z" } },
@@ -182,7 +206,7 @@ async function main() {
       } else if (run.status !== "SUCCEEDED" && !acceptedTicketekChallenge) {
         failures.push(`CollectionRun ended as ${run.status}: ${run.errorCode ?? "UNKNOWN"}`);
       }
-      if (run && scope.governanceUnchanged !== true) failures.push("Source governance changed");
+      if (run && scope.configurationUnchanged !== true) failures.push("Source configuration changed");
       if (run && scope.schedulesUnchanged !== true) failures.push("Source schedules changed");
       const lineageFailures = lineageProblems(countsAfter);
       failures.push(...lineageFailures);
@@ -230,7 +254,7 @@ async function main() {
         countsBefore,
         countsAfter,
         newSourceRows: subtractCounts(countsAfter, countsBefore),
-        governanceUnchanged: scope.governanceUnchanged === true,
+        configurationUnchanged: scope.configurationUnchanged === true,
         schedulesUnchanged: scope.schedulesUnchanged === true,
         failures,
       };
@@ -275,7 +299,7 @@ async function main() {
     }));
   if (enabledSchedulesAfter !== enabledSchedulesBefore) {
     failures.push({
-      sourceKey: "schedule-governance",
+      sourceKey: "schedule-configuration",
       failures: [`Enabled schedule count changed from ${enabledSchedulesBefore} to ${enabledSchedulesAfter}`],
     });
   }

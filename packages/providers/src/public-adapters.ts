@@ -6,7 +6,6 @@ import type {
   PublicDiscoveryRequest,
   PublicRawRecord,
   PublicSignal,
-  SourceRights,
 } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 import { officialNzSourceAdapters } from "./official-nz-adapters";
@@ -14,6 +13,14 @@ import { christchurchEventAdapters } from "./christchurch-event-adapters";
 import { christchurchDemandAdapters } from "./christchurch-demand-adapters";
 import { christchurchPriorityAdapters } from "./christchurch-priority-adapters";
 import { publicEventPlatformAdapters } from "./public-event-platform-adapters";
+import { regionalMarketAdapters } from "./regional-market-adapters";
+import { airportMonthlyAdapters } from "./airport-monthly-adapters";
+import { mbieTourismAdapters } from "./mbie-tourism-adapters";
+import { queenstownAirportMonthlyAdapters } from "./queenstown-airport-monthly-adapter";
+import { accessDisruptionAdapters } from "./access-disruption-adapters";
+import { skiSeasonAdapters } from "./ski-season-adapter";
+import { aviationArgusAdapters } from "./aviation-argus-adapters";
+import { marketKeysForAnniversaryRegion, nearestNzMarketKey, nzMarketKeysForAreaText, nzMarketKeysWithinDistance } from "./nz-market-coverage";
 import { parse } from "csv-parse/sync";
 import { DOMParser, parseHTML } from "linkedom";
 
@@ -77,11 +84,13 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
   }
 
   async normalise(records: PublicRawRecord[], _context: AdapterContext): Promise<PublicSignal[]> {
-    return records.map((record) => {
+    return records.flatMap((record) => {
       const value = record.payload as CalendarRecord;
-      return {
+      const marketKeys = value.type === "ANNIVERSARY_DAY" ? marketKeysForAnniversaryRegion(value.region) : ["new-zealand"];
+      return marketKeys.map((marketKey, index): PublicSignal => ({
         sourceId: this.metadata.sourceId,
-        externalId: value.id,
+        externalId: index === 0 ? value.id : `${value.id}:market:${marketKey}`,
+        marketKey,
         type: value.type,
         title: value.title,
         region: value.region,
@@ -91,7 +100,7 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
         confidence: 1,
         evidenceRef: `${this.sourceUrl}#${value.id}`,
         fixture: false,
-      };
+      }));
     });
   }
 
@@ -105,11 +114,7 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return allowedPublicRights("Official New Zealand calendar facts with source attribution");
-  }
 }
-
 export function parseEmploymentPublicHolidays(html: string): CalendarRecord[] {
   const { document } = parseHTML(html);
   const heading = [...document.querySelectorAll("h2")].find((element) => /\b\d{4}\s+public holiday and anniversary dates/i.test(element.textContent));
@@ -152,16 +157,16 @@ class GeoNetAdapter implements PublicDataAdapter {
     sourceName: "GeoNet",
     sourceType: "PUBLIC_DATA",
     supportedDomains: ["api.geonet.org.nz"],
-    adapterKey: "public:geonet:quake-v2",
+    adapterKey: "public:geonet:hazards-v3",
     accessMethod: "OFFICIAL_OPEN_API",
     concurrencyLimit: 2,
     dailyBudget: 2_000,
-    collectorVersion: "geonet-fetch-v1",
-    parserVersion: "geonet-geojson-v2",
+    collectorVersion: "geonet-fetch-v2",
+    parserVersion: "geonet-geojson-v3",
   };
 
   async discover(_request: PublicDiscoveryRequest, _context: AdapterContext): Promise<string[]> {
-    return ["https://api.geonet.org.nz/quake?MMI=3"];
+    return ["https://api.geonet.org.nz/quake?MMI=3", "https://api.geonet.org.nz/volcano/val"];
   }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
@@ -170,18 +175,56 @@ class GeoNetAdapter implements PublicDataAdapter {
     const payload = await response.json() as { features?: Array<{ properties?: Record<string, unknown> }> };
     if (!Array.isArray(payload.features)) throw new AdapterError("PARSING_ERROR", "GeoNet response did not contain GeoJSON features", false);
     const maxRecords = context.collectionLimits?.maxRecords ?? 100;
-    return payload.features.slice(0, maxRecords).map((feature, index) => ({ sourceId: "geonet", externalId: String(feature.properties?.publicID ?? `quake-${index}`), payload: feature, fetchedAt: new Date(), fixture: false }));
+    const volcanoLevels = reference.includes("/volcano/val");
+    return payload.features.slice(0, maxRecords).map((feature, index) => ({
+      sourceId: "geonet",
+      externalId: volcanoLevels ? `volcano-alert:${String(feature.properties?.volcanoID ?? index)}` : String(feature.properties?.publicID ?? `quake-${index}`),
+      payload: { ...feature, sourceKind: volcanoLevels ? "volcano_alert_level" : "earthquake" },
+      fetchedAt: new Date(),
+      fixture: false,
+    }));
   }
 
   async normalise(records: PublicRawRecord[], _context: AdapterContext): Promise<PublicSignal[]> {
-    return records.map((record) => {
-      const feature = record.payload as { properties?: Record<string, unknown> };
+    return records.flatMap((record): PublicSignal[] => {
+      const feature = record.payload as { properties?: Record<string, unknown>; geometry?: { coordinates?: unknown } };
       const properties = feature.properties ?? {};
+      if ((record.payload as { sourceKind?: string }).sourceKind === "volcano_alert_level") {
+        const level = Number(properties.level ?? 0);
+        if (!Number.isFinite(level) || level <= 0) return [];
+        const coordinate = pointCoordinate(feature.geometry?.coordinates);
+        if (!coordinate) return [];
+        const marketKeys = nzMarketKeysWithinDistance(coordinate.latitude, coordinate.longitude, level >= 3 ? 350 : level >= 2 ? 180 : 120);
+        const observedDay = record.fetchedAt.toISOString().slice(0, 10);
+        const startsAt = new Date(`${observedDay}T00:00:00.000Z`);
+        return marketKeys.map((marketKey, index) => ({
+          sourceId: "geonet",
+          externalId: index === 0 ? record.externalId : `${record.externalId}:market:${marketKey}`,
+          marketKey,
+          type: "WEATHER_OR_ACCESS_DISRUPTION",
+          title: `GeoNet volcanic alert: ${String(properties.volcanoTitle ?? properties.volcanoID ?? "New Zealand volcano")}`,
+          region: String(properties.volcanoTitle ?? "New Zealand"),
+          startsAt,
+          endsAt: addUtcDays(startsAt, 2),
+          direction: level >= 2 ? "NEGATIVE" : "MIXED",
+          confidence: Math.min(1, 0.55 + level * 0.1),
+          evidenceRef: "https://api.geonet.org.nz/volcano/val",
+          metadata: { hazardKind: "VOLCANIC_ALERT_LEVEL", level, aviationColourCode: properties.acc ?? null, activity: properties.activity ?? null, hazards: properties.hazards ?? null, coordinates: coordinate },
+          fixture: false,
+        }));
+      }
       const time = new Date(String(properties.time ?? record.fetchedAt.toISOString()));
       const mmi = Number(properties.mmi ?? properties.MMI ?? 0);
-      return {
+      const coordinate = pointCoordinate(feature.geometry?.coordinates);
+      const radiusKm = mmi >= 6 ? 350 : mmi >= 5 ? 220 : mmi >= 4 ? 140 : 80;
+      const marketKeys = [...new Set([
+        ...nzMarketKeysForAreaText(String(properties.locality ?? "")),
+        ...(coordinate ? nzMarketKeysWithinDistance(coordinate.latitude, coordinate.longitude, radiusKm) : []),
+      ])];
+      return marketKeys.map((marketKey, index) => ({
         sourceId: "geonet",
-        externalId: record.externalId,
+        externalId: index === 0 ? record.externalId : `${record.externalId}:market:${marketKey}`,
+        marketKey,
         type: "WEATHER_OR_ACCESS_DISRUPTION",
         title: `GeoNet earthquake: ${String(properties.locality ?? "New Zealand")}`,
         region: String(properties.locality ?? "New Zealand"),
@@ -190,8 +233,9 @@ class GeoNetAdapter implements PublicDataAdapter {
         direction: mmi >= 5 ? "MIXED" : "UNKNOWN",
         confidence: Number.isFinite(mmi) ? Math.min(1, Math.max(0.2, mmi / 8)) : 0.2,
         evidenceRef: `https://api.geonet.org.nz/quake/${record.externalId}`,
+        metadata: { magnitude: properties.magnitude ?? null, mmi, radiusKm, coordinates: coordinate },
         fixture: false,
-      };
+      }));
     });
   }
 
@@ -205,9 +249,6 @@ class GeoNetAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return allowedPublicRights("GeoNet data policy and CC BY 3.0 NZ attribution requirements apply");
-  }
 }
 
 type MbieMeasure = { value: number | string; flag: string | null };
@@ -282,12 +323,12 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
     sourceName: "MBIE Accommodation Data Programme",
     sourceType: "PUBLIC_DATA",
     supportedDomains: ["teic.mbie.govt.nz"],
-    adapterKey: "public:mbie:adp-csv-v1",
+    adapterKey: "public:mbie:adp-csv-v2",
     accessMethod: "OFFICIAL_PUBLIC_CSV_RANGE",
     concurrencyLimit: 1,
     dailyBudget: 4,
     collectorVersion: "mbie-adp-range-fetch-v1",
-    parserVersion: "mbie-adp-grouped-v1",
+    parserVersion: "mbie-adp-canonical-markets-v2",
   };
 
   async discover(_request: PublicDiscoveryRequest, _context: AdapterContext): Promise<string[]> {
@@ -309,10 +350,11 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
     let records: MbieAccommodationRecord[];
     try { records = parseMbieAccommodationTail(content); }
     catch (error) { throw new AdapterError("PARSING_ERROR", error instanceof Error ? error.message : "MBIE ADP parsing failed", false); }
-    const maxRecords = context.collectionLimits?.maxRecords ?? records.length;
+    const relevantRecords = records.filter((record) => record.areaType === "RTO" && record.property === "Total" && marketKeysForMbieArea(record.area).length > 0);
+    const maxRecords = context.collectionLimits?.maxRecords ?? relevantRecords.length;
     const fetchedAt = new Date();
     const contentRange = response.headers.get("content-range");
-    return records.slice(0, maxRecords).map((record) => ({
+    return relevantRecords.slice(0, maxRecords).map((record) => ({
       sourceId: "mbie",
       externalId: record.id,
       payload: { ...record, sourceUrl: MBIE_ADP_URL, contentRange },
@@ -322,16 +364,17 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
   }
 
   async normalise(records: PublicRawRecord[], _context: AdapterContext): Promise<PublicSignal[]> {
-    return records.map((raw) => {
+    return records.flatMap((raw) => {
       const record = raw.payload as MbieAccommodationRecord & { sourceUrl?: string; contentRange?: string | null };
       const startsAt = new Date(`${record.period}T00:00:00.000Z`);
       const endsAt = new Date(Date.UTC(startsAt.getUTCFullYear(), startsAt.getUTCMonth() + 1, 1));
       const occupancy = numericMeasure(record.measures, "Occupancy rate");
       const quality = String(record.measures["Quality indicator"]?.value ?? "Unknown");
-      return {
+      const marketKeys = marketKeysForMbieArea(record.area);
+      return marketKeys.map((marketKey, index): PublicSignal => ({
         sourceId: "mbie",
-        externalId: record.id,
-        marketKey: marketKeyForMbieArea(record.area),
+        externalId: index === 0 ? record.id : `${record.id}:market:${marketKey}`,
+        marketKey,
         type: "TOURISM_DEMAND",
         title: `MBIE accommodation demand: ${record.area} (${record.property})`,
         region: record.area,
@@ -349,7 +392,7 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
           contentRange: record.contentRange ?? null,
         },
         fixture: false,
-      };
+      }));
     });
   }
 
@@ -363,9 +406,6 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Official MBIE Tourism Evidence and Insights Centre ADP CSV; production use remains subject to source-governance approval");
-  }
 }
 
 class RbnzFxBrowserAdapter implements PublicDataAdapter {
@@ -402,9 +442,6 @@ class RbnzFxBrowserAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Official RBNZ B1 public statistics page and data-file index; production use remains subject to source-governance approval");
-  }
 }
 
 type StatsNzMetric = {
@@ -498,7 +535,7 @@ class StatsNzInternationalTravelAdapter implements PublicDataAdapter {
   }
 
   async normalise(records: PublicRawRecord[]): Promise<PublicSignal[]> {
-    return records.map((raw) => {
+    return records.map((raw): PublicSignal => {
       const record = raw.payload as StatsNzInternationalTravelRecord;
       const annualChange = record.metrics.find((metric) => metric.unit === "PERCENT" && /previous year/i.test(metric.description));
       return {
@@ -538,9 +575,6 @@ class StatsNzInternationalTravelAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Official Stats NZ international-travel indicator; production use remains subject to source-governance approval and attribution review");
-  }
 }
 
 type NztaDelayFeature = {
@@ -614,7 +648,7 @@ class NztaJourneyPlannerAdapter implements PublicDataAdapter {
   }
 
   async normalise(records: PublicRawRecord[]): Promise<PublicSignal[]> {
-    return records.map((raw) => {
+    return records.flatMap((raw): PublicSignal[] => {
       const record = raw.payload as NztaDelayRecord;
       const properties = record.feature.properties;
       const startsAt = record.startsAt ? new Date(record.startsAt) : raw.fetchedAt;
@@ -623,10 +657,14 @@ class NztaJourneyPlannerAdapter implements PublicDataAdapter {
       const eventType = cleanText(stringValue(properties.EventType ?? properties.type));
       const impact = cleanText(stringValue(properties.Impact));
       const isCritical = Number(properties.IsCritical ?? 0) === 1;
-      return {
+      const coordinate = geometryCoordinate(record.feature.geometry);
+      const textMarkets = nzMarketKeysForAreaText([properties.Name, properties.LocationArea, properties.EventDescription, properties.EventComments].map(stringValue).join(" "));
+      const nearestMarket = coordinate ? nearestNzMarketKey(coordinate.latitude, coordinate.longitude, 150) : null;
+      const marketKeys = [...new Set([...textMarkets, ...(nearestMarket ? [nearestMarket] : [])])];
+      return marketKeys.map((marketKey, index) => ({
         sourceId: "nzta",
-        externalId: record.id,
-        marketKey: "new-zealand",
+        externalId: index === 0 ? record.id : `${record.id}:market:${marketKey}`,
+        marketKey,
         type: "WEATHER_OR_ACCESS_DISRUPTION",
         title: cleanText(stringValue(properties.Name)) || `NZTA road event: ${eventType || "traffic disruption"}`,
         region: cleanText(stringValue(properties.EventIsland)) || "New Zealand",
@@ -647,7 +685,7 @@ class NztaJourneyPlannerAdapter implements PublicDataAdapter {
           sourceTimezone: "Pacific/Auckland",
         },
         fixture: false,
-      };
+      }));
     });
   }
 
@@ -661,9 +699,6 @@ class NztaJourneyPlannerAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Official NZTA Journey Planner public GeoJSON; production use remains subject to source-governance approval and attribution review");
-  }
 }
 
 type MetServiceCapFeedItem = {
@@ -851,17 +886,19 @@ class MetServiceCapAdapter implements PublicDataAdapter {
   async normalise(records: PublicRawRecord[]): Promise<PublicSignal[]> {
     return records.flatMap((raw): PublicSignal[] => {
       if (!isRecord(raw.payload) || raw.payload.kind !== "cap_alert" || !isRecord(raw.payload.alert)) return [];
-      const alert = raw.payload.alert as unknown as MetServiceCapAlert;
+      const payload = raw.payload;
+      const alert = payload.alert as unknown as MetServiceCapAlert;
       const info = alert.infos[0];
       if (!info) return [];
       const startsAt = parseIsoTimestamp(info.onset ?? info.effective ?? alert.sent) ?? raw.fetchedAt;
       const parsedEnd = parseIsoTimestamp(info.expires);
       const endsAt = parsedEnd && parsedEnd > startsAt ? parsedEnd : addUtcDays(startsAt, 1);
       const region = info.areas.map((area) => area.areaDesc).join("; ") || "New Zealand";
-      return [{
+      const marketKeys = nzMarketKeysForAreaText(region);
+      return marketKeys.map((marketKey, index): PublicSignal => ({
         sourceId: "metservice",
-        externalId: `cap-alert:${alert.identifier}`,
-        marketKey: "new-zealand",
+        externalId: index === 0 ? `cap-alert:${alert.identifier}` : `cap-alert:${alert.identifier}:market:${marketKey}`,
+        marketKey,
         type: "WEATHER_OR_ACCESS_DISRUPTION",
         title: info.headline || info.event,
         region,
@@ -869,15 +906,15 @@ class MetServiceCapAdapter implements PublicDataAdapter {
         endsAt,
         direction: "NEGATIVE",
         confidence: metServiceConfidence(info.severity, info.certainty),
-        evidenceRef: stringValue(raw.payload.sourceUrl) || METSERVICE_CAP_RSS_URL,
+        evidenceRef: stringValue(payload.sourceUrl) || METSERVICE_CAP_RSS_URL,
         metadata: {
           sourceFormat: "OASIS CAP 1.2",
           attribution: info.senderName || alert.sender,
           alert,
-          feedItem: isRecord(raw.payload.feedItem) ? raw.payload.feedItem : null,
+          feedItem: isRecord(payload.feedItem) ? payload.feedItem : null,
         },
         fixture: false,
-      }];
+      }));
     });
   }
 
@@ -891,9 +928,6 @@ class MetServiceCapAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Official MetService CAP RSS feed, licensed CC BY 4.0 and subject to the New Zealand CAP Code of Practice");
-  }
 }
 
 class EventfindaWebAdapter implements PublicDataAdapter {
@@ -930,9 +964,6 @@ class EventfindaWebAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Nationwide discovery and bounded detail persistence are verified in development; production activation and long-running stability acceptance remain separate gates");
-  }
 }
 
 class TicketmasterWebAdapter implements PublicDataAdapter {
@@ -969,20 +1000,17 @@ class TicketmasterWebAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights("Direct HTTP city-listing collection is implemented; Argus is used only for selectively required detail pages; production remains gated by source review and explicit activation");
-  }
 }
 
 class ArgusEventWebAdapter implements PublicDataAdapter {
   readonly metadata: AdapterMetadata;
 
   constructor(
-    sourceId: "school_sport_nz" | "school_sport_canterbury" | "ticketek_events",
+    sourceId: "school_sport_nz" | "school_sport_canterbury" | "ticketek_events" | "dunedinnz_events",
     sourceName: string,
     supportedDomains: string[],
     private readonly healthUrl: string,
-    connector: "sporty-school-sport-public" | "ticketek-public",
+    connector: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public",
     dailyBudget: number,
   ) {
     this.metadata = {
@@ -1026,9 +1054,6 @@ class ArgusEventWebAdapter implements PublicDataAdapter {
     }
   }
 
-  rightsMetadata(): SourceRights {
-    return reviewPublicRights(`${this.metadata.sourceName} uses a fixed, read-only Argus connector; production use remains subject to source-governance approval`);
-  }
 }
 
 export const publicDataAdapters: Record<string, PublicDataAdapter> = {
@@ -1045,11 +1070,19 @@ export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   school_sport_nz: new ArgusEventWebAdapter("school_sport_nz", "School Sport New Zealand", ["www.sporty.co.nz"], "https://www.sporty.co.nz/SSNZ/Sport-1/Events", "sporty-school-sport-public", 4),
   school_sport_canterbury: new ArgusEventWebAdapter("school_sport_canterbury", "School Sport Canterbury", ["www.sporty.co.nz", "teamup.com"], "https://www.sporty.co.nz/sscanterbury", "sporty-school-sport-public", 4),
   ticketek_events: new ArgusEventWebAdapter("ticketek_events", "Ticketek New Zealand Events", ["www.ticketek.co.nz", "premier.ticketek.co.nz"], "https://premier.ticketek.co.nz/shows/whatson.aspx", "ticketek-public", 20),
+  dunedinnz_events: new ArgusEventWebAdapter("dunedinnz_events", "DunedinNZ Official Events", ["www.dunedinnz.com"], "https://www.dunedinnz.com/visit/dunedin-events/upcoming-events", "dunedinnz-public", 24),
   ...officialNzSourceAdapters,
   ...christchurchEventAdapters,
   ...christchurchDemandAdapters,
   ...christchurchPriorityAdapters,
   ...publicEventPlatformAdapters,
+  ...regionalMarketAdapters,
+  ...airportMonthlyAdapters,
+  ...mbieTourismAdapters,
+  ...queenstownAirportMonthlyAdapters,
+  ...accessDisruptionAdapters,
+  ...skiSeasonAdapters,
+  ...aviationArgusAdapters,
 };
 
 function calendarTableRows(table: Element): string[][] {
@@ -1199,13 +1232,55 @@ function stringValue(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
+function geometryCoordinate(geometry: Record<string, unknown> | null) {
+  return pointCoordinate(geometry?.coordinates);
+}
+
+function pointCoordinate(value: unknown): { latitude: number; longitude: number } | null {
+  const points: Array<{ latitude: number; longitude: number }> = [];
+  const visit = (candidate: unknown) => {
+    if (!Array.isArray(candidate)) return;
+    if (candidate.length >= 2 && typeof candidate[0] === "number" && typeof candidate[1] === "number") {
+      const longitude = candidate[0];
+      const latitude = candidate[1];
+      if (latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) points.push({ latitude, longitude });
+      return;
+    }
+    candidate.forEach(visit);
+  };
+  visit(value);
+  if (!points.length) return null;
+  return {
+    latitude: points.reduce((sum, point) => sum + point.latitude, 0) / points.length,
+    longitude: points.reduce((sum, point) => sum + point.longitude, 0) / points.length,
+  };
+}
+
 function numericMeasure(measures: Record<string, MbieMeasure>, name: string): number | null {
   const value = measures[name]?.value;
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function marketKeyForMbieArea(area: string): string {
-  return slug(area.replace(/\s+(RTO|District|City|Territory)$/i, "")) || "new-zealand";
+export function marketKeysForMbieArea(area: string): string[] {
+  const key = slug(area.replace(/\s+(RTO|District|City|Territory)$/i, ""));
+  if (["total-new-zealand"].includes(key)) return ["new-zealand"];
+  if (["auckland", "tataki-auckland-unlimited"].includes(key)) return ["auckland"];
+  if (["wellington", "wellingtonnz", "destination-wairarapa", "lower-hutt", "upper-hutt", "porirua", "kapiti-coast"].includes(key)) return ["wellington"];
+  if (["canterbury", "christchurch", "christchurchnz", "selwyn", "waimakariri"].includes(key)) return ["christchurch"];
+  if (["queenstown", "destination-queenstown", "wanaka", "lake-wanaka", "lake-wanaka-tourism", "queenstown-lakes"].includes(key)) return ["queenstown-wanaka"];
+  if (["rotorua", "rotoruanz"].includes(key)) return ["rotorua"];
+  if (["tauranga", "coastal-bay-of-plenty", "tourism-bay-of-plenty", "western-bay-of-plenty"].includes(key)) return ["tauranga"];
+  if (key === "bay-of-plenty") return ["rotorua", "tauranga"];
+  if (["waikato", "hamilton", "hamilton-waikato-tourism", "waipa", "matamata-piako", "waitomo", "otorohanga"].includes(key)) return ["waikato"];
+  if (["lake-taupo", "taupo", "destination-great-lake-taupo"].includes(key)) return ["taupo"];
+  if (["dunedin", "enterprise-dunedin"].includes(key)) return ["dunedin"];
+  if (["nelson-tasman", "nelson", "tasman", "nelson-regional-development-agency-nrda"].includes(key)) return ["nelson-tasman"];
+  if (["hawke-s-bay", "hawke-s-bay-tourism", "napier", "hastings", "central-hawke-s-bay", "wairoa"].includes(key)) return ["hawkes-bay"];
+  if (["taranaki", "venture-taranaki", "new-plymouth", "south-taranaki", "stratford"].includes(key)) return ["taranaki"];
+  if (["northland", "northland-inc", "whangarei", "far-north", "kaipara"].includes(key)) return ["northland"];
+  if (["manawatu", "central-economic-development-agency-ceda", "palmerston-north", "horowhenua"].includes(key)) return ["manawatu"];
+  if (["southland", "visit-southland", "fiordland", "visit-fiordland", "invercargill", "gore"].includes(key)) return ["southland-fiordland"];
+  return [];
 }
 
 function addUtcDays(value: Date, days: number) { return new Date(value.getTime() + days * 86_400_000); }
@@ -1234,32 +1309,4 @@ async function readBoundedText(response: Response, maxBytes: number): Promise<st
   let offset = 0;
   for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; }
   return new TextDecoder().decode(output);
-}
-
-function allowedPublicRights(basis: string): SourceRights {
-  return {
-    internalApprovalStatus: "APPROVED",
-    legalRightsStatus: "ALLOWED",
-    lifecycle: "PILOT",
-    environments: ["DEVELOPMENT", "TEST", "PILOT"],
-    allowedUsage: ["COLLECTION", "NORMALISATION", "DERIVED_ANALYSIS", "ATTRIBUTED_DISPLAY"],
-    displayPermission: true,
-    derivedAnalysisPermission: true,
-    retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null },
-    basis,
-  };
-}
-
-function reviewPublicRights(basis: string): SourceRights {
-  return {
-    internalApprovalStatus: "PENDING",
-    legalRightsStatus: "REVIEW",
-    lifecycle: "RESEARCH",
-    environments: ["DEVELOPMENT", "TEST"],
-    allowedUsage: ["HEALTH_CHECK", "FIXTURE_CONTRACT_TEST"],
-    displayPermission: false,
-    derivedAnalysisPermission: false,
-    retentionPolicy: { rawHours: 72, parserFailureHours: 168, normalizedDays: null },
-    basis,
-  };
 }

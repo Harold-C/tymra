@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Prisma, prisma } from "@tymra/db";
+import { prisma } from "@tymra/db";
 import { closeRedis } from "@tymra/queue";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -31,15 +31,8 @@ describe("manual import local acceptance", () => {
       data: {
         status: "UNKNOWN",
         lifecycle: "RESEARCH",
-        internalApprovalStatus: "PENDING",
-        legalRightsStatus: "REVIEW",
         operationalStatus: "UNCONFIGURED",
         healthStatus: "DEGRADED",
-        displayPermission: false,
-        derivedAnalysisPermission: false,
-        rightsAllowStorage: false,
-        rightsAllowDerivedAnalysis: false,
-        rightsAllowDisplay: false,
       },
     });
   });
@@ -51,16 +44,8 @@ describe("manual import local acceptance", () => {
         data: {
           status: originalSource.status,
           lifecycle: originalSource.lifecycle,
-          internalApprovalStatus: originalSource.internalApprovalStatus,
-          legalRightsStatus: originalSource.legalRightsStatus,
           operationalStatus: originalSource.operationalStatus,
           healthStatus: originalSource.healthStatus,
-          allowedUsage: originalSource.allowedUsage === null ? Prisma.JsonNull : originalSource.allowedUsage,
-          displayPermission: originalSource.displayPermission,
-          derivedAnalysisPermission: originalSource.derivedAnalysisPermission,
-          rightsAllowStorage: originalSource.rightsAllowStorage,
-          rightsAllowDerivedAnalysis: originalSource.rightsAllowDerivedAnalysis,
-          rightsAllowDisplay: originalSource.rightsAllowDisplay,
           lastSuccessAt: originalSource.lastSuccessAt,
           errorRate: originalSource.errorRate,
         },
@@ -77,8 +62,6 @@ describe("manual import local acceptance", () => {
       .rejects.toThrow("LOCAL_ACCEPTANCE_UNAVAILABLE");
     await expect(importManualRates(input, adminId, preview, { ...runtime, NODE_ENV: "production" }))
       .rejects.toThrow("LOCAL_ACCEPTANCE_UNAVAILABLE");
-    await expect(importManualRates(input, adminId, preview, { ...runtime, SCHEDULER_ENABLED: true }))
-      .rejects.toThrow("LOCAL_ACCEPTANCE_UNAVAILABLE");
     expect(() => previewImport({ ...input, content: "x".repeat(manualImportLocalAcceptanceLimits.maxBytes + 1) }))
       .toThrow("LOCAL_ACCEPTANCE_FILE_TOO_LARGE");
 
@@ -87,11 +70,11 @@ describe("manual import local acceptance", () => {
     expect(bounded.rows).toHaveLength(2);
   });
 
-  it("persists two bounded passes without duplicating immutable observations or changing governance", async () => {
+  it("persists two bounded passes without duplicating immutable observations or changing configuration", async () => {
     const prefix = `manual-acceptance-${randomUUID()}`;
     const input = localInput([validRow(`${prefix}-1`), validRow(`${prefix}-2`), validRow(`${prefix}-3`)]);
     const preview = previewImport(input);
-    const governanceBefore = await governanceSnapshot();
+    const configurationBefore = await configurationSnapshot();
 
     const first = await importManualRates(input, adminId, preview, runtime);
     const second = await importManualRates(input, adminId, preview, runtime);
@@ -115,7 +98,7 @@ describe("manual import local acceptance", () => {
       effective: { rows: 2 },
       limits: { maxBytes: 262144, maxRecords: 2, concurrency: 1, timeoutMs: 60000 },
       counters: { files: 1, records: 2, observationsCreated: 0, observationsExisting: 2, rawArtifacts: 1 },
-      governanceUnchanged: true,
+      configurationUnchanged: true,
       schedulesUnchanged: true,
     });
 
@@ -128,7 +111,7 @@ describe("manual import local acceptance", () => {
     for (const artifact of artifacts) {
       expect((artifact.expiresAt.getTime() - artifact.createdAt.getTime()) / 3_600_000).toBeCloseTo(72, 1);
     }
-    expect(await governanceSnapshot()).toEqual(governanceBefore);
+    expect(await configurationSnapshot()).toEqual(configurationBefore);
     expect(await prisma.scheduleDefinition.count({ where: { enabled: true } })).toBe(0);
   });
 
@@ -157,7 +140,6 @@ function localInput(rows: unknown[]) {
     filename: "local-acceptance.json",
     format: "json" as const,
     content: JSON.stringify(rows),
-    rightsAttested: true,
     localAcceptance: true,
   };
 }
@@ -185,19 +167,11 @@ function validRow(id: string) {
   };
 }
 
-async function governanceSnapshot() {
+async function configurationSnapshot() {
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "manual-import" } });
   return {
-    internalApprovalStatus: source.internalApprovalStatus,
-    legalRightsStatus: source.legalRightsStatus,
     lifecycle: source.lifecycle,
     operationalStatus: source.operationalStatus,
     healthStatus: source.healthStatus,
-    allowedUsage: source.allowedUsage,
-    displayPermission: source.displayPermission,
-    derivedAnalysisPermission: source.derivedAnalysisPermission,
-    rightsAllowStorage: source.rightsAllowStorage,
-    rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis,
-    rightsAllowDisplay: source.rightsAllowDisplay,
   };
 }

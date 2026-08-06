@@ -76,7 +76,7 @@ Anonymous supported OTA listing URL
 - Password authentication.
 - Property-name or natural-address input that directly starts pricing analysis.
 - Mandatory date, guest-count or room-type selection in the new-visitor flow.
-- Unapproved OTA scraping or unrestricted raw competitor export.
+- Live OTA scraping or unrestricted raw competitor export.
 
 ## 4. End-to-End User Flow
 
@@ -90,7 +90,7 @@ Anonymous supported OTA listing URL
    confirm it. Otherwise Tymra uses the configuration shown by the OTA's default listing view.
 4. Tymra records the configuration actually observed, including any available dates, guest count,
    room or unit, rate plan, currency, tax treatment, source and capture time.
-5. Tymra resolves the property and reads a recent approved cached or aggregate market snapshot for
+5. Tymra resolves the property and reads a recent validated cached or aggregate market snapshot for
    the normalized listing and observed context.
 6. The page presents real progress stages while the rough result is prepared.
 7. Tymra shows the rough result without requiring an email address.
@@ -121,7 +121,7 @@ A URL is valid for anonymous analysis only when all of the following are true:
 - its hostname and URL shape belong to a configured supported OTA;
 - Tymra can extract and normalize a stable listing ID;
 - the listing is active, publicly resolvable and in a supported market;
-- an approved provider or permitted data path can observe the listing's default display context;
+- an enabled and healthy provider can observe the listing's default display context;
 - the observed context contains enough quote evidence to produce the rough result honestly.
 
 URL handling rules:
@@ -182,7 +182,7 @@ The anonymous result must not expose:
 
 ### 5.3 Cost and freshness rules
 
-- Rough analysis uses approved cached or aggregate evidence and must not start the formal provider
+- Rough analysis uses validated cached or aggregate evidence and must not start the formal provider
   pipeline.
 - Equivalent platform, listing ID and observed pricing-context inputs reuse a server-side rough
   snapshot for six hours by default.

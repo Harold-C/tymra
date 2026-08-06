@@ -180,7 +180,7 @@ High priority 等高影响结论必须先执行自动二次验证。只有二次
 • Market Signal：节假日、学校假期、重要活动、价格上涨和可售收紧等信号。  
 • Price Check、Insight、Result Version：每次检查、洞察、结果和分析版本。  
 • User Feedback、Action Record：竞品相关性、结果评价和用户后续动作。  
-• Data Source、Collection Run、Quality Issue：来源、采集批次、许可状态、失败和质量问题。
+• Data Source、Collection Run、Quality Issue：来源、采集批次、运行状态、失败和质量问题。
 
 ## 6.3 历史快照原则
 
@@ -193,15 +193,15 @@ Market coverage collection：系统针对正式支持市场、已知 Property、
 
 ## 6.5 首个市场范围
 
-Release 1 以 Christchurch 及经 Market Coverage 配置批准的周边区域作为首个正式自动支持市场。其他新西兰区域根据来源合法性、房源识别质量、竞品覆盖、数据新鲜度和运营能力进入 Supported、Pilot available、Coming soon 或 Insufficient market data。
+Release 1 以 Christchurch 及经 Market Coverage 配置的周边区域作为首个正式自动支持市场。其他新西兰区域根据来源可用性、房源识别质量、竞品覆盖、数据新鲜度和运营能力进入 Supported、Pilot available、Coming soon 或 Insufficient market data。
 
 ## 6.6 数据复用与学习
 
 已确认的 Property、Sellable Unit、Listing 映射和竞品关系应优先在后续检查中复用，同时根据新数据、人工修正和用户反馈更新版本。人工调整必须进入可审计的数据闭环，避免同类问题反复由人工处理。
 
-## 6.7 数据来源和权利
+## 6.7 数据来源和运行状态
 
-自有市场数据库不改变上游数据的权利边界。每条可用于分析的市场数据必须记录来源、采集时间、允许用途、保存限制和质量状态。无法确认商业使用、衍生分析、展示或长期保存权利的数据不得进入正式自动发布路径。
+每条可用于分析的市场数据必须记录来源、采集时间和质量状态。只有已启用且运行健康的来源数据可以进入正式自动发布路径。
 
 # \[PRD-RESULT\] 七、分析范围与用户结果
 
@@ -220,7 +220,7 @@ Release 1 以 Christchurch 及经 Market Coverage 配置批准的周边区域作
 • Generated at、Data last checked 和 Analysis version。  
 • 整体 Confidence。  
 • 最多 5 个重点日期。  
-• 目标价格和聚合竞品中位价或区间，前提是数据权利允许展示。  
+• 目标价格和聚合竞品中位价或区间，前提是来源可用且数据通过质量门槛。
 • 风险等级、主要原因和市场信号。  
 • 建议动作和明确限制。  
 • 用户反馈和问题举报入口。
@@ -347,9 +347,9 @@ Release 1 被视为正式上线版本，必须具备：
 
 必须明确收集的数据、目的、保存期限、产品改进用途、删除方式、第三方共享和未来 PMS 数据范围。服务通知与营销必须分开，营销邮件需要单独同意。
 
-## 14.2 数据合规
+## 14.2 数据运行控制
 
-每个第三方来源接入前必须确认服务条款、许可、商业使用、保存、展示、衍生分析、终止和删除要求。公开可见不等于可以批量获取、长期保存或商业再利用。
+每个第三方来源必须具有明确的启用开关、健康检查、请求预算、保留期限和停用路径。
 
 ## 14.3 产品责任
 
@@ -402,7 +402,7 @@ Phase 0 已形成 Search-first 首页、Preview、Pilot 和需求验证基线，
 
 ## 17.2 解释优先级与默认决策
 
-文档冲突时依次服从《需求说明》《业务规则》《页面结构》《视觉交互》。同一层级以带有 Release 1 Codex Build Baseline v1.2 的最新内容为准。Codex 不得自行扩大范围；遇到文档未明确但不影响业务承诺的实现细节时，应采用本章默认值并记录在仓库 docs/decisions.md。只有外部凭证、数据许可或法律文本确实缺失时，才允许将其标记为上线门槛，不得以此省略可实现的代码。
+文档冲突时依次服从《需求说明》《业务规则》《页面结构》《视觉交互》。同一层级以带有 Release 1 Codex Build Baseline v1.2 的最新内容为准。Codex 不得自行扩大范围；遇到文档未明确但不影响业务承诺的实现细节时，应采用本章默认值并记录在仓库 docs/decisions.md。只有外部凭证或法律文本确实缺失时，才允许将其标记为上线门槛，不得以此省略可实现的代码。
 
 ## 17.3 默认技术基线
 
@@ -410,7 +410,7 @@ Phase 0 已形成 Search-first 首页、Preview、Pilot 和需求验证基线，
 
 ## 17.4 数据提供者与真实数据约束
 
-系统必须实现统一 Data Provider 接口、可在生产使用的 Manual Import Provider，以及仅限开发和测试的 Demo Provider。任何 OTA、API 或供应商适配器只有在许可和凭证配置完成后才能启用。生产环境严禁使用 Demo Provider、固定假数据或随机数据生成真实结果。没有获批数据来源时，网站、后台、数据库和任务系统仍须可运行，但 Price Check 必须返回 Source unavailable、Coming soon 或 Insufficient data，不得伪造市场结果。
+系统必须实现统一 Data Provider 接口、可在生产使用的 Manual Import Provider，以及仅限开发和测试的 Demo Provider。任何 OTA、API 或供应商适配器只有在所需凭证配置完成且运行健康后才能启用。生产环境严禁使用 Demo Provider、固定假数据或随机数据生成真实结果。没有可用数据来源时，网站、后台、数据库和任务系统仍须可运行，但 Price Check 必须返回 Source unavailable、Coming soon 或 Insufficient data，不得伪造市场结果。
 
 ## 17.5 必须交付的仓库内容
 
@@ -426,11 +426,11 @@ Codex 必须交付：中英文公开网站；完整 Price Check 流程；安全�
 
 ## 17.8 外部上线门槛
 
-完整开发不等于所有外部条件已经满足。正式开放真实结果前，仍必须具备至少一个获批数据来源及凭证、生产域名、发信域名、最终法律文本和数据保留审批。Codex 必须把这些条件实现为明确的环境配置、健康检查和启动前检查清单；不得捏造凭证、许可或法律批准。除这些外部门槛外，所有可由代码实现的 Release 1 内容均必须在一次开发任务内完成。
+完整开发不等于所有外部条件已经满足。正式开放真实结果前，仍必须具备至少一个已启用且运行健康的数据来源及所需凭证、生产域名、发信域名和最终法律文本。Codex 必须把这些条件实现为明确的环境配置、健康检查和启动前检查清单；不得捏造凭证。除这些外部门槛外，所有可由代码实现的 Release 1 内容均必须在一次开发任务内完成。
 
 ## 17.9 环境变量与配置契约
 
-仓库必须提供 .env.example，并在服务启动时使用共享 Schema 校验环境变量。核心变量至少包括：DATABASE\_URL、APP\_BASE\_URL、SESSION\_SECRET、ADMIN\_EMAIL、ADMIN\_PASSWORD\_HASH、RESULT\_TOKEN\_SECRET、ACCESS\_KEY\_SECRET、DATA\_ENCRYPTION\_KEY、CRON\_SECRET、PROVIDER\_MODE、DEFAULT\_MARKET、AUTO\_PUBLISH\_ENABLED、EMAIL\_PROVIDER 和 EMAIL\_FROM。EMAIL\_PROVIDER=smtp 时必须提供 SMTP\_URL；本地开发可使用 EMAIL\_PROVIDER=log。可选变量包括 SENTRY\_DSN 和 ANALYTICS\_ENDPOINT。任何密钥不得提交仓库。生产环境 PROVIDER\_MODE=demo 必须启动失败；PROVIDER\_MODE=manual 只允许使用已在后台登记为 APPROVED 且权利允许的导入数据，并且不满足自动发布质量门槛时必须返回明确限制状态。
+仓库必须提供 .env.example，并在服务启动时使用共享 Schema 校验环境变量。核心变量至少包括：DATABASE\_URL、APP\_BASE\_URL、SESSION\_SECRET、ADMIN\_EMAIL、ADMIN\_PASSWORD\_HASH、RESULT\_TOKEN\_SECRET、ACCESS\_KEY\_SECRET、DATA\_ENCRYPTION\_KEY、CRON\_SECRET、PROVIDER\_MODE、DEFAULT\_MARKET、AUTO\_PUBLISH\_ENABLED、EMAIL\_PROVIDER 和 EMAIL\_FROM。EMAIL\_PROVIDER=smtp 时必须提供 SMTP\_URL；本地开发可使用 EMAIL\_PROVIDER=log。可选变量包括 SENTRY\_DSN 和 ANALYTICS\_ENDPOINT。任何密钥不得提交仓库。生产环境 PROVIDER\_MODE=demo 必须启动失败；PROVIDER\_MODE=manual 只允许使用已在后台启用且运行健康的导入来源，并且不满足自动发布质量门槛时必须返回明确限制状态。
 
 ## 17.10 固定开发、测试与 CI 命令
 
@@ -438,6 +438,4 @@ Codex 必须交付：中英文公开网站；完整 Price Check 流程；安全�
 
 ## 17.11 生产启动保护
 
-生产启动检查必须阻止以下配置：Demo Provider；默认或空管理员凭证；不足强度的 token、session 或加密密钥；未执行数据库迁移；AUTO\_PUBLISH\_ENABLED=true 但没有 Enabled 且 Rights Approved 的数据来源；结果链接基址不是 HTTPS；SMTP 模式缺少 SMTP\_URL。系统必须支持全局暂停接受新检查、暂停自动发布和暂停单一数据来源，并且这些开关的变化必须写入 Audit Event。外部数据来源尚未配置时，应用和后台仍应正常启动，但公开流程必须返回 Source unavailable、Coming soon 或 Insufficient data，不能生成 Demo 结果。
-
-
+生产启动检查必须阻止以下配置：Demo Provider；默认或空管理员凭证；不足强度的 token、session 或加密密钥；未执行数据库迁移；AUTO\_PUBLISH\_ENABLED=true 但没有已启用且运行健康的数据来源；结果链接基址不是 HTTPS；SMTP 模式缺少 SMTP\_URL。系统必须支持全局暂停接受新检查、暂停自动发布和暂停单一数据来源，并且这些开关的变化必须写入 Audit Event。外部数据来源尚未配置时，应用和后台仍应正常启动，但公开流程必须返回 Source unavailable、Coming soon 或 Insufficient data，不能生成 Demo 结果。

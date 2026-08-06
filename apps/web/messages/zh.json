@@ -34,7 +34,7 @@
     "marketingConsent": "我也愿意偶尔接收 Tymra 产品更新。",
     "fieldErrors": { "input": "请输入至少 3 个字符的房源信息。", "email": "请输入有效的邮箱地址。", "serviceConsent": "必须同意服务消息，才能交付本次 Price Check。" },
     "searchAction": "搜索并继续",
-    "searching": "正在搜索获批数据源",
+    "searching": "正在搜索可用数据源",
     "errorTitle": "暂时无法继续",
     "genericError": "请求未能完成。",
     "retry": "重试",
@@ -75,16 +75,16 @@
     "backHome": "返回首页",
     "anotherCheck": "再次检查",
     "notice": {
-      "UNSUPPORTED": { "title": "暂不支持该市场", "body": "Release 1 从 Christchurch 开始支持获批的新西兰市场。其他地区可以加入候补名单。" },
+      "UNSUPPORTED": { "title": "暂不支持该市场", "body": "Release 1 从 Christchurch 开始支持已配置的新西兰市场。其他地区可以加入候补名单。" },
       "COMING_SOON": { "title": "该市场即将开放", "body": "该地区已在覆盖计划中，但尚未正式开放。可以加入候补名单以接收开放通知。" },
-      "SOURCE_UNAVAILABLE": { "title": "获批数据暂时不可用", "body": "请稍后重试。Source unavailable 是本次检查状态，不代表市场结论。" },
+      "SOURCE_UNAVAILABLE": { "title": "数据源暂时不可用", "body": "请稍后重试。Source unavailable 是本次检查状态，不代表市场结论。" },
       "NO_MATCH": { "title": "未找到可靠的房源匹配", "body": "请检查拼写，或输入更完整的新西兰地址或受支持的房源链接。" }
     },
     "status": {
-      "DRAFT": "草稿", "VALIDATING": "正在验证", "NEEDS_CONFIRMATION": "需要确认", "QUEUED": "已排队", "COLLECTING": "正在采集获批数据", "NORMALIZING": "正在标准化房价", "ANALYSING": "正在分析", "AUTO_VALIDATING": "正在验证结果", "EXCEPTION": "正在进行额外检查", "READY": "准备发布", "PUBLISHED": "已发布", "PARTIAL": "部分结果", "INSUFFICIENT_DATA": "数据不足", "UNSUPPORTED": "不支持", "SOURCE_UNAVAILABLE": "数据源不可用", "FAILED": "失败", "CANCELLED": "已取消", "EXPIRED": "已过期", "WITHDRAWN": "已撤回", "ARCHIVED": "已归档"
+      "DRAFT": "草稿", "VALIDATING": "正在验证", "NEEDS_CONFIRMATION": "需要确认", "QUEUED": "已排队", "COLLECTING": "正在采集数据", "NORMALIZING": "正在标准化房价", "ANALYSING": "正在分析", "AUTO_VALIDATING": "正在验证结果", "EXCEPTION": "正在进行额外检查", "READY": "准备发布", "PUBLISHED": "已发布", "PARTIAL": "部分结果", "INSUFFICIENT_DATA": "数据不足", "UNSUPPORTED": "不支持", "SOURCE_UNAVAILABLE": "数据源不可用", "FAILED": "失败", "CANCELLED": "已取消", "EXPIRED": "已过期", "WITHDRAWN": "已撤回", "ARCHIVED": "已归档"
     },
     "statusBody": {
-      "DRAFT": "Price Check 尚未开始。", "VALIDATING": "Tymra 正在验证请求。", "NEEDS_CONFIRMATION": "仍需确认房源、房型或入住条件。", "QUEUED": "Price Check 即将开始。", "COLLECTING": "Tymra 正在采集获批的可比观察。", "NORMALIZING": "正在标准化价格和强制费用。", "ANALYSING": "Tymra 正在评估可比背景和市场信号。", "AUTO_VALIDATING": "正在检查质量、权利和发布规则。", "EXCEPTION": "正在进行额外的质量与证据检查。", "READY": "结果已通过验证，正在准备发布。", "PUBLISHED": "结果已通过安全服务邮件发送。", "PARTIAL": "已有部分有用证据，并附有明确限制。", "INSUFFICIENT_DATA": "没有足够可靠的证据提供建议。", "UNSUPPORTED": "该房源或市场不在 Release 1 支持范围内。", "SOURCE_UNAVAILABLE": "获批数据源无法提供可靠数据。", "FAILED": "本次 Price Check 未能完成。", "CANCELLED": "本次 Price Check 已取消。", "EXPIRED": "结果访问期限已结束。", "WITHDRAWN": "结果已撤回，不再可用。", "ARCHIVED": "本次 Price Check 已归档。"
+      "DRAFT": "Price Check 尚未开始。", "VALIDATING": "Tymra 正在验证请求。", "NEEDS_CONFIRMATION": "仍需确认房源、房型或入住条件。", "QUEUED": "Price Check 即将开始。", "COLLECTING": "Tymra 正在采集可比观察。", "NORMALIZING": "正在标准化价格和强制费用。", "ANALYSING": "Tymra 正在评估可比背景和市场信号。", "AUTO_VALIDATING": "正在检查质量和发布规则。", "EXCEPTION": "正在进行额外的质量与证据检查。", "READY": "结果已通过验证，正在准备发布。", "PUBLISHED": "结果已通过安全服务邮件发送。", "PARTIAL": "已有部分有用证据，并附有明确限制。", "INSUFFICIENT_DATA": "没有足够可靠的证据提供建议。", "UNSUPPORTED": "该房源或市场不在 Release 1 支持范围内。", "SOURCE_UNAVAILABLE": "数据源无法提供可靠数据。", "FAILED": "本次 Price Check 未能完成。", "CANCELLED": "本次 Price Check 已取消。", "EXPIRED": "结果访问期限已结束。", "WITHDRAWN": "结果已撤回，不再可用。", "ARCHIVED": "本次 Price Check 已归档。"
     }
   },
   "Result": {
@@ -169,8 +169,8 @@
     "submitError": "表单提交失败，请检查字段后重试。"
   },
   "Content": {
-    "methodology": { "eyebrow": "透明方法", "title": "方法说明", "intro": "Tymra 如何将获批观察转化为可解释的决策支持。", "section1Title": "一个可观察的房源配置", "section1Body": "匿名检查优先使用 OTA 链接中的入住日期、人数和房型配置；链接没有这些值时，使用 OTA 当前可观察的默认展示配置，不要求用户手动设置。", "section2Title": "获批的可比证据", "section2Body": "只有具备存储、分析和展示权利的获批数据源可以支持自动发布。价格记录采用追加模式，并关联 Collection Run。", "section3Title": "置信度与限制", "section3Body": "置信度综合竞品数量、新鲜度、费用完整性、房源配置和可比性。证据缺失会降低置信度或返回明确的受限结果。", "section4Title": "决策支持而非自动调价", "section4Body": "Tymra 最多突出五个日期。经营者仍负责价格决定，Tymra 不会自动修改房价。" },
-    "faq": { "eyebrow": "产品问题", "title": "常见问题", "intro": "关于当前 Price Check 流程的实用说明。", "section1Title": "Tymra 会修改我的价格吗？", "section1Body": "不会。Tymra 仅提供决策支持，不连接 PMS，也不会自动修改价格。", "section2Title": "支持哪些房源链接？", "section2Body": "请使用受支持的 Booking.com 新西兰酒店链接或 Airbnb 房源链接。Christchurch 及获批周边是首个正式报告市场。", "section3Title": "日期、人数和房型如何确定？", "section3Body": "OTA 链接包含这些值时优先使用；否则使用 OTA 当前可观察的默认展示配置。新用户无需手动选择这些字段。", "section4Title": "数据不可用时怎么办？", "section4Body": "Tymra 会返回 Source unavailable、Partial 或 Insufficient data，而不会编造结果。人工审核只处理可修复冲突。" },
+    "methodology": { "eyebrow": "透明方法", "title": "方法说明", "intro": "Tymra 如何将可靠观察转化为可解释的决策支持。", "section1Title": "一个可观察的房源配置", "section1Body": "匿名检查优先使用 OTA 链接中的入住日期、人数和房型配置；链接没有这些值时，使用 OTA 当前可观察的默认展示配置，不要求用户手动设置。", "section2Title": "可比证据", "section2Body": "只有已启用且运行健康的数据源可以支持自动发布。价格记录采用追加模式，并关联 Collection Run。", "section3Title": "置信度与限制", "section3Body": "置信度综合竞品数量、新鲜度、费用完整性、房源配置和可比性。证据缺失会降低置信度或返回明确的受限结果。", "section4Title": "决策支持而非自动调价", "section4Body": "Tymra 最多突出五个日期。经营者仍负责价格决定，Tymra 不会自动修改房价。" },
+    "faq": { "eyebrow": "产品问题", "title": "常见问题", "intro": "关于当前 Price Check 流程的实用说明。", "section1Title": "Tymra 会修改我的价格吗？", "section1Body": "不会。Tymra 仅提供决策支持，不连接 PMS，也不会自动修改价格。", "section2Title": "支持哪些房源链接？", "section2Body": "请使用受支持的 Booking.com 新西兰酒店链接或 Airbnb 房源链接。Christchurch 及已配置周边是首个正式报告市场。", "section3Title": "日期、人数和房型如何确定？", "section3Body": "OTA 链接包含这些值时优先使用；否则使用 OTA 当前可观察的默认展示配置。新用户无需手动选择这些字段。", "section4Title": "数据不可用时怎么办？", "section4Body": "Tymra 会返回 Source unavailable、Partial 或 Insufficient data，而不会编造结果。人工审核只处理可修复冲突。" },
     "privacy": { "eyebrow": "法律文本骨架", "title": "隐私政策", "intro": "供本地开发和评审使用的 Release 1 隐私说明，最终法律审批尚未完成。", "section1Title": "收集的信息", "section1Body": "Tymra 处理服务联系方式、Price Check 输入、同意选项及交付和审计所需的运营记录。", "section2Title": "信息用途", "section2Body": "服务数据用于房源识别、分析、结果交付、安全、支持和合规。营销用途需要独立同意。", "section3Title": "安全与保留", "section3Body": "敏感值会按需要加密或哈希。结果 token 仅保存哈希，并按政策过期。", "section4Title": "你的选择", "section4Body": "你可以通过联系表单申请访问、更正或删除。必要的非个人审计历史可能会保留。" },
     "terms": { "eyebrow": "法律文本骨架", "title": "使用条款", "intro": "供本地评审使用的 Release 1 服务条款草案，最终法律文本尚未完成。", "section1Title": "服务范围", "section1Body": "Tymra 为获支持的新西兰市场提供住宿价格情报及相关服务消息。", "section2Title": "经营者责任", "section2Body": "你仍需自行核验证据、决定价格，并遵守平台、税务和消费者义务。", "section3Title": "可接受使用", "section3Body": "不得滥用服务、尝试未授权访问，或提交无权处理的内容。", "section4Title": "可用性", "section4Body": "数据源和市场覆盖可能变化。缺乏可靠证据时，Tymra 可能返回受限或不可用结果。" },
     "cookies": { "eyebrow": "法律文本骨架", "title": "Cookie 说明", "intro": "本地应用使用的 Cookie。", "section1Title": "必要 Cookie", "section1Body": "Tymra 使用必要 Cookie 保存语言偏好、匿名滥用防护、客户访问和管理员会话。", "section2Title": "客户访问", "section2Body": "安全 HttpOnly Cookie 让已验证浏览器保持登录客户账户，同时避免客户端脚本读取会话密钥。", "section3Title": "管理员会话", "section3Body": "受保护的运营页面使用有时限且可撤销的 HttpOnly 会话 Cookie。", "section4Title": "Analytics", "section4Body": "本地开发不依赖外部 Analytics。未来接入必须遵守同意和数据最小化规则。" },

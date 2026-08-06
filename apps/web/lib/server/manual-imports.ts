@@ -9,7 +9,6 @@ type ImportRequest = {
   filename: string;
   format: "csv" | "json";
   content: string;
-  rightsAttested: boolean;
   localAcceptance?: boolean;
 };
 
@@ -37,16 +36,8 @@ const sourceSelect = {
   enabled: true,
   environments: true,
   lifecycle: true,
-  internalApprovalStatus: true,
-  legalRightsStatus: true,
   operationalStatus: true,
   healthStatus: true,
-  allowedUsage: true,
-  displayPermission: true,
-  derivedAnalysisPermission: true,
-  rightsAllowStorage: true,
-  rightsAllowDerivedAnalysis: true,
-  rightsAllowDisplay: true,
   lastSuccessAt: true,
   errorRate: true,
 } as const;
@@ -62,25 +53,16 @@ export async function importManualRates(
   preview: ManualImportPreview,
   runtime: ManualImportRuntime = getEnvironment(),
 ) {
-  if (!input.rightsAttested) throw new Error("RIGHTS_ATTESTATION_REQUIRED");
   assertLocalFileBound(input);
   const localAcceptance = input.localAcceptance === true;
-  if (localAcceptance && (
-    runtime.NODE_ENV !== "development"
-    || runtime.SCHEDULER_ENABLED
-  )) throw new Error("LOCAL_ACCEPTANCE_UNAVAILABLE");
+  if (localAcceptance && runtime.NODE_ENV !== "development") throw new Error("LOCAL_ACCEPTANCE_UNAVAILABLE");
 
-  const source = localAcceptance
-    ? await prisma.dataSource.findUnique({ where: { key: "manual-import" }, select: sourceSelect })
-    : await prisma.dataSource.findUnique({ where: { key: "manual-import" }, select: { ...sourceSelect, licenseBasis: true } });
+  const source = await prisma.dataSource.findUnique({ where: { key: "manual-import" }, select: sourceSelect });
   if (!source) throw new Error("MANUAL_SOURCE_UNAVAILABLE");
   if (localAcceptance) {
     if (!source.enabled || !source.environments.includes("DEVELOPMENT")) throw new Error("LOCAL_ACCEPTANCE_UNAVAILABLE");
-  } else if (!source.enabled || source.status !== "APPROVED") {
+  } else if (!source.enabled || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) {
     throw new Error("MANUAL_SOURCE_UNAVAILABLE");
-  }
-  if (!localAcceptance && (!source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis || !source.rightsAllowDisplay)) {
-    throw new Error("MANUAL_SOURCE_RIGHTS_BLOCKED");
   }
 
   const effectivePreview = boundPreview(preview, localAcceptance);
@@ -89,10 +71,7 @@ export async function importManualRates(
     new Date(0),
   );
   const status = effectivePreview.rows.length === 0 ? "REJECTED" : effectivePreview.errors.length > 0 ? "PARTIAL" : "IMPORTED";
-  const licenseBasis = !localAcceptance && "licenseBasis" in source && typeof source.licenseBasis === "string"
-    ? source.licenseBasis
-    : null;
-  const governanceBefore = sourceGovernanceSnapshot(source);
+  const configurationBefore = sourceConfigurationSnapshot(source);
   const schedulesBefore = await sourceScheduleSnapshot();
 
   const lockTtlMs = localAcceptance ? manualImportLocalAcceptanceLimits.timeoutMs : 5 * 60_000;
@@ -104,15 +83,6 @@ export async function importManualRates(
         format: input.format.toUpperCase(),
         filename: input.filename,
         collectedAt: collectedAt.getTime() > 0 ? collectedAt : new Date(),
-        rightsMetadata: localAcceptance
-          ? { attested: true, localAcceptance: true }
-          : {
-              attested: true,
-              basis: licenseBasis,
-              storage: source.rightsAllowStorage,
-              derivedAnalysis: source.rightsAllowDerivedAnalysis,
-              display: source.rightsAllowDisplay,
-            },
         rowCount: effectivePreview.totalRows,
         validRowCount: effectivePreview.rows.length,
         errorRowCount: effectivePreview.errors.length,
@@ -143,7 +113,7 @@ export async function importManualRates(
         effective: { rows: effectivePreview.rows.length },
         limits: localAcceptance ? manualImportLocalAcceptanceLimits : null,
         counters,
-        governanceBefore: localAcceptance ? governanceBefore : null,
+        configurationBefore: localAcceptance ? configurationBefore : null,
         schedulesBefore: localAcceptance ? schedulesBefore : null,
       };
       const run = await tx.collectionRun.create({
@@ -181,7 +151,7 @@ export async function importManualRates(
       }
       counters.observationsCreated = observationsCreated;
       counters.observationsExisting = observationsExisting;
-      const governanceAfter = localAcceptance ? sourceGovernanceSnapshot(await tx.dataSource.findUniqueOrThrow({ where: { id: source.id }, select: sourceSelect })) : null;
+      const configurationAfter = localAcceptance ? sourceConfigurationSnapshot(await tx.dataSource.findUniqueOrThrow({ where: { id: source.id }, select: sourceSelect })) : null;
       const schedulesAfter = localAcceptance ? await sourceScheduleSnapshot(tx) : null;
 
       await tx.collectionRun.update({
@@ -197,8 +167,8 @@ export async function importManualRates(
             ...initialScope,
             manualImportId: importRecord.id,
             counters,
-            governanceAfter,
-            governanceUnchanged: localAcceptance ? stableHash(governanceBefore) === stableHash(governanceAfter) : null,
+            configurationAfter,
+            configurationUnchanged: localAcceptance ? stableHash(configurationBefore) === stableHash(configurationAfter) : null,
             schedulesAfter,
             schedulesUnchanged: localAcceptance ? stableHash(schedulesBefore) === stableHash(schedulesAfter) : null,
           }),
@@ -313,7 +283,6 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
       onlineStatus: row.availability_status === "AVAILABLE" ? "ONLINE" : row.availability_status,
       listingStatus: row.availability_status === "AVAILABLE" ? "ONLINE" : row.availability_status,
       matchConfidence: 1,
-      legalRightsStatus: "ALLOWED",
       operationalStatus: "HEALTHY",
       metadata: { manualImport: true },
     },
@@ -402,7 +371,7 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
       cancellationCategory: row.cancellation_category,
       cancellationPolicy: row.cancellation_category,
       paymentTerms: "UNKNOWN",
-      rateFence: "MANUAL_OPERATOR_ATTESTED",
+      rateFence: "MANUAL_IMPORT",
       minimumStay: row.minimum_stay,
       availabilityStatus: row.availability_status,
       restrictionReason: row.availability_status === "MINIMUM_STAY_RESTRICTION" ? "MINIMUM_STAY_RESTRICTION" : null,
@@ -412,7 +381,6 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
       collectorVersion: "manual-import-v1",
       parserVersion: "manual-import-parser-v1",
       qualityFlags: row.fee_completeness === "COMPLETE" ? [] : ["INCOMPLETE_FEES"],
-      legalRightsStatus: "ALLOWED",
       operationalStatus: "HEALTHY",
       collectedAt: row.collected_at,
       rawDataStored: false,
@@ -432,31 +400,15 @@ function boundPreview(preview: ManualImportPreview, localAcceptance: boolean): M
   return localAcceptance ? { ...preview, rows: preview.rows.slice(0, manualImportLocalAcceptanceLimits.maxRecords) } : preview;
 }
 
-function sourceGovernanceSnapshot(source: {
-  internalApprovalStatus: string;
-  legalRightsStatus: string;
+function sourceConfigurationSnapshot(source: {
   lifecycle: string;
   operationalStatus: string;
   healthStatus: string;
-  allowedUsage: unknown;
-  displayPermission: boolean;
-  derivedAnalysisPermission: boolean;
-  rightsAllowStorage: boolean;
-  rightsAllowDerivedAnalysis: boolean;
-  rightsAllowDisplay: boolean;
 }) {
   return {
-    internalApprovalStatus: source.internalApprovalStatus,
-    legalRightsStatus: source.legalRightsStatus,
     lifecycle: source.lifecycle,
     operationalStatus: source.operationalStatus,
     healthStatus: source.healthStatus,
-    allowedUsage: source.allowedUsage,
-    displayPermission: source.displayPermission,
-    derivedAnalysisPermission: source.derivedAnalysisPermission,
-    rightsAllowStorage: source.rightsAllowStorage,
-    rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis,
-    rightsAllowDisplay: source.rightsAllowDisplay,
   };
 }
 

@@ -30,13 +30,23 @@ switch (command) {
   case "collect-source": print(await service.collectSource(requiredArg(args, 0), option(args, "--market") ?? "new-zealand", undefined, collectionOptions(args))); break;
   case "source-health":
   case "source:health": print(await service.sourceHealth(args[0])); break;
-  case "source:approve": print(await service.approveSource(requiredArg(args, 0))); break;
-  case "source:activate": print(await service.activateSource(requiredArg(args, 0), { approvedBy: option(args, "--approved-by") ?? "Harold", licenseBasis: requiredOption(args, "--license-basis"), allowDisplay: args.includes("--allow-display") })); break;
+  case "source:activate": print(await service.activateSource(requiredArg(args, 0))); break;
   case "source:suspend": print(await service.suspendSource(requiredArg(args, 0))); break;
-  case "schedule:eventfinda:enable": print(await service.setEventfindaSchedules(true)); break;
-  case "schedule:eventfinda:disable": print(await service.setEventfindaSchedules(false)); break;
-  case "schedule:ticketmaster:enable": print(await service.setTicketmasterSchedules(true)); break;
-  case "schedule:ticketmaster:disable": print(await service.setTicketmasterSchedules(false)); break;
+  case "schedule:eventfinda:enable": print(await guardedSourceScheduleChange(["eventfinda"], true)); break;
+  case "schedule:eventfinda:disable": print(await guardedSourceScheduleChange(["eventfinda"], false)); break;
+  case "schedule:ticketmaster:enable": print(await guardedSourceScheduleChange(["ticketmaster"], true)); break;
+  case "schedule:ticketmaster:disable": print(await guardedSourceScheduleChange(["ticketmaster"], false)); break;
+  case "schedule:sources:plan": print(await service.sourceSchedulePlan(requiredCsvOption(args, "--sources"))); break;
+  case "schedule:sources:enable": {
+    if (option(args, "--confirm") !== "ENABLE_SOURCE_SCHEDULES") throw new Error("Enabling source schedules requires --confirm ENABLE_SOURCE_SCHEDULES");
+    print(await service.configureSourceSchedules(requiredCsvOption(args, "--sources"), { enabled: true, reason: requiredOption(args, "--reason") }));
+    break;
+  }
+  case "schedule:sources:disable": {
+    if (option(args, "--confirm") !== "DISABLE_SOURCE_SCHEDULES") throw new Error("Disabling source schedules requires --confirm DISABLE_SOURCE_SCHEDULES");
+    print(await service.configureSourceSchedules(requiredCsvOption(args, "--sources"), { enabled: false, reason: requiredOption(args, "--reason") }));
+    break;
+  }
   case "collect:market": print(await service.enqueueOperationalJob("MARKET_COVERAGE_COLLECTION", { marketScope: option(args, "--market") ?? "new-zealand" })); break;
   case "collect:anchor-panel": print(await service.enqueueOperationalJob("ANCHOR_PANEL_COLLECTION", { marketScope: option(args, "--market") ?? "new-zealand" })); break;
   case "collect:rotating-panel": print(await service.enqueueOperationalJob("ROTATING_PANEL_COLLECTION", { marketScope: option(args, "--market") ?? "new-zealand" })); break;
@@ -101,9 +111,9 @@ switch (command) {
         const after = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
         const parserFailures = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } });
         const remoteEvidenceRemaining = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } });
-        return { sourceKey, pass, governanceUnchanged: scope.governanceUnchanged === true, schedulesUnchanged: scope.schedulesUnchanged === true, parserFailures, repeatRowGrowth: pass > 1 ? Math.max(0, after - before) : 0, remoteEvidenceRemaining };
+        return { sourceKey, pass, configurationUnchanged: scope.configurationUnchanged === true, schedulesUnchanged: scope.schedulesUnchanged === true, parserFailures, repeatRowGrowth: pass > 1 ? Math.max(0, after - before) : 0, remoteEvidenceRemaining };
       } catch (error) {
-        return { sourceKey, pass, governanceUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.message : "unknown" };
+        return { sourceKey, pass, configurationUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.message : "unknown" };
       }
     }));
     break;
@@ -134,7 +144,7 @@ switch (command) {
     print(await enqueueJob({
       type: ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "christchurch_sports", "christchurch_racing", "christchurch_council_events", "canterbury_major_annual_events"].includes(sourceId)
         ? "EVENT_COLLECTION"
-        : ["christchurch_airport", "christchurch_cruise", "christchurch_airport_monthly"].includes(sourceId) ? "TRANSPORT_COLLECTION" : "PUBLIC_DATA_COLLECTION",
+        : ["christchurch_airport", "christchurch_cruise", "christchurch_airport_monthly", "wellington_airport_monthly", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance", "interislander_alerts"].includes(sourceId) ? "TRANSPORT_COLLECTION" : "PUBLIC_DATA_COLLECTION",
       payload: {
         sourceId,
         marketScope: option(args, "--market") ?? "new-zealand",
@@ -149,7 +159,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:approve|source:activate|source:suspend|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
     process.exitCode = 2;
 }
 
@@ -161,6 +171,12 @@ function requiredArg(args: string[], index: number) { const value = args[index];
 function option(args: string[], name: string) { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; }
 function requiredOption(args: string[], name: string) { const value = option(args, name); if (!value) throw new Error(`Missing ${name}`); return value; }
 function csvOption(args: string[], name: string) { return (option(args, name) ?? "").split(",").map((value) => value.trim()).filter(Boolean); }
+function requiredCsvOption(args: string[], name: string) { const values = csvOption(args, name); if (!values.length) throw new Error(`Missing ${name}`); return values; }
+function guardedSourceScheduleChange(sources: string[], enabled: boolean) {
+  const confirmation = enabled ? "ENABLE_SOURCE_SCHEDULES" : "DISABLE_SOURCE_SCHEDULES";
+  if (option(args, "--confirm") !== confirmation) throw new Error(`Source schedule change requires --confirm ${confirmation}`);
+  return service.configureSourceSchedules(sources, { enabled, reason: requiredOption(args, "--reason") });
+}
 function locale(args: string[]): "en" | "zh" { return option(args, "--locale") === "zh" ? "zh" : "en"; }
 function dateOption(args: string[], name: string, inclusiveEnd = false) {
   const value = option(args, name);

@@ -1,9 +1,7 @@
 import {
   ConfidenceLevel,
   DataSourceStatus,
-  InternalApprovalStatus,
   JobType,
-  LegalRightsStatus,
   OperationalStatus,
   ExceptionPriority,
   ExceptionType,
@@ -67,16 +65,13 @@ async function seedDataSources() {
       key: "development-demo",
       name: "Development Demo Data - Not real market data",
       providerType: ProviderType.DEMO,
-      status: DataSourceStatus.APPROVED,
+      status: DataSourceStatus.PILOT,
       healthStatus: SourceHealthStatus.HEALTHY,
       enabled: true,
-      rights: true,
       isDemo: true,
       errorRate: 0,
       sourceType: SourceType.FIXTURE,
       lifecycle: SourceLifecycle.POC,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED,
-      legalRightsStatus: LegalRightsStatus.ALLOWED,
       operationalStatus: OperationalStatus.HEALTHY,
       environments: ["DEVELOPMENT", "TEST"] as const,
     },
@@ -84,20 +79,16 @@ async function seedDataSources() {
       key: "browser-neutral-fixture",
       name: "Browser Neutral Controlled Fixture",
       providerType: ProviderType.FIXTURE,
-      status: DataSourceStatus.APPROVED,
+      status: DataSourceStatus.PILOT,
       healthStatus: SourceHealthStatus.HEALTHY,
       enabled: true,
-      rights: true,
       isDemo: true,
       errorRate: 0,
       sourceType: SourceType.FIXTURE,
       lifecycle: SourceLifecycle.POC,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED,
-      legalRightsStatus: LegalRightsStatus.ALLOWED,
       operationalStatus: OperationalStatus.HEALTHY,
       supportedDomains: ["browser-fixture"],
       accessMethod: "CONTROLLED_BROWSER_FIXTURE",
-      allowedUsage: ["BROWSER_CAPTURE", "DEVELOPMENT_TEST"],
       concurrencyLimit: 1,
       dailyBudget: 100,
       environments: ["DEVELOPMENT", "TEST"] as const,
@@ -106,16 +97,13 @@ async function seedDataSources() {
       key: "manual-import",
       name: "Manual Import Provider",
       providerType: ProviderType.MANUAL,
-      status: DataSourceStatus.APPROVED,
+      status: DataSourceStatus.PILOT,
       healthStatus: SourceHealthStatus.HEALTHY,
       enabled: true,
-      rights: true,
       isDemo: false,
       errorRate: 0,
       sourceType: SourceType.MANUAL_IMPORT,
       lifecycle: SourceLifecycle.PILOT,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED,
-      legalRightsStatus: LegalRightsStatus.ALLOWED,
       operationalStatus: OperationalStatus.HEALTHY,
       environments: ["DEVELOPMENT", "TEST", "PILOT"] as const,
     },
@@ -126,13 +114,10 @@ async function seedDataSources() {
       status: DataSourceStatus.PILOT,
       healthStatus: SourceHealthStatus.DEGRADED,
       enabled: true,
-      rights: true,
       isDemo: true,
       errorRate: 0.2,
       sourceType: SourceType.FIXTURE,
       lifecycle: SourceLifecycle.POC,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED,
-      legalRightsStatus: LegalRightsStatus.ALLOWED,
       operationalStatus: OperationalStatus.DEGRADED,
       environments: ["DEVELOPMENT", "TEST"] as const,
     },
@@ -140,33 +125,27 @@ async function seedDataSources() {
       key: "development-down",
       name: "Development Demo - Down Source",
       providerType: ProviderType.DEMO,
-      status: DataSourceStatus.APPROVED,
+      status: DataSourceStatus.SUSPENDED,
       healthStatus: SourceHealthStatus.DOWN,
       enabled: true,
-      rights: true,
       isDemo: true,
       errorRate: 1,
       sourceType: SourceType.FIXTURE,
       lifecycle: SourceLifecycle.SUSPENDED,
-      internalApprovalStatus: InternalApprovalStatus.SUSPENDED,
-      legalRightsStatus: LegalRightsStatus.ALLOWED,
       operationalStatus: OperationalStatus.DOWN,
       environments: ["DEVELOPMENT", "TEST"] as const,
     },
     {
-      key: "development-rights-blocked",
-      name: "Development Demo - Rights blocked",
+      key: "development-operational-blocked",
+      name: "Development Demo - Operationally blocked",
       providerType: ProviderType.DEMO,
-      status: DataSourceStatus.APPROVED,
+      status: DataSourceStatus.SUSPENDED,
       healthStatus: SourceHealthStatus.HEALTHY,
       enabled: true,
-      rights: false,
       isDemo: true,
       errorRate: 0,
       sourceType: SourceType.FIXTURE,
       lifecycle: SourceLifecycle.BLOCKED,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED,
-      legalRightsStatus: LegalRightsStatus.BLOCKED,
       operationalStatus: OperationalStatus.BLOCKED,
       environments: ["DEVELOPMENT", "TEST"] as const,
     },
@@ -184,7 +163,7 @@ async function seedDataSources() {
       && "baseline" in existingMetadata
       && existingMetadata.baseline === "worker-v1",
     );
-    const bootstrapGovernance = !existing || !hasWorkerBaseline;
+    const bootstrapConfiguration = !existing || !hasWorkerBaseline;
     const replaceConfiguredPlaceholder = existing?.operationalStatus === OperationalStatus.UNCONFIGURED
       && record.providerType === ProviderType.PUBLIC
       && "adapterKey" in record
@@ -201,17 +180,10 @@ async function seedDataSources() {
         adapterKey: "adapterKey" in record ? record.adapterKey : record.key,
         environments: [...record.environments],
         accessMethod: "accessMethod" in record ? record.accessMethod : record.providerType === ProviderType.MANUAL ? "VALIDATED_OPERATOR_IMPORT" : "DETERMINISTIC_FIXTURE",
-        allowedUsage: "allowedUsage" in record ? [...record.allowedUsage] : ["DEVELOPMENT_TEST"],
-        displayPermission: record.rights,
-        derivedAnalysisPermission: record.rights,
         retentionPolicy: { rawHours: 72, parserFailureHours: 168 },
         concurrencyLimit: "concurrencyLimit" in record ? record.concurrencyLimit : 1,
         dailyBudget: "dailyBudget" in record ? record.dailyBudget : 100,
-        internalApprovalStatus: record.internalApprovalStatus,
-        legalRightsStatus: record.legalRightsStatus,
         operationalStatus: record.operationalStatus,
-        approvedBy: record.internalApprovalStatus === InternalApprovalStatus.APPROVED ? "Harold" : null,
-        approvedAt: record.internalApprovalStatus === InternalApprovalStatus.APPROVED ? seedDate : null,
         lastReviewedAt: seedDate,
         healthSummary: { seeded: true, mode: record.isDemo ? "fixture" : "configured" },
         metadata: { baseline: "worker-v1" },
@@ -219,10 +191,6 @@ async function seedDataSources() {
         healthStatus: record.healthStatus,
         enabled: record.enabled,
         acquisitionMethod: "accessMethod" in record ? record.accessMethod : record.providerType === ProviderType.MANUAL ? "Validated operator import" : "Deterministic fixture",
-        licenseBasis: record.isDemo ? "Development Demo Data" : record.providerType === ProviderType.PUBLIC ? "Source-specific terms review required" : "Operator attestation required per import",
-        rightsAllowStorage: record.rights,
-        rightsAllowDerivedAnalysis: record.rights,
-        rightsAllowDisplay: record.rights,
         retentionDays: record.isDemo ? null : 365,
         owner: "Tymra local development",
         lastSuccessAt: record.healthStatus === SourceHealthStatus.DOWN ? null : seedDate,
@@ -248,23 +216,12 @@ async function seedDataSources() {
         errorRate: record.errorRate,
         isDemo: record.isDemo,
         ...(replaceConfiguredPlaceholder ? { operationalStatus: record.operationalStatus, healthStatus: record.healthStatus } : {}),
-        ...(bootstrapGovernance ? {
+        ...(bootstrapConfiguration ? {
           lifecycle: record.lifecycle,
           environments: [...record.environments],
-          allowedUsage: "allowedUsage" in record ? [...record.allowedUsage] : ["DEVELOPMENT_TEST"],
           status: record.status,
           healthStatus: record.healthStatus,
-          internalApprovalStatus: record.internalApprovalStatus,
-          legalRightsStatus: record.legalRightsStatus,
           operationalStatus: record.operationalStatus,
-          displayPermission: record.rights,
-          derivedAnalysisPermission: record.rights,
-          rightsAllowStorage: record.rights,
-          rightsAllowDerivedAnalysis: record.rights,
-          rightsAllowDisplay: record.rights,
-          licenseBasis: record.isDemo ? "Development Demo Data" : record.providerType === ProviderType.PUBLIC ? "Source-specific terms review required" : "Operator attestation required per import",
-          approvedBy: record.internalApprovalStatus === InternalApprovalStatus.APPROVED ? "Harold" : null,
-          approvedAt: record.internalApprovalStatus === InternalApprovalStatus.APPROVED ? seedDate : null,
           healthSummary: { seeded: true, mode: record.isDemo ? "fixture" : "configured" },
         } : {}),
       },
@@ -294,65 +251,87 @@ async function seedDataSources() {
 
 function registrySourceSeedRecords() {
   const ota = [
-    ["booking", "Booking.com", ["booking.com"], LegalRightsStatus.REVIEW],
-    ["airbnb", "Airbnb", ["airbnb.com", "airbnb.co.nz"], LegalRightsStatus.BLOCKED],
-    ["expedia", "Expedia", ["expedia.com", "expedia.co.nz"], LegalRightsStatus.REVIEW],
-    ["hotels", "Hotels.com", ["hotels.com"], LegalRightsStatus.REVIEW],
-    ["agoda", "Agoda", ["agoda.com"], LegalRightsStatus.REVIEW],
-    ["trip", "Trip.com", ["trip.com"], LegalRightsStatus.REVIEW],
-    ["google_hotels", "Google Hotels", ["google.com", "google.co.nz"], LegalRightsStatus.REVIEW],
+    ["booking", "Booking.com", ["booking.com"]],
+    ["airbnb", "Airbnb", ["airbnb.com", "airbnb.co.nz"]],
+    ["expedia", "Expedia", ["expedia.com", "expedia.co.nz"]],
+    ["hotels", "Hotels.com", ["hotels.com"]],
+    ["agoda", "Agoda", ["agoda.com"]],
+    ["trip", "Trip.com", ["trip.com"]],
+    ["google_hotels", "Google Hotels", ["google.com", "google.co.nz"]],
   ] as const;
   const publicSources = [
-    ["linz", "LINZ New Zealand Gazetteer", ["gazetteer.linz.govt.nz"], LegalRightsStatus.REVIEW],
-    ["mbie", "MBIE Tourism Data", ["mbie.govt.nz"], LegalRightsStatus.REVIEW],
-    ["stats_nz", "Stats NZ", ["stats.govt.nz"], LegalRightsStatus.REVIEW],
-    ["public_holidays_nz", "Employment New Zealand public holidays", ["employment.govt.nz"], LegalRightsStatus.ALLOWED],
-    ["school_holidays_nz", "Ministry of Education school holidays", ["education.govt.nz"], LegalRightsStatus.ALLOWED],
-    ["eventfinda", "Eventfinda New Zealand", ["www.eventfinda.co.nz", "eventfinda.co.nz"], LegalRightsStatus.REVIEW],
-    ["ticketmaster", "Ticketmaster New Zealand", ["www.ticketmaster.co.nz", "ticketmaster.co.nz"], LegalRightsStatus.REVIEW],
-    ["eventbrite_events", "Eventbrite New Zealand Events", ["www.eventbrite.co.nz", "eventbrite.co.nz"], LegalRightsStatus.REVIEW],
-    ["humanitix_events", "Humanitix New Zealand Events", ["humanitix.com", "events.humanitix.com"], LegalRightsStatus.REVIEW],
-    ["school_sport_nz", "School Sport New Zealand Events", ["www.sporty.co.nz"], LegalRightsStatus.REVIEW],
-    ["school_sport_canterbury", "School Sport Canterbury Events", ["www.sporty.co.nz", "teamup.com"], LegalRightsStatus.REVIEW],
-    ["ticketek_events", "Ticketek New Zealand Events", ["www.ticketek.co.nz", "premier.ticketek.co.nz"], LegalRightsStatus.REVIEW],
-    ["venue_calendars", "Auckland Live Events", ["www.aucklandlive.co.nz"], LegalRightsStatus.REVIEW],
-    ["council_calendars", "Auckland Council OurAuckland Events", ["ourauckland.aucklandcouncil.govt.nz"], LegalRightsStatus.REVIEW],
-    ["university_calendars", "University of Auckland Events", ["apis.auckland.ac.nz"], LegalRightsStatus.REVIEW],
-    ["rto_calendars", "ChristchurchNZ Events", ["www.christchurchnz.com"], LegalRightsStatus.REVIEW],
-    ["te_pae_events", "Te Pae Christchurch Events", ["www.tepae.co.nz"], LegalRightsStatus.REVIEW],
-    ["venues_otautahi_events", "Venues Otautahi Events", ["venuesotautahi.co.nz", "api.storyblok.com"], LegalRightsStatus.REVIEW],
-    ["isaac_theatre_royal_events", "Isaac Theatre Royal Events", ["isaactheatreroyal.co.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_council_events", "Christchurch City Council What's On", ["www.ccc.govt.nz"], LegalRightsStatus.REVIEW],
-    ["ara_academic_dates", "Ara Academic Calendar", ["www.ara.ac.nz"], LegalRightsStatus.REVIEW],
-    ["canterbury_major_annual_events", "Canterbury Independent Major Annual Events", ["www.theshow.co.nz", "www.christchurchmarathon.co.nz"], LegalRightsStatus.REVIEW],
-    ["metservice", "MetService CAP weather warnings", ["alerts.metservice.com", "www.metservice.com", "metservice.com"], LegalRightsStatus.REVIEW],
-    ["nzta", "NZTA Journey Planner", ["nzta.govt.nz"], LegalRightsStatus.REVIEW],
-    ["geonet", "GeoNet", ["api.geonet.org.nz"], LegalRightsStatus.ALLOWED],
-    ["airport_data", "Queenstown Airport Flights", ["www.queenstownairport.co.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_airport", "Christchurch Airport Flights", ["www.christchurchairport.co.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_sports", "Christchurch Official Sports Fixtures", ["www.crusaders.co.nz", "www.tactixnetball.co.nz", "www.canterburycricket.org.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_university_dates", "Christchurch University Demand Dates", ["www.canterbury.ac.nz", "www.lincoln.ac.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_racing", "Christchurch Racing and Cup Week", ["www.addington.co.nz", "racing.riccartonpark.nz"], LegalRightsStatus.REVIEW],
-    ["christchurch_cruise", "Christchurch Cruise Schedule", ["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"], LegalRightsStatus.REVIEW],
-    ["christchurch_airport_monthly", "Christchurch Airport Monthly Passengers", ["www.christchurchairport.co.nz"], LegalRightsStatus.REVIEW],
-    ["port_and_cruise", "Port and Cruise Schedules", ["poal.co.nz"], LegalRightsStatus.REVIEW],
-    ["fx_rates", "Reserve Bank of New Zealand Exchange Rates", ["rbnz.govt.nz"], LegalRightsStatus.REVIEW],
+    ["linz", "LINZ New Zealand Gazetteer", ["gazetteer.linz.govt.nz"]],
+    ["mbie", "MBIE Tourism Data", ["mbie.govt.nz"]],
+    ["stats_nz", "Stats NZ", ["stats.govt.nz"]],
+    ["mbie_tourism_flows", "MBIE Tourism Volumes & Flows", ["teic.mbie.govt.nz"]],
+    ["mbie_mrte", "MBIE Monthly Regional Tourism Estimates", ["teic.mbie.govt.nz"]],
+    ["mbie_ivs", "MBIE International Visitor Survey", ["teic.mbie.govt.nz"]],
+    ["public_holidays_nz", "Employment New Zealand public holidays", ["employment.govt.nz"]],
+    ["school_holidays_nz", "Ministry of Education school holidays", ["education.govt.nz"]],
+    ["eventfinda", "Eventfinda New Zealand", ["www.eventfinda.co.nz", "eventfinda.co.nz"]],
+    ["ticketmaster", "Ticketmaster New Zealand", ["www.ticketmaster.co.nz", "ticketmaster.co.nz"]],
+    ["eventbrite_events", "Eventbrite New Zealand Events", ["www.eventbrite.co.nz", "eventbrite.co.nz"]],
+    ["humanitix_events", "Humanitix New Zealand Events", ["humanitix.com", "events.humanitix.com"]],
+    ["school_sport_nz", "School Sport New Zealand Events", ["www.sporty.co.nz"]],
+    ["school_sport_canterbury", "School Sport Canterbury Events", ["www.sporty.co.nz", "teamup.com"]],
+    ["ticketek_events", "Ticketek New Zealand Events", ["www.ticketek.co.nz", "premier.ticketek.co.nz"]],
+    ["venue_calendars", "Auckland Live Events", ["www.aucklandlive.co.nz"]],
+    ["council_calendars", "Auckland Council OurAuckland Events", ["ourauckland.aucklandcouncil.govt.nz"]],
+    ["university_calendars", "University of Auckland Events", ["apis.auckland.ac.nz"]],
+    ["rto_calendars", "ChristchurchNZ Events", ["www.christchurchnz.com"]],
+    ["wellingtonnz_events", "WellingtonNZ Official Events", ["www.wellingtonnz.com"]],
+    ["waikatonz_events", "Hamilton & Waikato Tourism Official Events", ["www.waikatonz.com"]],
+    ["queenstownnz_events", "Destination Queenstown Official Events", ["www.queenstownnz.co.nz"]],
+    ["tauponz_events", "Destination Great Lake Taupō Official Events", ["www.lovetaupo.com"]],
+    ["southlandnz_events", "Great South Official Events", ["southlandnz.com"]],
+    ["hawkesbaynz_events", "Hawke's Bay Tourism Official Events", ["www.hawkesbaynz.com"]],
+    ["taranakienz_events", "Venture Taranaki Official Events", ["listings.venture.org.nz"]],
+    ["nelsontasman_events", "Nelson Regional Development Agency Official Events", ["www.nelsontasman.nz"]],
+    ["tauranga_events", "Tauranga City Council What's On Events", ["www.whatsontauranga.co.nz"]],
+    ["manawatunz_events", "Central Economic Development Agency Official Events", ["manawatunz.co.nz"]],
+    ["northland_events", "Whangārei District Council Official Events", ["www.wdc.govt.nz"]],
+    ["rotoruanz_events", "RotoruaNZ Official Events", ["www.rotoruanz.com"]],
+    ["dunedinnz_events", "DunedinNZ Official Events", ["www.dunedinnz.com"]],
+    ["te_pae_events", "Te Pae Christchurch Events", ["www.tepae.co.nz"]],
+    ["venues_otautahi_events", "Venues Otautahi Events", ["venuesotautahi.co.nz", "api.storyblok.com"]],
+    ["isaac_theatre_royal_events", "Isaac Theatre Royal Events", ["isaactheatreroyal.co.nz"]],
+    ["christchurch_council_events", "Christchurch City Council What's On", ["www.ccc.govt.nz"]],
+    ["ara_academic_dates", "Ara Academic Calendar", ["www.ara.ac.nz"]],
+    ["canterbury_major_annual_events", "Canterbury Independent Major Annual Events", ["www.theshow.co.nz", "www.christchurchmarathon.co.nz"]],
+    ["metservice", "MetService CAP weather warnings", ["alerts.metservice.com", "www.metservice.com", "metservice.com"]],
+    ["nzta", "NZTA Journey Planner", ["nzta.govt.nz"]],
+    ["geonet", "GeoNet", ["api.geonet.org.nz"]],
+    ["doc_alerts", "DOC Regional Recreation Alerts", ["www.doc.govt.nz"]],
+    ["interislander_alerts", "Interislander Service Alerts", ["www.interislander.co.nz"]],
+    ["ski_seasons_nz", "Official New Zealand Ski Season Dates", ["www.theremarkables.co.nz", "www.mthutt.co.nz", "www.whakapapa.com"]],
+    ["airport_data", "Queenstown Airport Flights", ["www.queenstownairport.co.nz"]],
+    ["queenstown_airport_monthly", "Queenstown Airport Monthly Passengers", ["www.queenstownairport.co.nz", "app.powerbi.com", "wabi-australia-southeast-api.analysis.windows.net"]],
+    ["auckland_airport_monthly", "Auckland Airport Monthly Passengers", ["corporate.aucklandairport.co.nz"]],
+    ["mot_airline_performance", "Ministry of Transport Airline On-time Performance", ["www.transport.govt.nz"]],
+    ["wellington_airport", "Wellington Airport Flights", ["www.wellingtonairport.co.nz"]],
+    ["wellington_airport_monthly", "Wellington Airport Monthly Passengers", ["www.wellingtonairport.co.nz"]],
+    ["christchurch_airport", "Christchurch Airport Flights", ["www.christchurchairport.co.nz"]],
+    ["christchurch_sports", "Christchurch Official Sports Fixtures", ["www.crusaders.co.nz", "www.tactixnetball.co.nz", "www.canterburycricket.org.nz"]],
+    ["christchurch_university_dates", "Christchurch University Demand Dates", ["www.canterbury.ac.nz", "www.lincoln.ac.nz"]],
+    ["christchurch_racing", "Christchurch Racing and Cup Week", ["www.addington.co.nz", "racing.riccartonpark.nz"]],
+    ["christchurch_cruise", "Christchurch Cruise Schedule", ["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"]],
+    ["christchurch_airport_monthly", "Christchurch Airport Monthly Passengers", ["www.christchurchairport.co.nz"]],
+    ["port_and_cruise", "Port and Cruise Schedules", ["poal.co.nz"]],
+    ["fx_rates", "Reserve Bank of New Zealand Exchange Rates", ["rbnz.govt.nz"]],
   ] as const;
 
   return [
-    ...ota.map(([key, name, supportedDomains, legalRightsStatus]) => ({
+    ...ota.map(([key, name, supportedDomains]) => ({
       key, name, supportedDomains, providerType: ProviderType.OTA, sourceType: key === "google_hotels" ? SourceType.META_SEARCH : SourceType.OTA,
-      status: DataSourceStatus.PILOT, healthStatus: SourceHealthStatus.DEGRADED, enabled: true, rights: false, isDemo: false, errorRate: 0,
-      lifecycle: legalRightsStatus === LegalRightsStatus.BLOCKED ? SourceLifecycle.BLOCKED : SourceLifecycle.RESEARCH,
-      internalApprovalStatus: InternalApprovalStatus.APPROVED, legalRightsStatus,
-      operationalStatus: legalRightsStatus === LegalRightsStatus.BLOCKED ? OperationalStatus.BLOCKED : OperationalStatus.HEALTHY,
+      status: DataSourceStatus.PILOT, healthStatus: SourceHealthStatus.DEGRADED, enabled: true, isDemo: false, errorRate: 0,
+      lifecycle: SourceLifecycle.RESEARCH,
+      operationalStatus: OperationalStatus.HEALTHY,
       environments: ["DEVELOPMENT", "TEST"] as const, adapterKey: `ota:${key}:v1`, accessMethod: "PUBLIC_WEB_RESEARCH_FIXTURE",
-      allowedUsage: ["URL_IDENTIFICATION", "PARSER_TEST", "RECORD_REPLAY_RESEARCH"], concurrencyLimit: 1, dailyBudget: 100,
     })),
-    ...publicSources.map(([key, name, supportedDomains, legalRightsStatus]) => {
-      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "geonet", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
+    ...publicSources.map(([key, name, supportedDomains]) => {
+      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "ski_seasons_nz", "geonet", "doc_alerts", "interislander_alerts", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "wellingtonnz_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "hawkesbaynz_events", "taranakienz_events", "nelsontasman_events", "tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance", "wellington_airport", "wellington_airport_monthly", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
       const locallyVerified = ["public_holidays_nz", "school_holidays_nz", "geonet"].includes(key);
-      const browserSource = ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(key);
+      const browserSource = ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key);
       const adapterKey = key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
         : key === "eventfinda" ? "public:eventfinda:http-v1"
           : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v1"
@@ -360,7 +339,14 @@ function registrySourceSeedRecords() {
               : key === "school_sport_nz" || key === "school_sport_canterbury" ? `public:${key}:argus-v1`
                 : key === "ticketek_events" ? "public:ticketek_events:argus-v1"
           : key === "fx_rates" ? "public:fx_rates:rbnz-browser-v1"
-            : key === "mbie" ? "public:mbie:adp-csv-v1"
+                      : key === "geonet" ? "public:geonet:hazards-v3"
+                        : key === "doc_alerts" ? "public:doc:regional-alerts-json-v1"
+                          : key === "interislander_alerts" ? "public:interislander:service-alerts-json-v1"
+                            : key === "ski_seasons_nz" ? "public:nz-ski-seasons:official-html-v1"
+                        : key === "mbie" ? "public:mbie:adp-csv-v2"
+              : key === "mbie_tourism_flows" ? "public:mbie_tourism_flows:xlsx-v1"
+                : key === "mbie_mrte" ? "public:mbie_mrte:xlsx-v1"
+                  : key === "mbie_ivs" ? "public:mbie_ivs:annual-summary-json-v1"
               : key === "stats_nz" ? "public:stats_nz:international-travel-v1"
                 : key === "nzta" ? "public:nzta:journey-planner-delays-v1"
                   : key === "metservice" ? "public:metservice:cap-rss-v1"
@@ -369,6 +355,21 @@ function registrySourceSeedRecords() {
                         : key === "council_calendars" ? "public:council-calendars:our-auckland-v1"
                           : key === "university_calendars" ? "public:university-calendars:uoa-events-v1"
                             : key === "rto_calendars" ? "public:rto-calendars:christchurchnz-v1"
+                              : key === "wellingtonnz_events" ? "public:wellingtonnz_events:wellingtonnz-html-v1"
+                                : key === "waikatonz_events" ? "public:waikatonz_events:waikatonz-api-v1"
+                                  : key === "queenstownnz_events" ? "public:queenstownnz_events:queenstownnz-simpleview-v1"
+                                    : key === "tauponz_events" ? "public:tauponz_events:tauponz-ajax-html-v1"
+                                      : key === "southlandnz_events" ? "public:southlandnz_events:southlandnz-simpleview-v1"
+                                        : key === "hawkesbaynz_events" ? "public:hawkesbaynz_events:hawkesbaynz-epoch-html-v1"
+                                          : key === "taranakienz_events" ? "public:taranakienz_events:taranaki-graphql-v1"
+                                            : key === "nelsontasman_events" ? "public:nelsontasman_events:nelsontasman-featured-html-v1"
+                                              : key === "tauranga_events" ? "public:tauranga_events:tauranga-carousel-html-v1"
+                                                : key === "manawatunz_events" ? "public:manawatunz_events:manawatu-wordpress-html-v1"
+                                                  : key === "northland_events" ? "public:northland_events:whangarei-opencities-html-v1"
+                                                    : key === "rotoruanz_events" ? "public:rotoruanz_events:rotoruanz-simple-tile-html-v1"
+                                                      : key === "dunedinnz_events" ? "public:dunedinnz_events:argus-v1"
+                                                        : key === "auckland_airport_monthly" ? "public:auckland-airport:monthly-passengers-argus-v1"
+                                                          : key === "mot_airline_performance" ? "public:mot:airline-performance-argus-v1"
                               : key === "te_pae_events" ? "public:te-pae-events:html-v1"
                                 : key === "venues_otautahi_events" ? "public:venues-otautahi:storyblok-v1"
                               : key === "isaac_theatre_royal_events" ? "public:isaac-theatre-royal-events:html-v1"
@@ -381,20 +382,34 @@ function registrySourceSeedRecords() {
                                       : key === "christchurch_racing" ? "public:christchurch_racing:racing-v1"
                                         : key === "christchurch_cruise" ? "public:christchurch_cruise:powerbi-v1"
                                           : key === "christchurch_airport_monthly" ? "public:christchurch_airport_monthly:passenger-table-v1"
-                              : key === "airport_data" ? "public:airport-data:queenstown-flights-v1"
+                              : key === "airport_data" ? "public:airport-data:queenstown-flights-v2"
+                                : key === "queenstown_airport_monthly" ? "public:queenstown-airport:monthly-passengers-powerbi-v1"
+                                : key === "wellington_airport" ? "public:wellington-airport:flight-board-html-v1"
+                                  : key === "wellington_airport_monthly" ? "public:wellington-airport:monthly-passengers-xlsx-v1"
                                 : key === "port_and_cruise" ? "public:port-and-cruise:poal-csv-v1"
               : `public:${key}:v1`;
       const accessMethod = key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
         : key === "eventfinda" ? "PUBLIC_HTTP_HTML_JSONLD"
           : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD"
-            : ["school_sport_nz", "school_sport_canterbury", "ticketek_events"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
+            : ["school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
       : key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
         : key === "mbie" ? "OFFICIAL_PUBLIC_CSV_RANGE"
+          : ["mbie_tourism_flows", "mbie_mrte"].includes(key) ? "OFFICIAL_PUBLIC_XLSX"
+            : key === "mbie_ivs" ? "OFFICIAL_PUBLIC_JSON"
           : key === "stats_nz" ? "OFFICIAL_PUBLIC_HTML_EMBEDDED_JSON"
             : key === "nzta" ? "OFFICIAL_PUBLIC_GEOJSON"
               : key === "metservice" ? "OFFICIAL_PUBLIC_CAP_RSS"
                 : key === "linz" ? "OFFICIAL_PUBLIC_JSON"
-                  : key === "venue_calendars" || key === "rto_calendars" ? "OFFICIAL_PUBLIC_JSON_PAGINATED"
+                  : key === "venue_calendars" || key === "rto_calendars" || key === "waikatonz_events" ? "OFFICIAL_PUBLIC_JSON_PAGINATED"
+                    : key === "queenstownnz_events" ? "OFFICIAL_PUBLIC_JSON_DISCOVERED"
+                      : key === "southlandnz_events" ? "OFFICIAL_PUBLIC_JSON_DISCOVERED"
+                        : key === "tauponz_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
+                          : key === "hawkesbaynz_events" ? "OFFICIAL_PUBLIC_HTML"
+                            : key === "taranakienz_events" ? "OFFICIAL_PUBLIC_GRAPHQL"
+                              : key === "nelsontasman_events" ? "OFFICIAL_PUBLIC_HTML"
+                                : ["tauranga_events", "northland_events", "rotoruanz_events"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
+                                  : key === "manawatunz_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
+                    : key === "wellingtonnz_events" ? "OFFICIAL_PUBLIC_HTML"
                     : key === "council_calendars" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
                       : key === "venues_otautahi_events" ? "PUBLIC_HTML_DISCOVERED_JSON"
                         : key === "christchurch_council_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
@@ -403,21 +418,23 @@ function registrySourceSeedRecords() {
                             : key === "christchurch_university_dates" ? "OFFICIAL_PUBLIC_HTML_AND_ARGUS"
                             : ["christchurch_sports", "christchurch_racing", "christchurch_airport_monthly"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
                         : ["te_pae_events", "isaac_theatre_royal_events", "ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
+                      : key === "wellington_airport" ? "OFFICIAL_PUBLIC_HTML"
+                        : key === "wellington_airport_monthly" ? "OFFICIAL_PUBLIC_HTML_XLSX"
+                      : key === "queenstown_airport_monthly" ? "OFFICIAL_PUBLIC_HTML_POWERBI_JSON"
+                        : ["doc_alerts", "interislander_alerts"].includes(key) ? "OFFICIAL_PUBLIC_JSON"
+                          : key === "ski_seasons_nz" ? "OFFICIAL_PUBLIC_HTML"
                       : key === "university_calendars" || key === "airport_data" ? "OFFICIAL_PUBLIC_JSON"
                         : key === "port_and_cruise" ? "OFFICIAL_PUBLIC_CSV"
           : browserSource ? "PUBLIC_WEB_BROWSER_READ_ONLY"
             : "OFFICIAL_PUBLIC_SOURCE";
       return {
         key, name, supportedDomains, providerType: ProviderType.PUBLIC, sourceType: SourceType.PUBLIC_DATA,
-        status: legalRightsStatus === LegalRightsStatus.ALLOWED ? DataSourceStatus.PILOT : DataSourceStatus.UNKNOWN,
+        status: locallyVerified ? DataSourceStatus.PILOT : DataSourceStatus.UNKNOWN,
         healthStatus: locallyVerified ? SourceHealthStatus.HEALTHY : SourceHealthStatus.DEGRADED,
-        enabled: true, rights: legalRightsStatus === LegalRightsStatus.ALLOWED, isDemo: false, errorRate: 0,
-        lifecycle: legalRightsStatus === LegalRightsStatus.ALLOWED ? SourceLifecycle.PILOT : SourceLifecycle.RESEARCH,
-        internalApprovalStatus: legalRightsStatus === LegalRightsStatus.ALLOWED ? InternalApprovalStatus.APPROVED : InternalApprovalStatus.PENDING,
-        legalRightsStatus, operationalStatus: locallyVerified ? OperationalStatus.HEALTHY : liveTransportImplemented ? OperationalStatus.DEGRADED : OperationalStatus.UNCONFIGURED,
+        enabled: true, isDemo: false, errorRate: 0,
+        lifecycle: locallyVerified ? SourceLifecycle.PILOT : SourceLifecycle.RESEARCH, operationalStatus: locallyVerified ? OperationalStatus.HEALTHY : liveTransportImplemented ? OperationalStatus.DEGRADED : OperationalStatus.UNCONFIGURED,
         environments: ["DEVELOPMENT", "TEST", "PILOT"] as const, adapterKey, accessMethod,
-        allowedUsage: legalRightsStatus === LegalRightsStatus.ALLOWED ? ["COLLECTION", "DERIVED_ANALYSIS", "ATTRIBUTED_DISPLAY"] : ["HEALTH_CHECK", "FIXTURE_TEST"],
-        concurrencyLimit: browserSource || ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "mbie", "stats_nz", "metservice", "nzta", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key) ? 1 : 2,
+        concurrencyLimit: browserSource || ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "mbie", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "stats_nz", "metservice", "nzta", "doc_alerts", "interislander_alerts", "ski_seasons_nz", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "wellingtonnz_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "hawkesbaynz_events", "taranakienz_events", "nelsontasman_events", "tauranga_events", "manawatunz_events", "northland_events", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "queenstown_airport_monthly", "wellington_airport", "wellington_airport_monthly", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key) ? 1 : 2,
         dailyBudget: key === "ticketmaster" ? 20
           : key === "eventfinda" ? 2_500
             : key === "metservice" ? 288
@@ -425,8 +442,19 @@ function registrySourceSeedRecords() {
                 : key === "christchurch_sports" ? 24
                   : key === "christchurch_racing" ? 12
                     : ["christchurch_university_dates", "christchurch_cruise", "christchurch_airport_monthly"].includes(key) ? 4
-                : ["nzta", "airport_data"].includes(key) ? 96
+                : ["nzta", "airport_data", "wellington_airport"].includes(key) ? 96
+                  : key === "queenstown_airport_monthly" ? 6
+                  : ["auckland_airport_monthly", "mot_airline_performance"].includes(key) ? 4
+                  : key === "wellington_airport_monthly" ? 4
                 : ["council_calendars", "rto_calendars", "linz"].includes(key) ? 100
+                  : key === "waikatonz_events" ? 72
+                    : key === "wellingtonnz_events" ? 24
+                      : key === "queenstownnz_events" ? 24
+                        : ["tauponz_events", "southlandnz_events"].includes(key) ? 24
+                          : key === "hawkesbaynz_events" ? 24
+                            : key === "taranakienz_events" ? 24
+                              : key === "nelsontasman_events" ? 24
+                                : ["tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events"].includes(key) ? 24
                   : key === "venue_calendars" ? 48
                     : ["venues_otautahi_events", "isaac_theatre_royal_events"].includes(key) ? 48
                       : key === "christchurch_council_events" ? 48
@@ -434,8 +462,11 @@ function registrySourceSeedRecords() {
                       : ["eventbrite_events", "humanitix_events"].includes(key) ? 24
                         : ["school_sport_nz", "school_sport_canterbury"].includes(key) ? 4
                           : key === "ticketek_events" ? 20
-                      : ["university_calendars", "te_pae_events", "port_and_cruise"].includes(key) ? 24
-                      : ["mbie", "fx_rates"].includes(key) ? 4
+                        : key === "doc_alerts" ? 14
+                          : key === "interislander_alerts" ? 48
+                            : key === "ski_seasons_nz" ? 3
+                        : ["university_calendars", "te_pae_events", "port_and_cruise"].includes(key) ? 24
+                      : ["mbie", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "fx_rates"].includes(key) ? 4
                         : key === "stats_nz" ? 8 : 2_000,
       };
     }),
@@ -443,29 +474,50 @@ function registrySourceSeedRecords() {
 }
 
 async function seedMarketCoverage() {
-  await prisma.marketCoverage.upsert({
-    where: { key: "christchurch" },
-    create: {
-      key: "christchurch",
-      name: "Christchurch Development Demo Coverage",
-      status: MarketStatus.SUPPORTED,
-      region: { country: "NZ", city: "Christchurch", note: "Development Demo Data" },
-      knownPropertyCount: 12,
-      knownUnitCount: 21,
-      coverage24h: 0.82,
-      coverage72h: 0.95,
-      collectionSuccessRate: 0.93,
-      sourceFailureRate: 0.07,
-      competitorCoverage: 0.86,
-      acceptNewChecks: true,
-      lastHealthAt: seedDate,
-    },
-    update: {
-      status: MarketStatus.SUPPORTED,
-      acceptNewChecks: true,
-      lastHealthAt: seedDate,
-    },
-  });
+  const markets = [
+    ["auckland", "Auckland", "IMPLEMENTED"],
+    ["wellington", "Wellington", "IMPLEMENTED"],
+    ["christchurch", "Christchurch", "IMPLEMENTED"],
+    ["queenstown-wanaka", "Queenstown and Wānaka", "IMPLEMENTED"],
+    ["rotorua", "Rotorua", "IMPLEMENTED"],
+    ["tauranga", "Tauranga and Mount Maunganui", "IMPLEMENTED"],
+    ["waikato", "Hamilton and Waikato", "IMPLEMENTED"],
+    ["dunedin", "Dunedin", "ARGUS_REQUIRED"],
+    ["nelson-tasman", "Nelson and Tasman", "IMPLEMENTED"],
+    ["hawkes-bay", "Napier and Hastings", "IMPLEMENTED"],
+    ["taranaki", "New Plymouth and Taranaki", "IMPLEMENTED"],
+    ["taupo", "Taupō", "IMPLEMENTED"],
+    ["northland", "Whangārei and Bay of Islands", "IMPLEMENTED"],
+    ["manawatu", "Palmerston North and Manawatū", "IMPLEMENTED"],
+    ["southland-fiordland", "Invercargill, Southland and Fiordland", "IMPLEMENTED"],
+  ] as const;
+  for (const [key, name, publicSignalStatus] of markets) {
+    const christchurch = key === "christchurch";
+    await prisma.marketCoverage.upsert({
+      where: { key },
+      create: {
+        key,
+        name: christchurch ? "Christchurch Development Demo Coverage" : name,
+        status: christchurch ? MarketStatus.SUPPORTED : publicSignalStatus === "ARGUS_REQUIRED" ? MarketStatus.COMING_SOON : MarketStatus.PILOT_AVAILABLE,
+        region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
+        knownPropertyCount: christchurch ? 12 : 0,
+        knownUnitCount: christchurch ? 21 : 0,
+        coverage24h: christchurch ? 0.82 : 0,
+        coverage72h: christchurch ? 0.95 : 0,
+        collectionSuccessRate: christchurch ? 0.93 : 0,
+        sourceFailureRate: christchurch ? 0.07 : 0,
+        competitorCoverage: christchurch ? 0.86 : 0,
+        acceptNewChecks: christchurch,
+        lastHealthAt: christchurch ? seedDate : null,
+      },
+      update: {
+        name: christchurch ? "Christchurch Development Demo Coverage" : name,
+        status: christchurch ? MarketStatus.SUPPORTED : publicSignalStatus === "ARGUS_REQUIRED" ? MarketStatus.COMING_SOON : MarketStatus.PILOT_AVAILABLE,
+        region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
+        acceptNewChecks: christchurch,
+      },
+    });
+  }
 }
 
 async function seedSchedules() {
@@ -476,6 +528,9 @@ async function seedSchedules() {
     { key: "school-holidays-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "school_holidays_nz", marketScope: "new-zealand" } },
     { key: "geonet-high-frequency-hourly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "every-1-hours", payload: { sourceId: "geonet", marketScope: "new-zealand" } },
     { key: "mbie-adp-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "mbie", marketScope: "new-zealand" } },
+    { key: "mbie-tourism-flows-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "mbie_tourism_flows", marketScope: "new-zealand" } },
+    { key: "mbie-mrte-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "mbie_mrte", marketScope: "new-zealand" } },
+    { key: "mbie-ivs-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "mbie_ivs", marketScope: "new-zealand" } },
     { key: "stats-nz-international-travel-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "stats_nz", marketScope: "new-zealand" } },
     { key: "rbnz-fx-daily", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "daily", payload: { sourceId: "fx_rates", marketScope: "new-zealand" } },
     { key: "linz-gazetteer-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "linz", marketScope: "new-zealand" } },
@@ -483,6 +538,19 @@ async function seedSchedules() {
     { key: "council-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "council_calendars", marketScope: "new-zealand" } },
     { key: "university-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "university_calendars", marketScope: "new-zealand" } },
     { key: "rto-calendars-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "rto_calendars", marketScope: "new-zealand" } },
+    { key: "wellingtonnz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "wellingtonnz_events", marketScope: "wellington" } },
+    { key: "waikatonz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "waikatonz_events", marketScope: "waikato" } },
+    { key: "queenstownnz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "queenstownnz_events", marketScope: "queenstown-wanaka" } },
+    { key: "tauponz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "tauponz_events", marketScope: "taupo" } },
+    { key: "southlandnz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "southlandnz_events", marketScope: "southland-fiordland" } },
+    { key: "hawkesbaynz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "hawkesbaynz_events", marketScope: "hawkes-bay" } },
+    { key: "taranakienz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "taranakienz_events", marketScope: "taranaki" } },
+    { key: "nelsontasman-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "nelsontasman_events", marketScope: "nelson-tasman" } },
+    { key: "tauranga-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "tauranga_events", marketScope: "tauranga" } },
+    { key: "manawatunz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "manawatunz_events", marketScope: "manawatu" } },
+    { key: "northland-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "northland_events", marketScope: "northland" } },
+    { key: "rotoruanz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "rotoruanz_events", marketScope: "rotorua" } },
+    { key: "dunedinnz-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "dunedinnz_events", marketScope: "dunedin", phase: "full", limit: 100 } },
     { key: "te-pae-events-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "te_pae_events", marketScope: "christchurch" } },
     { key: "venues-otautahi-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "venues_otautahi_events", marketScope: "christchurch" } },
     { key: "isaac-theatre-royal-events-12-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-12-hours", payload: { sourceId: "isaac_theatre_royal_events", marketScope: "christchurch" } },
@@ -495,7 +563,12 @@ async function seedSchedules() {
     { key: "school-sport-canterbury-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "school_sport_canterbury", marketScope: "christchurch", phase: "full", limit: 100 } },
     { key: "ticketek-events-discovery-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "ticketek_events", marketScope: "new-zealand", phase: "discovery", limit: 20 } },
     { key: "ticketek-events-details-six-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-6-hours", payload: { sourceId: "ticketek_events", marketScope: "new-zealand", phase: "details", maxDetails: 3 } },
-    { key: "queenstown-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "airport_data", marketScope: "queenstown" } },
+    { key: "queenstown-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "airport_data", marketScope: "queenstown-wanaka" } },
+    { key: "queenstown-airport-monthly-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "queenstown_airport_monthly", marketScope: "queenstown-wanaka" } },
+    { key: "auckland-airport-monthly-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "auckland_airport_monthly", marketScope: "auckland" } },
+    { key: "mot-airline-performance-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "mot_airline_performance", marketScope: "new-zealand" } },
+    { key: "wellington-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "wellington_airport", marketScope: "wellington" } },
+    { key: "wellington-airport-monthly-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "wellington_airport_monthly", marketScope: "wellington" } },
     { key: "christchurch-airport-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "christchurch_airport", marketScope: "christchurch" } },
     { key: "christchurch-sports-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "christchurch_sports", marketScope: "christchurch" } },
     { key: "christchurch-university-dates-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "christchurch_university_dates", marketScope: "christchurch" } },
@@ -511,6 +584,9 @@ async function seedSchedules() {
     { key: "ticketmaster-details-six-hour", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "every-6-hours", payload: { sourceId: "ticketmaster", marketScope: "new-zealand", phase: "details", maxDetails: 3 } },
     { key: "metservice-cap-five-minutes", jobType: JobType.WEATHER_COLLECTION, queueName: "weather-collection", cronExpression: "every-5-minutes", payload: { sourceId: "metservice", marketScope: "new-zealand" } },
     { key: "disruptions-high-frequency", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "nzta", marketScope: "new-zealand", severity: "severe" } },
+    { key: "doc-alerts-daily", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "daily", payload: { sourceId: "doc_alerts", marketScope: "new-zealand" } },
+    { key: "interislander-alerts-30-minute", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "every-30-minutes", payload: { sourceId: "interislander_alerts", marketScope: "new-zealand" } },
+    { key: "ski-seasons-weekly", jobType: JobType.PUBLIC_DATA_COLLECTION, queueName: "public-data-collection", cronExpression: "weekly", payload: { sourceId: "ski_seasons_nz", marketScope: "new-zealand" } },
     { key: "market-coverage-daily", jobType: JobType.MARKET_COVERAGE_COLLECTION, queueName: "market-coverage", cronExpression: "daily", payload: {} },
     { key: "anchor-panel-daily", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "daily", payload: { marketScope: "new-zealand" } },
     { key: "rotating-panel-daily", jobType: JobType.ROTATING_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "daily", payload: { marketScope: "new-zealand" } },
@@ -622,7 +698,6 @@ async function seedInventory(dataSourceId: string) {
       onlineStatus: "ONLINE",
       listingStatus: "ONLINE",
       matchConfidence: 1,
-      legalRightsStatus: "ALLOWED",
       operationalStatus: "HEALTHY",
       metadata: { fixture: true },
       isDemo: true,
@@ -718,7 +793,6 @@ async function seedInventory(dataSourceId: string) {
         onlineStatus: "ONLINE",
         listingStatus: "ONLINE",
         matchConfidence: 1,
-        legalRightsStatus: "ALLOWED",
         operationalStatus: "HEALTHY",
         metadata: { fixture: true },
         isDemo: true,
@@ -869,7 +943,6 @@ async function seedObservations(
         collectorVersion: "fixture-collector-v1",
         parserVersion: "fixture-parser-v1",
         qualityFlags: [],
-        legalRightsStatus: "ALLOWED",
         operationalStatus: "HEALTHY",
         collectedAt: addMinutes(seedDate, 60),
         idempotencyKey: `seed:${dateKey(seedDate)}:${listing.id}:${stayQueryId}`,

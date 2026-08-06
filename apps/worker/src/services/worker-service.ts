@@ -23,16 +23,22 @@ import {
   createQuerySignature,
   evaluateBlockingQualityGates,
   evaluateEventImpactEvidence,
+  mergeEventImpactEvidence,
   type ComparableRate,
   type QueryPlanDate,
 } from "@tymra/domain";
 import {
   AdapterError,
+  AUCKLAND_AIRPORT_MONTHLY_URL,
   extractEventfindaHttpPage,
   extractTicketmasterHttpPage,
   getOtaAdapterForInput,
+  NZ_MAJOR_ACCOMMODATION_MARKETS,
+  MOT_AIRLINE_PERFORMANCE_URL,
   otaAdapters,
   publicDataAdapters,
+  publicSignalCollectionPlanForMarket,
+  resolveNzMarketKey,
   type AdapterContext,
   type OtaAdapter,
   type PublicDataAdapter,
@@ -97,6 +103,7 @@ import {
 } from "../collection/lincoln-university-key-dates";
 import {
   isArgusEventSourceId,
+  DUNEDINNZ_EVENTS_SOURCE_ID,
   normaliseSportySchoolSportEvents,
   normaliseTicketekEvents,
   SCHOOL_SPORT_CANTERBURY_SOURCE_ID,
@@ -109,6 +116,18 @@ import {
   ticketekListingExtractionSchema,
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
+import {
+  isRegionalArgusEventSourceId,
+  normaliseRegionalArgusEvents,
+  regionalArgusEventExtractionSchema,
+  regionalArgusSourceDefinition,
+} from "../collection/regional-argus-events";
+import {
+  aucklandAirportExtractionRecords,
+  aucklandAirportMonthlyExtractionSchema,
+  motAirlinePerformanceExtractionRecords,
+  motAirlinePerformanceExtractionSchema,
+} from "../collection/aviation-argus-signals";
 import { captureBrowserTaskWithArgus, getArgusHealth, type ArgusBrowserTaskResult } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import {
@@ -116,6 +135,9 @@ import {
   durableArgusTraceId,
   settleCancelledCollectionRun,
 } from "./argus-orchestrator";
+import { sourceCollectionBlockers, sourceSchedulingBlockers, type SourceAccessState } from "../operations/source-access";
+
+export { sourceSchedulingBlockers } from "../operations/source-access";
 
 type CreateWorkerRequest = {
   input: string;
@@ -145,10 +167,9 @@ type CollectSourceOptions = {
   developmentBootstrap?: boolean;
 };
 
-type ActivateSourceRequest = {
-  approvedBy: string;
-  licenseBasis: string;
-  allowDisplay?: boolean;
+type ConfigureSourceSchedulesRequest = {
+  enabled: boolean;
+  reason: string;
 };
 
 type EventPersistenceCache = {
@@ -271,7 +292,7 @@ export class WorkerService {
       }
 
       if (!this.fixtureEnabled()) {
-        await this.failBusiness(request, "SOURCE_UNAVAILABLE", "NO_APPROVED_LIVE_RATE_SOURCE", "No approved live OTA rate source is configured; production never falls back to fixture data");
+        await this.failBusiness(request, "SOURCE_UNAVAILABLE", "NO_LIVE_RATE_SOURCE", "No live OTA rate source is configured; production never falls back to fixture data");
         return;
       }
 
@@ -281,13 +302,13 @@ export class WorkerService {
         fixtureSource = await this.requireFixtureSource();
       } catch (error) {
         const code = error instanceof WorkerRequestError ? error.code : "SOURCE_UNAVAILABLE";
-        const message = error instanceof Error ? error.message : "Approved development fixture source is unavailable";
+        const message = error instanceof Error ? error.message : "Development fixture source is unavailable";
         await this.failBusiness(request, "SOURCE_UNAVAILABLE", code, message);
         return;
       }
       const profile = await this.ensureCollectionProfile(request, fixtureSource.id);
       const run = await prisma.collectionRun.create({
-        data: { jobId, analysisRequestId: request.id, dataSourceId: fixtureSource.id, collectionProfileId: profile.id, mode: "ON_DEMAND", status: "RUNNING", scope: { targetListingId: request.targetListingId, dateBasket: plan.dateBasket, mode: "APPROVED_DEVELOPMENT_FIXTURE" }, startedAt: new Date(), attemptCount: 1, correlationId: request.correlationId, isDemo: true },
+        data: { jobId, analysisRequestId: request.id, dataSourceId: fixtureSource.id, collectionProfileId: profile.id, mode: "ON_DEMAND", status: "RUNNING", scope: { targetListingId: request.targetListingId, dateBasket: plan.dateBasket, mode: "DEVELOPMENT_FIXTURE" }, startedAt: new Date(), attemptCount: 1, correlationId: request.correlationId, isDemo: true },
       });
       const competitors = await this.ensureFixtureCompetitors(request.sellableUnitId!, fixtureCompetitorCount(request.rawInput));
       const listingIds = [request.targetListingId!, ...competitors.map((item) => item.listing.id)];
@@ -354,7 +375,6 @@ export class WorkerService {
               collectorVersion: "worker-fixture-collector-v1",
               parserVersion: "worker-fixture-parser-v1",
               qualityFlags: ["FIXTURE_RECORD_REPLAY", "NOT_REAL_MARKET_DATA"],
-              legalRightsStatus: "ALLOWED",
               operationalStatus: "HEALTHY",
               rawDataStored: false,
               idempotencyKey,
@@ -377,6 +397,8 @@ export class WorkerService {
 
   async buildCompetitorSet(analysisRequestId: string, jobId: string) {
     const request = await this.requireReadyIdentity(analysisRequestId);
+    const analysisMarketKey = resolveNzMarketKey(request.property ?? {});
+    if (!analysisMarketKey) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to a supported New Zealand accommodation market", 422);
     const competitors = await this.ensureFixtureCompetitors(request.sellableUnitId!, fixtureCompetitorCount(request.rawInput));
     const existing = await prisma.competitorSetVersion.findUnique({ where: { analysisRequestId_version: { analysisRequestId, version: 1 } } });
     const set = existing ?? await prisma.competitorSetVersion.create({
@@ -385,7 +407,7 @@ export class WorkerService {
         targetSellableUnitId: request.sellableUnitId!,
         version: 1,
         algorithmVersion: "deterministic-comparability-v1",
-        marketScope: { market: "christchurch", expansionLevel: 0 },
+        marketScope: { market: analysisMarketKey, expansionLevel: 0 },
         expansionLevel: 0,
         createdBy: "SYSTEM",
         members: { create: competitors.map((item, index) => ({ competitorSellableUnitId: item.unit.id, relationshipType: "CORE", comparabilityScore: 0.95 - index * 0.02, geographyScore: 0.95, propertyTypeScore: 1, unitScore: 1, qualityScore: 0.9, priceTierScore: 0.9, inclusionReason: "Same fixture micro-market and unit profile", createdBy: "SYSTEM", algorithmVersion: "deterministic-comparability-v1" })) },
@@ -405,6 +427,24 @@ export class WorkerService {
     const competitorSet = await prisma.competitorSetVersion.findFirstOrThrow({ where: { analysisRequestId }, orderBy: { version: "desc" }, include: { members: true } });
     const observationIds = await this.analysisObservationIds(request, plan.querySignatureHash);
     const observations = await prisma.rateObservation.findMany({ where: { id: { in: observationIds } }, orderBy: { collectedAt: "asc" } });
+    const analysisMarketKey = resolveNzMarketKey(request.property ?? {});
+    if (!analysisMarketKey) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to a supported New Zealand accommodation market", 422);
+    const publicSignalPlan = publicSignalCollectionPlanForMarket(analysisMarketKey);
+    const [publicSignalRuns, publicSignalRegistry] = await Promise.all([
+      prisma.collectionRun.findMany({
+        where: { analysisRequestId: request.id, dataSource: { key: { in: publicSignalPlan.map((target) => target.sourceId) } } },
+        orderBy: { createdAt: "asc" },
+        select: { status: true, errorCode: true, dataSource: { select: { key: true } } },
+      }),
+      prisma.dataSource.findMany({
+        where: { key: { in: publicSignalPlan.map((target) => target.sourceId) } },
+        select: { key: true, adapterKey: true, operationalStatus: true },
+      }),
+    ]);
+    const publicSignalCoverage = summarisePublicSignalCollectionCoverage(
+      publicSignalPlan,
+      publicSignalRuns.map((run) => ({ sourceId: run.dataSource.key, status: run.status, errorCode: run.errorCode })),
+    );
     const dates = [...new Set(observations.map((item) => item.checkIn.toISOString().slice(0, 10)))].sort();
     const dateSnapshotIds: string[] = [];
     const allFlags = new Set<string>();
@@ -413,19 +453,38 @@ export class WorkerService {
       const items = observations.filter((item) => item.checkIn.toISOString().slice(0, 10) === date);
       const stayDate = new Date(`${date}T00:00:00.000Z`);
       const nextDate = new Date(stayDate.getTime() + 86_400_000);
-      const marketSignals = await prisma.marketSignal.findMany({ where: { marketKey: "christchurch", startsAt: { lt: nextDate }, endsAt: { gt: stayDate }, status: "CONFIRMED" }, select: { id: true, type: true, region: true, evidence: true } });
-      const eventImpactScore = marketSignals.length ? Math.min(1, marketSignals.length / 3) : null;
-      const eventEvidence = marketSignals.length ? {
+      const contextFloor = new Date(stayDate.getTime() - 400 * 86_400_000);
+      const candidateSignals = await prisma.marketSignal.findMany({
+        where: {
+          marketKey: { in: [analysisMarketKey, "new-zealand"] },
+          startsAt: { lt: nextDate },
+          status: "CONFIRMED",
+          OR: [
+            { endsAt: { gt: stayDate } },
+            { type: "TOURISM_DEMAND", endsAt: { gte: contextFloor, lte: stayDate } },
+          ],
+        },
+        select: { id: true, dataSourceId: true, type: true, region: true, startsAt: true, endsAt: true, evidence: true },
+      });
+      const marketSignals = selectPricingMarketSignals(candidateSignals, stayDate);
+      const signalSummary = summariseMarketSignals(marketSignals);
+      const eventEvidence = {
         signalIds: marketSignals.map((signal) => signal.id),
+        majorEventSignalIds: marketSignals.filter((signal) => signal.type === "MAJOR_EVENT").map((signal) => signal.id),
         signalTypes: [...new Set(marketSignals.map((signal) => signal.type))],
         regions: [...new Set(marketSignals.map((signal) => signal.region))],
         signalCount: marketSignals.length,
+        majorEventSignalCount: signalSummary.majorEventCount,
+        demandSignalCount: signalSummary.demandSignalCount,
+        demandPressure: signalSummary.demandPressure,
+        marketKey: analysisMarketKey,
         weekday: stayDate.toLocaleDateString("en-NZ", { weekday: "long", timeZone: "UTC" }),
         bookingHorizonDays: Math.max(0, Math.round((stayDate.getTime() - Date.now()) / 86_400_000)),
         accommodationType: targetUnit.unitType,
-        policyVersion: "event-impact-v1",
+        publicSignalCoverage,
+        policyVersion: "event-impact-v2",
         causalClaim: false,
-      } : {};
+      };
       const target = items.find((item) => item.sellableUnitId === request.sellableUnitId);
       const memberScores = new Map(competitorSet.members.map((member) => [member.competitorSellableUnitId, member.comparabilityScore]));
       const comparableRates: ComparableRate[] = items.filter((item) => memberScores.has(item.sellableUnitId)).map((item) => ({ sellableUnitId: item.sellableUnitId, listingId: item.listingId, amountMinor: item.effectiveNightlyTotalMinor, availabilityStatus: item.availabilityStatus, comparabilityScore: memberScores.get(item.sellableUnitId) ?? 0, collectedAt: item.collectedAt, feeComplete: item.feeCompleteness === "COMPLETE" }));
@@ -437,12 +496,12 @@ export class WorkerService {
       const maxSkewMinutes = newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null;
       const ageHours = newest ? Math.max(0, (Date.now() - newest.getTime()) / 3_600_000) : null;
       const horizonDays = Math.max(0, Math.round((new Date(`${date}T00:00:00.000Z`).getTime() - Date.now()) / 86_400_000));
-      const flags = evaluateBlockingQualityGates({ targetRatePresent: Boolean(target), unitConfirmed: Boolean(request.sellableUnitId), feesKnown: target?.feeCompleteness === "COMPLETE", comparable: unique.length >= 3, sourceRightsAllowed: items.every((item) => item.legalRightsStatus === "ALLOWED"), sourceAvailable: items.every((item) => item.operationalStatus === "HEALTHY"), severeConflict: false, freshnessExpired: ageHours === null || ageHours > this.environment.FRESHNESS_CORE_HOURS, snapshotCoherent: maxSkewMinutes !== null && maxSkewMinutes <= (horizonDays <= 7 ? this.environment.FRESHNESS_NEAR_TERM_SKEW_HOURS * 60 : this.environment.FRESHNESS_LONG_TERM_SKEW_HOURS * 60), competitorCount: distribution.count });
+      const flags = evaluateBlockingQualityGates({ targetRatePresent: Boolean(target), unitConfirmed: Boolean(request.sellableUnitId), feesKnown: target?.feeCompleteness === "COMPLETE", comparable: unique.length >= 3, sourceAvailable: items.every((item) => item.operationalStatus === "HEALTHY"), severeConflict: false, freshnessExpired: ageHours === null || ageHours > this.environment.FRESHNESS_CORE_HOURS, snapshotCoherent: maxSkewMinutes !== null && maxSkewMinutes <= (horizonDays <= 7 ? this.environment.FRESHNESS_NEAR_TERM_SKEW_HOURS * 60 : this.environment.FRESHNESS_LONG_TERM_SKEW_HOURS * 60), competitorCount: distribution.count });
       flags.forEach((flag) => allFlags.add(flag));
       const confidence = confidenceForDate({ competitorCount: distribution.count, freshnessHours: ageHours, feeComplete: target?.feeCompleteness === "COMPLETE", maxSkewMinutes, horizonDays, blockingFlags: flags });
       const snapshot = await prisma.dateSnapshot.upsert({
         where: { analysisRequestId_stayDate_snapshotVersion: { analysisRequestId, stayDate, snapshotVersion: "date-snapshot-v1" } },
-        create: { analysisRequestId, stayDate, targetRateMinor: target?.effectiveNightlyTotalMinor, validCompetitorCount: distribution.count, availableCount: compression.available, restrictedCount: compression.restricted, unavailableCount: compression.unavailable, dataMissingCount: compression.dataMissing, sourceFailureCount: compression.sourceFailure, marketMedianMinor: distribution.weightedMedianMinor, lowerQuartileMinor: distribution.lowerQuartileMinor, upperQuartileMinor: distribution.upperQuartileMinor, availabilityCompression: compression.compression, eventImpact: eventImpactScore, eventEvidence, disruptionImpact: { accessibilityEffect: "UNKNOWN", demandDisplacementEffect: "UNKNOWN", strandedTravellerEffect: "UNKNOWN", direction: "UNKNOWN", confidence: 0 }, newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: maxSkewMinutes, freshness: { ageHours, policyVersion: "freshness-v1" }, qualityGateResult: flags.length ? "BLOCKED" : confidence.level === "HIGH" ? "PASSED" : "PASSED_WITH_LIMITATIONS", qualityFlags: flags, confidenceScore: confidence.score, confidenceLevel: confidence.level, observationIds: items.map((item) => item.id), snapshotVersion: "date-snapshot-v1" },
+        create: { analysisRequestId, stayDate, targetRateMinor: target?.effectiveNightlyTotalMinor, validCompetitorCount: distribution.count, availableCount: compression.available, restrictedCount: compression.restricted, unavailableCount: compression.unavailable, dataMissingCount: compression.dataMissing, sourceFailureCount: compression.sourceFailure, marketMedianMinor: distribution.weightedMedianMinor, lowerQuartileMinor: distribution.lowerQuartileMinor, upperQuartileMinor: distribution.upperQuartileMinor, availabilityCompression: compression.compression, eventImpact: signalSummary.eventImpact, eventEvidence, disruptionImpact: signalSummary.disruptionImpact, newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: maxSkewMinutes, freshness: { ageHours, policyVersion: "freshness-v1" }, qualityGateResult: flags.length ? "BLOCKED" : confidence.level === "HIGH" ? "PASSED" : "PASSED_WITH_LIMITATIONS", qualityFlags: flags, confidenceScore: confidence.score, confidenceLevel: confidence.level, observationIds: items.map((item) => item.id), snapshotVersion: "date-snapshot-v1" },
         update: {},
       });
       dateSnapshotIds.push(snapshot.id);
@@ -451,10 +510,10 @@ export class WorkerService {
     await this.setStatus(request, "BUILDING_SNAPSHOT");
     const newest = maxDate(observations.map((item) => item.collectedAt));
     const oldest = minDate(observations.map((item) => item.collectedAt));
-    const contentHash = stableHash({ analysisRequestId, observationIds: [...observationIds].sort(), dateSnapshotIds: [...dateSnapshotIds].sort(), competitorSetVersionId: competitorSet.id, queryPlanId: plan.id });
+    const contentHash = stableHash({ analysisRequestId, observationIds: [...observationIds].sort(), dateSnapshotIds: [...dateSnapshotIds].sort(), competitorSetVersionId: competitorSet.id, queryPlanId: plan.id, publicSignalCoverage });
     const marketSnapshot = await prisma.marketSnapshot.upsert({
       where: { contentHash },
-      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: "christchurch", country: "NZ" }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => item.checkIn.toISOString().startsWith(date))).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
+      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: analysisMarketKey, country: "NZ", publicSignalCoverage }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }, ...publicSignalRegistry.map((source) => ({ sourceId: source.key, version: source.adapterKey ?? "unversioned", operational: source.operationalStatus }))], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => item.checkIn.toISOString().startsWith(date))).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
       update: {},
     });
     await prisma.dateSnapshot.updateMany({ where: { id: { in: dateSnapshotIds }, marketSnapshotId: null }, data: { marketSnapshotId: marketSnapshot.id } });
@@ -470,7 +529,16 @@ export class WorkerService {
       await this.failBusiness(request, "INSUFFICIENT_DATA", "BLOCKING_QUALITY_GATES", "No date passed the blocking quality gates");
       return;
     }
-    const ranked = usable.map((date) => ({ id: date.id, date: date.stayDate.toISOString().slice(0, 10), target: date.targetRateMinor!, median: date.marketMedianMinor!, gap: date.marketMedianMinor! - date.targetRateMinor!, confidence: date.confidenceLevel })).sort((left, right) => right.gap - left.gap);
+    const ranked = usable.map((date) => ({
+      id: date.id,
+      date: date.stayDate.toISOString().slice(0, 10),
+      target: date.targetRateMinor!,
+      median: date.marketMedianMinor!,
+      gap: date.marketMedianMinor! - date.targetRateMinor!,
+      confidence: date.confidenceLevel,
+      marketSignalIds: jsonStringArray(jsonRecord(date.eventEvidence).signalIds),
+      hasMajorEvent: date.eventImpact !== null,
+    })).sort((left, right) => right.gap - left.gap);
     const keyDates = ranked.slice(0, request.isPreview ? 2 : 5);
     const medians = usable.map((date) => date.marketMedianMinor!).sort((a, b) => a - b);
     const targetPrices = usable.map((date) => date.targetRateMinor!).sort((a, b) => a - b);
@@ -483,15 +551,23 @@ export class WorkerService {
     const position = targetMedian < marketMedian * 0.9 ? "BELOW_MARKET" : targetMedian > marketMedian * 1.1 ? "ABOVE_MARKET" : "NEAR_MARKET";
     const eventDates = usable.filter((date) => date.eventImpact !== null);
     const eventImpactScore = eventDates.length ? average(eventDates.map((date) => date.eventImpact!)) : null;
+    const publicSignalCoverage = jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage);
+    const publicSignalGapCodes = publicSignalCoverage.complete === false
+      ? ["PUBLIC_SIGNAL_COVERAGE_INCOMPLETE", ...jsonStringArray(publicSignalCoverage.missingSourceIds).map((sourceId) => `PUBLIC_SIGNAL_MISSING:${sourceId}`), ...jsonStringArray(publicSignalCoverage.failedSourceIds).map((sourceId) => `PUBLIC_SIGNAL_FAILED:${sourceId}`)]
+      : [];
     const eventEvidence = eventDates.length ? {
       affectedDateCount: eventDates.length,
       affectedDates: eventDates.map((date) => date.stayDate.toISOString().slice(0, 10)),
       dateSnapshotIds: eventDates.map((date) => date.id),
-      policyVersion: "event-impact-v1",
+      signalIds: [...new Set(eventDates.flatMap((date) => jsonStringArray(jsonRecord(date.eventEvidence).majorEventSignalIds)))],
+      publicSignalCoverage,
+      policyVersion: "event-impact-v2",
       causalClaim: false,
-    } : {};
+    } : { publicSignalCoverage, policyVersion: "event-impact-v2", causalClaim: false };
+    const demandPressureValues = usable.map((date) => jsonNumber(jsonRecord(date.eventEvidence).demandPressure)).filter((value): value is number => value !== null);
+    const disruptionSummary = summariseDateDisruptions(usable.map((date) => date.disruptionImpact));
     const analysis = await prisma.priceAnalysis.create({
-      data: { analysisRequestId, marketSnapshotId: snapshot.id, marketMedianMinor: marketMedian, weightedRange: { low: Math.min(...medians), high: Math.max(...medians) }, percentile, comparableCount: Math.min(...usable.map((date) => date.validCompetitorCount)), marketRateIndex: marketMedian / 100, availabilityCompression: average(usable.map((date) => date.availabilityCompression).filter((value): value is number => value !== null)), demandPressure: eventDates.length / usable.length, eventImpact: eventImpactScore, eventEvidence, accessibilityEffect: "UNKNOWN", demandDisplacementEffect: "UNKNOWN", strandedTravellerEffect: "UNKNOWN", disruptionDirection: "UNKNOWN", marketReferenceRange: { low: Math.min(...medians), high: Math.max(...medians) }, reviewRange: { low: Math.round(marketMedian * 0.9), high: Math.round(marketMedian * 1.1) }, targetPricePosition: position, keyDates, reasonCodes: position === "BELOW_MARKET" ? ["BELOW_COMPARABLE_RANGE"] : [], recommendedAction: position === "BELOW_MARKET" ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidenceScore, confidenceComponents: { datesPassing: usable.length, datesPlanned: snapshot.dateSnapshots.length, fixture: request.isFixture, eventDates: eventDates.length }, dataGaps: inputJson(snapshot.qualityFlags, []), modelVersion: "deterministic-pricing-v1", ruleVersion: "worker-baseline-v1" },
+      data: { analysisRequestId, marketSnapshotId: snapshot.id, marketMedianMinor: marketMedian, weightedRange: { low: Math.min(...medians), high: Math.max(...medians) }, percentile, comparableCount: Math.min(...usable.map((date) => date.validCompetitorCount)), marketRateIndex: marketMedian / 100, availabilityCompression: average(usable.map((date) => date.availabilityCompression).filter((value): value is number => value !== null)), demandPressure: average(demandPressureValues), eventImpact: eventImpactScore, eventEvidence, accessibilityEffect: disruptionSummary.accessibilityEffect, demandDisplacementEffect: disruptionSummary.demandDisplacementEffect, strandedTravellerEffect: disruptionSummary.strandedTravellerEffect, disruptionDirection: disruptionSummary.direction, marketReferenceRange: { low: Math.min(...medians), high: Math.max(...medians) }, reviewRange: { low: Math.round(marketMedian * 0.9), high: Math.round(marketMedian * 1.1) }, targetPricePosition: position, keyDates, reasonCodes: position === "BELOW_MARKET" ? ["BELOW_COMPARABLE_RANGE", ...(eventDates.length ? ["MAJOR_LOCAL_EVENT"] : [])] : [], recommendedAction: position === "BELOW_MARKET" ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidenceScore, confidenceComponents: { datesPassing: usable.length, datesPlanned: snapshot.dateSnapshots.length, fixture: request.isFixture, eventDates: eventDates.length, demandSignalDates: demandPressureValues.length, disruptionSignalDates: disruptionSummary.signalDates, publicSignalCoverage: jsonNumber(publicSignalCoverage.coverage) ?? 0 }, dataGaps: [...jsonStringArray(snapshot.qualityFlags), ...publicSignalGapCodes], modelVersion: "deterministic-pricing-v1", ruleVersion: "worker-baseline-v1" },
     });
     if (request.isPreview) {
       await prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { status: "COMPLETED", completedAt: new Date() } });
@@ -513,22 +589,27 @@ export class WorkerService {
       where: { key: sourceId },
       select: {
         id: true, key: true, name: true, enabled: true, environments: true,
-        internalApprovalStatus: true, legalRightsStatus: true, lifecycle: true,
-        operationalStatus: true, healthStatus: true, allowedUsage: true,
-        displayPermission: true, derivedAnalysisPermission: true,
-        rightsAllowStorage: true, rightsAllowDerivedAnalysis: true, rightsAllowDisplay: true,
+        lifecycle: true, operationalStatus: true, healthStatus: true,
       },
     });
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
     const requestedFrom = options.from ?? new Date();
     const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
     const localBounds = {
-      maxRequests: sourceId === "christchurch_airport" ? 4 : ["council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events"].includes(sourceId) ? 3 : ["christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
-      maxRecords: 2,
+      maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
+      maxRecords: sourceId === "mbie_tourism_flows" ? 250
+        : sourceId === "mbie" || sourceId === "mbie_mrte" ? 100
+          : sourceId === "mbie_ivs" ? 10
+            : sourceId === "university_calendars" ? 50
+              : sourceId === "doc_alerts" ? 300
+                : sourceId === "interislander_alerts" ? 20
+                  : sourceId === "ski_seasons_nz" ? 3
+                    : ["queenstown_airport_monthly", "auckland_airport_monthly"].includes(sourceId) ? 13
+                      : sourceId === "mot_airline_performance" ? 100 : 2,
       maxWindowDays: 31,
       maxBytes: 2_000_000,
       concurrency: 1,
-      timeoutMs: sourceId === "council_calendars" ? 120_000 : 10_000,
+      timeoutMs: sourceId === "council_calendars" ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
     } as const;
     const from = requestedFrom;
     const to = localAcceptance
@@ -556,7 +637,7 @@ export class WorkerService {
       ...(localAcceptance ? { signal: AbortSignal.timeout(localBounds.timeoutMs) } : {}),
       ...(collectionState ? { collectionState } : {}),
     };
-    const governanceBefore = sourceGovernanceSnapshot(source);
+    const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
       localAcceptance, sourceId, marketScope,
@@ -565,7 +646,7 @@ export class WorkerService {
       limits: effectiveBounds,
       dryRun: options.dryRun ?? false,
       counters: emptyPublicCollectionCounters(),
-      governanceBefore,
+      configurationBefore,
       schedulesBefore,
     };
     const run = await this.resumeOrCreateBrowserCollectionRun(
@@ -579,12 +660,7 @@ export class WorkerService {
     );
     const counters = emptyPublicCollectionCounters();
     try {
-      if (!localAcceptance && (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis)) {
-        throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
-      }
-      if (!localAcceptance && source.operationalStatus !== "HEALTHY") {
-        throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
-      }
+      if (!localAcceptance) this.assertSourceCollectionAllowed(source);
       const result = await withRedisLock(`source:${sourceId}`, 60_000, async () => {
         const adapterReferences = await adapter.discover({ marketScope, from, to, limit }, context);
         const discovered = sourceId === "christchurch_university_dates"
@@ -608,6 +684,8 @@ export class WorkerService {
               )
             : sourceId === "christchurch_university_dates" && reference === LINCOLN_KEY_DATES_URL
               ? await this.executeLincolnKeyDatesBrowserTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+              : sourceId === "auckland_airport_monthly" || sourceId === "mot_airline_performance"
+                ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : await adapter.fetch(reference, context);
           counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
@@ -643,31 +721,26 @@ export class WorkerService {
         }
         counters.signals = signals.length;
         counters.events = events.length;
+        let derivedEventSignalCount = events.flatMap(eventSignal).length;
         if (!options.dryRun) {
-          const eventOccurrenceIds = new Map<string, string>();
           const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
+          derivedEventSignalCount = 0;
           for (const event of events) {
             const persisted = persistedEvents.get(event.externalId)!;
-            eventOccurrenceIds.set(event.externalId, persisted.eventOccurrence.id);
+            derivedEventSignalCount += eventSignal(persisted.normalisedEvent).length;
             if (persisted.unchanged) counters.unchangedSkipped += 1;
           }
           for (const signal of signals) {
             const persisted = await this.persistNormalisedSignal(signal, source.id, run.id, marketScope);
             if (persisted.unchanged) counters.unchangedSkipped += 1;
           }
-          for (const event of events) {
-            for (const signal of eventSignal(event)) {
-              const persisted = await this.persistNormalisedSignal(signal, source.id, run.id, marketScope, eventOccurrenceIds.get(event.externalId));
-              if (persisted.unchanged) counters.unchangedSkipped += 1;
-            }
-          }
         }
         counters.persisted = events.length + signals.length;
-        return { references: references.length, records: raw.length, events: events.length, signals: signals.length + events.flatMap(eventSignal).length };
+        return { references: references.length, records: raw.length, events: events.length, signals: signals.length + derivedEventSignalCount };
       });
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
-      const scope = { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
+      const scope = { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       const successCount = result.events + result.signals;
       await prisma.$transaction([
         prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount, scope, finishedAt: new Date() } }),
@@ -678,9 +751,9 @@ export class WorkerService {
     } catch (error) {
       if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown public source failure", scope: { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown public source failure", scope: { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
     }
@@ -691,10 +764,20 @@ export class WorkerService {
     localAcceptance: boolean,
   ) {
     if (!localAcceptance) return;
-    if (this.environment.NODE_ENV !== "development") throw new AdapterError("RIGHTS_BLOCKED", "Local source acceptance is available only in development", false);
-    if (this.environment.SCHEDULER_ENABLED) throw new AdapterError("RIGHTS_BLOCKED", "Disable the scheduler before local source acceptance", false);
-    if (!source.enabled) throw new AdapterError("RIGHTS_BLOCKED", `${source.name} must be enabled for local source acceptance`, false);
-    if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("RIGHTS_BLOCKED", `${source.name} does not allow the DEVELOPMENT environment`, false);
+    if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", "Local source acceptance is available only in development", false);
+    if (!source.enabled) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} must be enabled for local source acceptance`, false);
+    if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} does not allow the DEVELOPMENT environment`, false);
+  }
+
+  private assertSourceCollectionAllowed(
+    source: SourceAccessState & { name: string },
+    allowDegradedInProduction = false,
+  ) {
+    const blockers = sourceCollectionBlockers(source, this.environment.NODE_ENV, { allowDegradedInProduction });
+    if (!blockers.length) return;
+    const unavailable = blockers.length === 1 && blockers[0] === "source is not operationally available";
+    if (unavailable) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
+    throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} cannot be collected: ${blockers.join("; ")}`, false);
   }
 
   private async metServiceCollectionState(dataSourceId: string): Promise<NonNullable<AdapterContext["collectionState"]>> {
@@ -762,7 +845,8 @@ export class WorkerService {
         },
       });
     const existingLink = await prisma.marketSignalSourceLink.findUnique({ where: { sourceMarketSignalId: sourceSignal.id }, select: { marketSignalId: true } });
-    const canonicalId = existingLink?.marketSignalId ?? stableId("signal", `${dataSourceId}:${signal.externalId}`);
+    const canonicalId = existingLink?.marketSignalId
+      ?? stableId("signal", eventOccurrenceId ? `event-occurrence:${eventOccurrenceId}` : `${dataSourceId}:${signal.externalId}`);
     const evidence = { title: signal.title, direction: signal.direction, confidence: signal.confidence, evidenceRef: signal.evidenceRef, metadata: signalMetadata } as Prisma.InputJsonValue;
     const canonical = await prisma.marketSignal.upsert({
         where: { id: canonicalId },
@@ -821,19 +905,19 @@ export class WorkerService {
     if (sourceId === TICKETEK_SOURCE_ID && !["new-zealand", "christchurch"].includes(marketScope)) {
       throw new WorkerRequestError("INVALID_MARKET_SCOPE", "Ticketek collection currently supports New Zealand or Christchurch scope only", 422);
     }
+    if (sourceId === DUNEDINNZ_EVENTS_SOURCE_ID && marketScope !== "dunedin") {
+      throw new WorkerRequestError("INVALID_MARKET_SCOPE", "DunedinNZ collection requires the dunedin market scope", 422);
+    }
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
     const localAcceptance = options.localAcceptance === true;
     if (localAcceptance) this.assertLocalAcceptanceAllowed(source, true);
-    else if (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) {
-      throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
-    } else if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) {
-      throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
-    }
+    else this.assertSourceCollectionAllowed(source, true);
 
     const now = new Date();
     const requestedFrom = options.from ?? now;
-    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + (sourceId === TICKETEK_SOURCE_ID ? 90 : 62) * 86_400_000);
-    const maxWindowDays = sourceId === TICKETEK_SOURCE_ID ? 366 : 62;
+    const regionalArgusSource = isRegionalArgusEventSourceId(sourceId);
+    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + (sourceId === TICKETEK_SOURCE_ID || regionalArgusSource ? 90 : 62) * 86_400_000);
+    const maxWindowDays = sourceId === TICKETEK_SOURCE_ID || regionalArgusSource ? 366 : 62;
     const to = new Date(Math.min(requestedTo.getTime(), requestedFrom.getTime() + maxWindowDays * 86_400_000));
     if (to <= requestedFrom) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Collection range must be positive", 422);
     const maxRecords = localAcceptance
@@ -843,7 +927,7 @@ export class WorkerService {
       ? Math.min(options.maxDetails ?? (localAcceptance ? 1 : 3), localAcceptance ? 1 : 10)
       : 0;
     const phase = options.phase ?? "full";
-    const governanceBefore = sourceGovernanceSnapshot(source);
+    const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
       sourceId,
@@ -853,7 +937,7 @@ export class WorkerService {
       dryRun: options.dryRun === true,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
       effective: { from: requestedFrom.toISOString(), to: to.toISOString(), maxRecords, maxDetails },
-      governanceBefore,
+      configurationBefore,
       schedulesBefore,
     };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
@@ -887,6 +971,31 @@ export class WorkerService {
           counters.records = parsed.data.occurrences.length;
           counters.discovered = parsed.data.series.length;
           for (const event of normaliseSportySchoolSportEvents(parsed.data, sourceId, { from: requestedFrom, to }, maxRecords)) events.set(event.externalId, event);
+        } else if (isRegionalArgusEventSourceId(sourceId)) {
+          const definition = regionalArgusSourceDefinition(sourceId);
+          const capture = await this.executePriorityArgusEventTask({
+            sourceId,
+            dataSourceId: source.id,
+            collectionRunId: run.id,
+            connectorId: definition.connectorId,
+            workflowId: "collect_events",
+            url: definition.url,
+            startDate: requestedFrom.toISOString().slice(0, 10),
+            endDate: to.toISOString().slice(0, 10),
+            maxRecords,
+            dryRun: options.dryRun === true,
+            parentJobId: options.jobId,
+          });
+          counters.requests += 1;
+          const parsed = regionalArgusEventExtractionSchema.safeParse(capture.extracted);
+          if (!parsed.success || parsed.data.market !== definition.market) {
+            if (!options.dryRun) await this.markArgusEvidenceParserFailure(run.id, capture.traceId);
+            throw new AdapterError("PARSING_ERROR", `Regional event extractor returned an invalid ${definition.market} payload: ${parsed.success ? "market mismatch" : parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+          }
+          if (!options.dryRun) await this.persistArgusConnectorPayload(source.id, run.id, capture, sourceId, definition.url);
+          counters.records = parsed.data.events.length;
+          counters.discovered = parsed.data.totalEvents;
+          for (const event of normaliseRegionalArgusEvents(parsed.data, sourceId, { from: requestedFrom, to }, maxRecords)) events.set(event.externalId, event);
         } else {
           let listing: ReturnType<typeof ticketekListingExtractionSchema.parse> | null = null;
           if (phase === "discovery" || phase === "full") {
@@ -991,11 +1100,11 @@ export class WorkerService {
         counters.persisted = events.size;
         return { events: events.size, records: counters.records, requests: counters.requests };
       });
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
       const status = counters.failures > 0 ? "PARTIAL" : "SUCCEEDED";
       await prisma.$transaction([
-        prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: result.events, failureCount: counters.failures, errorCode: rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: rateLimited ? "Ticketek detail collection stopped after an access challenge; listing events were retained" : null, scope: { ...initialScope, counters, rateLimited, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } }),
+        prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: result.events, failureCount: counters.failures, errorCode: rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: rateLimited ? "Ticketek detail collection stopped after an access challenge; listing events were retained" : null, scope: { ...initialScope, counters, rateLimited, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } }),
         ...(localAcceptance ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: new Date(), healthStatus: "HEALTHY", operationalStatus: "HEALTHY", errorRate: 0 } })]),
       ]);
       await this.syncCollectionIncidentSafely(run.id);
@@ -1004,9 +1113,9 @@ export class WorkerService {
       if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
       if (!options.dryRun) counters.rawArtifacts = await prisma.rawArtifact.count({ where: { collectionRunId: run.id } });
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Argus event collection failure", scope: { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Argus event collection failure", scope: { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
       if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
@@ -1018,10 +1127,7 @@ export class WorkerService {
     const localAcceptance = options.localAcceptance === true;
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "fx_rates" } });
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
-    if (!localAcceptance && (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis)) {
-      throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
-    }
-    if (!localAcceptance && source.operationalStatus !== "HEALTHY") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
+    if (!localAcceptance) this.assertSourceCollectionAllowed(source);
     const now = new Date();
     const requestedFrom = options.from ?? new Date(now.getTime() - 86_400_000);
     const requestedTo = options.to ?? new Date(now.getTime() + 31 * 86_400_000);
@@ -1029,9 +1135,9 @@ export class WorkerService {
     const to = localAcceptance ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
     if (to <= from) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "RBNZ B1 collection range must be positive", 422);
     const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS, maxBytes: 2_000_000 } as const;
-    const governanceBefore = sourceGovernanceSnapshot(source);
+    const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("fx_rates");
-    const initialScope = { localAcceptance, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
+    const initialScope = { localAcceptance, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
     const counters = { requests: 0, pages: 0, records: 0, signals: 0, unchangedSignalsSkipped: 0, rawArtifacts: 0, failures: 0 };
     try {
@@ -1055,9 +1161,9 @@ export class WorkerService {
         }
         return { references: 1, records: signals.length, events: 0, signals: signals.length };
       });
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("fx_rates");
-      const scope = { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
+      const scope = { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       await prisma.$transaction([
         prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: result.signals, scope, finishedAt: new Date() } }),
         ...(localAcceptance ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: new Date(), healthStatus: "HEALTHY", operationalStatus: "HEALTHY", errorRate: 0 } })]),
@@ -1067,9 +1173,9 @@ export class WorkerService {
     } catch (error) {
       if (error instanceof DeferredJobError) throw error;
       counters.failures += 1;
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("fx_rates");
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown RBNZ B1 collection failure", scope: { ...initialScope, counters, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown RBNZ B1 collection failure", scope: { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
     }
@@ -1100,9 +1206,9 @@ export class WorkerService {
     const maxRecords = localAcceptance ? 2 : Math.min(options.limit ?? 5_000, 5_000);
     const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails * 2 : 0);
     const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
-    const governanceBefore = sourceGovernanceSnapshot(source);
+    const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("ticketmaster");
-    const initialScope = { localAcceptance, developmentBootstrap, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, governanceBefore, schedulesBefore };
+    const initialScope = { localAcceptance, developmentBootstrap, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
     const counters = { requests: 0, pages: 0, discovered: 0, records: 0, targetsUpserted: 0, listingEventsAccepted: 0, listingEventsPersisted: 0, detailRequestsAvoided: 0, detailsFetched: 0, unchangedDetails: 0, eventsPersisted: 0, unchangedEventsSkipped: 0, rawArtifacts: 0, failures: 0 };
     let circuitTransitionApplied = false;
@@ -1292,9 +1398,9 @@ export class WorkerService {
         await prisma.dataSource.update({ where: { id: source.id }, data: { metadata: ticketmasterCircuitSuccessMetadata(metadata, new Date()) as Prisma.InputJsonValue } });
         circuitCooldownUntil = null;
       }
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("ticketmaster");
-      const scope = { ...initialScope, counters, rateLimited: collectionResult.rateLimited, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
+      const scope = { ...initialScope, counters, rateLimited: collectionResult.rateLimited, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       const status = counters.failures ? "PARTIAL" : "SUCCEEDED";
       await prisma.$transaction([
         prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: counters.eventsPersisted + Math.max(0, counters.targetsUpserted - counters.detailRequestsAvoided), failureCount: counters.failures, errorCode: collectionResult.rateLimited ? "RATE_LIMITED" : counters.failures ? "PARTIAL_FAILURE" : null, errorSummary: collectionResult.rateLimited ? "Collection stopped and entered cooldown after a rate limit or persistent access challenge" : null, scope, finishedAt: new Date() } }),
@@ -1313,10 +1419,10 @@ export class WorkerService {
         circuitCooldownUntil = transition.cooldownUntil;
         await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: transition.metadata as Prisma.InputJsonValue } });
       }
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("ticketmaster");
       const retryable = error instanceof AdapterError && (error.code === "RATE_LIMITED" || error.retryable);
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Ticketmaster collection failure", scope: { ...initialScope, counters, ...(retryable && circuitCooldownUntil ? { cooldownUntil: circuitCooldownUntil.toISOString() } : {}), governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: counters.failures, errorCode: error instanceof AdapterError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Ticketmaster collection failure", scope: { ...initialScope, counters, ...(retryable && circuitCooldownUntil ? { cooldownUntil: circuitCooldownUntil.toISOString() } : {}), configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
       if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
@@ -1328,10 +1434,7 @@ export class WorkerService {
       this.assertLocalAcceptanceAllowed(source, true);
       return;
     }
-    if (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) {
-      throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
-    }
-    if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
+    this.assertSourceCollectionAllowed(source, true);
   }
 
   private async collectEventfindaSource(marketScope: string, analysisRequestId?: string, options: CollectSourceOptions = {}) {
@@ -1352,9 +1455,9 @@ export class WorkerService {
       ? Math.min(options.maxDetails ?? options.limit ?? 2, 2)
       : Math.min(options.maxDetails ?? options.limit ?? this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, 500);
     const dryRun = options.dryRun === true;
-    const governanceBefore = sourceGovernanceSnapshot(source);
+    const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("eventfinda");
-    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, governanceBefore, schedulesBefore };
+    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
 
     try {
@@ -1557,9 +1660,9 @@ export class WorkerService {
       }, this.environment.REDIS_URL);
 
       const status = result.failureCount > 0 ? "PARTIAL" : "SUCCEEDED";
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("eventfinda");
-      const finalScope = { ...initialScope, ...result, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
+      const finalScope = { ...initialScope, ...result, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       await prisma.$transaction([
         prisma.collectionRun.update({ where: { id: run.id }, data: { status, successCount: result.eventsPersisted + result.discovered, failureCount: result.failureCount, errorCode: result.rateLimited ? "RATE_LIMITED" : result.failureCount ? "PARTIAL_FAILURE" : null, errorSummary: result.rateLimited ? "Collection stopped and entered cooldown after a rate limit or access challenge" : null, finishedAt: new Date(), scope: finalScope } }),
         ...(guardedDevelopmentRun ? [] : [prisma.dataSource.update({ where: { id: source.id }, data: { lastSuccessAt: result.pagesScanned || result.detailsFetched ? new Date() : source.lastSuccessAt, healthStatus: result.rateLimited ? "DEGRADED" : "HEALTHY", operationalStatus: result.rateLimited ? "DEGRADED" : "HEALTHY", errorRate: result.requests ? result.failureCount / result.requests : 0 } })]),
@@ -1573,14 +1676,14 @@ export class WorkerService {
         const collectionCooldownUntil = eventfindaFailureBackoff(1, true);
         await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...jsonRecord(source.metadata), collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
       }
-      const governanceAfter = sourceGovernanceSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
+      const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("eventfinda");
       const [requestsAttempted, successfulPages, targetsTouched] = await Promise.all([
         prisma.rawArtifact.count({ where: { collectionRunId: run.id, artifactType: "MANIFEST_JSON" } }),
         prisma.rawArtifact.count({ where: { collectionRunId: run.id, artifactType: "HTML", parserFailure: false } }),
         prisma.sourceCrawlTarget.count({ where: { dataSourceId: source.id, lastSeenAt: { gte: now } } }),
       ]);
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Eventfinda collection failure", scope: { ...initialScope, failureProgress: { requestsAttempted, successfulPages, targetsTouched }, governanceAfter, governanceUnchanged: stableHash(governanceBefore) === stableHash(governanceAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: error instanceof AdapterError ? error.code : error instanceof WorkerRequestError ? error.code : "COLLECTION_FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown Eventfinda collection failure", scope: { ...initialScope, failureProgress: { requestsAttempted, successfulPages, targetsTouched }, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) }, finishedAt: new Date() } });
       if (options.jobId) await settleCancelledCollectionRun(options.jobId);
       await this.syncCollectionIncidentSafely(run.id);
       throw error;
@@ -1590,15 +1693,11 @@ export class WorkerService {
   private assertEventfindaSourceAllowed(source: Awaited<ReturnType<typeof prisma.dataSource.findUniqueOrThrow>>, localAcceptance = false, developmentBootstrap = false) {
     if (localAcceptance || developmentBootstrap) {
       const mode = developmentBootstrap ? "development bootstrap" : "local acceptance";
-      if (this.environment.NODE_ENV !== "development") throw new AdapterError("RIGHTS_BLOCKED", developmentBootstrap ? "Eventfinda development bootstrap is restricted to the development environment" : "Local Eventfinda acceptance is restricted to the development environment", false);
-      if (this.environment.SCHEDULER_ENABLED) throw new AdapterError("RIGHTS_BLOCKED", developmentBootstrap ? "Disable the scheduler before Eventfinda development bootstrap" : "Disable the scheduler before local Eventfinda acceptance", false);
-      if (!source.enabled || !source.environments.includes("DEVELOPMENT")) throw new AdapterError("RIGHTS_BLOCKED", `Eventfinda is not enabled for ${mode}`, false);
+      if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", developmentBootstrap ? "Eventfinda development bootstrap is restricted to the development environment" : "Local Eventfinda acceptance is restricted to the development environment", false);
+      if (!source.enabled || !source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `Eventfinda is not enabled for ${mode}`, false);
       return;
     }
-    if (!source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || !source.rightsAllowStorage || !source.rightsAllowDerivedAnalysis) {
-      throw new AdapterError("RIGHTS_BLOCKED", `${source.name} is not approved for collection and derived analysis`, false);
-    }
-    if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
+    this.assertSourceCollectionAllowed(source, true);
   }
 
   private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
@@ -1806,6 +1905,53 @@ export class WorkerService {
     return result;
   }
 
+  private async executeAviationArgusTask(
+    sourceId: "auckland_airport_monthly" | "mot_airline_performance",
+    dataSourceId: string,
+    collectionRunId: string,
+    url: string,
+    context: AdapterContext,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    const config = sourceId === "auckland_airport_monthly"
+      ? { connectorId: "auckland-airport-monthly" as const, workflowId: "collect_monthly_traffic" as const, expectedUrl: AUCKLAND_AIRPORT_MONTHLY_URL }
+      : { connectorId: "mot-airline-performance" as const, workflowId: "collect_monthly_performance" as const, expectedUrl: MOT_AIRLINE_PERFORMANCE_URL };
+    if (url !== config.expectedUrl) throw new AdapterError("INVALID_INPUT", `${sourceId} received an unexpected source URL`, false);
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, config.connectorId, config.workflowId, url)
+      : `${sourceId}-${randomUUID()}`;
+    const input = {
+      traceId,
+      url,
+      connectorId: config.connectorId,
+      workflowId: config.workflowId,
+      startDate: context.collectionRange?.from.toISOString(),
+      endDate: context.collectionRange?.to.toISOString(),
+      maxRecords: context.collectionLimits?.maxRecords,
+    };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, config.connectorId, url);
+    if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", `${sourceId} presented an access challenge; collection stopped without bypassing it`, true);
+    if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? `${sourceId} Argus capture failed`, result.error?.retryable ?? true);
+    const parsed = sourceId === "auckland_airport_monthly"
+      ? aucklandAirportMonthlyExtractionSchema.safeParse(result.extracted)
+      : motAirlinePerformanceExtractionSchema.safeParse(result.extracted);
+    if (!parsed.success) {
+      if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, result.traceId);
+      throw new AdapterError("PARSING_ERROR", `${sourceId} extractor returned an invalid payload: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+    }
+    return sourceId === "auckland_airport_monthly"
+      ? aucklandAirportExtractionRecords(parsed.data as ReturnType<typeof aucklandAirportMonthlyExtractionSchema.parse>)
+      : motAirlinePerformanceExtractionRecords(parsed.data as ReturnType<typeof motAirlinePerformanceExtractionSchema.parse>);
+  }
+
   private async executeLincolnKeyDatesBrowserTask(
     dataSourceId: string,
     collectionRunId: string,
@@ -1864,7 +2010,7 @@ export class WorkerService {
     sourceId: ArgusEventSourceId;
     dataSourceId: string;
     collectionRunId: string;
-    connectorId: "sporty-school-sport-public" | "ticketek-public";
+    connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public";
     workflowId: "collect_events" | "collect_listing" | "collect_detail";
     url: string;
     entryUrl?: string;
@@ -1996,7 +2142,7 @@ export class WorkerService {
           prisma.dataSource.update({ where: { id: source.id }, data: { operationalStatus: health.status, healthStatus: health.status === "HEALTHY" ? "HEALTHY" : health.status === "DOWN" || health.status === "BLOCKED" ? "DOWN" : "DEGRADED", healthSummary: { message: health.message, checkedAt: health.checkedAt, mode: health.mode }, lastSuccessAt: health.status === "HEALTHY" ? health.checkedAt : source.lastSuccessAt } }),
         ]);
       }
-      results.push({ sourceId: key, ...health, rights: adapter.rightsMetadata() });
+      results.push({ sourceId: key, ...health });
     }
     return results;
   }
@@ -2050,46 +2196,26 @@ export class WorkerService {
     });
   }
 
-  async approveSource(sourceId: string) {
-    return prisma.dataSource.update({ where: { key: sourceId }, data: { internalApprovalStatus: "APPROVED", lifecycle: "PILOT", approvedBy: "Harold", approvedAt: new Date(), lastReviewedAt: new Date() } });
-  }
-
-  async activateSource(sourceId: string, input: ActivateSourceRequest) {
+  async activateSource(sourceId: string) {
     const adapter = this.publicAdapters[sourceId];
     if (!adapter) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No public adapter exists for ${sourceId}`, 404);
-    const approvedBy = input.approvedBy.trim();
-    const licenseBasis = input.licenseBasis.trim();
-    if (approvedBy.length < 2) throw new WorkerRequestError("INVALID_APPROVER", "An approving operator is required", 422);
-    if (licenseBasis.length < 10) throw new WorkerRequestError("INVALID_LICENSE_BASIS", "A specific source usage-rights basis is required", 422);
     const health = await adapter.healthCheck(this.publicAdapterContext());
     if (health.status !== "HEALTHY") throw new WorkerRequestError("SOURCE_UNAVAILABLE", `Source cannot be activated: ${health.message}`, 503);
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
-    const allowDisplay = input.allowDisplay === true;
     return prisma.$transaction(async (transaction) => {
       await transaction.sourceHealthCheck.create({ data: { dataSourceId: source.id, status: health.status, message: health.message, latencyMs: health.latencyMs, metadata: { mode: health.mode, activationCheck: true } } });
       return transaction.dataSource.update({
         where: { id: source.id },
         data: {
           lifecycle: "PILOT",
-          internalApprovalStatus: "APPROVED",
-          legalRightsStatus: "ALLOWED",
           operationalStatus: "HEALTHY",
           status: "PILOT",
           healthStatus: "HEALTHY",
           enabled: true,
-          allowedUsage: ["COLLECTION", "NORMALISATION", "DERIVED_ANALYSIS", ...(allowDisplay ? ["ATTRIBUTED_DISPLAY"] : [])],
-          displayPermission: allowDisplay,
-          derivedAnalysisPermission: true,
-          rightsAllowStorage: true,
-          rightsAllowDerivedAnalysis: true,
-          rightsAllowDisplay: allowDisplay,
-          licenseBasis,
-          approvedBy,
-          approvedAt: new Date(),
           lastReviewedAt: new Date(),
           lastSuccessAt: health.checkedAt,
           healthSummary: { message: health.message, checkedAt: health.checkedAt, mode: health.mode, activationCheck: true },
-          metadata: { ...jsonRecord(source.metadata), activation: { approvedBy, activatedAt: new Date().toISOString(), allowDisplay } },
+          metadata: { ...jsonRecord(source.metadata), activation: { activatedAt: new Date().toISOString(), environment: this.environment.NODE_ENV } },
         },
       });
     });
@@ -2115,25 +2241,65 @@ export class WorkerService {
   }
 
   async suspendSource(sourceId: string) {
-    return prisma.dataSource.update({ where: { key: sourceId }, data: { internalApprovalStatus: "SUSPENDED", lifecycle: "SUSPENDED", enabled: false, lastReviewedAt: new Date() } });
+    return prisma.dataSource.update({ where: { key: sourceId }, data: { lifecycle: "SUSPENDED", enabled: false, lastReviewedAt: new Date() } });
   }
 
-  async setEventfindaSchedules(enabled: boolean) {
-    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
-    if (enabled) this.assertEventfindaSourceAllowed(source);
-    const keys = ["eventfinda-discovery-daily", "eventfinda-details-hourly"];
-    const result = await prisma.scheduleDefinition.updateMany({ where: { key: { in: keys } }, data: { enabled, nextRunAt: enabled ? new Date() : null } });
-    if (result.count !== keys.length) throw new WorkerRequestError("SCHEDULES_MISSING", "Run the database seed before configuring Eventfinda schedules", 409);
-    return prisma.scheduleDefinition.findMany({ where: { key: { in: keys } }, orderBy: { key: "asc" } });
+  async sourceSchedulePlan(sourceIds: string[]) {
+    const requested = [...new Set(sourceIds.map((sourceId) => sourceId.trim()).filter(Boolean))].sort();
+    if (!requested.length) throw new WorkerRequestError("SOURCES_REQUIRED", "At least one source is required", 422);
+    const [sources, allSchedules] = await Promise.all([
+      prisma.dataSource.findMany({ where: { key: { in: requested } }, orderBy: { key: "asc" } }),
+      prisma.scheduleDefinition.findMany({ orderBy: { key: "asc" } }),
+    ]);
+    const bySource = new Map(sources.map((source) => [source.key, source]));
+    const entries = requested.map((sourceId) => {
+      const source = bySource.get(sourceId);
+      const schedules = allSchedules.filter((schedule) => scheduleSourceId(schedule.payload) === sourceId);
+      const blockers = source
+        ? sourceSchedulingBlockers(source, Boolean(this.publicAdapters[sourceId]), this.environment.NODE_ENV)
+        : ["source does not exist"];
+      if (!schedules.length) blockers.push("no source-bound schedule is registered");
+      return { sourceId, schedules: schedules.map((schedule) => ({ key: schedule.key, enabled: schedule.enabled, cronExpression: schedule.cronExpression })), blockers };
+    });
+    return { ready: entries.every((entry) => entry.blockers.length === 0), sources: entries, mutationPerformed: false };
   }
 
-  async setTicketmasterSchedules(enabled: boolean) {
-    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "ticketmaster" } });
-    if (enabled) this.assertTicketmasterSourceAllowed(source, false);
-    const keys = ["ticketmaster-discovery-daily", "ticketmaster-details-six-hour"];
-    const result = await prisma.scheduleDefinition.updateMany({ where: { key: { in: keys } }, data: { enabled, nextRunAt: enabled ? new Date() : null } });
-    if (result.count !== keys.length) throw new WorkerRequestError("SCHEDULES_MISSING", "Run the database seed before configuring Ticketmaster schedules", 409);
-    return prisma.scheduleDefinition.findMany({ where: { key: { in: keys } }, orderBy: { key: "asc" } });
+  async configureSourceSchedules(sourceIds: string[], input: ConfigureSourceSchedulesRequest) {
+    const requested = [...new Set(sourceIds.map((sourceId) => sourceId.trim()).filter(Boolean))].sort();
+    const reason = input.reason.trim();
+    if (!requested.length) throw new WorkerRequestError("SOURCES_REQUIRED", "At least one source is required", 422);
+    if (reason.length < 8) throw new WorkerRequestError("INVALID_REASON", "A reason of at least 8 characters is required", 422);
+    return prisma.$transaction(async (transaction) => {
+      const [sources, allSchedules] = await Promise.all([
+        transaction.dataSource.findMany({ where: { key: { in: requested } }, orderBy: { key: "asc" } }),
+        transaction.scheduleDefinition.findMany({ orderBy: { key: "asc" } }),
+      ]);
+      const found = new Set(sources.map((source) => source.key));
+      const missing = requested.filter((sourceId) => !found.has(sourceId));
+      if (missing.length) throw new WorkerRequestError("SOURCE_NOT_FOUND", `Unknown sources: ${missing.join(", ")}`, 404);
+      const schedules = allSchedules.filter((schedule) => requested.includes(scheduleSourceId(schedule.payload) ?? ""));
+      const scheduledSources = new Set(schedules.map((schedule) => scheduleSourceId(schedule.payload)).filter((sourceId): sourceId is string => Boolean(sourceId)));
+      const withoutSchedules = requested.filter((sourceId) => !scheduledSources.has(sourceId));
+      if (withoutSchedules.length) throw new WorkerRequestError("SCHEDULES_MISSING", `No source-bound schedules for: ${withoutSchedules.join(", ")}`, 409);
+      if (input.enabled) {
+        const blocked = sources.flatMap((source) => sourceSchedulingBlockers(source, Boolean(this.publicAdapters[source.key]), this.environment.NODE_ENV).map((blocker) => `${source.key}: ${blocker}`));
+        if (blocked.length) throw new WorkerRequestError("SOURCE_UNAVAILABLE", `Cannot enable schedules: ${blocked.join("; ")}`, 409);
+      }
+      const scheduleIds = schedules.map((schedule) => schedule.id);
+      await transaction.scheduleDefinition.updateMany({
+        where: { id: { in: scheduleIds } },
+        data: { enabled: input.enabled, nextRunAt: input.enabled ? new Date() : null },
+      });
+      await transaction.auditEvent.create({ data: {
+        eventType: input.enabled ? "source_schedules_enabled" : "source_schedules_disabled",
+        entityType: "CollectionRuntime",
+        entityId: requested.join(","),
+        payload: { sources: requested, schedules: schedules.map((schedule) => schedule.key), reason },
+        eventHash: hashPersonalIdentifier(`source-schedules:${input.enabled}:${requested.join(",")}:${randomUUID()}`, this.environment.ACCESS_KEY_SECRET),
+      } });
+      const updated = await transaction.scheduleDefinition.findMany({ where: { id: { in: scheduleIds } }, orderBy: { key: "asc" } });
+      return { enabled: input.enabled, sources: requested, schedules: updated, mutationPerformed: true };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async enqueueOperationalJob(type: "CATALOG_DISCOVERY" | "MARKET_COVERAGE_COLLECTION" | "ANCHOR_PANEL_COLLECTION" | "ROTATING_PANEL_COLLECTION", payload: Prisma.InputJsonValue = {}) {
@@ -2203,7 +2369,7 @@ export class WorkerService {
       const slug = input.toLowerCase().includes("multiple") || input.toLowerCase().includes("hotel") || input.toLowerCase().includes("motel") ? `fixture-multi-hotel-${stableId("input", input).slice(-8)}` : `fixture-property-${stableId("input", input).slice(-8)}`;
       resolvedInput = `https://www.booking.com/hotel/nz/${slug}.html`;
     }
-    if (!adapter) throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Property/address discovery requires an approved configured source", 503);
+    if (!adapter) throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Property/address discovery requires a configured source", 503);
     const context: AdapterContext = { mode: fixture ? "fixture" : "live", correlationId, locale, currency: "NZD" };
     let resolved: ResolvedOtaListing;
     try { resolved = await adapter.resolveListing(resolvedInput, context); }
@@ -2231,7 +2397,7 @@ export class WorkerService {
       const externalId = resolved.units.length === 1 ? resolved.sourceListingId : `${resolved.sourceListingId}:${unit.externalId}`;
       const persistedListing = await prisma.listing.upsert({
         where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } },
-        create: { propertyId: property.id, unitId: persistedUnit.id, dataSourceId: source.id, platform: resolved.sourceId.toUpperCase(), externalId, sourceListingId: resolved.sourceListingId, canonicalUrl: resolved.canonicalUrl, rawUrl: input, url: resolved.canonicalUrl, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, legalRightsStatus: source.legalRightsStatus, operationalStatus: resolved.operationalStatus, metadata: { adapterKey: adapter.metadata.adapterKey, fixture }, isDemo: fixture },
+        create: { propertyId: property.id, unitId: persistedUnit.id, dataSourceId: source.id, platform: resolved.sourceId.toUpperCase(), externalId, sourceListingId: resolved.sourceListingId, canonicalUrl: resolved.canonicalUrl, rawUrl: input, url: resolved.canonicalUrl, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, operationalStatus: resolved.operationalStatus, metadata: { adapterKey: adapter.metadata.adapterKey, fixture }, isDemo: fixture },
         update: { propertyId: property.id, unitId: persistedUnit.id, canonicalUrl: resolved.canonicalUrl, rawUrl: input, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, operationalStatus: resolved.operationalStatus },
       });
       units.push(persistedUnit);
@@ -2270,7 +2436,7 @@ export class WorkerService {
   }
 
   private async requireReadyIdentity(id: string) {
-    const request = await prisma.workerAnalysisRequest.findUniqueOrThrow({ where: { id }, include: { queryPlans: { orderBy: { version: "desc" }, take: 1 } } });
+    const request = await prisma.workerAnalysisRequest.findUniqueOrThrow({ where: { id }, include: { property: true, queryPlans: { orderBy: { version: "desc" }, take: 1 } } });
     if (!request.propertyId || !request.sellableUnitId || !request.targetListingId) throw new WorkerRequestError("UNIT_UNCONFIRMED", "Property, Sellable Unit and OTA Listing must be confirmed", 409);
     if (request.status === "CANCELLED") throw new WorkerRequestError("CANCELLED", "The analysis was cancelled", 409);
     return request;
@@ -2290,12 +2456,12 @@ export class WorkerService {
 
   private async requireFixtureSource() {
     const source = await prisma.dataSource.findUnique({ where: { key: fixtureSourceKey } });
-    if (!source || !source.enabled || source.internalApprovalStatus !== "APPROVED" || source.legalRightsStatus !== "ALLOWED" || source.operationalStatus !== "HEALTHY") throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Approved development fixture source is unavailable", 503);
+    if (!source || !source.enabled || source.operationalStatus !== "HEALTHY") throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Development fixture source is unavailable", 503);
     return source;
   }
 
   private async ensureCollectionProfile(request: WorkerAnalysisRequest, dataSourceId: string) {
-    return prisma.collectionProfile.upsert({ where: { key: collectionProfileKey }, create: { key: collectionProfileKey, sellableUnitId: request.sellableUnitId, dataSourceId, ipRegion: "NZ", locale: request.locale === "zh" ? "zh-NZ" : "en-NZ", currency: "NZD", deviceType: "DESKTOP", loggedInState: "LOGGED_OUT", memberState: "NON_MEMBER", mobilePriceContext: "STANDARD", publicRateContext: "APPROVED_DEVELOPMENT_FIXTURE", browserProfileVersion: "fixture-browser-v1" }, update: {} });
+    return prisma.collectionProfile.upsert({ where: { key: collectionProfileKey }, create: { key: collectionProfileKey, sellableUnitId: request.sellableUnitId, dataSourceId, ipRegion: "NZ", locale: request.locale === "zh" ? "zh-NZ" : "en-NZ", currency: "NZD", deviceType: "DESKTOP", loggedInState: "LOGGED_OUT", memberState: "NON_MEMBER", mobilePriceContext: "STANDARD", publicRateContext: "DEVELOPMENT_FIXTURE", browserProfileVersion: "fixture-browser-v1" }, update: {} });
   }
 
   private async ensureFixtureCompetitors(targetUnitId: string, count = 8) {
@@ -2309,7 +2475,7 @@ export class WorkerService {
       const unit = await prisma.sellableUnit.upsert({ where: { id: unitId }, create: { id: unitId, propertyId: property.id, canonicalName: `Fixture Comparable Unit ${index}`, officialName: `Fixture Comparable Unit ${index}`, capacity: target.capacity, bedrooms: target.bedrooms, bathrooms: target.bathrooms, bedTypes: inputJson(target.bedTypes, []), bedConfiguration: inputJson(target.bedConfiguration ?? target.bedTypes, []), amenities: inputJson(target.amenities, []), accessibilityAttributes: inputJson(target.accessibilityAttributes, []), unitType: target.unitType, entireOrShared: target.entireOrShared, status: "ACTIVE", version: 1, isDemo: true }, update: {} });
       const externalId = `worker-fixture-comparable-${stableId("x", targetUnitId).slice(-8)}-${index}`;
       const url = `https://example.invalid/worker-fixture/${externalId}`;
-      const listing = await prisma.listing.upsert({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } }, create: { propertyId: property.id, unitId: unit.id, dataSourceId: source.id, platform: "FIXTURE", externalId, sourceListingId: externalId, canonicalUrl: url, rawUrl: url, url, platformUnitName: unit.officialName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: 1, legalRightsStatus: "ALLOWED", operationalStatus: "HEALTHY", metadata: { fixture: true, targetUnitId }, isDemo: true }, update: {} });
+      const listing = await prisma.listing.upsert({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } }, create: { propertyId: property.id, unitId: unit.id, dataSourceId: source.id, platform: "FIXTURE", externalId, sourceListingId: externalId, canonicalUrl: url, rawUrl: url, url, platformUnitName: unit.officialName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: 1, operationalStatus: "HEALTHY", metadata: { fixture: true, targetUnitId }, isDemo: true }, update: {} });
       await prisma.competitorRelationship.upsert({ where: { targetUnitId_competitorUnitId_version: { targetUnitId, competitorUnitId: unit.id, version: 1 } }, create: { targetUnitId, competitorUnitId: unit.id, role: "CORE", version: 1, reasonCode: "FIXTURE_SAME_MICRO_MARKET", suggestedBy: "DETERMINISTIC_COMPARABILITY_V1", isDemo: true }, update: {} });
       await prisma.panelMembership.upsert({ where: { sellableUnitId_marketKey: { sellableUnitId: unit.id, marketKey: "christchurch" } }, create: { sellableUnitId: unit.id, marketKey: "christchurch", membershipType: index <= 6 ? "ANCHOR" : "ROTATING", weight: 1, coverage24h: 1, coverage72h: 1, active: true, lastSuccessfulAt: new Date() }, update: { active: true } });
       result.push({ property, unit, listing });
@@ -2331,20 +2497,25 @@ export class WorkerService {
 
   private async collectPublicSignals(request: WorkerAnalysisRequest) {
     await this.setStatus(request, "COLLECTING_MARKET_SIGNALS");
-    for (const sourceId of ["public_holidays_nz", "school_holidays_nz", "eventfinda"]) {
-      const marketScope = sourceId === "eventfinda" ? "new-zealand" : "christchurch";
-      try { await this.collectSource(sourceId, marketScope, request.id); } catch { /* A public signal source cannot turn a successful rate collection into sold out. */ }
+    const property = request.propertyId ? await prisma.property.findUnique({ where: { id: request.propertyId } }) : null;
+    const marketKey = property ? resolveNzMarketKey(property) : null;
+    const plan = marketKey ? publicSignalCollectionPlanForMarket(marketKey) : [];
+    for (const target of plan) {
+      try { await this.collectSource(target.sourceId, target.marketScope, request.id); } catch { /* Public signals corroborate price evidence; a source failure cannot invent sold-out inventory. */ }
     }
   }
 
-  private async publishFormalResult(request: WorkerAnalysisRequest, marketSnapshotId: string, priceAnalysisId: string, confidence: "HIGH" | "MEDIUM" | "LOW", keyDates: Array<{ date: string; target: number; median: number; gap: number; confidence: string }>, jobId: string) {
+  private async publishFormalResult(request: WorkerAnalysisRequest, marketSnapshotId: string, priceAnalysisId: string, confidence: "HIGH" | "MEDIUM" | "LOW", keyDates: Array<{ date: string; target: number; median: number; gap: number; confidence: string; marketSignalIds: string[]; hasMajorEvent: boolean }>, jobId: string) {
     if (!request.priceCheckId || !request.emailHash || !request.encryptedEmail) throw new Error("Formal analysis is missing PriceCheck or email delivery identity");
     const current = await prisma.resultVersion.findFirst({ where: { priceCheckId: request.priceCheckId, status: "PUBLISHED" }, orderBy: { version: "desc" } });
     const latest = await prisma.resultVersion.aggregate({ where: { priceCheckId: request.priceCheckId }, _max: { version: true } });
-    const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, payload: { priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
+    const snapshot = await prisma.marketSnapshot.findUniqueOrThrow({ where: { id: marketSnapshotId }, select: { marketScope: true } });
+    const publicSignalCoverage = jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage);
+    const publicSignalIncomplete = publicSignalCoverage.complete === false;
+    const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, payload: { priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length, publicSignalCoverage }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
     if (current) await prisma.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
     for (const [index, item] of keyDates.entries()) {
-      await prisma.insight.create({ data: { id: `${result.id}:insight:${index + 1}`, resultVersionId: result.id, stayDate: new Date(`${item.date}T00:00:00.000Z`), risk: item.gap > item.median * 0.15 ? "REVIEW" : "WATCH", reasonCodes: item.gap > 0 ? ["BELOW_COMPARABLE_RANGE"] : [], marketSignalIds: [], targetPriceMinor: item.target, competitorMedianMinor: item.median, competitorLowMinor: Math.round(item.median * 0.9), competitorHighMinor: Math.round(item.median * 1.1), recommendedAction: item.gap > 0 ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidence: item.confidence as "HIGH" | "MEDIUM" | "LOW", limitations: request.isFixture ? ["Development fixture data. Not real market data."] : [], explanation: { whatChanged: "The observed public target rate is compared with the unique CORE cohort.", whyItMatters: "This date may warrant a rate review; this is not a guaranteed optimal price.", suggestedAction: item.gap > 0 ? "Review the public rate and operational context before changing price." : "Monitor this date." } } });
+      await prisma.insight.create({ data: { id: `${result.id}:insight:${index + 1}`, resultVersionId: result.id, stayDate: new Date(`${item.date}T00:00:00.000Z`), risk: item.gap > item.median * 0.15 ? "REVIEW" : "WATCH", reasonCodes: item.gap > 0 ? ["BELOW_COMPARABLE_RANGE", ...(item.hasMajorEvent ? ["MAJOR_LOCAL_EVENT"] : [])] : [], marketSignalIds: item.marketSignalIds, targetPriceMinor: item.target, competitorMedianMinor: item.median, competitorLowMinor: Math.round(item.median * 0.9), competitorHighMinor: Math.round(item.median * 1.1), recommendedAction: item.gap > 0 ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidence: item.confidence as "HIGH" | "MEDIUM" | "LOW", limitations: [...(request.isFixture ? ["Development fixture data. Not real market data."] : []), ...(publicSignalIncomplete ? ["PUBLIC_SIGNAL_COVERAGE_INCOMPLETE"] : [])], explanation: { whatChanged: "The observed public target rate is compared with the unique CORE cohort.", whyItMatters: item.hasMajorEvent ? "A promoted local event corroborates the price comparison for this date; it does not prove causation by itself." : "This date may warrant a rate review; this is not a guaranteed optimal price.", suggestedAction: item.gap > 0 ? "Review the public rate and operational context before changing price." : "Monitor this date." } } });
     }
     await prisma.$transaction([
       prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { status: "COMPLETED", completedAt: new Date() } }),
@@ -2420,7 +2591,9 @@ export class WorkerService {
   }
 
   async persistNormalisedEvent(event: PublicEvent, dataSourceId: string, collectionRunId: string) {
-    return this.persistNormalisedEventCached(event, event, dataSourceId, collectionRunId, createEventPersistenceCache());
+    const persisted = await this.persistNormalisedEventCached(event, event, dataSourceId, collectionRunId, createEventPersistenceCache());
+    await this.persistEventSignals(persisted.normalisedEvent, dataSourceId, collectionRunId, persisted.eventOccurrence.id);
+    return persisted;
   }
 
   async persistNormalisedEvents(events: PublicEvent[], dataSourceId: string, collectionRunId: string) {
@@ -2433,9 +2606,32 @@ export class WorkerService {
     }
     for (const occurrences of series.values()) {
       const seriesEvent = eventSeriesRepresentative(occurrences);
-      for (const event of occurrences) persisted.set(event.externalId, await this.persistNormalisedEventCached(event, seriesEvent, dataSourceId, collectionRunId, cache));
+      for (const event of occurrences) {
+        const item = await this.persistNormalisedEventCached(event, seriesEvent, dataSourceId, collectionRunId, cache);
+        await this.persistEventSignals(item.normalisedEvent, dataSourceId, collectionRunId, item.eventOccurrence.id);
+        persisted.set(event.externalId, item);
+      }
     }
     return persisted;
+  }
+
+  private async persistEventSignals(event: PublicEvent, dataSourceId: string, collectionRunId: string, eventOccurrenceId: string) {
+    const signals = eventSignal(event);
+    for (const signal of signals) {
+      await this.persistNormalisedSignal(signal, dataSourceId, collectionRunId, signal.marketKey ?? "new-zealand", eventOccurrenceId);
+    }
+    if (!signals.length) {
+      const existing = await prisma.sourceMarketSignal.findUnique({
+        where: { dataSourceId_externalId: { dataSourceId, externalId: `event:${event.externalId}` } },
+        include: { canonicalLink: true },
+      });
+      if (existing?.canonicalLink) {
+        await prisma.$transaction([
+          prisma.sourceMarketSignal.update({ where: { id: existing.id }, data: { lastCollectionRunId: collectionRunId, lastSeenAt: new Date() } }),
+          prisma.marketSignal.update({ where: { id: existing.canonicalLink.marketSignalId }, data: { status: "RETRACTED" } }),
+        ]);
+      }
+    }
   }
 
   private async persistNormalisedEventCached(event: PublicEvent, seriesEvent: PublicEvent, dataSourceId: string, collectionRunId: string, cache: EventPersistenceCache) {
@@ -2559,10 +2755,18 @@ export class WorkerService {
         prisma.canonicalEvent.update({ where: { id: existingCanonicalLink.eventOccurrence.canonicalEventId }, data: { lastSeenAt: seenAt } }),
       ]);
       if (venueCanonicalKey && eventOccurrence.venueId) cache.venues.set(venueCanonicalKey, eventOccurrence.venueId);
-      return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence, unchanged: true };
+      const reconciled = await this.reconcileCanonicalEventImpact(eventOccurrence.id);
+      return {
+        sourceEvent,
+        sourceOccurrence,
+        canonicalEvent,
+        eventOccurrence: reconciled,
+        normalisedEvent: withEventImpact(event, reconciled),
+        unchanged: true,
+      };
     }
 
-    return prisma.$transaction(async (tx) => {
+    const persisted = await prisma.$transaction(async (tx) => {
       const seriesCacheKey = `${dataSourceId}:${sourceIdentity.externalId}`;
       const cachedSeries = cache.series.get(seriesCacheKey);
       const sourceEvent = cachedSeries
@@ -2630,6 +2834,35 @@ export class WorkerService {
 
       return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence, unchanged: false };
     });
+    const reconciled = await this.reconcileCanonicalEventImpact(persisted.eventOccurrence.id);
+    return {
+      ...persisted,
+      eventOccurrence: reconciled,
+      normalisedEvent: withEventImpact(event, reconciled),
+    };
+  }
+
+  private async reconcileCanonicalEventImpact(eventOccurrenceId: string) {
+    const occurrence = await prisma.eventOccurrence.findUniqueOrThrow({
+      where: { id: eventOccurrenceId },
+      include: { sourceLinks: { include: { sourceEventOccurrence: { select: { impactEvidence: true } } } } },
+    });
+    const evidence = mergeEventImpactEvidence(occurrence.sourceLinks.map((link) => link.sourceEventOccurrence.impactEvidence));
+    const impact = evaluateEventImpactEvidence(evidence);
+    return prisma.eventOccurrence.update({
+      where: { id: eventOccurrenceId },
+      data: {
+        impactStatus: impact.status,
+        impactScore: impact.score,
+        impactConfidence: impact.confidence,
+        impactEvidence: impact.evidence as Prisma.InputJsonValue,
+        metadata: {
+          ...jsonRecord(occurrence.metadata),
+          impactPolicyVersion: impact.evidence.policyVersion,
+          impactEvidenceSourceCount: occurrence.sourceLinks.length,
+        },
+      },
+    });
   }
 
   private fixtureEnabled() {
@@ -2673,6 +2906,19 @@ function impactEvidenceForHash(value: Record<string, unknown>) {
   return { ...value, ...(items ? { items } : {}) };
 }
 
+function withEventImpact(
+  event: PublicEvent,
+  impact: { impactStatus: string; impactScore: number | null; impactConfidence: number | null; impactEvidence: Prisma.JsonValue },
+): PublicEvent {
+  return {
+    ...event,
+    impactStatus: impact.impactStatus === "PROMOTED" ? "PROMOTED" : "PENDING_EVIDENCE",
+    impactScore: impact.impactScore,
+    impactConfidence: impact.impactConfidence,
+    impactEvidence: jsonRecord(impact.impactEvidence),
+  };
+}
+
 function defaultPublicRecordLimit(sourceId: string) {
   return sourceId === "geonet" ? 100 : 5_000;
 }
@@ -2706,31 +2952,15 @@ function uniqueByExternalId<T extends { externalId: string }>(items: T[], counte
   return [...unique.values()];
 }
 
-function sourceGovernanceSnapshot(source: {
-  internalApprovalStatus: string;
-  legalRightsStatus: string;
+function sourceConfigurationSnapshot(source: {
   lifecycle: string;
   operationalStatus: string;
   healthStatus: string;
-  allowedUsage: Prisma.JsonValue;
-  displayPermission: boolean;
-  derivedAnalysisPermission: boolean;
-  rightsAllowStorage: boolean;
-  rightsAllowDerivedAnalysis: boolean;
-  rightsAllowDisplay: boolean;
 }) {
   return {
-    internalApprovalStatus: source.internalApprovalStatus,
-    legalRightsStatus: source.legalRightsStatus,
     lifecycle: source.lifecycle,
     operationalStatus: source.operationalStatus,
     healthStatus: source.healthStatus,
-    allowedUsage: source.allowedUsage,
-    displayPermission: source.displayPermission,
-    derivedAnalysisPermission: source.derivedAnalysisPermission,
-    rightsAllowStorage: source.rightsAllowStorage,
-    rightsAllowDerivedAnalysis: source.rightsAllowDerivedAnalysis,
-    rightsAllowDisplay: source.rightsAllowDisplay,
   };
 }
 
@@ -2847,6 +3077,15 @@ function jsonRecord(value: Prisma.JsonValue | undefined | null): Record<string, 
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Prisma.JsonValue> : {};
 }
 
+function scheduleSourceId(payload: Prisma.JsonValue): string | null {
+  const value = jsonRecord(payload).sourceId;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function jsonNumber(value: Prisma.JsonValue | undefined | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function integerMetadata(value: Prisma.JsonValue | undefined | null, key: string) {
   const candidate = jsonRecord(value)[key];
   return typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 0 ? candidate : 0;
@@ -2888,13 +3127,15 @@ function orderPersistedDetailTargets<T extends { url: string }>(urls: string[], 
   return ordered;
 }
 
-function eventSignal(event: PublicEvent) {
+export function eventSignal(event: PublicEvent) {
   if (event.impactStatus !== "PROMOTED" || event.impactScore === null || event.impactScore < 0.7) return [];
   const region = event.city ?? event.region ?? "New Zealand";
+  const resolvedMarketKey = resolveNzMarketKey({ city: event.city, territorialAuthority: event.territorialAuthority, region: event.region });
+  if (!resolvedMarketKey) return [];
   return [{
     sourceId: event.sourceId,
     externalId: `event:${event.externalId}`,
-    marketKey: marketKey(region),
+    marketKey: resolvedMarketKey,
     type: "MAJOR_EVENT",
     title: event.title,
     region,
@@ -2907,8 +3148,138 @@ function eventSignal(event: PublicEvent) {
   }];
 }
 
-function marketKey(value: string) {
-  return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "new-zealand";
+type SnapshotMarketSignal = {
+  id: string;
+  dataSourceId?: string | null;
+  type: string;
+  region: string;
+  startsAt?: Date;
+  endsAt?: Date;
+  evidence: Prisma.JsonValue;
+};
+
+type PublicSignalCollectionRunEvidence = {
+  sourceId: string;
+  status: string;
+  errorCode?: string | null;
+};
+
+export function summarisePublicSignalCollectionCoverage(
+  plan: ReadonlyArray<{ sourceId: string; marketScope: string; layer: string }>,
+  runs: readonly PublicSignalCollectionRunEvidence[],
+) {
+  const latestBySource = new Map<string, PublicSignalCollectionRunEvidence>();
+  for (const run of runs) latestBySource.set(run.sourceId, run);
+  const succeededSourceIds: string[] = [];
+  const failedSourceIds: string[] = [];
+  const missingSourceIds: string[] = [];
+  const layers = new Map<string, { required: number; succeeded: number }>();
+  for (const target of plan) {
+    const layer = layers.get(target.layer) ?? { required: 0, succeeded: 0 };
+    layer.required += 1;
+    const run = latestBySource.get(target.sourceId);
+    if (run?.status === "SUCCEEDED") {
+      succeededSourceIds.push(target.sourceId);
+      layer.succeeded += 1;
+    } else if (run) failedSourceIds.push(target.sourceId);
+    else missingSourceIds.push(target.sourceId);
+    layers.set(target.layer, layer);
+  }
+  const requiredSourceCount = plan.length;
+  return {
+    policyVersion: "public-signal-analysis-coverage-v1",
+    requiredSourceCount,
+    succeededSourceCount: succeededSourceIds.length,
+    coverage: requiredSourceCount ? succeededSourceIds.length / requiredSourceCount : 0,
+    complete: requiredSourceCount > 0 && succeededSourceIds.length === requiredSourceCount,
+    succeededSourceIds,
+    failedSourceIds,
+    missingSourceIds,
+    failed: failedSourceIds.map((sourceId) => ({ sourceId, errorCode: latestBySource.get(sourceId)?.errorCode ?? "UNKNOWN" })),
+    layers: Object.fromEntries([...layers]),
+  };
+}
+
+export function selectPricingMarketSignals(signals: SnapshotMarketSignal[], stayDate: Date) {
+  const overlapping = signals.filter((signal) => !signal.startsAt || !signal.endsAt || (signal.startsAt < new Date(stayDate.getTime() + 86_400_000) && signal.endsAt > stayDate));
+  const latestContext = new Map<string, SnapshotMarketSignal>();
+  for (const signal of signals) {
+    if (signal.type !== "TOURISM_DEMAND" || !signal.endsAt || signal.endsAt > stayDate || overlapping.some((item) => item.id === signal.id)) continue;
+    const evidence = jsonRecord(signal.evidence);
+    const metadata = jsonRecord(evidence.metadata);
+    if (metadata.temporalUse === "DETERMINISTIC_SEASON_WINDOW") continue;
+    const contextMaxAgeDays = jsonNumber(metadata.contextMaxAgeDays) ?? 120;
+    if (stayDate.getTime() - signal.endsAt.getTime() > contextMaxAgeDays * 86_400_000) continue;
+    const contextSeriesKey = typeof metadata.contextSeriesKey === "string"
+      ? metadata.contextSeriesKey
+      : typeof evidence.title === "string" ? evidence.title : signal.type;
+    const key = [signal.dataSourceId ?? "unknown", signal.region, contextSeriesKey].join("|");
+    const existing = latestContext.get(key);
+    if (!existing?.endsAt || signal.endsAt > existing.endsAt) latestContext.set(key, signal);
+  }
+  return [...overlapping, ...latestContext.values()];
+}
+
+export function summariseMarketSignals(signals: SnapshotMarketSignal[]) {
+  const eventSignals = signals.filter((signal) => signal.type === "MAJOR_EVENT");
+  const demandSignals = signals.filter((signal) => ["MAJOR_EVENT", "PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "TOURISM_DEMAND", "TRANSPORT_FLOW"].includes(signal.type));
+  const demandValues = demandSignals.map((signal) => {
+    const evidence = jsonRecord(signal.evidence);
+    const direction = typeof evidence.direction === "string" ? evidence.direction : signal.type === "TRANSPORT_FLOW" ? "UNKNOWN" : "POSITIVE";
+    const confidence = jsonNumber(evidence.confidence) ?? (signal.type === "MAJOR_EVENT" ? 0.5 : 0.4);
+    return Math.max(0, directionWeight(direction)) * confidence;
+  });
+  const disruptions = signals.filter((signal) => signal.type === "WEATHER_OR_ACCESS_DISRUPTION");
+  const disruptionDirections = disruptions.map((signal) => {
+    const value = jsonRecord(signal.evidence).direction;
+    return typeof value === "string" ? value : "UNKNOWN";
+  });
+  const disruptionDirection = combinedDirection(disruptionDirections);
+  const disruptionConfidence = disruptions.length
+    ? Math.max(...disruptions.map((signal) => jsonNumber(jsonRecord(signal.evidence).confidence) ?? 0.4))
+    : 0;
+  return {
+    eventImpact: eventSignals.length ? Math.max(...eventSignals.map((signal) => jsonNumber(jsonRecord(signal.evidence).confidence) ?? 0.5)) : null,
+    majorEventCount: eventSignals.length,
+    demandSignalCount: demandSignals.length,
+    demandPressure: average(demandValues),
+    disruptionImpact: disruptionEffects(disruptionDirection, disruptionConfidence, disruptions.length),
+  };
+}
+
+export function summariseDateDisruptions(values: Prisma.JsonValue[]) {
+  const records = values.map(jsonRecord);
+  const active = records.filter((record) => (jsonNumber(record.signalCount) ?? 0) > 0);
+  const direction = combinedDirection(active.map((record) => typeof record.direction === "string" ? record.direction : "UNKNOWN"));
+  const confidence = active.length ? Math.max(...active.map((record) => jsonNumber(record.confidence) ?? 0)) : 0;
+  return { ...disruptionEffects(direction, confidence, active.reduce((sum, record) => sum + (jsonNumber(record.signalCount) ?? 0), 0)), signalDates: active.length };
+}
+
+function disruptionEffects(direction: string, confidence: number, signalCount: number) {
+  const normalised = ["POSITIVE", "NEGATIVE", "MIXED"].includes(direction) ? direction : "UNKNOWN";
+  return {
+    accessibilityEffect: normalised,
+    demandDisplacementEffect: normalised === "UNKNOWN" ? "UNKNOWN" : "MIXED",
+    strandedTravellerEffect: normalised === "NEGATIVE" ? "POSITIVE" : normalised === "POSITIVE" ? "NEGATIVE" : normalised,
+    direction: normalised,
+    confidence,
+    signalCount,
+  };
+}
+
+function combinedDirection(values: string[]) {
+  const known = new Set(values.filter((value) => value === "POSITIVE" || value === "NEGATIVE" || value === "MIXED"));
+  if (known.has("MIXED") || known.has("POSITIVE") && known.has("NEGATIVE")) return "MIXED";
+  if (known.has("NEGATIVE")) return "NEGATIVE";
+  if (known.has("POSITIVE")) return "POSITIVE";
+  return "UNKNOWN";
+}
+
+function directionWeight(value: string) {
+  if (value === "POSITIVE") return 1;
+  if (value === "MIXED") return 0.25;
+  if (value === "NEGATIVE") return -1;
+  return 0;
 }
 
 function maxDate(values: Date[]) {
@@ -2932,5 +3303,5 @@ function mapWorkerStatusToPriceCheck(status: string) {
 
 function mapSignalType(type: string): "PUBLIC_HOLIDAY" | "ANNIVERSARY_DAY" | "SCHOOL_HOLIDAY" | "MAJOR_EVENT" | "WEEKEND_PATTERN" | "PRICE_RISING" | "AVAILABILITY_TIGHTENING" | "RESTRICTION_INCREASING" | "WEATHER_OR_ACCESS_DISRUPTION" | "TOURISM_DEMAND" | "TRANSPORT_FLOW" | "FX_RATE" {
   if (["PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "MAJOR_EVENT", "WEEKEND_PATTERN", "PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING", "WEATHER_OR_ACCESS_DISRUPTION", "TOURISM_DEMAND", "TRANSPORT_FLOW", "FX_RATE"].includes(type)) return type as ReturnType<typeof mapSignalType>;
-  return "WEATHER_OR_ACCESS_DISRUPTION";
+  throw new AdapterError("PARSING_ERROR", `Unsupported public signal type: ${type}`, false);
 }

@@ -170,7 +170,7 @@ Variants：processing、confirmation、partial、insufficient、unsupported、so
 
 ## 6.8 Badge
 
-包括 RiskBadge、ConfidenceBadge、StatusBadge、DataSourceStatusBadge、SourceHealthBadge、MarketStatusBadge。高度 24–28px，图标 14px，文字 12–13px。所有语义同时用文字和图标；Provider 许可状态和运行健康状态不得共用同一枚举。
+包括 RiskBadge、ConfidenceBadge、StatusBadge、DataSourceStatusBadge、SourceHealthBadge、MarketStatusBadge。高度 24–28px，图标 14px，文字 12–13px。所有语义同时用文字和图标；Provider 生命周期和运行健康状态不得共用同一枚举。
 
 ## 6.9 InsightCard
 
@@ -370,7 +370,7 @@ Tabs 使用水平可滚动但无页面横向溢出。Observation 表格固定日
 
 ## 11.10 Data Source Health
 
-DataSourceStatusBadge 只显示 APPROVED、PILOT、SUSPENDED、DISABLED、DEPRECATED、UNKNOWN；SourceHealthBadge 只显示 HEALTHY、DEGRADED、DOWN。每项同时显示 Last success、Error rate、权限和 Retention。Rights blocked 是独立权限警告，不属于健康枚举；出现时使用 Warning/Danger 并禁止自动发布。
+DataSourceStatusBadge 显示 PILOT、SUSPENDED、DISABLED、DEPRECATED、UNKNOWN；SourceHealthBadge 显示 HEALTHY、DEGRADED、DOWN。每项同时显示 Last success、Error rate 和 Retention。来源未启用或运行状态为 BLOCKED/DOWN 时使用 Warning/Danger 并禁止自动发布。
 
 # \[UI-FORM\] 十二、表单与操作反馈
 
@@ -464,7 +464,7 @@ apps/web 页面只组合共享组件和业务容器；不得在每页创建新�
 
 ## 18.2 必测后台画面
 
-Sign in、Exception Inbox 有数据/空状态、每个 Exception Type 的工作区、Price Check Detail、Market Coverage、Collection Runs、Data Source 状态 APPROVED/PILOT/SUSPENDED/DISABLED/DEPRECATED/UNKNOWN、Health 状态 HEALTHY/DEGRADED/DOWN、Rights blocked、Signals、Feedback、Audit、403 和 System Error。
+Sign in、Exception Inbox 有数据/空状态、每个 Exception Type 的工作区、Price Check Detail、Market Coverage、Collection Runs、Data Source 状态 PILOT/SUSPENDED/DISABLED/DEPRECATED/UNKNOWN、Health 状态 HEALTHY/DEGRADED/DOWN、Signals、Feedback、Audit、403 和 System Error。
 
 ## 18.3 尺寸
 
@@ -488,4 +488,3 @@ UI-AT-005 中英文、桌面、Tablet 和移动端保持同一设计系统。
 UI-AT-006 风险、置信度、差异和错误不只依赖颜色。  
 UI-AT-007 所有动效支持 Reduced Motion。  
 UI-AT-008 生产界面不含 Demo 数据、虚假指标、未上线功能入口或未批准承诺。  
-

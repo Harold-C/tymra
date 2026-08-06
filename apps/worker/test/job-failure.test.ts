@@ -6,7 +6,7 @@ import { WorkerRequestError } from "../src/services/worker-service";
 
 describe("worker job failure classification", () => {
   it("does not retry terminal collection failures", () => {
-    expect(classifyJobFailure(new AdapterError("RIGHTS_BLOCKED", "not approved", false))).toMatchObject({ code: "RIGHTS_BLOCKED", retryable: false });
+    expect(classifyJobFailure(new AdapterError("SOURCE_UNAVAILABLE", "unavailable", false))).toMatchObject({ code: "SOURCE_UNAVAILABLE", retryable: false });
     expect(classifyJobFailure(new AdapterError("PARSING_ERROR", "invalid source shape", false))).toMatchObject({ code: "PARSING_ERROR", retryable: false });
     expect(classifyJobFailure(new WorkerRequestError("INVALID_COLLECTION_RANGE", "bad range", 422))).toMatchObject({ code: "INVALID_COLLECTION_RANGE", retryable: false });
   });

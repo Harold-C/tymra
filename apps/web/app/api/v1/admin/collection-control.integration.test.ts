@@ -74,13 +74,13 @@ describe("admin collection control persistence", () => {
     expect(await prisma.job.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({ status: "CANCELLED", lastErrorCode: "SOURCE_PAUSED" });
   });
 
-  it("resumes a source without changing governance and refuses schedule activation while runtime scheduling is off", async () => {
+  it("resumes a source without changing operational configuration and refuses schedule activation while runtime scheduling is off", async () => {
     const before = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
     await runCollectionControlAction(adminId, { action: "set_source_enabled", sourceKey, enabled: true }, environment);
     const after = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
     expect(after.enabled).toBe(true);
-    expect(after.internalApprovalStatus).toBe(before.internalApprovalStatus);
-    expect(after.legalRightsStatus).toBe(before.legalRightsStatus);
+    expect(after.operationalStatus).toBe(before.operationalStatus);
+    expect(after.lifecycle).toBe(before.lifecycle);
 
     await expect(runCollectionControlAction(adminId, { action: "set_schedule_enabled", scheduleKey, enabled: true }, environment))
       .rejects.toMatchObject({ code: "SCHEDULER_RUNTIME_DISABLED" } satisfies Partial<CollectionControlError>);

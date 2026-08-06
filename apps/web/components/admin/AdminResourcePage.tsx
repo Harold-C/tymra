@@ -65,7 +65,7 @@ async function loadResource(resource: Exclude<AdminResource, "settings">, locale
     }
     case "dataSources": {
       const items = await prisma.dataSource.findMany({ orderBy: { name: "asc" } });
-      return table(locale, ["Data Source", "Type", "Approval", "Health", "Rights", "Enabled"], items.map((item) => [item.name, item.providerType, pill(item.status, locale), pill(item.healthStatus, locale), rights(item, locale), adminText(locale, item.enabled ? "yes" : "no")]));
+      return table(locale, ["Data Source", "Type", "Lifecycle", "Health", "Enabled"], items.map((item) => [item.name, item.providerType, pill(item.lifecycle, locale), pill(item.healthStatus, locale), adminText(locale, item.enabled ? "yes" : "no")]));
     }
     case "events": {
       const items = await prisma.eventOccurrence.findMany({ orderBy: { startsAt: "desc" }, take: 150, include: { canonicalEvent: true, venue: true, sourceLinks: { include: { sourceEventOccurrence: { include: { dataSource: { select: { name: true } } } } } } } });
@@ -108,5 +108,4 @@ function pill(value: string, locale: AdminLocale) { return <StatusPill value={va
 function date(value: Date | null, locale: AdminLocale) { return value ? value.toLocaleString(adminDateLocale(locale), { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }) : "—"; }
 function percent(value: number) { return `${Math.round(value * 100)}%`; }
 function demo(value: boolean, locale: AdminLocale) { return value ? <span className="demo-inline">{adminText(locale, "demo")}</span> : adminText(locale, "livePath"); }
-function rights(item: { rightsAllowStorage: boolean; rightsAllowDerivedAnalysis: boolean; rightsAllowDisplay: boolean }, locale: AdminLocale) { return [item.rightsAllowStorage && adminText(locale, "store"), item.rightsAllowDerivedAnalysis && adminText(locale, "analyse"), item.rightsAllowDisplay && adminText(locale, "display")].filter(Boolean).join(" / ") || adminText(locale, "blocked"); }
 function yesNo(value: boolean, locale: AdminLocale) { return adminText(locale, value ? "enabled" : "disabled"); }

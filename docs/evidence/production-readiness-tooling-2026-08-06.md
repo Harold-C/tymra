@@ -30,11 +30,10 @@ production-readiness view.
   and 72 manual-review items. The detailed output includes bounded sample job IDs, distinct error
   codes and an operator recommendation for every disposition.
 - Current Eventfinda/Ticketmaster production preflight failed closed because both local source
-  records intentionally lack production approval, health and storage/analysis rights. No production
-  canary was executed and no schedule was enabled.
+  records were not enabled and operationally healthy. No production canary was executed and no schedule was enabled.
 - Argus health and Tymra Worker health both passed. Argus reported zero active tasks; Worker reported
   scheduler disabled and Argus healthy/ready.
-- The in-app browser rendered the Admin readiness page with rights, approval, health, schedule,
+- The in-app browser rendered the Admin readiness page with source health, schedule,
   Argus, queue and canary state; it showed 31 grouped source blockers, zero enabled schedules,
   Argus ready and no browser console errors.
 
@@ -42,5 +41,4 @@ production-readiness view.
 
 The harness supports multi-hour/day execution and checkpoint recovery, but this local two-cycle run
 is not a deployed multi-day soak. A managed challenge provider still requires production endpoint,
-site key, credentials and vendor-specific client completion. Production source approval and rights
-remain deliberately blocked.
+site key, credentials and vendor-specific client completion. Production source activation remains blocked.

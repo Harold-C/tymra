@@ -16,9 +16,8 @@ evidence, while the Tymra records remained available.
 - Raw HTML and screenshot files were intentionally not retained by Tymra. Tymra retained their
   metadata and hashes only.
 
-An initial ordinary Job was rejected with `RIGHTS_BLOCKED` before creating an Argus execution because
-the RBNZ source is not approved for normal production collection. The bounded acceptance Job then used
-the existing explicit development gate; no governance setting was changed.
+An initial ordinary Job was rejected by the source gate that existed at the time. That gate has
+since been removed. The bounded acceptance Job used the development path and changed no source configuration.
 
 ## Verified sequence
 

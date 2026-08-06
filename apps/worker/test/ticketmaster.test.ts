@@ -39,7 +39,7 @@ describe("Ticketmaster normalisation", () => {
     expect(ticketmasterRequestDelayMs(5_000, 4_000, () => 0.5)).toBe(7_000);
   });
 
-  it("canonicalises only approved detail URLs and hashes them stably", () => {
+  it("canonicalises only allowed detail URLs and hashes them stably", () => {
     const canonical = "https://www.ticketmaster.co.nz/sample/event/240064959CF424FB";
     expect(isTicketmasterDetailUrl(`${canonical}?brand=x#tickets`)).toBe(true);
     expect(isTicketmasterDetailUrl("https://example.com/sample/event/240064959CF424FB")).toBe(false);
