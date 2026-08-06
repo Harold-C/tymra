@@ -52,12 +52,17 @@ export function ResultView({ locale, token, resolved }: { locale: Locale; token:
   const result = resolved.result;
   const propertyName = result.priceCheck.property?.canonicalName ?? t("propertyUnavailable");
   const unitName = result.priceCheck.unit?.officialName ?? t("unitUnavailable");
+  const addressCoverage = resultAddressCoverage(result.payload);
 
   return (
     <section className="result-page">
       <div className="result-container">
         {result.isDemo ? <div className="demo-banner"><ShieldCheck size={18} /><strong>{t("demoLabel")}</strong><span>{t("demoBody")}</span></div> : null}
         {resolved.state === "SUPERSEDED" ? <div className="flow-notice notice-warning"><AlertTriangle size={20} /><div><strong>{t("supersededTitle")}</strong><p>{t("supersededBody")}</p></div></div> : null}
+        {addressCoverage ? <div className={`flow-notice ${addressCoverage.level === "FULL" ? "notice-success" : "notice-warning"}`}>
+          {addressCoverage.level === "FULL" ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+          <div><strong>{t(`coverage.${addressCoverage.level}.title`)}</strong><p>{t(`coverage.${addressCoverage.level}.body`, { market: addressCoverage.marketName })}</p></div>
+        </div> : null}
         <header className="result-heading">
           <div><span>{t("eyebrow")}</span><h1>{t("title")}</h1><p>{propertyName} · {unitName}</p></div>
           <div className={`confidence-badge confidence-${result.confidence.toLowerCase()}`}><span>{t("confidence")}</span><strong>{t(`confidenceValue.${result.confidence}`)}</strong></div>
@@ -86,6 +91,19 @@ export function ResultView({ locale, token, resolved }: { locale: Locale; token:
       </div>
     </section>
   );
+}
+
+function resultAddressCoverage(payload: Record<string, unknown>) {
+  const publicSignalCoverage = recordValue(payload.publicSignalCoverage);
+  const addressCoverage = recordValue(publicSignalCoverage.addressCoverage);
+  const level = addressCoverage.level;
+  const marketName = addressCoverage.marketName;
+  if ((level !== "FULL" && level !== "REGIONAL" && level !== "NATIONAL_ONLY") || typeof marketName !== "string") return null;
+  return { level, marketName } as const;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function FeedbackForm({ insightId, token }: { insightId: string; token: string }) {

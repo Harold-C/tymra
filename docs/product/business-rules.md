@@ -117,6 +117,17 @@ Christchurch 及 Market Coverage 配置中的周边区域为首个自动支持�
 
 Property name、New Zealand address、已启用 Data Source 的 Listing URL。允许中英文混合输入；专有名词保留官方形式。
 
+已启用的身份来源完成地址解析后，系统必须保存来源返回的真实 city、Region、Territorial
+Authority、RTO、经纬度和国家字段，不得写死 Christchurch。地址信号覆盖分为 `FULL`、
+`REGIONAL` 和 `NATIONAL_ONLY`：非主要市场地址至少获得全国基线；区域可确认时使用独立
+`nz-region-*` 键；区域不可确认时不得猜测最近城市。覆盖等级和缺失的本地来源必须显示在结果中。
+
+地址身份缓存必须与正式 Property 分离：仅保存 HMAC 查询指纹、来源规范地址、有序候选、解析器
+版本、命中次数和有效期，不保存原始查询。Web 和 Worker 共用 PostgreSQL 缓存，并使用 Redis 锁
+避免并发回源。UNIQUE、MULTIPLE、NONE 默认分别缓存 7 天、24 小时和 1 小时；来源失败不得覆盖
+有效结果。搜索和展示候选不得创建 Property 或 SellableUnit，只有用户明确确认或 Worker 已取得
+唯一可信身份并实际开始分析时才能晋升为业务实体。
+
 ## 4.2 前端和服务端校验
 
 • 去除首尾空格；长度 3–500 个字符。  

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 
-import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzMarketKey } from "../src";
+import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "../src";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };
@@ -178,6 +178,41 @@ describe("public data adapter contract", () => {
     expect(publicSignalSourceIdsForMarket("hawkes_bay")).toContain("hawkesbaynz_events");
   });
 
+  it("gives every structured New Zealand region an explicit, non-guessed signal coverage level", () => {
+    const regions = [
+      "Auckland", "Bay of Plenty", "Canterbury", "Chatham Islands", "Gisborne", "Hawke's Bay",
+      "Manawatū-Whanganui", "Marlborough", "Nelson", "Northland", "Otago", "Southland",
+      "Taranaki", "Tasman", "Waikato", "Wellington", "West Coast",
+    ];
+    for (const region of regions) {
+      expect(resolveNzAddressSignalCoverage({ region, countryCode: "NZ" })).not.toBeNull();
+    }
+
+    expect(resolveNzAddressSignalCoverage({ city: "Christchurch", region: "Canterbury", countryCode: "NZ" })).toMatchObject({
+      level: "FULL", marketKey: "christchurch", majorMarketKey: "christchurch", regionKey: "nz-region-canterbury", limitations: [],
+    });
+    expect(resolveNzAddressSignalCoverage({ city: "Greymouth", region: "West Coast", countryCode: "NZ" })).toMatchObject({
+      level: "REGIONAL", marketKey: "nz-region-west-coast", majorMarketKey: null, regionName: "West Coast",
+      limitations: ["LOCAL_OFFICIAL_EVENT_SOURCE_NOT_CONFIGURED", "LOCAL_FLOW_SOURCE_NOT_CONFIGURED"],
+    });
+    expect(resolveNzAddressSignalCoverage({ city: "Unresolved locality", countryCode: "NZ" })).toMatchObject({
+      level: "NATIONAL_ONLY", marketKey: "new-zealand", regionKey: null,
+    });
+    expect(resolveNzAddressSignalCoverage({ city: "Sydney", countryCode: "AU" })).toBeNull();
+  });
+
+  it("uses the nationwide baseline plan for regional and national-only addresses", () => {
+    const regional = publicSignalCollectionPlanForAddress({ city: "Greymouth", region: "West Coast", countryCode: "NZ" });
+    const national = publicSignalCollectionPlanForAddress({ countryCode: "NZ" });
+    expect(regional).toEqual(national);
+    expect(regional).toHaveLength(19);
+    expect(regional.every((target) => target.marketScope === "new-zealand")).toBe(true);
+    expect(regional.filter((target) => target.layer === "DISCOVERY")).toHaveLength(5);
+    expect(regional.filter((target) => target.layer === "DEMAND")).toHaveLength(5);
+    expect(regional.filter((target) => target.layer === "DISRUPTION")).toHaveLength(9);
+    expect(regional.some((target) => target.layer === "OFFICIAL_EVENT" || target.layer === "LOCAL_FLOW")).toBe(false);
+  });
+
   it("builds the complete on-demand signal plan for every market", () => {
     for (const market of NZ_MAJOR_ACCOMMODATION_MARKETS) {
       const plan = publicSignalCollectionPlanForMarket(market.key);
@@ -236,6 +271,7 @@ describe("public data adapter contract", () => {
     expect(nzMarketKeysForAreaText("Otago and Clutha")).toEqual(expect.arrayContaining(["dunedin", "queenstown-wanaka"]));
     expect(nzMarketKeysForAreaText("Hawke's Bay")).toEqual(["hawkes-bay"]);
     expect(nzMarketKeysForAreaText("Gisborne")).toEqual([]);
+    expect(nzCoverageKeysForAreaText("Heavy rain across Gisborne and the West Coast")).toEqual(expect.arrayContaining(["nz-region-gisborne", "nz-region-west-coast"]));
     expect(nearestNzMarketKey(-37.0734, 174.9300)).toBe("auckland");
     expect(nearestNzMarketKey(-45.0312, 168.6626)).toBe("queenstown-wanaka");
   });
@@ -392,19 +428,21 @@ describe("public data adapter contract", () => {
     const expected = new Map([
       ["Auckland RTO", ["auckland"]], ["Wellington City", ["wellington"]], ["Canterbury RTO", ["christchurch"]],
       ["Queenstown-Lakes District", ["queenstown-wanaka"]], ["Rotorua District", ["rotorua"]],
-      ["Tauranga City", ["tauranga"]], ["Waikato RTO", ["waikato"]], ["Lake Taupo RTO", ["taupo"]],
+      ["Tauranga City", ["tauranga"]], ["Waikato RTO", ["waikato", "nz-region-waikato"]], ["Lake Taupo RTO", ["taupo"]],
       ["Dunedin City", ["dunedin"]], ["Nelson Tasman RTO", ["nelson-tasman"]],
       ["Hawke's Bay RTO", ["hawkes-bay"]], ["Taranaki RTO", ["taranaki"]], ["Northland RTO", ["northland"]],
       ["Palmerston North City", ["manawatu"]], ["Fiordland RTO", ["southland-fiordland"]],
-      ["Bay of Plenty RTO", ["rotorua", "tauranga"]], ["Total New Zealand", ["new-zealand"]],
+      ["Bay of Plenty RTO", ["rotorua", "tauranga", "nz-region-bay-of-plenty"]], ["Total New Zealand", ["new-zealand"]],
     ]);
     for (const [area, markets] of expected) expect(marketKeysForMbieArea(area)).toEqual(markets);
-    expect(marketKeysForMbieArea("West Coast RTO")).toEqual([]);
+    expect(marketKeysForMbieArea("West Coast RTO")).toEqual(["nz-region-west-coast"]);
+    expect(marketKeysForMbieArea("Tairawhiti RTO")).toEqual(["nz-region-gisborne"]);
+    expect(marketKeysForMbieArea("Destination Marlborough RTO")).toEqual(["nz-region-marlborough"]);
 
     const record = parseMbieAccommodationTail("Month,Area type,Area,Property,Measure,Value,Flag\n1/05/2026,RTO,Bay of Plenty RTO,Total,Occupancy rate,0.72,\n1/05/2026,RTO,Bay of Plenty RTO,Total,Quality indicator,High,")[0]!;
     const signals = await publicDataAdapters.mbie.normalise([{ sourceId: "mbie", externalId: record.id, payload: record, fetchedAt: new Date(), fixture: false }], fixtureContext);
-    expect(signals.map((signal) => signal.marketKey)).toEqual(["rotorua", "tauranga"]);
-    expect(new Set(signals.map((signal) => signal.externalId)).size).toBe(2);
+    expect(signals.map((signal) => signal.marketKey)).toEqual(["rotorua", "tauranga", "nz-region-bay-of-plenty"]);
+    expect(new Set(signals.map((signal) => signal.externalId)).size).toBe(3);
   });
 
   it("parses and normalises MBIE Tourism Volumes & Flows RTO visitor trends", async () => {

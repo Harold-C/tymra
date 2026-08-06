@@ -18,6 +18,7 @@ type PropertyCandidate = {
   matchStatus: "UNIQUE" | "MULTIPLE" | "NONE" | "CONFLICT";
   isDemo: boolean;
   propertyId: string | null;
+  addressExternalId?: string;
   unitIds: string[];
 };
 
@@ -201,15 +202,15 @@ export function PropertyConfirmation({ locale, checkId }: { locale: Locale; chec
   }, [checkId, locale, t]);
 
   async function select(candidate: PropertyCandidate) {
-    if (!candidate.propertyId) return;
+    if (!candidate.propertyId && !candidate.addressExternalId) return;
     setLoading(true);
     try {
-      await requestJson(`/api/v1/price-checks/${checkId}/confirm-property`, {
+      const confirmed = await requestJson<{ requiresUnitConfirmation: boolean }>(`/api/v1/price-checks/${checkId}/confirm-property`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ propertyId: candidate.propertyId }),
+        body: JSON.stringify(candidate.propertyId ? { propertyId: candidate.propertyId } : { addressExternalId: candidate.addressExternalId }),
       });
-      router.push(`/${locale}/check/${checkId}/${candidate.unitIds.length > 1 ? "unit" : "query"}`);
+      router.push(`/${locale}/check/${checkId}/${confirmed.requiresUnitConfirmation ? "unit" : "query"}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("genericError"));
       setLoading(false);
@@ -220,7 +221,7 @@ export function PropertyConfirmation({ locale, checkId }: { locale: Locale; chec
     <FlowPage title={t("propertyTitle")} intro={check ? t("propertyIntro", { input: check.rawInput }) : t("loading")} currentStep={0}>
       {loading ? <LoadingState label={t("loadingCandidates")} /> : null}
       {!loading && candidates.length ? <div className="selection-list">{candidates.map((candidate) => (
-        <button className="selection-row" type="button" key={candidate.externalId} onClick={() => select(candidate)} disabled={!candidate.propertyId}>
+        <button className="selection-row" type="button" key={candidate.externalId} onClick={() => select(candidate)} disabled={!candidate.propertyId && !candidate.addressExternalId}>
           <Building2 size={22} /><span><strong>{candidate.canonicalName}</strong><small>{candidate.address}</small>{candidate.isDemo ? <em>{t("demoBadge")}</em> : null}</span><ArrowRight size={19} />
         </button>
       ))}</div> : null}

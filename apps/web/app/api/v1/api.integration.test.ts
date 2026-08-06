@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { hashOpaqueToken, issueResultLink, prisma } from "@tymra/db";
+import { addressIdentityPersistentCache, hashOpaqueToken, hashPersonalIdentifier, issueResultLink, prisma } from "@tymra/db";
+import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentitySearchResult } from "@tymra/providers";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -84,6 +85,66 @@ describe("Release 1 API contracts", () => {
 
     const invalid = await searchProperties(jsonRequest("/api/v1/property-search", { input: "x", locale: "en" }));
     expect(invalid.status).toBe(422);
+  });
+
+  it("returns nationwide LINZ address candidates with confirmation-safe identity fields", async () => {
+    const originalSearch = linzAddressIdentityProvider.search.bind(linzAddressIdentityProvider);
+    const suffix = randomUUID();
+    const externalIds = [`linz-address:${suffix}:a`, `linz-address:${suffix}:b`];
+    const candidatePropertyIds = externalIds.map((externalId) => `property_${stableAddressIdentityId(externalId)}`);
+    const localIds = { checkId: "", stayQueryId: "", propertyId: "" };
+    try {
+      const identityResult = (query: string): AddressIdentitySearchResult => ({
+        query,
+        normalizedQuery: query.toLowerCase(),
+        matchStatus: "MULTIPLE",
+        cache: { hit: false, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        warnings: ["ADDRESS_CONFIRMATION_REQUIRED"],
+        candidates: externalIds.map((externalId, index) => ({ provider: "linz-nz-addresses" as const, externalId, normalizedAddress: `${100 + index} Queen Street, Auckland Central, Auckland`, city: "Auckland", countryCode: "NZ" as const, region: "Auckland", territorialAuthority: "Auckland", rto: "Tātaki Auckland Unlimited", postcode: "1010", latitude: -36.8467 + index / 10_000, longitude: 174.7662 + index / 10_000, confidence: 0.96, matchStatus: "MULTIPLE" as const, lifecycle: "Current", sourceUrl: "https://data.linz.govt.nz/layer/105689-nz-addresses/" })),
+      });
+      linzAddressIdentityProvider.search = async (query) => identityResult(query);
+      const persisted = identityResult("100 Queen Street, Auckland 1010");
+      const queryHash = hashPersonalIdentifier(normalizeAddressQuery(persisted.query), process.env.ACCESS_KEY_SECRET!);
+      await addressIdentityPersistentCache.write({ queryHash, providerKey: "linz-nz-addresses", resolverVersion: "test-v1", resultLimit: 10 }, { candidates: persisted.candidates, matchStatus: persisted.matchStatus, warnings: persisted.warnings, validUntil: persisted.cache.expiresAt, staleUntil: new Date(Date.now() + 120_000).toISOString() });
+      const response = await searchProperties(jsonRequest("/api/v1/property-search", { input: "100 Queen Street, Auckland 1010", locale: "en" }));
+      expect(response.status).toBe(200);
+      const data = (await response.json()).data;
+      expect(data.matchStatus).toBe("MULTIPLE");
+      expect(data.candidates).toHaveLength(2);
+      expect(data.candidates[0]).toMatchObject({ region: "Auckland", territorialAuthority: "Auckland", rto: "Tātaki Auckland Unlimited", postcode: "1010", coverageLevel: "FULL", confidence: 0.96 });
+      expect(data.candidates.every((candidate: { propertyId: string | null }) => candidate.propertyId === null)).toBe(true);
+      expect(await prisma.property.count({ where: { id: { in: candidatePropertyIds } } })).toBe(0);
+
+      const createResponse = await createCheck(jsonRequest("/api/v1/price-checks", {
+        email: `address-confirm-${suffix}@tymra.test`, locale: "en", input: "100 Queen Street, Auckland 1010",
+        stayQuery: { checkIn: "2026-09-10T00:00:00.000Z", checkOut: "2026-09-11T00:00:00.000Z", adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" },
+        serviceConsent: true, marketingConsent: false, idempotencyKey: `address-confirm:${suffix}`,
+      }));
+      const createdBody = await createResponse.json();
+      localIds.checkId = createdBody.data.checkId;
+      const localCheck = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.checkId } });
+      localIds.stayQueryId = localCheck.stayQueryId!;
+      const cookie = createResponse.headers.get("set-cookie")!.split(";")[0];
+      const confirmation = await confirmProperty(jsonRequest(`/api/v1/price-checks/${localIds.checkId}/confirm-property`, { addressExternalId: externalIds[0] }, { cookie }), { params: { checkId: localIds.checkId } });
+      expect(confirmation.status).toBe(200);
+      const confirmed = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.checkId } });
+      localIds.propertyId = confirmed.propertyId!;
+      expect(confirmed.unitId).toBeTruthy();
+      expect(await prisma.sellableUnit.count({ where: { propertyId: localIds.propertyId } })).toBe(1);
+    } finally {
+      linzAddressIdentityProvider.search = originalSearch;
+      if (localIds.checkId) {
+        await prisma.emailDelivery.deleteMany({ where: { priceCheckId: localIds.checkId } });
+        await prisma.job.deleteMany({ where: { priceCheckId: localIds.checkId } });
+        await prisma.priceCheck.deleteMany({ where: { id: localIds.checkId } });
+        if (localIds.stayQueryId) await prisma.stayQuery.deleteMany({ where: { id: localIds.stayQueryId } });
+      }
+      const properties = await prisma.property.findMany({ where: { id: { in: candidatePropertyIds } }, select: { id: true } });
+      await prisma.sellableUnit.deleteMany({ where: { propertyId: { in: properties.map((property) => property.id) } } });
+      await prisma.property.deleteMany({ where: { id: { in: properties.map((property) => property.id) } } });
+      await prisma.addressResolutionCache.deleteMany({ where: { candidates: { some: { addressIdentity: { providerExternalId: { in: externalIds } } } } } });
+      await prisma.addressIdentity.deleteMany({ where: { providerExternalId: { in: externalIds } } });
+    }
   });
 
   it("creates and protects a complete Price Check confirmation flow", async () => {

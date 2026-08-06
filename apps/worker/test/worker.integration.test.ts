@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { getEnvironment } from "@tymra/config";
 import { prisma, Prisma } from "@tymra/db";
 import { emptyEventImpactEvidence } from "@tymra/domain";
-import { AdapterError, type PublicDataAdapter } from "@tymra/providers";
+import { AdapterError, linzAddressIdentityProvider, otaAdapters, type PublicDataAdapter } from "@tymra/providers";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";
@@ -59,6 +59,84 @@ describe("Worker baseline pipeline", () => {
     expect(request).toMatchObject({ inputType: "ADDRESS", status: "NEEDS_CONFIRMATION" });
     expect(request?.confirmationCandidates).toHaveLength(2);
     await service.cancelAnalysis(request!.id);
+  });
+
+  it("runs two idempotent nationwide address pipelines without cross-region market contamination", async () => {
+    const originalSearch = linzAddressIdentityProvider.search.bind(linzAddressIdentityProvider);
+    const cases = [
+      { input: "100 Queen Street, Auckland", id: "1110540", city: "Auckland", region: "Auckland", authority: "Auckland", rto: "Tātaki Auckland Unlimited", latitude: -36.8467, longitude: 174.7662, market: "auckland", level: "FULL" },
+      { input: "1 Mackay Street, Greymouth", id: "west-coast-live", city: "Greymouth", region: "West Coast", authority: "Grey District", rto: "Development West Coast", latitude: -42.4504, longitude: 171.2108, market: "nz-region-west-coast", level: "REGIONAL" },
+    ] as const;
+    try {
+      for (const [index, item] of cases.entries()) {
+        linzAddressIdentityProvider.search = async (query) => ({
+          query,
+          normalizedQuery: query.toLowerCase(),
+          matchStatus: "UNIQUE",
+          cache: { hit: index > 0, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+          warnings: [],
+          candidates: [{ provider: "linz-nz-addresses", externalId: `linz-address:${item.id}`, normalizedAddress: item.input, city: item.city, countryCode: "NZ", region: item.region, territorialAuthority: item.authority, rto: item.rto, postcode: null, latitude: item.latitude, longitude: item.longitude, confidence: 1, matchStatus: "UNIQUE", lifecycle: "Current", sourceUrl: "https://data.linz.govt.nz/layer/105689-nz-addresses/" }],
+        });
+        const idempotencyKey = `${prefix}:national-address:${index}`;
+        const request = await service.createPreview({ input: item.input, idempotencyKey, locale: "en", deviceId: `${prefix}:national-address-device:${index}`, ipAddress: testIp(30 + index) });
+        const repeated = await service.createPreview({ input: item.input, idempotencyKey, locale: "en", deviceId: `${prefix}:national-address-device:${index}`, ipAddress: testIp(30 + index) });
+        expect(repeated?.id).toBe(request?.id);
+        await drainRequest(request!.id);
+        const result = await service.getResult(request!.id);
+        const marketScope = result!.marketSnapshots[0].marketScope as Record<string, unknown>;
+        const addressCoverage = marketScope.addressCoverage as Record<string, unknown>;
+        expect(marketScope.market).toBe(item.market);
+        expect(addressCoverage).toMatchObject({ level: item.level, regionName: item.region });
+        expect(JSON.stringify(marketScope)).not.toContain(item.region === "Auckland" ? "West Coast" : "Auckland regional coverage");
+      }
+    } finally {
+      linzAddressIdentityProvider.search = originalSearch;
+    }
+  });
+
+  it("persists resolved nationwide geography and uses a regional market key instead of Christchurch", async () => {
+    const adapter = otaAdapters.booking;
+    const originalResolve = adapter.resolveListing.bind(adapter);
+    adapter.resolveListing = async (input, context) => {
+      const resolved = await originalResolve(input, context);
+      return {
+        ...resolved,
+        property: {
+          ...resolved.property,
+          externalId: `booking:west-coast-${prefix.slice(-8)}`,
+          canonicalName: "Fixture Greymouth Stay",
+          address: "1 Mackay Street, Greymouth 7805",
+          city: "Greymouth",
+          region: "West Coast",
+          territorialAuthority: "Grey District",
+          rto: "Development West Coast",
+          postcode: "7805",
+          latitude: -42.4504,
+          longitude: 171.2108,
+          microMarket: null,
+        },
+      };
+    };
+    try {
+      const request = await service.createFormalAnalysis({
+        input: `https://www.booking.com/hotel/nz/west-coast-${prefix.slice(-8)}.html`,
+        email: `west-coast-${prefix.slice(-8)}@tymra.test`,
+        serviceConsent: true,
+        idempotencyKey: `${prefix}:west-coast`,
+        locale: "en",
+        deviceId: `${prefix}:west-coast-device`,
+        ipAddress: testIp(29),
+      });
+      const [property, check] = await Promise.all([
+        prisma.property.findUniqueOrThrow({ where: { id: request!.propertyId! } }),
+        prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! } }),
+      ]);
+      expect(property).toMatchObject({ city: "Greymouth", region: "West Coast", territorialAuthority: "Grey District", rto: "Development West Coast", supportStatus: "PILOT_AVAILABLE" });
+      expect(check.marketKey).toBe("nz-region-west-coast");
+      await service.cancelAnalysis(request!.id);
+    } finally {
+      adapter.resolveListing = originalResolve;
+    }
   });
 
   it("reuses idempotent requests and enforces the per-device/unit preview limit", async () => {

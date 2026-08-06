@@ -16,6 +16,31 @@ export type NzMajorMarketCoverage = {
 
 export type NzMajorMarketKey = "auckland" | "wellington" | "christchurch" | "queenstown-wanaka" | "rotorua" | "tauranga" | "waikato" | "dunedin" | "nelson-tasman" | "hawkes-bay" | "taranaki" | "taupo" | "northland" | "manawatu" | "southland-fiordland";
 
+export type NzAddressCoverageLevel = "FULL" | "REGIONAL" | "NATIONAL_ONLY";
+
+export type NzRegionalCoverageKey = `nz-region-${string}`;
+
+export type NzAddressSignalCoverage = {
+  level: NzAddressCoverageLevel;
+  marketKey: NzMajorMarketKey | NzRegionalCoverageKey | "new-zealand";
+  marketName: string;
+  majorMarketKey: NzMajorMarketKey | null;
+  regionKey: NzRegionalCoverageKey | null;
+  regionName: string | null;
+  countryCode: "NZ";
+  limitations: string[];
+};
+
+export type NzAddressLocation = {
+  city?: string | null;
+  territorialAuthority?: string | null;
+  region?: string | null;
+  rto?: string | null;
+  countryCode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
 export type NzSourceOperationalEvidence = {
   sourceId: string;
   lastSuccessAt: Date | string | null;
@@ -29,13 +54,45 @@ export type NzSourceOperationalEvidence = {
 
 export type NzPublicSignalCollectionTarget = {
   sourceId: string;
-  marketScope: NzMajorMarketKey | "new-zealand";
+  marketScope: NzMajorMarketKey | NzRegionalCoverageKey | "new-zealand";
   layer: "DISCOVERY" | "OFFICIAL_EVENT" | "DEMAND" | "DISRUPTION" | "SEASONAL" | "LOCAL_FLOW";
 };
 
 const NATIONAL_DISCOVERY = ["eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "ticketek_events"];
 const NATIONAL_DEMAND = ["mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs"];
 const NATIONAL_DISRUPTION = ["public_holidays_nz", "school_holidays_nz", "metservice", "nzta", "geonet", "fx_rates", "doc_alerts", "interislander_alerts", "mot_airline_performance"];
+
+const NZ_REGIONS = [
+  "Auckland", "Bay of Plenty", "Canterbury", "Chatham Islands", "Gisborne", "Hawke's Bay",
+  "Manawatū-Whanganui", "Marlborough", "Nelson", "Northland", "Otago", "Southland", "Taranaki",
+  "Tasman", "Waikato", "Wellington", "West Coast",
+] as const;
+
+const REGION_ALIASES: Readonly<Record<string, (typeof NZ_REGIONS)[number]>> = {
+  auckland: "Auckland",
+  "bay of plenty": "Bay of Plenty",
+  bop: "Bay of Plenty",
+  canterbury: "Canterbury",
+  "chatham islands": "Chatham Islands",
+  "wharekauri rekohu": "Chatham Islands",
+  gisborne: "Gisborne",
+  tairawhiti: "Gisborne",
+  "hawkes bay": "Hawke's Bay",
+  "manawatu whanganui": "Manawatū-Whanganui",
+  marlborough: "Marlborough",
+  nelson: "Nelson",
+  northland: "Northland",
+  "tai tokerau": "Northland",
+  otago: "Otago",
+  southland: "Southland",
+  taranaki: "Taranaki",
+  tasman: "Tasman",
+  waikato: "Waikato",
+  wellington: "Wellington",
+  "greater wellington": "Wellington",
+  "west coast": "West Coast",
+  "tai poutini": "West Coast",
+};
 
 /**
  * Product coverage boundary for the public-signal phase. A market is not treated
@@ -99,7 +156,7 @@ export function canonicalNzMarketKey(value: string): NzMajorMarketKey | null {
   return null;
 }
 
-export function resolveNzMarketKey(location: { city?: string | null; territorialAuthority?: string | null; region?: string | null; rto?: string | null }): NzMajorMarketKey | null {
+export function resolveNzMarketKey(location: NzAddressLocation): NzMajorMarketKey | null {
   for (const candidate of [location.city, location.territorialAuthority, location.rto]) {
     if (!candidate) continue;
     const resolved = canonicalNzMarketKey(candidate);
@@ -110,6 +167,66 @@ export function resolveNzMarketKey(location: { city?: string | null; territorial
     return canonicalNzMarketKey(region === "manawatu whanganui" ? "manawatu" : region);
   }
   return null;
+}
+
+/**
+ * Resolves already-identified New Zealand property geography into the public-signal coverage
+ * hierarchy. This function deliberately does not geocode free text: the identity provider must
+ * first supply a country and structured locality. Unknown localities degrade to national context
+ * instead of being guessed into a nearby major market.
+ */
+export function resolveNzAddressSignalCoverage(location: NzAddressLocation): NzAddressSignalCoverage | null {
+  const countryCode = location.countryCode?.trim().toUpperCase();
+  if (countryCode && countryCode !== "NZ") return null;
+
+  const majorMarketKey = resolveNzMarketKey(location);
+  const regionName = resolveNzRegionName(location);
+  const regionKey = regionName ? nzRegionalCoverageKey(regionName) : null;
+  if (majorMarketKey) {
+    const market = NZ_MAJOR_ACCOMMODATION_MARKETS.find((candidate) => candidate.key === majorMarketKey)!;
+    return {
+      level: "FULL",
+      marketKey: majorMarketKey,
+      marketName: market.name,
+      majorMarketKey,
+      regionKey,
+      regionName,
+      countryCode: "NZ",
+      limitations: [],
+    };
+  }
+  if (regionName && regionKey) {
+    return {
+      level: "REGIONAL",
+      marketKey: regionKey,
+      marketName: `${regionName} regional coverage`,
+      majorMarketKey: null,
+      regionKey,
+      regionName,
+      countryCode: "NZ",
+      limitations: ["LOCAL_OFFICIAL_EVENT_SOURCE_NOT_CONFIGURED", "LOCAL_FLOW_SOURCE_NOT_CONFIGURED"],
+    };
+  }
+  if (countryCode === "NZ" || coordinatesWithinNewZealand(location.latitude, location.longitude)) {
+    return {
+      level: "NATIONAL_ONLY",
+      marketKey: "new-zealand",
+      marketName: "New Zealand national coverage",
+      majorMarketKey: null,
+      regionKey: null,
+      regionName: null,
+      countryCode: "NZ",
+      limitations: ["REGION_NOT_RESOLVED", "LOCAL_OFFICIAL_EVENT_SOURCE_NOT_CONFIGURED", "LOCAL_FLOW_SOURCE_NOT_CONFIGURED"],
+    };
+  }
+  return null;
+}
+
+export function publicSignalCollectionPlanForAddress(location: NzAddressLocation): NzPublicSignalCollectionTarget[] {
+  const coverage = resolveNzAddressSignalCoverage(location);
+  if (!coverage) return [];
+  if (coverage.level === "FULL") return publicSignalCollectionPlanForMarket(coverage.marketKey);
+  return nationalBaselineSignalPlan();
 }
 
 export function marketKeysForAnniversaryRegion(value: string): NzMajorMarketKey[] {
@@ -148,6 +265,15 @@ export function nzMarketKeysForAreaText(value: string): NzMajorMarketKey[] {
   return [...keys];
 }
 
+export function nzCoverageKeysForAreaText(value: string): string[] {
+  const text = normaliseLocation(value);
+  const keys = new Set<string>(nzMarketKeysForAreaText(value));
+  for (const [alias, regionName] of Object.entries(REGION_ALIASES)) {
+    if (containsNormalisedPhrase(text, alias)) keys.add(nzRegionalCoverageKey(regionName));
+  }
+  return [...keys];
+}
+
 export function nzMarketKeysWithinDistance(latitude: number, longitude: number, radiusKm: number): NzMajorMarketKey[] {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || radiusKm <= 0) return [];
   return NZ_MAJOR_ACCOMMODATION_MARKETS
@@ -176,6 +302,15 @@ export function publicSignalCollectionPlanForMarket(value: string): NzPublicSign
     ...market.disruptionSources.map((sourceId) => ({ sourceId, marketScope: "new-zealand" as const, layer: "DISRUPTION" as const })),
     ...market.seasonalSources.map((sourceId) => ({ sourceId, marketScope: "new-zealand" as const, layer: "SEASONAL" as const })),
     ...market.localFlowSources.map((sourceId) => ({ sourceId, marketScope: key, layer: "LOCAL_FLOW" as const })),
+  ];
+  return [...new Map(targets.map((target) => [target.sourceId, target])).values()];
+}
+
+function nationalBaselineSignalPlan(): NzPublicSignalCollectionTarget[] {
+  const targets: NzPublicSignalCollectionTarget[] = [
+    ...NATIONAL_DISCOVERY.map((sourceId) => ({ sourceId, marketScope: "new-zealand" as const, layer: "DISCOVERY" as const })),
+    ...NATIONAL_DEMAND.map((sourceId) => ({ sourceId, marketScope: "new-zealand" as const, layer: "DEMAND" as const })),
+    ...NATIONAL_DISRUPTION.map((sourceId) => ({ sourceId, marketScope: "new-zealand" as const, layer: "DISRUPTION" as const })),
   ];
   return [...new Map(targets.map((target) => [target.sourceId, target])).values()];
 }
@@ -275,6 +410,30 @@ function missingSources(required: string[], available: ReadonlySet<string>) { re
 
 function normaliseLocation(value: string) {
   return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function resolveNzRegionName(location: NzAddressLocation): (typeof NZ_REGIONS)[number] | null {
+  for (const candidate of [location.region, location.territorialAuthority, location.rto]) {
+    if (!candidate) continue;
+    const normalised = normaliseLocation(candidate)
+      .replace(/\b(region|regional council|district council|city council|district|city|rto)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const direct = REGION_ALIASES[normalised];
+    if (direct) return direct;
+    const contained = Object.entries(REGION_ALIASES).find(([alias]) => containsNormalisedPhrase(normalised, alias));
+    if (contained) return contained[1];
+  }
+  return null;
+}
+
+function nzRegionalCoverageKey(regionName: string): NzRegionalCoverageKey {
+  return `nz-region-${normaliseLocation(regionName).replace(/\s+/g, "-")}`;
+}
+
+function coordinatesWithinNewZealand(latitude?: number | null, longitude?: number | null) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+  return latitude! >= -53 && latitude! <= -29 && longitude! >= 165 && longitude! <= 179.9;
 }
 
 function sourceOperationallyHealthy(evidence: NzSourceOperationalEvidence | undefined, now: Date) {

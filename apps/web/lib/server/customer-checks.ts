@@ -53,6 +53,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
           dataLastCheckedAt: result.dataLastCheckedAt,
           confidence: result.confidence,
           isDemo: result.isDemo,
+          addressCoverage: addressCoverageFromPayload(result.payload),
           insights: result.insights.map((insight) => ({
             id: insight.id,
             stayDate: insight.stayDate,
@@ -69,6 +70,20 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
         }
       : null,
   };
+}
+
+function addressCoverageFromPayload(payload: unknown) {
+  const resultPayload = recordValue(payload);
+  const publicSignalCoverage = recordValue(resultPayload.publicSignalCoverage);
+  const addressCoverage = recordValue(publicSignalCoverage.addressCoverage);
+  const level = addressCoverage.level;
+  const marketName = addressCoverage.marketName;
+  if ((level !== "FULL" && level !== "REGIONAL" && level !== "NATIONAL_ONLY") || typeof marketName !== "string") return null;
+  return { level, marketName };
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 export async function listCustomerChecks(customerUserId: string) {

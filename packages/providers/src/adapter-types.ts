@@ -55,11 +55,16 @@ export type ResolvedOtaListing = {
     externalId: string;
     canonicalName: string;
     address: string;
+    city: string;
+    countryCode: string;
     region: string;
     territorialAuthority: string;
+    rto: string | null;
     postcode: string;
     latitude: number;
     longitude: number;
+    microMarket: string | null;
+    timezone: string;
     propertyType: string;
   };
   units: OtaUnit[];

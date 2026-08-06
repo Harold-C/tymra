@@ -5,14 +5,17 @@ import { apiError, apiException, apiSuccess } from "@/lib/server/api";
 import { hasCheckAccess } from "@/lib/server/check-access";
 import { confirmProperty } from "@/lib/server/price-checks";
 
-const schema = z.object({ propertyId: z.string().min(1) });
+const schema = z.union([
+  z.object({ propertyId: z.string().min(1), addressExternalId: z.never().optional() }),
+  z.object({ addressExternalId: z.string().min(1), propertyId: z.never().optional() }),
+]);
 
 export async function POST(request: NextRequest, { params }: { params: { checkId: string } }) {
   try {
     if (!(await hasCheckAccess(request, params.checkId))) return apiError(403, "FORBIDDEN", "This Price Check is not available in this session.");
     const input = schema.parse(await request.json());
-    const check = await confirmProperty(params.checkId, input.propertyId);
-    return apiSuccess({ checkId: check.id, status: check.status });
+    const result = await confirmProperty(params.checkId, input);
+    return apiSuccess({ checkId: result.check.id, status: result.check.status, requiresUnitConfirmation: result.requiresUnitConfirmation });
   } catch (error) {
     return apiException(error);
   }

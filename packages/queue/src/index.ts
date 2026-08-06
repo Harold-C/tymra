@@ -55,6 +55,18 @@ export async function withRedisLock<T>(key: string, ttlMs: number, operation: ()
   }
 }
 
+export async function withRedisLockWait<T>(key: string, ttlMs: number, operation: () => Promise<T>, redisUrl?: string, waitMs = 10_000): Promise<T> {
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    try {
+      return await withRedisLock(key, ttlMs, operation, redisUrl);
+    } catch (error) {
+      if (!(error instanceof RedisLockUnavailableError) || Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50 + Math.floor(Math.random() * 75)));
+    }
+  }
+}
+
 export async function closeRedis(): Promise<void> {
   const client = globalRedis.tymraRedis;
   if (client?.isOpen) await client.quit();

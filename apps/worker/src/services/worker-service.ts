@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
 import {
+  addressIdentityPersistentCache,
   encryptPersonalData,
   enqueueJob,
   hashOpaqueToken,
@@ -33,11 +34,14 @@ import {
   extractEventfindaHttpPage,
   extractTicketmasterHttpPage,
   getOtaAdapterForInput,
+  linzAddressIdentityProvider,
+  normalizeAddressQuery,
   NZ_MAJOR_ACCOMMODATION_MARKETS,
   MOT_AIRLINE_PERFORMANCE_URL,
   otaAdapters,
   publicDataAdapters,
-  publicSignalCollectionPlanForMarket,
+  publicSignalCollectionPlanForAddress,
+  resolveNzAddressSignalCoverage,
   resolveNzMarketKey,
   type AdapterContext,
   type OtaAdapter,
@@ -48,7 +52,7 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { enrichEventVenue } from "../collection/venue-reference";
-import { redisHealth, withRedisLock } from "@tymra/queue";
+import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
 import {
   eventfindaEvidenceTtlHours,
   eventfindaFailureBackoff,
@@ -397,8 +401,9 @@ export class WorkerService {
 
   async buildCompetitorSet(analysisRequestId: string, jobId: string) {
     const request = await this.requireReadyIdentity(analysisRequestId);
-    const analysisMarketKey = resolveNzMarketKey(request.property ?? {});
-    if (!analysisMarketKey) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to a supported New Zealand accommodation market", 422);
+    const addressCoverage = resolveNzAddressSignalCoverage(request.property ?? {});
+    if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to New Zealand", 422);
+    const analysisMarketKey = addressCoverage.marketKey;
     const competitors = await this.ensureFixtureCompetitors(request.sellableUnitId!, fixtureCompetitorCount(request.rawInput));
     const existing = await prisma.competitorSetVersion.findUnique({ where: { analysisRequestId_version: { analysisRequestId, version: 1 } } });
     const set = existing ?? await prisma.competitorSetVersion.create({
@@ -407,7 +412,7 @@ export class WorkerService {
         targetSellableUnitId: request.sellableUnitId!,
         version: 1,
         algorithmVersion: "deterministic-comparability-v1",
-        marketScope: { market: analysisMarketKey, expansionLevel: 0 },
+        marketScope: { market: analysisMarketKey, addressCoverage, expansionLevel: 0 },
         expansionLevel: 0,
         createdBy: "SYSTEM",
         members: { create: competitors.map((item, index) => ({ competitorSellableUnitId: item.unit.id, relationshipType: "CORE", comparabilityScore: 0.95 - index * 0.02, geographyScore: 0.95, propertyTypeScore: 1, unitScore: 1, qualityScore: 0.9, priceTierScore: 0.9, inclusionReason: "Same fixture micro-market and unit profile", createdBy: "SYSTEM", algorithmVersion: "deterministic-comparability-v1" })) },
@@ -427,9 +432,10 @@ export class WorkerService {
     const competitorSet = await prisma.competitorSetVersion.findFirstOrThrow({ where: { analysisRequestId }, orderBy: { version: "desc" }, include: { members: true } });
     const observationIds = await this.analysisObservationIds(request, plan.querySignatureHash);
     const observations = await prisma.rateObservation.findMany({ where: { id: { in: observationIds } }, orderBy: { collectedAt: "asc" } });
-    const analysisMarketKey = resolveNzMarketKey(request.property ?? {});
-    if (!analysisMarketKey) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to a supported New Zealand accommodation market", 422);
-    const publicSignalPlan = publicSignalCollectionPlanForMarket(analysisMarketKey);
+    const addressCoverage = resolveNzAddressSignalCoverage(request.property ?? {});
+    if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to New Zealand", 422);
+    const analysisMarketKey = addressCoverage.marketKey;
+    const publicSignalPlan = publicSignalCollectionPlanForAddress(request.property ?? {});
     const [publicSignalRuns, publicSignalRegistry] = await Promise.all([
       prisma.collectionRun.findMany({
         where: { analysisRequestId: request.id, dataSource: { key: { in: publicSignalPlan.map((target) => target.sourceId) } } },
@@ -441,10 +447,11 @@ export class WorkerService {
         select: { key: true, adapterKey: true, operationalStatus: true },
       }),
     ]);
-    const publicSignalCoverage = summarisePublicSignalCollectionCoverage(
+    const collectionCoverage = summarisePublicSignalCollectionCoverage(
       publicSignalPlan,
       publicSignalRuns.map((run) => ({ sourceId: run.dataSource.key, status: run.status, errorCode: run.errorCode })),
     );
+    const publicSignalCoverage = { ...collectionCoverage, addressCoverage };
     const dates = [...new Set(observations.map((item) => item.checkIn.toISOString().slice(0, 10)))].sort();
     const dateSnapshotIds: string[] = [];
     const allFlags = new Set<string>();
@@ -456,7 +463,7 @@ export class WorkerService {
       const contextFloor = new Date(stayDate.getTime() - 400 * 86_400_000);
       const candidateSignals = await prisma.marketSignal.findMany({
         where: {
-          marketKey: { in: [analysisMarketKey, "new-zealand"] },
+          marketKey: { in: [...new Set([analysisMarketKey, addressCoverage.level === "REGIONAL" ? addressCoverage.regionKey : null, "new-zealand"].filter((key): key is string => Boolean(key)))] },
           startsAt: { lt: nextDate },
           status: "CONFIRMED",
           OR: [
@@ -513,7 +520,7 @@ export class WorkerService {
     const contentHash = stableHash({ analysisRequestId, observationIds: [...observationIds].sort(), dateSnapshotIds: [...dateSnapshotIds].sort(), competitorSetVersionId: competitorSet.id, queryPlanId: plan.id, publicSignalCoverage });
     const marketSnapshot = await prisma.marketSnapshot.upsert({
       where: { contentHash },
-      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: analysisMarketKey, country: "NZ", publicSignalCoverage }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }, ...publicSignalRegistry.map((source) => ({ sourceId: source.key, version: source.adapterKey ?? "unversioned", operational: source.operationalStatus }))], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => item.checkIn.toISOString().startsWith(date))).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
+      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: analysisMarketKey, country: "NZ", addressCoverage, publicSignalCoverage }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }, ...publicSignalRegistry.map((source) => ({ sourceId: source.key, version: source.adapterKey ?? "unversioned", operational: source.operationalStatus }))], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => item.checkIn.toISOString().startsWith(date))).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
       update: {},
     });
     await prisma.dateSnapshot.updateMany({ where: { id: { in: dateSnapshotIds }, marketSnapshotId: null }, data: { marketSnapshotId: marketSnapshot.id } });
@@ -2364,26 +2371,72 @@ export class WorkerService {
     const fixture = this.fixtureEnabled();
     let adapter: OtaAdapter | null = getOtaAdapterForInput(input);
     let resolvedInput = input;
-    if (!adapter && fixture) {
+    let resolvedAddress: ResolvedOtaListing | null = null;
+    if (!adapter && looksLikeAddress(input) && !/\bfixture\b/i.test(input)) {
+      let identityResult;
+      try {
+        identityResult = await linzAddressIdentityProvider.search(input, {
+          correlationId,
+          limit: 10,
+          queryHash: hashPersonalIdentifier(normalizeAddressQuery(input), this.environment.ACCESS_KEY_SECRET),
+          persistentCache: addressIdentityPersistentCache,
+          withCacheLock: (key, operation) => withRedisLockWait(key, 15_000, operation),
+        });
+      } catch (error) {
+        throw new WorkerRequestError("SOURCE_UNAVAILABLE", error instanceof Error ? error.message : "LINZ address source is unavailable", 503);
+      }
+      if (identityResult.matchStatus === "MULTIPLE") throw new WorkerRequestError("AMBIGUOUS_ADDRESS", "Multiple LINZ addresses match; confirm a single address before starting analysis", 409);
+      const identity = identityResult.matchStatus === "UNIQUE" ? identityResult.candidates[0] : null;
+      if (!identity) throw new WorkerRequestError("ADDRESS_NOT_CONFIRMED", "No sufficiently confident LINZ address match was found", 422);
+      resolvedAddress = {
+        sourceId: "linz",
+        sourceListingId: identity.externalId,
+        canonicalUrl: identity.sourceUrl,
+        rawUrl: input,
+        property: {
+          externalId: identity.externalId,
+          canonicalName: `Property at ${identity.normalizedAddress}`,
+          address: identity.normalizedAddress,
+          city: identity.city,
+          countryCode: "NZ",
+          region: identity.region ?? "",
+          territorialAuthority: identity.territorialAuthority,
+          rto: identity.rto,
+          postcode: identity.postcode ?? "",
+          latitude: identity.latitude,
+          longitude: identity.longitude,
+          microMarket: null,
+          timezone: "Pacific/Auckland",
+          propertyType: "UNCLASSIFIED_ACCOMMODATION",
+        },
+        units: [{ externalId: `${identity.externalId}:entire-property`, canonicalName: "Entire property", sourceUnitName: "Entire property", unitType: "UNCONFIRMED", bedrooms: null, bathrooms: null, beds: [], occupancyCapacity: 2, entireOrShared: "ENTIRE", amenities: [] }],
+        matchConfidence: identity.confidence,
+        operationalStatus: "HEALTHY",
+        fixture: false,
+      };
+    }
+    if (!adapter && !resolvedAddress && fixture) {
       adapter = otaAdapters.booking;
       const slug = input.toLowerCase().includes("multiple") || input.toLowerCase().includes("hotel") || input.toLowerCase().includes("motel") ? `fixture-multi-hotel-${stableId("input", input).slice(-8)}` : `fixture-property-${stableId("input", input).slice(-8)}`;
       resolvedInput = `https://www.booking.com/hotel/nz/${slug}.html`;
     }
-    if (!adapter) throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Property/address discovery requires a configured source", 503);
+    if (!adapter && !resolvedAddress) throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Property/address discovery requires a configured source", 503);
     const context: AdapterContext = { mode: fixture ? "fixture" : "live", correlationId, locale, currency: "NZD" };
     let resolved: ResolvedOtaListing;
-    try { resolved = await adapter.resolveListing(resolvedInput, context); }
+    try { resolved = resolvedAddress ?? await adapter!.resolveListing(resolvedInput, context); }
     catch (error) {
       if (error instanceof AdapterError) throw new WorkerRequestError(error.code, error.message, error.code === "INVALID_INPUT" ? 422 : 503);
       throw error;
     }
     const source = await prisma.dataSource.findUnique({ where: { key: resolved.sourceId } });
     if (!source) throw new WorkerRequestError("SOURCE_UNAVAILABLE", `SourceRegistry is missing ${resolved.sourceId}; run the seed`, 503);
+    const addressCoverage = resolveNzAddressSignalCoverage(resolved.property);
+    if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The resolved property is not in New Zealand", 422);
     const propertyId = stableId("property", resolved.property.externalId);
     const property = await prisma.property.upsert({
       where: { id: propertyId },
-      create: { id: propertyId, canonicalName: resolved.property.canonicalName, legalOrBrandName: resolved.property.canonicalName, address: resolved.property.address, city: "Christchurch", countryCode: "NZ", latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: "ChristchurchNZ", postcode: resolved.property.postcode, microMarket: "Christchurch Central", timezone: "Pacific/Auckland", accommodationType: resolved.property.propertyType, supportStatus: "SUPPORTED", identityConfidence: resolved.matchConfidence, status: "ACTIVE", isDemo: fixture },
-      update: { canonicalName: resolved.property.canonicalName, address: resolved.property.address, identityConfidence: resolved.matchConfidence, status: "ACTIVE" },
+      create: { id: propertyId, canonicalName: resolved.property.canonicalName, legalOrBrandName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: resolved.property.timezone, accommodationType: resolved.property.propertyType, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE", isDemo: fixture },
+      update: { canonicalName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: resolved.property.timezone, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE" },
     });
     const units = [];
     const listings = [];
@@ -2397,7 +2450,7 @@ export class WorkerService {
       const externalId = resolved.units.length === 1 ? resolved.sourceListingId : `${resolved.sourceListingId}:${unit.externalId}`;
       const persistedListing = await prisma.listing.upsert({
         where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } },
-        create: { propertyId: property.id, unitId: persistedUnit.id, dataSourceId: source.id, platform: resolved.sourceId.toUpperCase(), externalId, sourceListingId: resolved.sourceListingId, canonicalUrl: resolved.canonicalUrl, rawUrl: input, url: resolved.canonicalUrl, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, operationalStatus: resolved.operationalStatus, metadata: { adapterKey: adapter.metadata.adapterKey, fixture }, isDemo: fixture },
+        create: { propertyId: property.id, unitId: persistedUnit.id, dataSourceId: source.id, platform: resolved.sourceId.toUpperCase(), externalId, sourceListingId: resolved.sourceListingId, canonicalUrl: resolved.canonicalUrl, rawUrl: input, url: resolved.canonicalUrl, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, operationalStatus: resolved.operationalStatus, metadata: { adapterKey: adapter?.metadata.adapterKey ?? "identity:linz-nz-addresses:arcgis-v1", fixture, identityProvider: resolvedAddress ? "linz-nz-addresses" : null }, isDemo: fixture },
         update: { propertyId: property.id, unitId: persistedUnit.id, canonicalUrl: resolved.canonicalUrl, rawUrl: input, platformUnitName: unit.sourceUnitName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: resolved.matchConfidence, operationalStatus: resolved.operationalStatus },
       });
       units.push(persistedUnit);
@@ -2409,9 +2462,12 @@ export class WorkerService {
   private async createBackingPriceCheck(request: WorkerAnalysisRequest) {
     if (!request.emailHash || !request.encryptedEmail) throw new Error("Formal analysis is missing email identity");
     const start = tomorrow();
+    const property = request.propertyId ? await prisma.property.findUnique({ where: { id: request.propertyId } }) : null;
+    const addressCoverage = property ? resolveNzAddressSignalCoverage(property) : null;
+    if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to New Zealand", 422);
     const stayQuery = await prisma.stayQuery.create({ data: { checkIn: start, checkOut: new Date(start.getTime() + 86_400_000), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: "Worker Baseline default formal analysis" } });
     const accessToken = randomBytes(32).toString("base64url");
-    const check = await prisma.priceCheck.create({ data: { rawInput: request.rawInput, locale: request.locale, emailHash: request.emailHash, encryptedEmail: request.encryptedEmail, serviceConsent: true, marketingConsent: request.marketingConsent, propertyId: request.propertyId, unitId: request.sellableUnitId, stayQueryId: stayQuery.id, marketKey: "christchurch", status: request.status === "NEEDS_CONFIRMATION" ? "NEEDS_CONFIRMATION" : "QUEUED", accessKeyHash: hashOpaqueToken(accessToken, this.environment.ACCESS_KEY_SECRET), idempotencyKey: `${request.idempotencyKey}:price-check`, rulesVersion: "worker-baseline-v1", isDemo: request.isFixture } });
+    const check = await prisma.priceCheck.create({ data: { rawInput: request.rawInput, locale: request.locale, emailHash: request.emailHash, encryptedEmail: request.encryptedEmail, serviceConsent: true, marketingConsent: request.marketingConsent, propertyId: request.propertyId, unitId: request.sellableUnitId, stayQueryId: stayQuery.id, marketKey: addressCoverage.marketKey, status: request.status === "NEEDS_CONFIRMATION" ? "NEEDS_CONFIRMATION" : "QUEUED", accessKeyHash: hashOpaqueToken(accessToken, this.environment.ACCESS_KEY_SECRET), idempotencyKey: `${request.idempotencyKey}:price-check`, rulesVersion: "worker-baseline-v1", isDemo: request.isFixture } });
     await prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { priceCheckId: check.id } });
   }
 
@@ -2467,17 +2523,19 @@ export class WorkerService {
   private async ensureFixtureCompetitors(targetUnitId: string, count = 8) {
     const source = await this.requireFixtureSource();
     const target = await prisma.sellableUnit.findUniqueOrThrow({ where: { id: targetUnitId }, include: { property: true } });
+    const addressCoverage = resolveNzAddressSignalCoverage(target.property);
+    if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The target property is not mapped to New Zealand", 422);
     const result = [];
     for (let index = 1; index <= count; index += 1) {
       const propertyId = stableId("fixture-competitor-property", `${target.propertyId}:${index}`);
       const unitId = stableId("fixture-competitor-unit", `${targetUnitId}:${index}`);
-      const property = await prisma.property.upsert({ where: { id: propertyId }, create: { id: propertyId, canonicalName: `Fixture Comparable Property ${index}`, address: `${100 + index} Fixture Market Street, Christchurch 8011`, city: "Christchurch", countryCode: "NZ", latitude: (target.property.latitude ?? -43.5321) + index / 10_000, longitude: (target.property.longitude ?? 172.6362) + index / 10_000, region: "Canterbury", territorialAuthority: "Christchurch City", rto: "ChristchurchNZ", postcode: "8011", microMarket: target.property.microMarket ?? "Christchurch Central", timezone: "Pacific/Auckland", accommodationType: target.property.accommodationType, supportStatus: "SUPPORTED", identityConfidence: 1, status: "ACTIVE", isDemo: true }, update: {} });
+      const property = await prisma.property.upsert({ where: { id: propertyId }, create: { id: propertyId, canonicalName: `Fixture Comparable Property ${index}`, address: `${100 + index} Fixture Market Street, ${target.property.city}`, city: target.property.city, countryCode: target.property.countryCode, latitude: target.property.latitude === null ? null : target.property.latitude + index / 10_000, longitude: target.property.longitude === null ? null : target.property.longitude + index / 10_000, region: target.property.region, territorialAuthority: target.property.territorialAuthority, rto: target.property.rto, postcode: target.property.postcode, microMarket: target.property.microMarket, timezone: target.property.timezone, accommodationType: target.property.accommodationType, supportStatus: target.property.supportStatus, identityConfidence: 1, status: "ACTIVE", isDemo: true }, update: {} });
       const unit = await prisma.sellableUnit.upsert({ where: { id: unitId }, create: { id: unitId, propertyId: property.id, canonicalName: `Fixture Comparable Unit ${index}`, officialName: `Fixture Comparable Unit ${index}`, capacity: target.capacity, bedrooms: target.bedrooms, bathrooms: target.bathrooms, bedTypes: inputJson(target.bedTypes, []), bedConfiguration: inputJson(target.bedConfiguration ?? target.bedTypes, []), amenities: inputJson(target.amenities, []), accessibilityAttributes: inputJson(target.accessibilityAttributes, []), unitType: target.unitType, entireOrShared: target.entireOrShared, status: "ACTIVE", version: 1, isDemo: true }, update: {} });
       const externalId = `worker-fixture-comparable-${stableId("x", targetUnitId).slice(-8)}-${index}`;
       const url = `https://example.invalid/worker-fixture/${externalId}`;
       const listing = await prisma.listing.upsert({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } }, create: { propertyId: property.id, unitId: unit.id, dataSourceId: source.id, platform: "FIXTURE", externalId, sourceListingId: externalId, canonicalUrl: url, rawUrl: url, url, platformUnitName: unit.officialName, lastConfirmedAt: new Date(), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: 1, operationalStatus: "HEALTHY", metadata: { fixture: true, targetUnitId }, isDemo: true }, update: {} });
       await prisma.competitorRelationship.upsert({ where: { targetUnitId_competitorUnitId_version: { targetUnitId, competitorUnitId: unit.id, version: 1 } }, create: { targetUnitId, competitorUnitId: unit.id, role: "CORE", version: 1, reasonCode: "FIXTURE_SAME_MICRO_MARKET", suggestedBy: "DETERMINISTIC_COMPARABILITY_V1", isDemo: true }, update: {} });
-      await prisma.panelMembership.upsert({ where: { sellableUnitId_marketKey: { sellableUnitId: unit.id, marketKey: "christchurch" } }, create: { sellableUnitId: unit.id, marketKey: "christchurch", membershipType: index <= 6 ? "ANCHOR" : "ROTATING", weight: 1, coverage24h: 1, coverage72h: 1, active: true, lastSuccessfulAt: new Date() }, update: { active: true } });
+      await prisma.panelMembership.upsert({ where: { sellableUnitId_marketKey: { sellableUnitId: unit.id, marketKey: addressCoverage.marketKey } }, create: { sellableUnitId: unit.id, marketKey: addressCoverage.marketKey, membershipType: index <= 6 ? "ANCHOR" : "ROTATING", weight: 1, coverage24h: 1, coverage72h: 1, active: true, lastSuccessfulAt: new Date() }, update: { active: true } });
       result.push({ property, unit, listing });
     }
     return result;
@@ -2498,8 +2556,7 @@ export class WorkerService {
   private async collectPublicSignals(request: WorkerAnalysisRequest) {
     await this.setStatus(request, "COLLECTING_MARKET_SIGNALS");
     const property = request.propertyId ? await prisma.property.findUnique({ where: { id: request.propertyId } }) : null;
-    const marketKey = property ? resolveNzMarketKey(property) : null;
-    const plan = marketKey ? publicSignalCollectionPlanForMarket(marketKey) : [];
+    const plan = property ? publicSignalCollectionPlanForAddress(property) : [];
     for (const target of plan) {
       try { await this.collectSource(target.sourceId, target.marketScope, request.id); } catch { /* Public signals corroborate price evidence; a source failure cannot invent sold-out inventory. */ }
     }
@@ -2511,7 +2568,8 @@ export class WorkerService {
     const latest = await prisma.resultVersion.aggregate({ where: { priceCheckId: request.priceCheckId }, _max: { version: true } });
     const snapshot = await prisma.marketSnapshot.findUniqueOrThrow({ where: { id: marketSnapshotId }, select: { marketScope: true } });
     const publicSignalCoverage = jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage);
-    const publicSignalIncomplete = publicSignalCoverage.complete === false;
+    const addressCoverage = jsonRecord(publicSignalCoverage.addressCoverage);
+    const publicSignalIncomplete = publicSignalCoverage.complete === false || addressCoverage.level !== "FULL";
     const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, payload: { priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length, publicSignalCoverage }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
     if (current) await prisma.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
     for (const [index, item] of keyDates.entries()) {
@@ -3130,12 +3188,12 @@ function orderPersistedDetailTargets<T extends { url: string }>(urls: string[], 
 export function eventSignal(event: PublicEvent) {
   if (event.impactStatus !== "PROMOTED" || event.impactScore === null || event.impactScore < 0.7) return [];
   const region = event.city ?? event.region ?? "New Zealand";
-  const resolvedMarketKey = resolveNzMarketKey({ city: event.city, territorialAuthority: event.territorialAuthority, region: event.region });
-  if (!resolvedMarketKey) return [];
+  const addressCoverage = resolveNzAddressSignalCoverage({ city: event.city, territorialAuthority: event.territorialAuthority, region: event.region, countryCode: event.countryCode, latitude: event.latitude, longitude: event.longitude });
+  if (!addressCoverage) return [];
   return [{
     sourceId: event.sourceId,
     externalId: `event:${event.externalId}`,
-    marketKey: resolvedMarketKey,
+    marketKey: addressCoverage.marketKey,
     type: "MAJOR_EVENT",
     title: event.title,
     region,
@@ -3292,6 +3350,12 @@ function minDate(values: Date[]) {
 
 function average(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function propertySupportStatus(level: "FULL" | "REGIONAL" | "NATIONAL_ONLY"): "SUPPORTED" | "PILOT_AVAILABLE" | "INSUFFICIENT_MARKET_DATA" {
+  if (level === "FULL") return "SUPPORTED";
+  if (level === "REGIONAL") return "PILOT_AVAILABLE";
+  return "INSUFFICIENT_MARKET_DATA";
 }
 
 function mapWorkerStatusToPriceCheck(status: string) {

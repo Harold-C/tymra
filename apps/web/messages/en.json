@@ -104,6 +104,11 @@
     "demoBody": "Not real market data. This result demonstrates the Release 1 workflow only.",
     "supersededTitle": "This is an older result version",
     "supersededBody": "Treat it as historical context and use the latest issued link for decisions.",
+    "coverage": {
+      "FULL": { "title": "Full market signal coverage", "body": "{market}: nationwide, regional and configured local sources are included." },
+      "REGIONAL": { "title": "Regional signal coverage", "body": "{market}: nationwide and regional evidence is included; local official events and local-flow sources are not yet configured." },
+      "NATIONAL_ONLY": { "title": "National signal coverage only", "body": "{market}: the region could not be resolved reliably, so no local or regional evidence is implied." }
+    },
     "eyebrow": "Accommodation pricing intelligence",
     "title": "Dates that may deserve attention",
     "propertyUnavailable": "Property unavailable",

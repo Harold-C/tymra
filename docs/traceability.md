@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
@@ -41,13 +41,13 @@ verification evidence.
 | Source/config assembly | Docker Node 24 base image built and Prisma Client generated from the current schema | verified |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
 | TypeScript | Web, Worker, config, db, domain, providers and queue each passed `tsc --noEmit` | verified |
-| Root unit/component suite | 18 files, 138 tests passed and 5 external provider fixtures intentionally skipped | verified |
+| Root unit/component suite | 19 files, 146 tests passed and 5 external provider fixtures intentionally skipped | verified |
 | Worker unit suite | 17 files, 86 tests passed, including named Argus downloads, retry-safe evidence retention, strict aviation contracts, nationwide signal routing, source/schedule gating and failure classification | verified |
 | Argus boundary suites | Async Job client, durable orchestration, schema validation, cancellation and evidence-before-ACK tests | verified by current Worker unit and database integration suites plus 2026-08-02 real bounded acceptance |
 | Worker production build | `index`, `api`, `scheduler` and `cli` entrypoints built successfully | verified |
 | Web production build | Next.js generated 65/65 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
 | Isolated Compose smoke | Fresh image, migration, seed, Web, Worker API, Worker, Redis, PostgreSQL and Mailpit passed on isolated ports/volumes; cleanup completed | verified |
-| Database/API/Worker integration | 15 files and 69 tests passed against a migrated and seeded isolated PostgreSQL database; development scheduler disablement, production activation and guarded schedule rollback are included, and the database was removed afterwards | verified |
+| Database/API/Worker integration | 16 files and 74 tests passed against a migrated and seeded isolated PostgreSQL database; nationwide address API/Worker identity, persistent cache, confirmation-only Property promotion, idempotency and cross-region isolation are included, and the database was removed afterwards | verified |
 | Playwright/accessibility | Not rerun after the source-control UI simplification | not_verified |
 | Aggregate `pnpm verify` | All constituent gates—lint, typecheck, unit, integration and build—passed; they were invoked separately in this update | verified by constituents |
 | Current runtime image | Web, Worker and Worker API were rebuilt/recreated from the current worktree; database, Redis and Argus health are green | verified; Worker health returned HTTP 200 and Web returned HTTP 200 |
@@ -253,6 +253,7 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | Public signal lineage | RawArtifact -> SourceMarketSignal -> MarketSignal -> MarketSignalSourceLink | locally verified across holidays, ski seasons, DOC/Interislander alerts, GeoNet, MBIE ADP/TVF/MRTE/IVS, Stats NZ, MetService, NZTA, RBNZ FX, airport and port/cruise adapters |
 | Public source adapters | Every configured public source ID uses a concrete official/public transport or a required Argus read-only Job; Christchurch sports, UC and Lincoln dates, racing, cruise and airport monthly sources are registered separately | implementations, live-source probes and bounded two-pass local acceptance verified; Lincoln contract, local evidence copy, ACK purge and idempotency verified on 2026-08-04; schedules remain disabled |
 | New Zealand major-market coverage gate | 15-market executable matrix distinguishes official, demand, disruption, seasonal and local-flow layers and names every required source | 14 direct markets plus Dunedin's verified Argus path; DOC closures and ADP/TVF/MRTE route to all 15 markets, IVS/Stats provide national context, and MoT plus Auckland Airport passed repeat persistence |
+| Nationwide resolved-address signal routing | LINZ free-text address search resolves standard geography before `FULL`, `REGIONAL` or `NATIONAL_ONLY`; 17 regions have explicit keys, non-major addresses run the 19-source national baseline, and coverage limitations are frozen into snapshots/results | 17-Region provider corpus; ambiguity/low-confidence/cross-region/expiry/concurrency regression; isolated PostgreSQL cache and confirmation-promotion tests; live Wellington query returned `source`, then `database` after Web restart with zero Property rows |
 | Canonical event persistence | Source-normalised series/occurrences, exact canonical matching, venue linkage, idempotent repeat writes and preserved source state | verified by Worker unit tests and local database integration regression |
 | Event impact evidence v2 | Versioned evidence validation, provenance/time precision, cross-source aggregation, trusted venue enrichment and conservative promotion | unit/integration verified; attendance or independent official-scale plus demand evidence can qualify; capacity-only and same-domain corroboration stay pending; one canonical signal retains all lineage |
 | Local source acceptance standard | Development-only guard, hard-disabled development scheduler, bounded real collection, immutable run evidence, two-pass idempotency, retention, Redis lock, lease recovery, unchanged source configuration and full quality gate | verified and required for every implemented collection channel |

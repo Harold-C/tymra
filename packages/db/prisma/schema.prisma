@@ -587,6 +587,65 @@ model Property {
   @@index([canonicalName])
 }
 
+model AddressIdentity {
+  id                   String                       @id @default(cuid())
+  providerKey          String
+  providerExternalId   String
+  normalizedAddress    String
+  city                 String
+  countryCode          String                       @default("NZ")
+  region               String?
+  territorialAuthority String
+  rto                  String?
+  postcode             String?
+  latitude             Float
+  longitude            Float
+  lifecycle            String?
+  sourceUrl            String
+  observedAt           DateTime
+  firstSeenAt          DateTime                     @default(now())
+  lastSeenAt           DateTime
+  resolutionCandidates AddressResolutionCandidate[]
+
+  @@unique([providerKey, providerExternalId])
+  @@index([countryCode, region, city])
+  @@index([lastSeenAt])
+}
+
+model AddressResolutionCache {
+  id              String                       @id @default(cuid())
+  queryHash       String
+  providerKey     String
+  resolverVersion String
+  resultLimit     Int
+  matchStatus     String
+  warnings        Json                         @default("[]")
+  validUntil      DateTime
+  staleUntil      DateTime
+  hitCount        Int                          @default(0)
+  lastHitAt       DateTime?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+  candidates      AddressResolutionCandidate[]
+
+  @@unique([queryHash, providerKey, resolverVersion, resultLimit])
+  @@index([validUntil])
+  @@index([staleUntil])
+}
+
+model AddressResolutionCandidate {
+  resolutionId      String
+  addressIdentityId String
+  rank              Int
+  confidence        Float
+  resolution        AddressResolutionCache @relation(fields: [resolutionId], references: [id], onDelete: Cascade)
+  addressIdentity   AddressIdentity        @relation(fields: [addressIdentityId], references: [id], onDelete: Cascade)
+
+  @@id([resolutionId, addressIdentityId])
+  @@unique([resolutionId, rank])
+  @@index([addressIdentityId])
+}
+
 model SellableUnit {
   id                      String                   @id @default(cuid())
   propertyId              String
@@ -1024,47 +1083,47 @@ model ScheduleDefinition {
 }
 
 model DataSource {
-  id                         String                  @id @default(cuid())
-  key                        String                  @unique
-  name                       String
-  providerType               ProviderType
-  sourceType                 SourceType              @default(PUBLIC_DATA)
-  lifecycle                  SourceLifecycle         @default(RESEARCH)
-  supportedDomains           Json                    @default("[]")
-  adapterKey                 String?
-  environments               SourceEnvironment[]     @default([DEVELOPMENT])
-  accessMethod               String?
-  retentionPolicy            Json                    @default("{}")
-  concurrencyLimit           Int                     @default(1)
-  dailyBudget                Int                     @default(0)
-  operationalStatus          OperationalStatus       @default(UNCONFIGURED)
-  lastReviewedAt             DateTime?
-  healthSummary              Json                    @default("{}")
-  metadata                   Json                    @default("{}")
-  status                     DataSourceStatus        @default(UNKNOWN)
-  healthStatus               SourceHealthStatus      @default(DOWN)
-  enabled                    Boolean                 @default(false)
-  acquisitionMethod          String
-  retentionDays              Int?
-  owner                      String?
-  lastSuccessAt              DateTime?
-  errorRate                  Float                   @default(0)
-  isDemo                     Boolean                 @default(false)
-  createdAt                  DateTime                @default(now())
-  updatedAt                  DateTime                @updatedAt
-  listings                   Listing[]
-  collectionRuns             CollectionRun[]
-  observations               RateObservation[]
-  marketSignals              MarketSignal[]
-  sourceMarketSignals        SourceMarketSignal[]
-  sourceEvents               SourceEvent[]
-  sourceEventOccurrences     SourceEventOccurrence[]
-  imports                    ManualImport[]
-  sourceHealthChecks         SourceHealthCheck[]
-  queryPlans                 QueryPlan[]
-  collectionProfiles         CollectionProfile[]
-  workerAnalyses             WorkerAnalysisRequest[]
-  crawlTargets               SourceCrawlTarget[]
+  id                     String                  @id @default(cuid())
+  key                    String                  @unique
+  name                   String
+  providerType           ProviderType
+  sourceType             SourceType              @default(PUBLIC_DATA)
+  lifecycle              SourceLifecycle         @default(RESEARCH)
+  supportedDomains       Json                    @default("[]")
+  adapterKey             String?
+  environments           SourceEnvironment[]     @default([DEVELOPMENT])
+  accessMethod           String?
+  retentionPolicy        Json                    @default("{}")
+  concurrencyLimit       Int                     @default(1)
+  dailyBudget            Int                     @default(0)
+  operationalStatus      OperationalStatus       @default(UNCONFIGURED)
+  lastReviewedAt         DateTime?
+  healthSummary          Json                    @default("{}")
+  metadata               Json                    @default("{}")
+  status                 DataSourceStatus        @default(UNKNOWN)
+  healthStatus           SourceHealthStatus      @default(DOWN)
+  enabled                Boolean                 @default(false)
+  acquisitionMethod      String
+  retentionDays          Int?
+  owner                  String?
+  lastSuccessAt          DateTime?
+  errorRate              Float                   @default(0)
+  isDemo                 Boolean                 @default(false)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  listings               Listing[]
+  collectionRuns         CollectionRun[]
+  observations           RateObservation[]
+  marketSignals          MarketSignal[]
+  sourceMarketSignals    SourceMarketSignal[]
+  sourceEvents           SourceEvent[]
+  sourceEventOccurrences SourceEventOccurrence[]
+  imports                ManualImport[]
+  sourceHealthChecks     SourceHealthCheck[]
+  queryPlans             QueryPlan[]
+  collectionProfiles     CollectionProfile[]
+  workerAnalyses         WorkerAnalysisRequest[]
+  crawlTargets           SourceCrawlTarget[]
 
   @@index([status, enabled])
 }
@@ -1136,23 +1195,23 @@ model CollectionRun {
 }
 
 model CollectionIncident {
-  id                 String            @id @default(cuid())
-  collectionRunId    String            @unique
-  retryJobId         String?           @unique
-  status             ExceptionStatus   @default(OPEN)
-  severity           ExceptionPriority
-  category           String
-  title              String
-  summary            String
-  evidence           Json
-  resolutionAction   String?
-  resolutionReason   String?
-  acknowledgedAt     DateTime?
-  resolvedAt         DateTime?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  isDemo             Boolean           @default(false)
-  collectionRun      CollectionRun     @relation(fields: [collectionRunId], references: [id], onDelete: Restrict)
+  id               String            @id @default(cuid())
+  collectionRunId  String            @unique
+  retryJobId       String?           @unique
+  status           ExceptionStatus   @default(OPEN)
+  severity         ExceptionPriority
+  category         String
+  title            String
+  summary          String
+  evidence         Json
+  resolutionAction String?
+  resolutionReason String?
+  acknowledgedAt   DateTime?
+  resolvedAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  isDemo           Boolean           @default(false)
+  collectionRun    CollectionRun     @relation(fields: [collectionRunId], references: [id], onDelete: Restrict)
 
   @@index([status, severity, createdAt])
   @@index([retryJobId])
@@ -1267,7 +1326,7 @@ model MarketCoverage {
 }
 
 model MarketSignal {
-  id                String           @id @default(cuid())
+  id                String                   @id @default(cuid())
   marketKey         String
   type              MarketSignalType
   region            String
@@ -1275,12 +1334,12 @@ model MarketSignal {
   endsAt            DateTime
   dataSourceId      String?
   eventOccurrenceId String?
-  status            String           @default("CONFIRMED")
+  status            String                   @default("CONFIRMED")
   evidence          Json
-  isDemo            Boolean          @default(false)
-  createdAt         DateTime         @default(now())
-  dataSource        DataSource?      @relation(fields: [dataSourceId], references: [id])
-  eventOccurrence   EventOccurrence? @relation(fields: [eventOccurrenceId], references: [id])
+  isDemo            Boolean                  @default(false)
+  createdAt         DateTime                 @default(now())
+  dataSource        DataSource?              @relation(fields: [dataSourceId], references: [id])
+  eventOccurrence   EventOccurrence?         @relation(fields: [eventOccurrenceId], references: [id])
   sourceLinks       MarketSignalSourceLink[]
 
   @@index([marketKey, startsAt, endsAt])
@@ -1288,7 +1347,7 @@ model MarketSignal {
 }
 
 model SourceMarketSignal {
-  id                  String                   @id @default(cuid())
+  id                  String                  @id @default(cuid())
   dataSourceId        String
   lastCollectionRunId String
   externalId          String
@@ -1302,14 +1361,14 @@ model SourceMarketSignal {
   confidence          Float
   evidenceRef         String
   contentHash         String
-  metadata            Json                     @default("{}")
-  isDemo              Boolean                  @default(false)
-  firstSeenAt         DateTime                 @default(now())
-  lastSeenAt          DateTime                 @default(now())
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  dataSource          DataSource               @relation(fields: [dataSourceId], references: [id])
-  lastCollectionRun   CollectionRun            @relation(fields: [lastCollectionRunId], references: [id])
+  metadata            Json                    @default("{}")
+  isDemo              Boolean                 @default(false)
+  firstSeenAt         DateTime                @default(now())
+  lastSeenAt          DateTime                @default(now())
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  dataSource          DataSource              @relation(fields: [dataSourceId], references: [id])
+  lastCollectionRun   CollectionRun           @relation(fields: [lastCollectionRunId], references: [id])
   canonicalLink       MarketSignalSourceLink?
 
   @@unique([dataSourceId, externalId])
@@ -1783,27 +1842,27 @@ model Job {
 }
 
 model ArgusExecution {
-  id                String               @id @default(cuid())
-  orchestrationKey  String               @unique
-  parentJobId       String
-  collectionRunId   String
-  dataSourceId      String
-  argusJobId        String               @unique
-  traceId           String
-  connectorId       String
-  workflowId        String
-  requestedUrl      String
-  status            ArgusExecutionStatus @default(SUBMITTED)
-  result            Json?
-  errorCategory     String?
-  errorMessage      String?
-  retryable         Boolean?
-  submittedAt       DateTime             @default(now())
-  lastPolledAt      DateTime?
-  deadlineAt        DateTime
-  completedAt       DateTime?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  id               String               @id @default(cuid())
+  orchestrationKey String               @unique
+  parentJobId      String
+  collectionRunId  String
+  dataSourceId     String
+  argusJobId       String               @unique
+  traceId          String
+  connectorId      String
+  workflowId       String
+  requestedUrl     String
+  status           ArgusExecutionStatus @default(SUBMITTED)
+  result           Json?
+  errorCategory    String?
+  errorMessage     String?
+  retryable        Boolean?
+  submittedAt      DateTime             @default(now())
+  lastPolledAt     DateTime?
+  deadlineAt       DateTime
+  completedAt      DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([parentJobId, status])
   @@index([collectionRunId, createdAt])
@@ -1836,20 +1895,20 @@ model EmailDelivery {
 }
 
 model ManualImport {
-  id             String       @id @default(cuid())
-  dataSourceId   String
-  status         ImportStatus @default(UPLOADED)
-  format         String
-  filename       String
-  collectedAt    DateTime
-  rowCount       Int          @default(0)
-  validRowCount  Int          @default(0)
-  errorRowCount  Int          @default(0)
-  errors         Json
-  isDemo         Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  importedAt     DateTime?
-  dataSource     DataSource   @relation(fields: [dataSourceId], references: [id])
+  id            String       @id @default(cuid())
+  dataSourceId  String
+  status        ImportStatus @default(UPLOADED)
+  format        String
+  filename      String
+  collectedAt   DateTime
+  rowCount      Int          @default(0)
+  validRowCount Int          @default(0)
+  errorRowCount Int          @default(0)
+  errors        Json
+  isDemo        Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  importedAt    DateTime?
+  dataSource    DataSource   @relation(fields: [dataSourceId], references: [id])
 
   @@index([dataSourceId, createdAt])
 }

@@ -104,6 +104,11 @@
     "demoBody": "Not real market data。本结果仅演示 Release 1 流程。",
     "supersededTitle": "这是较旧的结果版本",
     "supersededBody": "仅可作为历史背景；作出决定时请使用最新链接。",
+    "coverage": {
+      "FULL": { "title": "完整市场信号覆盖", "body": "{market}：已包含全国、区域及已配置的本地来源。" },
+      "REGIONAL": { "title": "区域信号覆盖", "body": "{market}：已包含全国及区域证据；本地官方活动和本地客流来源尚未配置。" },
+      "NATIONAL_ONLY": { "title": "仅全国信号覆盖", "body": "{market}：无法可靠确定区域，因此不会暗示存在本地或区域证据。" }
+    },
     "eyebrow": "住宿价格情报",
     "title": "可能需要关注的日期",
     "propertyUnavailable": "房源信息不可用",

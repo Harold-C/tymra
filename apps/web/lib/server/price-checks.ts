@@ -1,7 +1,9 @@
 import { getEnvironment } from "@tymra/config";
 import {
+  addressIdentityPersistentCache,
   encryptPersonalData,
   enqueueJob,
+  findStoredAddressIdentity,
   hashPersonalIdentifier,
   prisma,
 } from "@tymra/db";
@@ -11,6 +13,14 @@ import {
   stayQuerySchema,
   type PriceCheckStatus,
 } from "@tymra/domain";
+import {
+  linzAddressIdentityProvider,
+  normalizeAddressQuery,
+  resolveNzAddressSignalCoverage,
+  stableAddressIdentityId,
+  type AddressIdentity,
+} from "@tymra/providers";
+import { withRedisLockWait } from "@tymra/queue";
 
 import { checkAccessHash, deriveCheckAccessKey } from "./check-access";
 import { queuePriceCheckEmail } from "./email-deliveries";
@@ -22,6 +32,36 @@ export async function searchProperties(inputValue: unknown) {
   const input = propertySearchSchema.parse(inputValue);
   if (nonNewZealandPattern.test(input.input)) {
     return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
+  }
+
+  if (looksLikeNzStreetAddress(input.input)) {
+    try {
+      const result = await linzAddressIdentityProvider.search(input.input, {
+        correlationId: `property-search:${Date.now().toString(36)}`,
+        limit: 10,
+        queryHash: hashPersonalIdentifier(normalizeAddressQuery(input.input), getEnvironment().ACCESS_KEY_SECRET),
+        persistentCache: addressIdentityPersistentCache,
+        withCacheLock: (key, operation) => withRedisLockWait(key, 15_000, operation),
+      });
+      if (result.matchStatus === "NONE") {
+        return { supportStatus: "SUPPORTED" as const, matchStatus: "NONE" as const, candidates: [], identity: result };
+      }
+      const propertyIds = result.candidates.map((candidate) => `property_${stableAddressIdentityId(candidate.externalId)}`);
+      const existingProperties = await prisma.property.findMany({
+        where: { id: { in: propertyIds } },
+        include: { units: { where: { status: "ACTIVE" }, select: { id: true } } },
+      });
+      const existingById = new Map(existingProperties.map((property) => [property.id, property]));
+      const candidates = result.candidates.map((candidate) => mapAddressCandidate(candidate, existingById));
+      return { supportStatus: "SUPPORTED" as const, matchStatus: result.matchStatus, candidates, identity: { ...result, candidates: result.candidates } };
+    } catch (error) {
+      return {
+        supportStatus: "SOURCE_UNAVAILABLE" as const,
+        matchStatus: "NONE" as const,
+        candidates: [],
+        identity: { provider: "linz-nz-addresses", warnings: [error instanceof Error ? error.message : "ADDRESS_SOURCE_UNAVAILABLE"] },
+      };
+    }
   }
 
   const environment = getEnvironment();
@@ -63,6 +103,43 @@ export async function searchProperties(inputValue: unknown) {
     matchStatus: mapped.length === 1 ? mapped[0].matchStatus : mapped.length > 1 ? ("MULTIPLE" as const) : ("NONE" as const),
     candidates: mapped,
   };
+}
+
+function mapAddressCandidate(candidate: AddressIdentity, existingById: Map<string, { id: string; units: { id: string }[] }>) {
+  const coverage = resolveNzAddressSignalCoverage(candidate);
+  const propertyId = `property_${stableAddressIdentityId(candidate.externalId)}`;
+  const existing = existingById.get(propertyId);
+  return {
+    externalId: candidate.externalId,
+    canonicalName: `Property at ${candidate.normalizedAddress}`,
+    address: candidate.normalizedAddress,
+    city: candidate.city,
+    countryCode: "NZ",
+    region: candidate.region,
+    territorialAuthority: candidate.territorialAuthority,
+    rto: candidate.rto,
+    postcode: candidate.postcode,
+    latitude: candidate.latitude,
+    longitude: candidate.longitude,
+    confidence: candidate.confidence,
+    coverageLevel: coverage?.level ?? "NATIONAL_ONLY",
+    accommodationType: "UNCLASSIFIED_ACCOMMODATION",
+    matchStatus: candidate.matchStatus,
+    isDemo: false,
+    propertyId: existing?.id ?? null,
+    addressExternalId: candidate.externalId,
+    unitIds: existing?.units.map((unit) => unit.id) ?? [],
+  };
+}
+
+function looksLikeNzStreetAddress(value: string) {
+  return /\d/.test(value) && /[a-z\u0100-\u017f]{2,}/i.test(value) && !/^https?:\/\//i.test(value.trim());
+}
+
+function addressSupportStatus(level: "FULL" | "REGIONAL" | "NATIONAL_ONLY" | undefined) {
+  if (level === "FULL") return "SUPPORTED" as const;
+  if (level === "REGIONAL") return "PILOT_AVAILABLE" as const;
+  return "INSUFFICIENT_MARKET_DATA" as const;
 }
 
 export async function createPriceCheck(inputValue: unknown) {
@@ -107,7 +184,7 @@ export async function createPriceCheck(inputValue: unknown) {
         propertyId: property?.id,
         unitId,
         stayQueryId: stayQuery.id,
-        marketKey: property?.city.toLowerCase() === "christchurch" ? "christchurch" : "unknown",
+        marketKey: property ? resolveNzAddressSignalCoverage(property)?.marketKey ?? "unknown" : "unknown",
         status,
         accessKeyHash: checkAccessHash(accessKey),
         idempotencyKey: input.idempotencyKey,
@@ -122,16 +199,71 @@ export async function createPriceCheck(inputValue: unknown) {
   return { accepted: true as const, check, accessKey, nextAction: nextAction(status), reused: false };
 }
 
-export async function confirmProperty(checkId: string, propertyId: string) {
+export async function confirmProperty(checkId: string, input: { propertyId?: string; addressExternalId?: string }) {
+  const current = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId }, select: { rawInput: true } });
+  const propertyId = input.propertyId ?? await promoteAddressIdentity(input.addressExternalId!, current.rawInput);
   const property = await prisma.property.findUniqueOrThrow({
     where: { id: propertyId },
     include: { units: { where: { status: "ACTIVE" } } },
   });
   const unitId = property.units.length === 1 ? property.units[0].id : null;
-  return prisma.priceCheck.update({
+  const check = await prisma.priceCheck.update({
     where: { id: checkId },
     data: { propertyId, unitId, status: "NEEDS_CONFIRMATION" },
   });
+  return { check, requiresUnitConfirmation: property.units.length > 1 };
+}
+
+async function promoteAddressIdentity(externalId: string, rawInput: string) {
+  const environment = getEnvironment();
+  const queryHash = hashPersonalIdentifier(normalizeAddressQuery(rawInput), environment.ACCESS_KEY_SECRET);
+  const candidate = await findStoredAddressIdentity("linz-nz-addresses", externalId, queryHash);
+  if (!candidate?.resolutionCandidates.length) throw new Error("The selected address identity is not a candidate for this Price Check");
+  const coverage = resolveNzAddressSignalCoverage(candidate);
+  const propertyId = `property_${stableAddressIdentityId(candidate.providerExternalId)}`;
+  const unitId = `unit_${stableAddressIdentityId(`${candidate.providerExternalId}:entire-property`)}`;
+  await prisma.$transaction([
+    prisma.property.upsert({
+      where: { id: propertyId },
+      create: {
+        id: propertyId,
+        canonicalName: `Property at ${candidate.normalizedAddress}`,
+        address: candidate.normalizedAddress,
+        city: candidate.city,
+        countryCode: candidate.countryCode,
+        latitude: candidate.latitude,
+        longitude: candidate.longitude,
+        region: candidate.region,
+        territorialAuthority: candidate.territorialAuthority,
+        rto: candidate.rto,
+        postcode: candidate.postcode,
+        accommodationType: "UNCLASSIFIED_ACCOMMODATION",
+        supportStatus: addressSupportStatus(coverage?.level),
+        identityConfidence: candidate.resolutionCandidates[0].confidence,
+        status: "ACTIVE",
+        isDemo: false,
+      },
+      update: {
+        address: candidate.normalizedAddress,
+        city: candidate.city,
+        latitude: candidate.latitude,
+        longitude: candidate.longitude,
+        region: candidate.region,
+        territorialAuthority: candidate.territorialAuthority,
+        rto: candidate.rto,
+        postcode: candidate.postcode,
+        supportStatus: addressSupportStatus(coverage?.level),
+        identityConfidence: candidate.resolutionCandidates[0].confidence,
+        status: "ACTIVE",
+      },
+    }),
+    prisma.sellableUnit.upsert({
+      where: { id: unitId },
+      create: { id: unitId, propertyId, canonicalName: "Entire property", officialName: "Entire property", capacity: 2, bedrooms: null, bathrooms: null, bedTypes: [], amenities: [], unitType: "UNCONFIRMED", entireOrShared: "ENTIRE", status: "ACTIVE", isDemo: false },
+      update: { propertyId, status: "ACTIVE" },
+    }),
+  ]);
+  return propertyId;
 }
 
 export async function confirmUnit(checkId: string, unitId: string) {

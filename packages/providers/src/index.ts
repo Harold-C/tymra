@@ -92,3 +92,4 @@ export * from "./mbie-tourism-adapters";
 export * from "./queenstown-airport-monthly-adapter";
 export * from "./aviation-argus-adapters";
 export * from "./nz-market-coverage";
+export * from "./address-identity";

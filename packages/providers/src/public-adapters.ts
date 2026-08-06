@@ -20,7 +20,7 @@ import { queenstownAirportMonthlyAdapters } from "./queenstown-airport-monthly-a
 import { accessDisruptionAdapters } from "./access-disruption-adapters";
 import { skiSeasonAdapters } from "./ski-season-adapter";
 import { aviationArgusAdapters } from "./aviation-argus-adapters";
-import { marketKeysForAnniversaryRegion, nearestNzMarketKey, nzMarketKeysForAreaText, nzMarketKeysWithinDistance } from "./nz-market-coverage";
+import { marketKeysForAnniversaryRegion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysWithinDistance } from "./nz-market-coverage";
 import { parse } from "csv-parse/sync";
 import { DOMParser, parseHTML } from "linkedom";
 
@@ -218,7 +218,7 @@ class GeoNetAdapter implements PublicDataAdapter {
       const coordinate = pointCoordinate(feature.geometry?.coordinates);
       const radiusKm = mmi >= 6 ? 350 : mmi >= 5 ? 220 : mmi >= 4 ? 140 : 80;
       const marketKeys = [...new Set([
-        ...nzMarketKeysForAreaText(String(properties.locality ?? "")),
+        ...nzCoverageKeysForAreaText(String(properties.locality ?? "")),
         ...(coordinate ? nzMarketKeysWithinDistance(coordinate.latitude, coordinate.longitude, radiusKm) : []),
       ])];
       return marketKeys.map((marketKey, index) => ({
@@ -658,7 +658,7 @@ class NztaJourneyPlannerAdapter implements PublicDataAdapter {
       const impact = cleanText(stringValue(properties.Impact));
       const isCritical = Number(properties.IsCritical ?? 0) === 1;
       const coordinate = geometryCoordinate(record.feature.geometry);
-      const textMarkets = nzMarketKeysForAreaText([properties.Name, properties.LocationArea, properties.EventDescription, properties.EventComments].map(stringValue).join(" "));
+      const textMarkets = nzCoverageKeysForAreaText([properties.Name, properties.LocationArea, properties.EventDescription, properties.EventComments].map(stringValue).join(" "));
       const nearestMarket = coordinate ? nearestNzMarketKey(coordinate.latitude, coordinate.longitude, 150) : null;
       const marketKeys = [...new Set([...textMarkets, ...(nearestMarket ? [nearestMarket] : [])])];
       return marketKeys.map((marketKey, index) => ({
@@ -894,7 +894,7 @@ class MetServiceCapAdapter implements PublicDataAdapter {
       const parsedEnd = parseIsoTimestamp(info.expires);
       const endsAt = parsedEnd && parsedEnd > startsAt ? parsedEnd : addUtcDays(startsAt, 1);
       const region = info.areas.map((area) => area.areaDesc).join("; ") || "New Zealand";
-      const marketKeys = nzMarketKeysForAreaText(region);
+      const marketKeys = nzCoverageKeysForAreaText(region);
       return marketKeys.map((marketKey, index): PublicSignal => ({
         sourceId: "metservice",
         externalId: index === 0 ? `cap-alert:${alert.identifier}` : `cap-alert:${alert.identifier}:market:${marketKey}`,
@@ -1270,8 +1270,9 @@ export function marketKeysForMbieArea(area: string): string[] {
   if (["queenstown", "destination-queenstown", "wanaka", "lake-wanaka", "lake-wanaka-tourism", "queenstown-lakes"].includes(key)) return ["queenstown-wanaka"];
   if (["rotorua", "rotoruanz"].includes(key)) return ["rotorua"];
   if (["tauranga", "coastal-bay-of-plenty", "tourism-bay-of-plenty", "western-bay-of-plenty"].includes(key)) return ["tauranga"];
-  if (key === "bay-of-plenty") return ["rotorua", "tauranga"];
-  if (["waikato", "hamilton", "hamilton-waikato-tourism", "waipa", "matamata-piako", "waitomo", "otorohanga"].includes(key)) return ["waikato"];
+  if (key === "bay-of-plenty") return ["rotorua", "tauranga", "nz-region-bay-of-plenty"];
+  if (key === "waikato") return ["waikato", "nz-region-waikato"];
+  if (["hamilton", "hamilton-waikato-tourism", "waipa", "matamata-piako", "waitomo", "otorohanga"].includes(key)) return ["waikato"];
   if (["lake-taupo", "taupo", "destination-great-lake-taupo"].includes(key)) return ["taupo"];
   if (["dunedin", "enterprise-dunedin"].includes(key)) return ["dunedin"];
   if (["nelson-tasman", "nelson", "tasman", "nelson-regional-development-agency-nrda"].includes(key)) return ["nelson-tasman"];
@@ -1280,6 +1281,11 @@ export function marketKeysForMbieArea(area: string): string[] {
   if (["northland", "northland-inc", "whangarei", "far-north", "kaipara"].includes(key)) return ["northland"];
   if (["manawatu", "central-economic-development-agency-ceda", "palmerston-north", "horowhenua"].includes(key)) return ["manawatu"];
   if (["southland", "visit-southland", "fiordland", "visit-fiordland", "invercargill", "gore"].includes(key)) return ["southland-fiordland"];
+  if (["gisborne", "tairawhiti", "trust-tairawhiti"].includes(key)) return ["nz-region-gisborne"];
+  if (["marlborough", "destination-marlborough"].includes(key)) return ["nz-region-marlborough"];
+  if (["west-coast", "development-west-coast", "tourism-west-coast"].includes(key)) return ["nz-region-west-coast"];
+  if (key === "otago") return ["nz-region-otago"];
+  if (key === "chatham-islands") return ["nz-region-chatham-islands"];
   return [];
 }
 

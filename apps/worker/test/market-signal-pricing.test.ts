@@ -44,8 +44,8 @@ describe("nationwide market signals in pricing", () => {
     assert.equal(signal?.type, "MAJOR_EVENT");
   });
 
-  it("does not publish a promoted event when its location is ambiguous", () => {
-    assert.deepEqual(eventSignal(event({ city: null, region: "Otago" })), []);
+  it("routes a promoted event with only a broad region to regional coverage without guessing a city market", () => {
+    assert.deepEqual(eventSignal(event({ city: null, region: "Otago" })).map((signal) => signal.marketKey), ["nz-region-otago"]);
   });
 
   it("separates major-event, demand and disruption evidence", () => {

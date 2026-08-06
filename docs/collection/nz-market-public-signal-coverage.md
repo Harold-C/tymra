@@ -51,6 +51,38 @@ The direct-adapter-only `assessNzMarketCoverage` report remains 14 of 15 and ide
 Argus-required by design. The separate registered Argus path is now live, so all 15 markets have an
 implemented official-calendar collection path; this does not imply operational stability.
 
+## Nationwide address coverage hierarchy
+
+Once an enabled identity provider has resolved a New Zealand property into structured country and
+locality fields, Tymra no longer rejects addresses outside the 15 major markets or assigns them to
+Christchurch. `resolveNzAddressSignalCoverage` produces one explicit level:
+
+- `FULL`: one of the 15 configured major markets; the complete national, official-local, seasonal
+  and registered local-flow plan applies.
+- `REGIONAL`: a recognised New Zealand region outside an unambiguous major-market mapping; the
+  19-source national discovery, demand and disruption baseline applies, regional MBIE and
+  text-addressed MetService/NZTA/GeoNet/event signals use an `nz-region-*` key, and missing official
+  local-event/local-flow sources are declared limitations.
+- `NATIONAL_ONLY`: the property is confirmed as New Zealand but its region is unresolved; only
+  `new-zealand` signals are queried and no regional or local coverage is implied.
+
+All 17 official region names, including Gisborne, Marlborough, West Coast and Chatham Islands, map
+to a non-null coverage result. Explicit non-New-Zealand countries fail closed. The resolved level,
+market name and limitations are frozen into the competitor set, date/market snapshots and result
+payload, and are shown in both secure result experiences.
+
+Free-text street-address discovery now uses the official LINZ NZ Addresses ArcGIS Feature Service
+through the unified `AddressIdentityProvider`. It returns the normalized address, town/city,
+Territorial Authority, derived Region and RTO, explicit postcode when available, WGS84 coordinates
+and a confidence score. Web and Worker use a process L1 plus a shared PostgreSQL L2 cache protected
+by a Redis miss lock. The database stores only an HMAC query fingerprint, resolver version, canonical
+public identities and ordered candidates; it never stores the raw search query. UNIQUE, MULTIPLE and
+NONE results expire after 7 days, 24 hours and 1 hour respectively. Multiple credible candidates
+require confirmation; low-confidence results are not selected; and an explicit Region in the query
+removes candidates from another Region. Search candidates stay outside Property/SellableUnit until
+the user confirms one or a Worker starts real work from a unique identity. The coverage router still
+does not silently substitute the nearest major market when structured geography is unavailable.
+
 Implementation coverage and operational stability are deliberately separate. The executable
 `assessNzMarketOperationalCoverage` gate requires, per market:
 

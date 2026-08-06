@@ -388,7 +388,7 @@ async function analyse(priceCheckId: string, sourceJobId: string) {
 }
 
 async function autoValidate(priceCheckId: string, sourceJobId: string, environment: Environment) {
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { property: { select: { supportStatus: true } } } });
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: check.isDemo ? "development-demo" : "manual-import" } });
   const observations = await prisma.rateObservation.findMany({ where: { collectionRun: { priceCheckId } } });
   const confidence = determineConfidence({
@@ -400,7 +400,7 @@ async function autoValidate(priceCheckId: string, sourceJobId: string, environme
     blockingFlags: observations.length < 3 ? ["COMPETITOR_COUNT_BELOW_3"] : [],
   });
   const decision = decidePublication({
-    marketStatus: check.marketKey === "christchurch" ? "SUPPORTED" : "COMING_SOON",
+    marketStatus: check.property?.supportStatus ?? "INSUFFICIENT_MARKET_DATA",
     propertyConfirmed: Boolean(check.propertyId),
     unitConfirmed: Boolean(check.unitId),
     targetRatePresent: observations.length > 0,
