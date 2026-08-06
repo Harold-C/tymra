@@ -8,10 +8,13 @@ const liveContext = { ...fixtureContext, mode: "live" as const };
 const samples: Record<string, string> = {
   booking: "https://www.booking.com/hotel/nz/example-stay.html?aid=123",
   airbnb: "https://www.airbnb.co.nz/rooms/12345678?source_impression_id=x",
-  expedia: "https://www.expedia.co.nz/Hotel-Information-12345",
+  expedia: "https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information",
+  wotif: "https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information",
   hotels: "https://nz.hotels.com/ho12345",
-  agoda: "https://www.agoda.com/hotel/nz/12345.html",
-  trip: "https://www.trip.com/hotels/detail/12345",
+  bookabach: "https://www.bookabach.co.nz/holiday-accommodation/p12345",
+  vrbo: "https://www.vrbo.com/12345ha",
+  agoda: "https://www.agoda.com/example-hotel/hotel/auckland-nz.html?hotel_id=12345",
+  trip: "https://www.trip.com/hotels/auckland-hotel-detail-12345/example/",
   google_hotels: "https://www.google.co.nz/travel/hotels?q=Example%20Stay",
 };
 

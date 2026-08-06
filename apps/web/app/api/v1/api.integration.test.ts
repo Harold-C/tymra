@@ -13,6 +13,7 @@ import { POST as reissueLink } from "./admin/checks/[checkId]/reissue-link/route
 import { POST as adminSignIn } from "./admin/session/route";
 import { POST as submitContact } from "./contact/route";
 import { GET as getCheck } from "./price-checks/[checkId]/route";
+import { POST as confirmListing } from "./price-checks/[checkId]/confirm-listing/route";
 import { POST as confirmProperty } from "./price-checks/[checkId]/confirm-property/route";
 import { POST as confirmQuery } from "./price-checks/[checkId]/confirm-query/route";
 import { POST as confirmUnit } from "./price-checks/[checkId]/confirm-unit/route";
@@ -127,10 +128,18 @@ describe("Release 1 API contracts", () => {
       const cookie = createResponse.headers.get("set-cookie")!.split(";")[0];
       const confirmation = await confirmProperty(jsonRequest(`/api/v1/price-checks/${localIds.checkId}/confirm-property`, { addressExternalId: externalIds[0] }, { cookie }), { params: { checkId: localIds.checkId } });
       expect(confirmation.status).toBe(200);
+      expect((await confirmation.json()).data.requiresListingConfirmation).toBe(true);
       const confirmed = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.checkId } });
       localIds.propertyId = confirmed.propertyId!;
       expect(confirmed.unitId).toBeTruthy();
+      expect(confirmed.listingValidationStatus).toBe("REQUIRED");
       expect(await prisma.sellableUnit.count({ where: { propertyId: localIds.propertyId } })).toBe(1);
+
+      const listingConfirmation = await confirmListing(jsonRequest(`/api/v1/price-checks/${localIds.checkId}/confirm-listing`, { listingUrl: "https://booking.com/hotel/nz/address-confirmation-stay.html?aid=tracking" }, { cookie }), { params: { checkId: localIds.checkId } });
+      expect(listingConfirmation.status).toBe(200);
+      const pending = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.checkId } });
+      expect(pending).toMatchObject({ listingUrl: "https://www.booking.com/hotel/nz/address-confirmation-stay.html", listingValidationStatus: "PENDING", status: "VALIDATING", unitId: null });
+      expect(await prisma.job.count({ where: { priceCheckId: localIds.checkId, type: "PROPERTY_IDENTIFICATION" } })).toBe(1);
     } finally {
       linzAddressIdentityProvider.search = originalSearch;
       if (localIds.checkId) {

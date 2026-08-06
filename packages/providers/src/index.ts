@@ -79,6 +79,8 @@ export * from "./adapter-types";
 export * from "./access-disruption-adapters";
 export * from "./ski-season-adapter";
 export * from "./ota-adapters";
+export * from "./ota-argus-contracts";
+export * from "./ota-address-match";
 export * from "./public-adapters";
 export * from "./official-nz-adapters";
 export * from "./christchurch-event-adapters";

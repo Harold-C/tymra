@@ -232,6 +232,65 @@ describe("Argus async Job client", () => {
     assert.match((response.payload.extracted as { coverageCaveat: string }).coverageCaveat, /voluntary|participating/iu);
   });
 
+  it("submits and validates the Booking listing identity contract", async () => {
+    server = jobServer(async () => otaResolveListingResult());
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-resolve-test",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal((response.payload.extracted as { sourceListingId: string }).sourceListingId, "example-stay");
+  });
+
+  it.each([
+    ["expedia-public", "expedia", "https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
+    ["wotif-public", "wotif", "https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
+    ["hotels-public", "hotels", "https://nz.hotels.com/ho12345"],
+    ["bookabach-public", "bookabach", "https://www.bookabach.co.nz/holiday-accommodation/p12345"],
+    ["vrbo-public", "vrbo", "https://www.vrbo.com/12345"],
+    ["agoda-public", "agoda", "https://www.agoda.com/example-hotel/hotel/auckland-nz.html"],
+    ["trip-public", "trip", "https://nz.trip.com/hotels/auckland-hotel-detail-12345"],
+  ] as const)("validates the %s listing identity contract", async (connectorId, provider, url) => {
+    const traceId = `${provider}-resolve-test`;
+    server = jobServer(async () => otaResolveListingResult({ traceId, connectorId, provider, url }));
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, { traceId, connectorId, workflowId: "resolve_listing", url });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal((response.payload.extracted as { provider: string }).provider, provider);
+  });
+
+  it("sends bounded stay parameters and rejects inconsistent OTA totals", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      const result = otaCollectRatesResult();
+      ((result.data as { rates: Array<Record<string, unknown>> }).rates[0]!).totalPriceMinor = 99_999;
+      return result;
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-rates-test",
+      connectorId: "booking-public",
+      workflowId: "collect_rates",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+      checkIn: "2026-09-10",
+      checkOut: "2026-09-12",
+      adults: 2,
+      children: 0,
+      units: 1,
+      currency: "NZD",
+    });
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid ota-public\.collect_rates data/u);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.deepEqual({ checkIn: capture.check_in, checkOut: capture.check_out, adults: capture.adults, units: capture.units, currency: capture.currency }, { checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, units: 1, currency: "NZD" });
+  });
+
   it("accepts Ticketek listing/detail contracts and rejects internal identity drift", async () => {
     const invalid = ticketekDetailResult();
     const data = invalid.data as { occurrences: Array<Record<string, unknown>> };
@@ -635,6 +694,50 @@ function ticketekDetailResult(): Record<string, unknown> {
       missingFields: [],
       warnings: [],
       fieldSources: { series: "fixture", occurrences: "fixture" },
+    },
+  };
+}
+
+function otaResolveListingResult(input: { traceId: string; connectorId: string; provider: string; url: string } = { traceId: "booking-resolve-test", connectorId: "booking-public", provider: "booking", url: "https://www.booking.com/hotel/nz/example-stay.html" }): Record<string, unknown> {
+  return {
+    ...baseResult(input.traceId, "resolve_listing", input.connectorId),
+    data: {
+      data_schema: "ota-public.resolve_listing",
+      schema_version: "1.0.0",
+      provider: input.provider,
+      sourceListingId: "example-stay",
+      canonicalUrl: input.url,
+      canonicalName: "Example Stay",
+      address: "42 Example Street, Christchurch 8011",
+      city: "Christchurch",
+      region: "Canterbury",
+      territorialAuthority: "Christchurch City",
+      postcode: "8011",
+      countryCode: "NZ",
+      latitude: -43.532,
+      longitude: 172.636,
+      propertyType: "HOTEL",
+      units: [{ externalId: "double-room", officialName: "Double Room", unitType: "HOTEL_ROOM", capacity: 2, bedrooms: 1, bathrooms: 1, bedTypes: ["queen"], amenities: ["wifi"], entireOrShared: "PRIVATE" }],
+      observedAt: "2026-08-07T00:00:00.000Z",
+      fieldSources: { canonicalName: "heading", address: "property details" },
+      warnings: [],
+      quality: "complete",
+    },
+  };
+}
+
+function otaCollectRatesResult(): Record<string, unknown> {
+  return {
+    ...baseResult("booking-rates-test", "collect_rates", "booking-public"),
+    data: {
+      data_schema: "ota-public.collect_rates",
+      schema_version: "1.0.0",
+      provider: "booking",
+      sourceListingId: "example-stay",
+      rates: [{ sourceListingId: "example-stay", unitExternalId: "double-room", checkIn: "2026-09-10", checkOut: "2026-09-12", currency: "NZD", basePriceMinor: 40_000, mandatoryFeesMinor: 2_000, taxesMinor: 6_000, optionalFeesMinor: 0, totalPriceMinor: 48_000, availabilityStatus: "AVAILABLE", restrictionReason: null, minimumStay: null, mealPlan: "ROOM_ONLY", cancellationPolicy: "FLEXIBLE", paymentTerms: "PAY_LATER", rateFence: "PUBLIC", sourceUrl: "https://www.booking.com/hotel/nz/example-stay.html", collectedAt: "2026-08-07T00:00:00.000Z", qualityFlags: [], fieldSources: { totalPriceMinor: "rate card" } }],
+      observedAt: "2026-08-07T00:00:00.000Z",
+      warnings: [],
+      quality: "complete",
     },
   };
 }

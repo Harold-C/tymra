@@ -25,7 +25,7 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production activation and schedule activation remain separate |
 | Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production activation remains separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
-| Booking/Airbnb/Expedia/Hotels/Agoda/Trip/Google Hotels | URL/canonical and deterministic research adapters only | Real collection implementation and production prerequisites are missing |
+| Nine public OTA brands | Tymra URL/canonical parsing, strict Argus contracts, provider-family persistence, bounded comparable discovery/rate workflow and cross-brand deduplication are implemented | New Argus connectors and bounded real cross-service acceptance remain; Google Hotels is intentionally excluded from OTA execution |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
@@ -268,6 +268,6 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | Retention | Redacted short-lived RawArtifact creation and expired payload deletion | verified |
 | Failure controls | Redis lock contention/reacquisition, lease recovery only after expiry, retry schedule, dead-letter and blocking quality-gate tests | verified |
 | Production fixture guard | Production config rejects both demo and fixture provider modes | verified |
-| External live OTA collection | No live API/browser source is configured; no fixture fallback is allowed | external prerequisite |
+| External live OTA collection | Tymra accepts strict `resolve_listing`, `discover_listings` and `collect_rates` contracts for nine brands; address-first checks require verified identity, discover at most eight comparables, preserve provider brand/family and never fall back to fixtures | New Argus connector implementation and bounded cross-service acceptance remain before production availability can be claimed |
 | Nationwide live panel | Schema, schedules and coverage operations exist; real 1,000-1,500 units require live catalog sources | external prerequisite |
 | Quality baseline | Lint, workspace typecheck, 81 TypeScript unit/component tests, 34 browser runtime/extractor/Worker tests, 49 integration tests, 57-route Next.js production build and four Worker entrypoint builds pass; Next.js reports only LinkeDOM's unused optional-canvas warning | verified |

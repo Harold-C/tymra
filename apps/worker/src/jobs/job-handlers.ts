@@ -116,6 +116,13 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
       await new WorkerService(environment).retentionCleanup();
       return;
     case "CATALOG_DISCOVERY":
+      if (optionalString(payload, "priceCheckId")) {
+        const priceCheckId = requiredString(payload, "priceCheckId");
+        await new WorkerService(environment).discoverAndCollectPriceCheckComparables(priceCheckId, job.id);
+        await acknowledgePersistedArgusResults(environment, job.id);
+        await enqueueNext(priceCheckId, "RATE_NORMALIZATION", "normalize", job.id);
+        return;
+      }
       await new WorkerService(environment).refreshCatalog(optionalString(payload, "marketScope") ?? "new-zealand");
       return;
     case "ANCHOR_PANEL_COLLECTION":
@@ -125,7 +132,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
       await new WorkerService(environment).refreshPanel("ROTATING", optionalString(payload, "marketScope") ?? "new-zealand");
       return;
     case "PROPERTY_IDENTIFICATION":
-      await validatePropertyIdentification(requiredString(payload, "priceCheckId"));
+      await validatePropertyIdentification(requiredString(payload, "priceCheckId"), job.id, environment);
       return;
     case "UNIT_IDENTIFICATION":
       await validateUnitIdentification(requiredString(payload, "priceCheckId"));
@@ -179,6 +186,14 @@ async function collectRates(priceCheckId: string, jobId: string, environment: En
   });
   if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
   const isDemo = environment.PROVIDER_MODE === "demo";
+  if (!isDemo) {
+    await setCheckStatus(priceCheckId, "COLLECTING", "ota_collection_started");
+    const result = await new WorkerService(environment).collectPriceCheckOtaRate(priceCheckId, jobId);
+    await acknowledgePersistedArgusResults(environment, jobId);
+    if (result.collected) await enqueueNext(priceCheckId, "CATALOG_DISCOVERY", "catalog", jobId);
+    else await queueTerminalEmail(priceCheckId, "CHECK_FAILED", `${result.outcome.toLowerCase()}:${jobId}`, environment);
+    return;
+  }
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: isDemo ? "development-demo" : "manual-import" } });
   if (!source.enabled || source.operationalStatus !== "HEALTHY") throw new Error("The configured data source is not enabled and healthy");
   await setCheckStatus(priceCheckId, "COLLECTING", "collection_started");
@@ -654,8 +669,13 @@ async function sendTerminalNotification(priceCheckId: string, type: EmailType, s
   await queueWorkerEmail(priceCheckId, type, suffix);
 }
 
-async function validatePropertyIdentification(priceCheckId: string) {
+async function validatePropertyIdentification(priceCheckId: string, jobId: string, environment: Environment) {
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  if (check.listingUrl) {
+    await new WorkerService(environment).validatePriceCheckOtaListing(priceCheckId, jobId);
+    await acknowledgePersistedArgusResults(environment, jobId);
+    return;
+  }
   if (check.propertyId) {
     await setCheckStatus(priceCheckId, "NEEDS_CONFIRMATION", "property_identification_completed");
     return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCircle2, Clock3, LoaderCircle, Search, TriangleAlert, XCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Building2, CalendarDays, CheckCircle2, Clock3, Link2, LoaderCircle, Search, TriangleAlert, XCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,9 @@ type PublicCheck = {
   status: string;
   nextAction: string;
   isDemo: boolean;
+  listingUrl: string | null;
+  listingValidationStatus: string;
+  listingValidationMessage: string | null;
   property: null | {
     id: string;
     canonicalName: string;
@@ -109,8 +112,9 @@ export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; 
       }
 
       const uniqueCandidate = searchResult.candidates.length === 1 ? searchResult.candidates[0] : null;
-      const propertyId = uniqueCandidate?.propertyId ?? undefined;
-      const unitId = uniqueCandidate?.unitIds.length === 1 ? uniqueCandidate.unitIds[0] : undefined;
+      const addressCandidate = Boolean(uniqueCandidate?.addressExternalId);
+      const propertyId = addressCandidate ? undefined : uniqueCandidate?.propertyId ?? undefined;
+      const unitId = addressCandidate ? undefined : uniqueCandidate?.unitIds.length === 1 ? uniqueCandidate.unitIds[0] : undefined;
       const created = await requestJson<{ checkId: string; status: string; nextAction: string }>("/api/v1/price-checks", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -136,7 +140,7 @@ export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; 
         }),
       });
 
-      const nextStep = !propertyId ? "property" : uniqueCandidate && uniqueCandidate.unitIds.length > 1 ? "unit" : "query";
+      const nextStep = addressCandidate || !propertyId ? "property" : uniqueCandidate && uniqueCandidate.unitIds.length > 1 ? "unit" : "query";
       router.push(`/${locale}/check/${created.checkId}/${nextStep}`);
     } catch (caught) {
       if (caught instanceof RequestError && caught.fieldErrors) {
@@ -205,12 +209,12 @@ export function PropertyConfirmation({ locale, checkId }: { locale: Locale; chec
     if (!candidate.propertyId && !candidate.addressExternalId) return;
     setLoading(true);
     try {
-      const confirmed = await requestJson<{ requiresUnitConfirmation: boolean }>(`/api/v1/price-checks/${checkId}/confirm-property`, {
+      const confirmed = await requestJson<{ requiresListingConfirmation: boolean; requiresUnitConfirmation: boolean }>(`/api/v1/price-checks/${checkId}/confirm-property`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(candidate.propertyId ? { propertyId: candidate.propertyId } : { addressExternalId: candidate.addressExternalId }),
+        body: JSON.stringify(candidate.addressExternalId ? { addressExternalId: candidate.addressExternalId } : { propertyId: candidate.propertyId }),
       });
-      router.push(`/${locale}/check/${checkId}/${confirmed.requiresUnitConfirmation ? "unit" : "query"}`);
+      router.push(`/${locale}/check/${checkId}/${confirmed.requiresListingConfirmation ? "listing" : confirmed.requiresUnitConfirmation ? "unit" : "query"}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("genericError"));
       setLoading(false);
@@ -227,6 +231,47 @@ export function PropertyConfirmation({ locale, checkId }: { locale: Locale; chec
       ))}</div> : null}
       {!loading && !candidates.length ? <FlowNotice tone="warning" title={t("notice.NO_MATCH.title")} body={t("notice.NO_MATCH.body")} /> : null}
       {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} /> : null}
+    </FlowPage>
+  );
+}
+
+export function ListingConfirmation({ locale, checkId }: { locale: Locale; checkId: string }) {
+  const t = useTranslations("Check");
+  const router = useRouter();
+  const { check, loading, error, setError } = usePublicCheck(checkId, t("genericError"));
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      await requestJson(`/api/v1/price-checks/${checkId}/confirm-listing`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ listingUrl: String(form.get("listingUrl") ?? "").trim() }),
+      });
+      router.push(`/${locale}/check/${checkId}/status`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("genericError"));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <FlowPage title={t("listingTitle")} intro={t("listingIntro")} currentStep={1}>
+      {loading ? <LoadingState label={t("loading")} /> : (
+        <form className="flow-form" onSubmit={submit}>
+          <Field label={t("listingLabel")} hint={t("listingHint")} htmlFor="listing-url">
+            <div className="input-with-icon"><Link2 size={19} /><input id="listing-url" name="listingUrl" type="url" required maxLength={2_000} autoComplete="url" defaultValue={check?.listingUrl ?? ""} placeholder={t("listingPlaceholder")} /></div>
+          </Field>
+          {check?.listingValidationStatus === "CONFLICT" ? <FlowNotice tone="warning" title={t("listingConflictTitle")} body={check.listingValidationMessage ?? t("listingConflictBody")} /> : null}
+          <FlowNotice tone="info" title={t("listingNoticeTitle")} body={t("listingNoticeBody")} />
+          {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} /> : null}
+          <button className="button button-primary flow-primary" type="submit" disabled={submitting}>{submitting ? <LoaderCircle className="spin" size={18} /> : <Link2 size={18} />}{submitting ? t("validatingListing") : t("confirmListing")}</button>
+        </form>
+      )}
     </FlowPage>
   );
 }
@@ -253,7 +298,7 @@ export function UnitConfirmation({ locale, checkId }: { locale: Locale; checkId:
   }
 
   return (
-    <FlowPage title={t("unitTitle")} intro={check?.property ? t("unitIntro", { property: check.property.canonicalName }) : t("loading")} currentStep={1}>
+    <FlowPage title={t("unitTitle")} intro={check?.property ? t("unitIntro", { property: check.property.canonicalName }) : t("loading")} currentStep={2}>
       {loading ? <LoadingState label={t("loadingUnits")} /> : null}
       {!loading && check?.property?.units.length ? <div className="selection-list">{check.property.units.map((unit) => (
         <button className="selection-row" type="button" key={unit.id} onClick={() => select(unit.id)} disabled={submitting}>
@@ -303,7 +348,7 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
   const initialCheckOut = check?.stayQuery?.checkOut?.slice(0, 10) ?? dates.checkOut;
 
   return (
-    <FlowPage title={t("queryTitle")} intro={check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={2}>
+    <FlowPage title={t("queryTitle")} intro={check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={3}>
       {loading ? <LoadingState label={t("loading")} /> : (
         <form className="flow-form" onSubmit={submit}>
           {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
@@ -341,8 +386,9 @@ export function CheckStatus({ locale, checkId }: { locale: Locale; checkId: stri
     return () => window.clearInterval(timer);
   }, [load, terminal]);
 
+  const confirmationPath = check?.nextAction === "CONFIRM_LISTING" ? "listing" : check?.nextAction === "CONFIRM_UNIT" ? "unit" : check?.nextAction === "CONFIRM_QUERY" ? "query" : null;
   return (
-    <FlowPage title={terminal ? t("statusFinishedTitle") : t("statusTitle")} intro={t("statusReference", { checkId })} currentStep={terminal ? 4 : 3}>
+    <FlowPage title={terminal ? t("statusFinishedTitle") : t("statusTitle")} intro={t("statusReference", { checkId })} currentStep={terminal ? 5 : 4}>
       {!check && !error ? <LoadingState label={t("loadingStatus")} /> : null}
       {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
       {check && presentation ? <div className={`status-panel status-tone-${presentation.tone}`} role="status" aria-live="polite">
@@ -351,6 +397,7 @@ export function CheckStatus({ locale, checkId }: { locale: Locale; checkId: stri
       </div> : null}
       {check?.status === "PUBLISHED" ? <FlowNotice tone="success" title={t("resultReadyTitle")} body={t("resultReadyBody")} action={localInboxAction} /> : null}
       {check?.status === "PARTIAL" || check?.status === "INSUFFICIENT_DATA" ? <FlowNotice tone="warning" title={t("limitedTitle")} body={t("limitedBody")} action={localInboxAction} /> : null}
+      {confirmationPath ? <FlowNotice tone="info" title={t("confirmationReadyTitle")} body={check?.listingValidationMessage ?? t("confirmationReadyBody")} action={<Link className="button button-secondary" href={`/${locale}/check/${checkId}/${confirmationPath}`}>{t("continueConfirmation")}</Link>} /> : null}
       {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} action={<button className="button button-secondary" type="button" onClick={load}>{t("retry")}</button>} /> : null}
       <div className="flow-actions"><Link className="text-link" href={`/${locale}`}><ArrowLeft size={16} />{t("backHome")}</Link>{terminal ? <Link className="button button-secondary" href={`/${locale}/check`}>{t("anotherCheck")}</Link> : null}</div>
     </FlowPage>
@@ -382,7 +429,7 @@ function FlowPage({ title, intro, currentStep, children }: { title: string; intr
 
 function FlowStepper({ currentStep }: { currentStep: number }) {
   const t = useTranslations("Check");
-  const steps = ["property", "unit", "query", "processing", "result"];
+  const steps = ["property", "listing", "unit", "query", "processing", "result"];
 
   return <ol className="flow-stepper" aria-label={t("steps.label")}>{steps.map((step, index) => <li className={index < currentStep ? "is-complete" : index === currentStep ? "is-current" : ""} key={step} aria-current={index === currentStep ? "step" : undefined}><span>{index < currentStep ? <CheckCircle2 size={16} /> : index + 1}</span><strong>{t(`steps.${step}`)}</strong></li>)}</ol>;
 }

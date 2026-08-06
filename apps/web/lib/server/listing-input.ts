@@ -1,4 +1,6 @@
-export type SupportedOta = "BOOKING" | "AIRBNB";
+import { otaProviderDetails, parseOtaListingReference, type OtaProvider } from "@tymra/providers";
+
+export type SupportedOta = "BOOKING" | "AIRBNB" | "EXPEDIA" | "WOTIF" | "HOTELS_COM" | "BOOKABACH" | "VRBO" | "AGODA" | "TRIP_COM";
 
 export type ListingPricingContext = {
   source: "URL" | "OTA_DEFAULT";
@@ -19,7 +21,7 @@ export type ResolvedListingInput = {
 
 export class UnsupportedListingUrlError extends Error {
   constructor() {
-    super("Enter a supported Booking.com or Airbnb listing URL.");
+    super("Enter a supported public OTA listing URL.");
     this.name = "UnsupportedListingUrlError";
   }
 }
@@ -33,46 +35,55 @@ export function resolveSupportedListingUrl(rawInput: string, now: Date = new Dat
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new UnsupportedListingUrlError();
-  const hostname = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
-  let platform: SupportedOta;
-  let listingId: string | null = null;
-
-  if (hostname === "booking.com" || hostname.endsWith(".booking.com")) {
-    platform = "BOOKING";
-    const match = url.pathname.match(/^\/hotel\/nz\/([^/]+?)(?:\.html)?\/?$/i);
-    listingId = match?.[1] ? decodeURIComponent(match[1]).toLowerCase() : null;
-  } else if (hostname === "airbnb.com" || hostname.endsWith(".airbnb.com") || hostname === "airbnb.co.nz" || hostname.endsWith(".airbnb.co.nz")) {
-    platform = "AIRBNB";
-    const match = url.pathname.match(/^\/rooms\/(\d+)(?:\/|$)/i);
-    listingId = match?.[1] ?? null;
-  } else {
+  let reference;
+  try {
+    reference = parseOtaListingReference(url.toString());
+  } catch {
     throw new UnsupportedListingUrlError();
   }
-
-  if (!listingId) throw new UnsupportedListingUrlError();
-  const embedded = readEmbeddedContext(url, platform);
+  if (reference.sourceId === "google_hotels") throw new UnsupportedListingUrlError();
+  const provider = otaProviderDetails(reference.sourceId);
+  if (!provider) throw new UnsupportedListingUrlError();
+  const platform = provider.brand as SupportedOta;
+  const embedded = readEmbeddedContext(url, reference.sourceId as OtaProvider);
   return {
     platform,
-    listingId,
+    listingId: reference.sourceListingId,
     context: embedded ?? defaultContext(now),
   };
 }
 
-function readEmbeddedContext(url: URL, platform: SupportedOta): ListingPricingContext | null {
-  const checkIn = url.searchParams.get(platform === "BOOKING" ? "checkin" : "check_in");
-  const checkOut = url.searchParams.get(platform === "BOOKING" ? "checkout" : "check_out");
+function readEmbeddedContext(url: URL, provider: OtaProvider): ListingPricingContext | null {
+  const parameterNames = pricingParameterNames(provider);
+  const checkIn = firstParameter(url, parameterNames.checkIn);
+  const checkOut = firstParameter(url, parameterNames.checkOut);
   if (!isIsoDate(checkIn) || !isIsoDate(checkOut) || checkOut <= checkIn) return null;
 
   return {
     source: "URL",
     checkIn,
     checkOut,
-    adults: boundedInteger(url.searchParams.get(platform === "BOOKING" ? "group_adults" : "adults"), 2, 1, 16),
-    children: boundedInteger(url.searchParams.get(platform === "BOOKING" ? "group_children" : "children"), 0, 0, 16),
-    units: boundedInteger(url.searchParams.get(platform === "BOOKING" ? "no_rooms" : "units"), 1, 1, 10),
+    adults: boundedInteger(firstParameter(url, parameterNames.adults), 2, 1, 16),
+    children: boundedInteger(firstParameter(url, parameterNames.children), 0, 0, 16),
+    units: boundedInteger(firstParameter(url, parameterNames.units), 1, 1, 10),
     currency: "NZD",
     timezone: "Pacific/Auckland",
   };
+}
+
+function pricingParameterNames(provider: OtaProvider) {
+  if (provider === "booking") return { checkIn: ["checkin"], checkOut: ["checkout"], adults: ["group_adults"], children: ["group_children"], units: ["no_rooms"] };
+  if (provider === "airbnb") return { checkIn: ["check_in"], checkOut: ["check_out"], adults: ["adults"], children: ["children"], units: ["units"] };
+  if (["expedia", "wotif", "hotels"].includes(provider)) return { checkIn: ["chkin", "checkIn"], checkOut: ["chkout", "checkOut"], adults: ["adults"], children: ["children"], units: ["rooms", "units"] };
+  return { checkIn: ["checkIn", "check_in"], checkOut: ["checkOut", "check_out"], adults: ["adults"], children: ["children"], units: ["rooms", "units"] };
+}
+
+function firstParameter(url: URL, names: string[]) {
+  for (const name of names) {
+    const value = url.searchParams.get(name);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 function defaultContext(now: Date): ListingPricingContext {

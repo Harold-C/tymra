@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: { checkId
     if (!(await hasCheckAccess(request, params.checkId))) return apiError(403, "FORBIDDEN", "This Price Check is not available in this session.");
     const input = schema.parse(await request.json());
     const result = await confirmProperty(params.checkId, input);
-    return apiSuccess({ checkId: result.check.id, status: result.check.status, requiresUnitConfirmation: result.requiresUnitConfirmation });
+    return apiSuccess({ checkId: result.check.id, status: result.check.status, requiresListingConfirmation: result.requiresListingConfirmation, requiresUnitConfirmation: result.requiresUnitConfirmation });
   } catch (error) {
     return apiException(error);
   }

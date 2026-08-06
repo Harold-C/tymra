@@ -1,0 +1,52 @@
+import { describe, expect, it } from "vitest";
+
+import { matchOtaListingToConfirmedAddress } from "../src/ota-address-match";
+import { otaDiscoveryUrlForSource, otaProviderDetails } from "../src/ota-argus-contracts";
+import { parseOtaListingReference } from "../src/ota-adapters";
+
+const confirmed = { address: "20 Customhouse Quay, Wellington 6011", city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: -41.2818, longitude: 174.7792 };
+
+describe("OTA listing to confirmed address match", () => {
+  it("accepts the same New Zealand location", () => {
+    expect(matchOtaListingToConfirmedAddress(confirmed, { ...confirmed, address: "20 Customhouse Quay, Wellington" })).toMatchObject({ status: "MATCH" });
+  });
+
+  it("rejects a listing in another city or country", () => {
+    expect(matchOtaListingToConfirmedAddress(confirmed, { ...confirmed, city: "Auckland", region: "Auckland", latitude: -36.8485, longitude: 174.7633 })).toMatchObject({ status: "CONFLICT" });
+    expect(matchOtaListingToConfirmedAddress(confirmed, { ...confirmed, countryCode: "AU" })).toMatchObject({ status: "CONFLICT", reasons: ["COUNTRY_MISMATCH"] });
+  });
+
+  it("does not bind a city-only listing without precise location", () => {
+    expect(matchOtaListingToConfirmedAddress(confirmed, { address: null, city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: null, longitude: null })).toMatchObject({ status: "INSUFFICIENT" });
+  });
+
+  it("canonicalises supported URLs without accepting a non-New-Zealand Booking path", () => {
+    expect(parseOtaListingReference("https://booking.com/hotel/nz/example.html?aid=tracking")).toEqual({ sourceId: "booking", sourceListingId: "example", canonicalUrl: "https://www.booking.com/hotel/nz/example.html" });
+    expect(() => parseOtaListingReference("https://booking.com/hotel/au/example.html")).toThrow(/does not identify/u);
+  });
+
+  it.each([
+    ["https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information", "expedia", "12345", "https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
+    ["https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information", "wotif", "12345", "https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
+    ["https://nz.hotels.com/ho12345", "hotels", "12345", "https://nz.hotels.com/ho12345"],
+    ["https://www.bookabach.co.nz/holiday-accommodation/p12345", "bookabach", "12345", "https://www.bookabach.co.nz/holiday-accommodation/p12345"],
+    ["https://www.vrbo.com/12345ha", "vrbo", "12345", "https://www.vrbo.com/12345"],
+    ["https://www.agoda.com/example-hotel/hotel/auckland-nz.html?hotel_id=12345", "agoda", "12345", "https://www.agoda.com/example-hotel/hotel/auckland-nz.html"],
+    ["https://www.trip.com/hotels/auckland-hotel-detail-12345/example/", "trip", "12345", "https://nz.trip.com/hotels/example-hotel-detail-12345"],
+  ])("recognises %s", (url, sourceId, sourceListingId, canonicalUrl) => {
+    expect(parseOtaListingReference(url)).toEqual({ sourceId, sourceListingId, canonicalUrl });
+  });
+
+  it.each([
+    ["expedia", "EXPEDIA_GROUP", "https://www.expedia.co.nz/Hotel-Search"],
+    ["wotif", "EXPEDIA_GROUP", "https://www.wotif.co.nz/Hotel-Search"],
+    ["hotels", "EXPEDIA_GROUP", "https://nz.hotels.com/Hotel-Search"],
+    ["bookabach", "VRBO_GROUP", "https://www.bookabach.co.nz/searchResults.html"],
+    ["vrbo", "VRBO_GROUP", "https://www.vrbo.com/searchResults.html"],
+    ["agoda", "BOOKING_HOLDINGS", "https://www.agoda.com/search"],
+    ["trip", "TRIP_COM", "https://nz.trip.com/hotels/list"],
+  ])("maps %s to its family and bounded discovery route", (sourceId, family, url) => {
+    expect(otaProviderDetails(sourceId)).toMatchObject({ family });
+    expect(otaDiscoveryUrlForSource(sourceId, "20 Customhouse Quay, Wellington")).toBe(url);
+  });
+});

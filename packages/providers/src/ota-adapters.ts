@@ -13,12 +13,15 @@ type OtaDefinition = {
 };
 
 const definitions: OtaDefinition[] = [
-  { sourceId: "booking", name: "Booking.com", domains: ["booking.com"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/hotel\/[a-z]{2}\/([^/]+?)(?:\.html)?\/?$/i)?.[1]?.toLowerCase() ?? null, canonicalPath: (id) => `/hotel/nz/${id}.html` },
+  { sourceId: "booking", name: "Booking.com", domains: ["booking.com"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/hotel\/nz\/([^/]+?)(?:\.html)?\/?$/i)?.[1]?.toLowerCase() ?? null, canonicalPath: (id) => `/hotel/nz/${id}.html` },
   { sourceId: "airbnb", name: "Airbnb", domains: ["airbnb.com", "airbnb.co.nz"], type: "OTA", idFromUrl: (url) => url.pathname.match(/^\/rooms\/(\d+)(?:\/|$)/i)?.[1] ?? null, canonicalPath: (id) => `/rooms/${id}` },
-  { sourceId: "expedia", name: "Expedia", domains: ["expedia.com", "expedia.co.nz"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/Hotel-Information-${id}` },
-  { sourceId: "hotels", name: "Hotels.com", domains: ["hotels.com", "nz.hotels.com"], type: "OTA", idFromUrl: hotelId, canonicalPath: (id) => `/ho${id}` },
-  { sourceId: "agoda", name: "Agoda", domains: ["agoda.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotel/nz/${id}.html` },
-  { sourceId: "trip", name: "Trip.com", domains: ["trip.com"], type: "OTA", idFromUrl: numericPathId, canonicalPath: (id) => `/hotels/detail/${id}` },
+  { sourceId: "expedia", name: "Expedia", domains: ["expedia.co.nz", "expedia.com"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/Hotel-Information?selected=${encodeURIComponent(id)}` },
+  { sourceId: "wotif", name: "Wotif", domains: ["wotif.co.nz"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/Hotel-Information?selected=${encodeURIComponent(id)}` },
+  { sourceId: "hotels", name: "Hotels.com", domains: ["nz.hotels.com", "hotels.com"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/ho${id}` },
+  { sourceId: "bookabach", name: "Bookabach", domains: ["bookabach.co.nz"], type: "OTA", idFromUrl: vrboGroupId, canonicalPath: (id) => `/holiday-accommodation/p${id}` },
+  { sourceId: "vrbo", name: "Vrbo", domains: ["vrbo.com"], type: "OTA", idFromUrl: vrboGroupId, canonicalPath: (id) => `/${id}` },
+  { sourceId: "agoda", name: "Agoda", domains: ["agoda.com"], type: "OTA", idFromUrl: agodaId, canonicalPath: (id) => `/hotel/nz/${id}.html` },
+  { sourceId: "trip", name: "Trip.com", domains: ["nz.trip.com", "trip.com"], type: "OTA", idFromUrl: tripId, canonicalPath: (id) => `/hotels/example-hotel-detail-${id}` },
   { sourceId: "google_hotels", name: "Google Hotels", domains: ["google.com", "google.co.nz"], type: "META_SEARCH", idFromUrl: (url) => url.searchParams.get("q") || url.searchParams.get("hotel"), canonicalPath: (id) => `/travel/hotels?q=${encodeURIComponent(id)}` },
 ];
 
@@ -148,7 +151,8 @@ export class ResearchOtaAdapter implements OtaAdapter {
 
   private canonicalUrl(id: string): string {
     const domain = this.definition.domains[0];
-    return `https://www.${domain}${this.definition.canonicalPath(id)}`;
+    const host = domain.startsWith("nz.") ? domain : `www.${domain}`;
+    return `https://${host}${this.definition.canonicalPath(id)}`;
   }
 }
 
@@ -161,6 +165,37 @@ export function getOtaAdapterForInput(input: string): OtaAdapter | null {
   return Object.values(otaAdapters).find((adapter) => adapter.metadata.supportedDomains.some((domain) => host === domain || host.endsWith(`.${domain}`))) ?? null;
 }
 
+export function parseOtaListingReference(input: string) {
+  const url = parseUrl(input);
+  const host = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
+  const definition = definitions.find((candidate) => candidate.domains.some((domain) => host === domain || host.endsWith(`.${domain}`)));
+  if (!definition) throw new AdapterError("INVALID_INPUT", "Listing URL is not from a supported OTA", false);
+  const sourceListingId = definition.idFromUrl(url);
+  if (!sourceListingId) throw new AdapterError("INVALID_INPUT", `URL does not identify a ${definition.name} accommodation listing`, false);
+  return {
+    sourceId: definition.sourceId,
+    sourceListingId,
+    canonicalUrl: canonicalListingReference(definition, url, sourceListingId),
+  };
+}
+
+function canonicalListingReference(definition: OtaDefinition, input: URL, sourceListingId: string) {
+  if (definition.sourceId === "booking" || definition.sourceId === "airbnb") {
+    const domain = definition.domains[0];
+    return `https://www.${domain}${definition.canonicalPath(sourceListingId)}`;
+  }
+  if (definition.sourceId === "vrbo") return `https://www.vrbo.com/${sourceListingId}`;
+  if (definition.sourceId === "trip") return `https://nz.trip.com/hotels/example-hotel-detail-${sourceListingId}`;
+  const canonicalHosts: Record<string, string> = {
+    expedia: "www.expedia.co.nz",
+    wotif: "www.wotif.co.nz",
+    hotels: "nz.hotels.com",
+    bookabach: "www.bookabach.co.nz",
+    agoda: "www.agoda.com",
+  };
+  return `https://${canonicalHosts[definition.sourceId] ?? input.hostname.toLowerCase()}${input.pathname}`;
+}
+
 function parseUrl(input: string): URL {
   try {
     const url = new URL(input.trim());
@@ -171,12 +206,34 @@ function parseUrl(input: string): URL {
   }
 }
 
-function hotelId(url: URL): string | null {
-  return url.pathname.match(/(?:ho|hotel-information-)([a-z0-9-]+)/i)?.[1] ?? url.searchParams.get("hotelId");
+function expediaGroupId(url: URL): string | null {
+  return url.pathname.match(/\.h(\d+)\.Hotel-Information/i)?.[1]
+    ?? url.pathname.match(/\/ho(\d+)(?:\/|$)/i)?.[1]
+    ?? url.searchParams.get("selected")
+    ?? url.searchParams.get("hotelId");
 }
 
-function numericPathId(url: URL): string | null {
-  return url.pathname.match(/(?:hotel|detail|property)[^0-9]*(\d{3,})/i)?.[1] ?? url.searchParams.get("hotel_id");
+function vrboGroupId(url: URL): string | null {
+  return url.pathname.match(/\/p(\d+)(?:\/|$)/i)?.[1]
+    ?? url.pathname.match(/\/(\d+)(?:ha)?(?:\/|$)/i)?.[1]
+    ?? url.searchParams.get("propertyId");
+}
+
+function agodaId(url: URL): string | null {
+  return url.searchParams.get("hotel_id")
+    ?? normalizedListingSlug(url.pathname.match(/\/([^/]+)\/hotel\/[^/]+(?:\.html)?\/?$/i)?.[1])
+    ?? normalizedListingSlug(url.pathname.match(/\/hotel\/[^/]+\/([^/]+?)(?:\.html)?\/?$/i)?.[1]);
+}
+
+function tripId(url: URL): string | null {
+  return url.pathname.match(/(?:hotel-detail-|\/detail\/)(\d{3,})(?:\/|$)/i)?.[1]
+    ?? url.searchParams.get("hotelId");
+}
+
+function normalizedListingSlug(value: string | undefined): string | null {
+  if (!value) return null;
+  const decoded = decodeURIComponent(value).toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{2,120}$/u.test(decoded) ? decoded : null;
 }
 
 function numericHash(value: string): number {

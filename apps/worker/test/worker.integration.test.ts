@@ -248,6 +248,8 @@ describe("Worker baseline pipeline", () => {
   it("enables source-bound schedules only for an enabled healthy source", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "mot_airline_performance" } });
     const schedules = await prisma.scheduleDefinition.findMany({ where: { key: "mot-airline-performance-daily" } });
+    const auditWhere = { entityType: "CollectionRuntime", entityId: source.key, eventType: { in: ["source_schedules_enabled", "source_schedules_disabled"] as const } };
+    const auditCountBefore = await prisma.auditEvent.count({ where: auditWhere });
     expect(schedules).toHaveLength(1);
     try {
       await prisma.dataSource.update({ where: { id: source.id }, data: {
@@ -277,7 +279,7 @@ describe("Worker baseline pipeline", () => {
         enabled: false,
         schedules: [{ key: "mot-airline-performance-daily", enabled: false }],
       });
-      expect(await prisma.auditEvent.count({ where: { entityType: "CollectionRuntime", entityId: source.key, eventType: { in: ["source_schedules_enabled", "source_schedules_disabled"] } } })).toBe(2);
+      expect(await prisma.auditEvent.count({ where: auditWhere })).toBe(auditCountBefore + 2);
     } finally {
       await prisma.dataSource.update({ where: { id: source.id }, data: {
         enabled: source.enabled,

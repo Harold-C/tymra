@@ -93,8 +93,15 @@ an audit event.
 
 ## External Limits
 
-No official OTA API or live browser rate collector is configured. The repository therefore
-does not claim that live OTA rates are available. Non-OTA adapters are implemented but remain
+Tymra implements the durable Argus boundary for nine public OTA brands: Booking.com, Airbnb,
+Expedia, Wotif, Hotels.com, Bookabach, Vrbo, Agoda and Trip.com. Address-first checks validate a
+target listing against
+the confirmed LINZ address before rate collection; conflicts, imprecise locations, challenges and
+incomplete prices stop with an explicit confirmation or limited state. After target collection, a
+user-triggered bounded catalog job discovers at most eight comparables, collects their rates and
+deduplicates shared property/unit identities across brands before analysis. This integration does not by
+itself claim production availability: the matching Argus connectors and bounded target-environment
+acceptance must also pass. Non-OTA adapters are implemented but remain
 unavailable for scheduled production collection until their operating gates pass. Nationwide
 catalog/panel scheduling and coverage models are implemented, but a real 1,000-1,500-unit
 accommodation panel still requires live OTA/catalog sources.

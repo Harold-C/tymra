@@ -16,6 +16,8 @@ import {
 import {
   linzAddressIdentityProvider,
   normalizeAddressQuery,
+  otaArgusConnectorForSource,
+  parseOtaListingReference,
   resolveNzAddressSignalCoverage,
   stableAddressIdentityId,
   type AddressIdentity,
@@ -153,7 +155,7 @@ export async function createPriceCheck(inputValue: unknown) {
       accepted: true as const,
       check: existing,
       accessKey: deriveCheckAccessKey(input.idempotencyKey),
-      nextAction: nextAction(existing.status),
+      nextAction: nextActionForStatus(existing.status),
       reused: true,
     };
   }
@@ -196,7 +198,7 @@ export async function createPriceCheck(inputValue: unknown) {
   await queuePriceCheckEmail(check.id, "CHECK_RECEIVED", "check-received");
   await queuePriceCheckEmail(check.id, "CONFIRMATION_REQUIRED", "confirmation-required");
 
-  return { accepted: true as const, check, accessKey, nextAction: nextAction(status), reused: false };
+  return { accepted: true as const, check, accessKey, nextAction: nextActionForStatus(status), reused: false };
 }
 
 export async function confirmProperty(checkId: string, input: { propertyId?: string; addressExternalId?: string }) {
@@ -204,14 +206,50 @@ export async function confirmProperty(checkId: string, input: { propertyId?: str
   const propertyId = input.propertyId ?? await promoteAddressIdentity(input.addressExternalId!, current.rawInput);
   const property = await prisma.property.findUniqueOrThrow({
     where: { id: propertyId },
-    include: { units: { where: { status: "ACTIVE" } } },
+    include: {
+      units: { where: { status: "ACTIVE" } },
+      listings: { where: { listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { sourceType: "OTA" } }, select: { id: true } },
+    },
   });
   const unitId = property.units.length === 1 ? property.units[0].id : null;
+  const requiresListingConfirmation = Boolean(input.addressExternalId) && property.listings.length === 0;
   const check = await prisma.priceCheck.update({
     where: { id: checkId },
-    data: { propertyId, unitId, status: "NEEDS_CONFIRMATION" },
+    data: {
+      propertyId,
+      unitId,
+      status: "NEEDS_CONFIRMATION",
+      listingValidationStatus: requiresListingConfirmation ? "REQUIRED" : "NOT_REQUIRED",
+      listingValidationMessage: null,
+      listingValidatedAt: null,
+    },
   });
-  return { check, requiresUnitConfirmation: property.units.length > 1 };
+  return { check, requiresListingConfirmation, requiresUnitConfirmation: property.units.length > 1 };
+}
+
+export async function confirmListing(checkId: string, listingUrl: string) {
+  const reference = parseOtaListingReference(listingUrl);
+  if (!otaArgusConnectorForSource(reference.sourceId)) throw new Error("This public OTA listing source is not supported for live validation");
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId }, select: { propertyId: true, updatedAt: true } });
+  if (!check.propertyId) throw new Error("Confirm the Property before adding an OTA listing");
+  await prisma.priceCheck.update({
+    where: { id: checkId },
+    data: {
+      listingUrl: reference.canonicalUrl,
+      listingValidationStatus: "PENDING",
+      listingValidationMessage: null,
+      listingValidatedAt: null,
+      unitId: null,
+      status: "VALIDATING",
+    },
+  });
+  await enqueueJob({
+    type: "PROPERTY_IDENTIFICATION",
+    payload: { priceCheckId: checkId },
+    idempotencyKey: `${checkId}:ota-listing:${reference.sourceId}:${stableAddressIdentityId(`${reference.sourceListingId}:${check.updatedAt.toISOString()}`)}`,
+    priceCheckId: checkId,
+  });
+  return { checkId, status: "VALIDATING" as const, nextStep: "status" as const };
 }
 
 async function promoteAddressIdentity(externalId: string, rawInput: string) {
@@ -281,12 +319,13 @@ export async function confirmQuery(checkId: string, inputValue: unknown) {
   const nights = Math.max(1, Math.round((input.checkOut.getTime() - input.checkIn.getTime()) / 86_400_000));
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
   if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
+  if (["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
   await prisma.stayQuery.update({ where: { id: check.stayQueryId! }, data: { ...input, nights } });
   const updated = await prisma.priceCheck.update({ where: { id: checkId }, data: { status: "QUEUED" } });
   await enqueueJob({
     type: "RATE_COLLECTION",
     payload: { priceCheckId: check.id },
-    idempotencyKey: `${check.id}:rate-collection`,
+    idempotencyKey: `${check.id}:rate-collection:${stableAddressIdentityId(`${check.listingValidatedAt?.toISOString() ?? "not-required"}:${input.checkIn.toISOString()}:${input.checkOut.toISOString()}:${input.adults}:${input.children}:${input.units}`)}`,
     priceCheckId: check.id,
   });
   await queuePriceCheckEmail(check.id, "CHECK_PROCESSING", "check-processing");
@@ -301,6 +340,11 @@ export async function getPublicCheck(checkId: string) {
       rawInput: true,
       locale: true,
       status: true,
+      listingUrl: true,
+      listingValidationStatus: true,
+      listingValidationMessage: true,
+      listingValidatedAt: true,
+      unitId: true,
       isDemo: true,
       createdAt: true,
       updatedAt: true,
@@ -321,14 +365,28 @@ export async function getPublicCheck(checkId: string) {
       resultVersions: { where: { status: "PUBLISHED" }, select: { id: true, outcome: true }, take: 1 },
     },
   });
-  return check ? { ...check, nextAction: nextAction(check.status) } : null;
+  return check ? { ...check, nextAction: nextAction(check) } : null;
 }
 
-function nextAction(status: PriceCheckStatus) {
-  if (status === "NEEDS_CONFIRMATION") return "CONFIRM_DETAILS" as const;
+function nextAction(check: { status: PriceCheckStatus; listingValidationStatus: string; unitId: string | null; property: { units: { id: string }[] } | null }) {
+  const { status } = check;
+  if (status === "NEEDS_CONFIRMATION") {
+    if (["REQUIRED", "CONFLICT"].includes(check.listingValidationStatus)) return "CONFIRM_LISTING" as const;
+    if (check.listingValidationStatus === "PENDING") return "WAIT" as const;
+    if (!check.unitId && (check.property?.units.length ?? 0) > 1) return "CONFIRM_UNIT" as const;
+    return "CONFIRM_QUERY" as const;
+  }
+  if (status === "SOURCE_UNAVAILABLE" && check.listingValidationStatus === "SOURCE_UNAVAILABLE") return "CONFIRM_LISTING" as const;
   if (status === "PUBLISHED" || status === "READY") return "VIEW_RESULT" as const;
   if (["PARTIAL", "INSUFFICIENT_DATA", "UNSUPPORTED", "SOURCE_UNAVAILABLE", "FAILED", "CANCELLED", "EXPIRED", "WITHDRAWN"].includes(status)) {
     return "REVIEW_STATUS" as const;
   }
+  return "WAIT" as const;
+}
+
+function nextActionForStatus(status: PriceCheckStatus) {
+  if (status === "NEEDS_CONFIRMATION") return "CONFIRM_DETAILS" as const;
+  if (status === "PUBLISHED" || status === "READY") return "VIEW_RESULT" as const;
+  if (["PARTIAL", "INSUFFICIENT_DATA", "UNSUPPORTED", "SOURCE_UNAVAILABLE", "FAILED", "CANCELLED", "EXPIRED", "WITHDRAWN"].includes(status)) return "REVIEW_STATUS" as const;
   return "WAIT" as const;
 }

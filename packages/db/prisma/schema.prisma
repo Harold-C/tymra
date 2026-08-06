@@ -690,6 +690,8 @@ model Listing {
   unitId            String
   dataSourceId      String
   platform          String
+  providerBrand     String?
+  providerFamily    String?
   externalId        String
   sourceListingId   String
   canonicalUrl      String
@@ -714,6 +716,7 @@ model Listing {
 
   @@unique([dataSourceId, externalId])
   @@index([unitId, onlineStatus])
+  @@index([propertyId, providerFamily, listingStatus])
 }
 
 model StayQuery {
@@ -1584,6 +1587,10 @@ model EventOccurrenceSourceLink {
 model PriceCheck {
   id                         String                 @id @default(cuid())
   rawInput                   String
+  listingUrl                 String?
+  listingValidationStatus    String                 @default("NOT_REQUIRED")
+  listingValidationMessage   String?
+  listingValidatedAt         DateTime?
   locale                     String
   emailHash                  String
   encryptedEmail             String
@@ -1626,6 +1633,7 @@ model PriceCheck {
   @@index([propertyId, unitId])
   @@index([emailHash, status])
   @@index([customerUserId, createdAt])
+  @@index([listingValidationStatus, updatedAt])
 }
 
 model ResultVersion {

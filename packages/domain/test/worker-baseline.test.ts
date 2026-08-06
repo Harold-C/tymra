@@ -62,6 +62,17 @@ describe("Worker baseline domain contracts", () => {
     expect(calculateAvailabilityCompression(rates)).toMatchObject({ eligible: 3, available: 1, restricted: 1, sourceFailure: 1, compression: 0.5 });
   });
 
+  it("deduplicates the same real room across OTA brands", () => {
+    const now = new Date("2026-07-18T00:00:00Z");
+    const rates: ComparableRate[] = [
+      { sellableUnitId: "expedia-room", listingId: "expedia", dedupeKey: "property-1:queen-room", amountMinor: 20_000, availabilityStatus: "AVAILABLE", comparabilityScore: 0.9, collectedAt: now, feeComplete: true },
+      { sellableUnitId: "wotif-room", listingId: "wotif", dedupeKey: "property-1:queen-room", amountMinor: 19_000, availabilityStatus: "AVAILABLE", comparabilityScore: 0.8, collectedAt: now, feeComplete: true },
+      { sellableUnitId: "other-room", listingId: "booking", dedupeKey: "property-2:queen-room", amountMinor: 22_000, availabilityStatus: "AVAILABLE", comparabilityScore: 0.9, collectedAt: now, feeComplete: true },
+    ];
+    expect(collapseDuplicateListings(rates)).toHaveLength(2);
+    expect(collapseDuplicateListings(rates)[0]?.listingId).toBe("expedia");
+  });
+
   it("blocks publication on fee, coherence and competitor failures", () => {
     const flags = evaluateBlockingQualityGates({ targetRatePresent: true, unitConfirmed: true, feesKnown: false, comparable: false, sourceAvailable: true, severeConflict: false, freshnessExpired: false, snapshotCoherent: false, competitorCount: 2 });
     expect(flags).toEqual(expect.arrayContaining(["FEES_UNKNOWN", "COMPARABILITY_FAILURE", "SNAPSHOT_INCOHERENT", "COMPETITOR_COUNT_BELOW_3"]));

@@ -575,3 +575,45 @@ zero second-pass source/link growth and no remaining active acceptance execution
 current runner code, 80 root tests, 37 Worker tests, Worker typecheck and Worker build passed. The
 real 17-source runner was not repeated, so current external availability continues to rely on the
 dated record.
+
+## D-037 Require A Verified OTA Listing After Address Discovery
+
+**Status:** Tymra implementation complete; cross-service acceptance pending.
+
+**Decision:** A confirmed LINZ address supplies geographic identity and public-signal routing, but
+does not prove an accommodation listing, sellable unit or price. Address-first Price Checks must
+therefore obtain a supported public OTA listing and validate its stable identity and
+location through a durable, read-only Argus Job before any rate Job is queued. Tymra owns strict
+connector schemas, conservative address matching, canonical persistence, evidence retention and
+the resulting user state. It never substitutes a LINZ identity for an OTA Listing and live mode
+never falls back to fixture or manual-import pricing.
+
+**Reason:** One street address can contain multiple businesses or units, while OTA pages may expose
+only approximate locations. Separating geographic confirmation from listing confirmation prevents
+false matches and fabricated market evidence without giving up nationwide address discovery.
+
+**Verification:** Provider address-match tests and Worker connector tests cover country/city and
+coordinate conflicts, insufficient location precision, stable request fields, read-only contracts
+and inconsistent price rejection. Production readiness additionally requires the corresponding
+Argus connectors and one bounded evidence-copy/ACK cross-service run; automatic scheduling remains
+disabled.
+
+## D-038 Model OTA Brands Separately From Source Families
+
+**Status:** Tymra implementation complete; live cross-service acceptance pending.
+
+**Decision:** Tymra supports Booking.com, Airbnb, Expedia, Wotif, Hotels.com, Bookabach, Vrbo,
+Agoda and Trip.com through one versioned OTA contract. Every Listing stores both the public brand
+and its provider family. Expedia/Wotif/Hotels.com share `EXPEDIA_GROUP`; Bookabach/Vrbo share
+`VRBO_GROUP`; Booking/Agoda share `BOOKING_HOLDINGS`. Address-driven discovery is bounded to eight
+competitor listings, retains each observed brand quote, and maps equivalent property/unit identities
+to the same canonical records before analysis so one accommodation is not counted repeatedly.
+
+**Reason:** Brand URLs and public prices can differ even when inventory originates from one platform
+family. Keeping both dimensions preserves evidence while preventing duplicated supply from inflating
+competitor counts.
+
+**Verification:** URL, provider contract and cross-brand duplicate tests cover all nine providers.
+Argus fixture contracts and a final bounded cross-service run remain required before any new source
+is described as externally verified. User-triggered jobs remain the only OTA execution path and
+automatic scheduling stays disabled.

@@ -54,13 +54,13 @@ export function validateHomeInput(rawValue: string, locale: Locale): ValidationR
 export function isSupportedListingUrl(value: string) {
   try {
     const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
-    const hostname = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
-    if (hostname === "booking.com" || hostname.endsWith(".booking.com")) {
-      return /^\/hotel\/nz\/[^/]+(?:\.html)?\/?$/i.test(url.pathname);
-    }
-    if (hostname === "airbnb.com" || hostname.endsWith(".airbnb.com") || hostname === "airbnb.co.nz" || hostname.endsWith(".airbnb.co.nz")) {
-      return /^\/rooms\/\d+(?:\/|$)/i.test(url.pathname);
-    }
+    const host = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
+    if (host === "booking.com" || host.endsWith(".booking.com")) return /^\/hotel\/nz\/[^/]+(?:\.html)?\/?$/i.test(url.pathname);
+    if (["airbnb.com", "airbnb.co.nz"].some((domain) => host === domain || host.endsWith(`.${domain}`))) return /^\/rooms\/\d+(?:\/|$)/i.test(url.pathname);
+    if (["expedia.co.nz", "expedia.com", "wotif.co.nz", "hotels.com"].some((domain) => host === domain || host.endsWith(`.${domain}`))) return /\.h\d+\.Hotel-Information|\/ho\d+(?:\/|$)/i.test(url.pathname) || Boolean(url.searchParams.get("selected") || url.searchParams.get("hotelId"));
+    if (["bookabach.co.nz", "vrbo.com"].some((domain) => host === domain || host.endsWith(`.${domain}`))) return /\/p?\d+(?:ha)?(?:\/|$)/i.test(url.pathname) || Boolean(url.searchParams.get("propertyId"));
+    if (host === "agoda.com" || host.endsWith(".agoda.com")) return /\/hotel\//i.test(url.pathname) || Boolean(url.searchParams.get("hotel_id"));
+    if (host === "trip.com" || host.endsWith(".trip.com")) return /(?:hotel-detail-|\/detail\/)\d{3,}(?:\/|$)/i.test(url.pathname) || Boolean(url.searchParams.get("hotelId"));
     return false;
   } catch {
     return false;

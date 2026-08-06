@@ -9,6 +9,7 @@ import {
 } from "../collection/school-sport-ticketek";
 import { regionalArgusEventExtractionSchema } from "../collection/regional-argus-events";
 import { aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionSchema } from "../collection/aviation-argus-signals";
+import { otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaResolveListingExtractionSchema } from "@tymra/providers";
 
 export type ArgusEvidenceKind = "html" | "screenshot" | "download";
 
@@ -33,8 +34,8 @@ export type ArgusEvidencePointer = ArgusEvidencePointerBase & (
     }
 );
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance";
+export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public";
+export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -98,7 +99,46 @@ const argusDataContracts = {
     dataSchema: "mot-airline-performance.collect_monthly_performance",
     schemaVersion: "1.0.0",
   },
+  "booking-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "booking-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "booking-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "airbnb-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "airbnb-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "airbnb-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "expedia-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "expedia-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "expedia-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "wotif-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "wotif-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "wotif-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "hotels-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "hotels-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "hotels-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "bookabach-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "bookabach-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "bookabach-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "vrbo-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "vrbo-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "vrbo-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "agoda-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "agoda-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "agoda-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "trip-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
+  "trip-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
+  "trip-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
 } as const satisfies Record<string, ArgusDataContract>;
+
+const otaArgusConnectors = new Set<ArgusConnectorId>([
+  "booking-public",
+  "airbnb-public",
+  "expedia-public",
+  "wotif-public",
+  "hotels-public",
+  "bookabach-public",
+  "vrbo-public",
+  "agoda-public",
+  "trip-public",
+]);
 
 type ArgusCaptureResult = {
   contract_version: "1.0";
@@ -160,6 +200,13 @@ export type ArgusCaptureInput = {
   startDate?: string;
   endDate?: string;
   maxRecords?: number;
+  searchQuery?: string;
+  checkIn?: string;
+  checkOut?: string;
+  adults?: number;
+  children?: number;
+  units?: number;
+  currency?: "NZD";
 };
 
 export type CaptureResponse =
@@ -521,8 +568,14 @@ function assertArgusDataContract(
           : connectorId === "auckland-airport-monthly" && workflowId === "collect_monthly_traffic"
             ? aucklandAirportMonthlyExtractionSchema
             : connectorId === "mot-airline-performance" && workflowId === "collect_monthly_performance"
-              ? motAirlinePerformanceExtractionSchema
-        : null;
+            ? motAirlinePerformanceExtractionSchema
+              : otaArgusConnectors.has(connectorId) && workflowId === "resolve_listing"
+                ? otaResolveListingExtractionSchema
+                : otaArgusConnectors.has(connectorId) && workflowId === "discover_listings"
+                  ? otaDiscoverListingsExtractionSchema
+                  : otaArgusConnectors.has(connectorId) && workflowId === "collect_rates"
+                    ? otaCollectRatesExtractionSchema
+              : null;
   if (sourceSchema) {
     const parsed = sourceSchema.safeParse(data);
     if (!parsed.success) {
@@ -576,6 +629,13 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.entryUrl === undefined ? {} : { entry_url: input.entryUrl }),
       ...(input.startDate === undefined ? {} : { start_date: input.startDate }),
       ...(input.endDate === undefined ? {} : { end_date: input.endDate }),
+      ...(input.searchQuery === undefined ? {} : { search_query: input.searchQuery }),
+      ...(input.checkIn === undefined ? {} : { check_in: input.checkIn }),
+      ...(input.checkOut === undefined ? {} : { check_out: input.checkOut }),
+      ...(input.adults === undefined ? {} : { adults: input.adults }),
+      ...(input.children === undefined ? {} : { children: input.children }),
+      ...(input.units === undefined ? {} : { units: input.units }),
+      ...(input.currency === undefined ? {} : { currency: input.currency }),
       timeout_ms: environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",
       ...(input.maxRecords === undefined ? {} : { max_records: Math.min(500, Math.max(1, input.maxRecords)) }),

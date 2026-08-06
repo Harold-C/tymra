@@ -3,6 +3,7 @@ import type { AvailabilityStatus, ConfidenceLevel } from "./enums";
 export type ComparableRate = {
   sellableUnitId: string;
   listingId: string;
+  dedupeKey?: string;
   amountMinor: number | null;
   availabilityStatus: AvailabilityStatus | "SOURCE_FAILURE";
   comparabilityScore: number;
@@ -23,8 +24,9 @@ export type CompressionCounts = {
 export function collapseDuplicateListings(rates: readonly ComparableRate[]): ComparableRate[] {
   const byUnit = new Map<string, ComparableRate>();
   for (const rate of rates) {
-    const current = byUnit.get(rate.sellableUnitId);
-    if (!current || compareRepresentative(rate, current) < 0) byUnit.set(rate.sellableUnitId, rate);
+    const key = rate.dedupeKey ?? rate.sellableUnitId;
+    const current = byUnit.get(key);
+    if (!current || compareRepresentative(rate, current) < 0) byUnit.set(key, rate);
   }
   return [...byUnit.values()];
 }

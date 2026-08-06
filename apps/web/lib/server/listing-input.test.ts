@@ -53,6 +53,18 @@ describe("supported OTA listing input", () => {
   });
 
   it.each([
+    ["https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information", "EXPEDIA", "12345"],
+    ["https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information", "WOTIF", "12345"],
+    ["https://nz.hotels.com/ho12345", "HOTELS_COM", "12345"],
+    ["https://www.bookabach.co.nz/holiday-accommodation/p12345", "BOOKABACH", "12345"],
+    ["https://www.vrbo.com/12345ha", "VRBO", "12345"],
+    ["https://www.agoda.com/example-hotel/hotel/auckland-nz.html?hotel_id=12345", "AGODA", "12345"],
+    ["https://www.trip.com/hotels/auckland-hotel-detail-12345/example/", "TRIP_COM", "12345"],
+  ])("resolves %s", (url, platform, listingId) => {
+    expect(resolveSupportedListingUrl(url, fixedNow)).toMatchObject({ platform, listingId });
+  });
+
+  it.each([
     "123 Colombo Street, Christchurch",
     "https://example.com/hotel/nz/example.html",
     "https://booking.com/hotel/au/sydney.html",

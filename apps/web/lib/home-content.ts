@@ -90,16 +90,16 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     search: {
       label: "Paste a supported New Zealand OTA listing URL",
-      placeholder: "Paste a Booking.com or Airbnb listing URL",
+      placeholder: "Paste a supported OTA listing URL",
       mobilePlaceholder: "Paste an OTA listing link",
       cta: "Check This Listing",
       working: "Checking listing",
       clear: "Clear search",
       validations: {
-        empty: "Paste a Booking.com or Airbnb listing URL to start.",
+        empty: "Paste a supported OTA listing URL to start.",
         short: "Paste the complete OTA listing URL.",
         long: "Keep the listing URL under 500 characters.",
-        unsupportedUrl: "Use a valid Booking.com New Zealand hotel URL or Airbnb room URL.",
+        unsupportedUrl: "Use a valid public listing URL from a supported OTA.",
       },
       facts: [
         { icon: MapPin, text: "Supported OTA links only" },
@@ -115,7 +115,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       { title: "Suggested Actions", body: "See a cautious next step with confidence and clear limitations.", example: "Example structure", icon: ListChecks, tone: "violet" },
     ],
     process: [
-      { label: "Paste the OTA link", body: "Use the public Booking.com or Airbnb link for the listing you want to check.", icon: Search },
+      { label: "Paste the OTA link", body: "Use a supported public OTA link for the listing you want to check.", icon: Search },
       { label: "See a rough signal", body: "Tymra uses the link context or OTA default display without asking for dates, guests or room type.", icon: BarChart3 },
       { label: "Unlock the formal report", body: "Verify one email to create your secure customer access and start the formal check.", icon: CheckCircle2 },
     ],
@@ -134,7 +134,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Does Tymra provide real pricing results?", answer: "Yes, when the property and market are supported and source data meets the required quality thresholds. Tymra returns a clear limited state rather than inventing a result when evidence is insufficient." },
-      { question: "Which properties does Tymra support?", answer: "Start with a supported Booking.com New Zealand hotel link or Airbnb room link. Tymra uses the listing identity and its observed display context rather than trying to infer pricing from a street address." },
+      { question: "Which properties does Tymra support?", answer: "Public accommodation links from Booking.com, Airbnb, Expedia, Wotif, Hotels.com, Bookabach, Vrbo, Agoda and Trip.com are supported. Tymra uses listing identity and observed display context rather than inferring a price from a street address." },
       { question: "How long does a Price Check take?", answer: "The rough signal normally appears in-page first. After you verify one email, the formal check runs asynchronously and opens in your secure customer account." },
       { question: "Does Tymra automatically change my prices?", answer: "No. Tymra provides decision support only. You remain responsible for every final pricing decision." },
       { question: "Where does the information come from?", answer: "Only enabled, operationally healthy sources can support publication. Results show data timing, confidence and relevant limitations." },
@@ -172,16 +172,16 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     search: {
       label: "粘贴受支持的新西兰 OTA 房源链接",
-      placeholder: "粘贴 Booking.com 或 Airbnb 房源链接",
+      placeholder: "粘贴受支持的 OTA 房源链接",
       mobilePlaceholder: "粘贴 OTA 房源链接",
       cta: "检查这个房源",
       working: "正在检查房源",
       clear: "清除搜索",
       validations: {
-        empty: "请粘贴 Booking.com 或 Airbnb 房源链接。",
+        empty: "请粘贴受支持的 OTA 房源链接。",
         short: "请粘贴完整的 OTA 房源链接。",
         long: "请将房源链接控制在 500 个字符以内。",
-        unsupportedUrl: "请使用有效的 Booking.com 新西兰酒店链接或 Airbnb 房源链接。",
+        unsupportedUrl: "请使用受支持 OTA 的有效公开房源链接。",
       },
       facts: [
         { icon: MapPin, text: "仅支持指定 OTA 链接" },
@@ -197,7 +197,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       { title: "建议动作", body: "结合置信度和明确限制查看谨慎的下一步。", example: "示例结构", icon: ListChecks, tone: "violet" },
     ],
     process: [
-      { label: "粘贴 OTA 链接", body: "使用需要检查的 Booking.com 或 Airbnb 公开房源链接。", icon: Search },
+      { label: "粘贴 OTA 链接", body: "使用需要检查的受支持公开 OTA 房源链接。", icon: Search },
       { label: "先看粗略信号", body: "Tymra 自动使用链接参数或 OTA 默认展示，无需选择日期、人数或房型。", icon: BarChart3 },
       { label: "解锁正式报告", body: "验证一次邮箱即可建立安全客户访问并开始正式检查。", icon: CheckCircle2 },
     ],
@@ -216,7 +216,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Tymra 会提供真实价格结果吗？", answer: "会。房源和市场受支持，并且数据满足质量门槛时，Tymra 会生成真实结果；证据不足时会明确返回受限状态，而不是编造结果。" },
-      { question: "Tymra 支持哪些房源？", answer: "请从受支持的 Booking.com 新西兰酒店链接或 Airbnb 房源链接开始。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
+      { question: "Tymra 支持哪些房源？", answer: "支持 Booking.com、Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 的公开住宿房源链接。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
       { question: "完成一次 Price Check 需要多久？", answer: "粗略信号会先在页面内出现。验证一次邮箱后，正式检查异步运行，并在你的安全客户账户中打开。" },
       { question: "Tymra 会自动修改我的价格吗？", answer: "不会。Tymra 只提供决策支持，最终定价决定始终由你负责。" },
       { question: "这些信息来自哪里？", answer: "只有已启用且运行健康的来源可以支持结果发布。结果会显示数据时间、置信度和相关限制。" },

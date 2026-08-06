@@ -128,6 +128,17 @@ Authority、RTO、经纬度和国家字段，不得写死 Christchurch。地址�
 有效结果。搜索和展示候选不得创建 Property 或 SellableUnit，只有用户明确确认或 Worker 已取得
 唯一可信身份并实际开始分析时才能晋升为业务实体。
 
+地址晋升为 Property 后，如尚无已验证 OTA Listing，必须要求用户补充受支持的公开 OTA 房源
+链接。Tymra 通过只读 Argus Job 比较国家、城市/Region、地址文本和坐标；冲突或位置
+精度不足不得自动绑定。只有验证通过的 Listing 和来源明确返回的 Sellable Unit 才能进入真实
+费率采集。来源挑战、无匹配费率或价格组成不完整时必须返回 `SOURCE_UNAVAILABLE` 或
+`INSUFFICIENT_DATA`，不得使用 fixture 或推断价格补齐。
+
+目标价成功后可以执行一次用户触发的有界竞品发现，最多保留 8 个竞品 Listing。Booking.com、
+Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 使用同一费率语义。
+同一真实 Property/Sellable Unit 的跨品牌报价可以保留为证据，但分析时只能计为一个竞品；
+会员价、App 专享价或费用不完整的结果必须显式标记，不能混入公开匿名完整总价。
+
 ## 4.2 前端和服务端校验
 
 • 去除首尾空格；长度 3–500 个字符。  
