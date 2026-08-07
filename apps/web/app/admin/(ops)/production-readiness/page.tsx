@@ -12,11 +12,12 @@ export default async function ProductionReadinessPage() {
   const locale = getAdminLocale();
   const t = locale === "zh" ? zh : en;
   const environment = getEnvironment();
-  const [sources, enabledSchedules, failedJobs, argus] = await Promise.all([
+  const [sources, enabledSchedules, failedJobs, argus, otaHealth] = await Promise.all([
     prisma.dataSource.findMany({ where: { providerType: "PUBLIC", isDemo: false }, orderBy: { key: "asc" }, select: { key: true, name: true, enabled: true, operationalStatus: true } }),
     prisma.scheduleDefinition.count({ where: { enabled: true } }),
     prisma.job.findMany({ where: { status: { in: ["FAILED", "DEAD_LETTER"] } }, select: { id: true, type: true, status: true, lastErrorCode: true }, orderBy: { createdAt: "asc" }, take: 500 }),
     loadArgusHealth(),
+    loadOtaHealth(),
   ]);
   const candidates = sources.filter((source) => source.enabled);
   const external = failedJobs.filter((job) => /SOURCE_UNAVAILABLE|RATE_LIMITED|ACCESS_CHALLENGE/.test(job.lastErrorCode ?? "")).length;
@@ -27,16 +28,21 @@ export default async function ProductionReadinessPage() {
     ];
     return reasons.length ? [`${source.key}: ${reasons.join(" · ")}`] : [];
   });
+  const otaBlockers = otaHealth.sources.flatMap((source) => source.releaseGate.failures.map((failure) => `${source.key}: ${failure}`));
+  const otaReady = otaHealth.sources.filter((source) => source.releaseGate.ready).length;
   const blockers = [
     ...(environment.NODE_ENV !== "development" && environment.SCHEDULER_ENABLED ? [t.schedulerRuntimeBlocked] : []),
     ...(enabledSchedules ? [t.schedulesBlocked.replace("{count}", String(enabledSchedules))] : []),
     ...(!argus.healthy || !argus.ready ? [t.argusBlocked] : []),
+    ...(otaHealth.error ? [`${t.otaHealth}: ${otaHealth.error}`] : []),
     ...sourceBlockers,
+    ...otaBlockers,
   ];
   const cards = [
     { label: t.health, value: `${candidates.filter((source) => source.operationalStatus === "HEALTHY").length} / ${candidates.length}`, ok: candidates.every((source) => source.operationalStatus === "HEALTHY"), detail: t.healthDetail },
     { label: t.schedules, value: String(enabledSchedules), ok: enabledSchedules === 0 && (environment.NODE_ENV === "development" || !environment.SCHEDULER_ENABLED), detail: environment.NODE_ENV !== "development" && environment.SCHEDULER_ENABLED ? t.schedulerOn : t.schedulerOff },
     { label: "Argus", value: argus.healthy && argus.ready ? t.ready : t.blocked, ok: argus.healthy && argus.ready, detail: argus.message ?? `${argus.latencyMs ?? 0} ms` },
+    { label: t.otaHealth, value: `${otaReady} / ${otaHealth.sources.length || 9}`, ok: !otaHealth.error && otaReady === otaHealth.sources.length, detail: t.otaHealthDetail },
     { label: t.queue, value: String(failedJobs.length), ok: failedJobs.length === 0, detail: t.queueDetail.replace("{retry}", String(retryable)).replace("{external}", String(external)) },
     { label: t.canary, value: blockers.length ? t.blocked : t.ready, ok: blockers.length === 0, detail: t.canaryDetail },
   ];
@@ -59,10 +65,16 @@ export default async function ProductionReadinessPage() {
         <dl className="detail-list"><div><dt>{t.mode}</dt><dd>READ_ONLY_BOUNDED</dd></div><div><dt>{t.passes}</dt><dd>2</dd></div><div><dt>{t.stop}</dt><dd>{t.stopDetail}</dd></div><div><dt>{t.rollback}</dt><dd>{t.rollbackDetail}</dd></div></dl>
       </aside>
     </div>
+    <section className="overview-section">
+      <header><div><h2>{t.otaEvidence}</h2><p>{t.otaEvidenceDetail}</p></div></header>
+      {otaHealth.sources.length ? <ul className={`run-diagnostics ${otaReady === otaHealth.sources.length ? "is-clear" : "has-danger"}`}>{otaHealth.sources.map((source) => <li className={source.releaseGate.ready ? "clear" : "danger"} key={source.key}><span><strong>{source.key}</strong><small>{t.otaCounts.replace("{listings}", String(source.positiveListingCount)).replace("{rates}", String(source.positiveRateCount)).replace("{empty}", percent(source.emptyResultRate)).replace("{blocked}", percent(source.policyBlockedRate)).replace("{challenge}", percent(source.challengeRate)).replace("{limited}", percent(source.rateLimitRate)).replace("{parser}", percent(source.parsingFailureRate)).replace("{latency}", source.averageResponseMs === null ? "—" : `${source.averageResponseMs} ms`)}</small></span><StatusPill value={source.releaseGate.ready ? "READY" : "BLOCKED"} locale={locale} /></li>)}</ul> : <div className="admin-empty compact"><CircleX size={24} /><h3>{t.otaUnavailable}</h3><p>{otaHealth.error ?? t.otaUnavailableDetail}</p></div>}
+    </section>
   </section>;
 }
 
 type ArgusHealth = { healthy: boolean; ready: boolean; latencyMs?: number; message?: string };
+type OtaHealthSource = { key: string; positiveListingCount: number; positiveRateCount: number; emptyResultRate: number; policyBlockedRate: number; challengeRate: number; rateLimitRate: number; parsingFailureRate: number; averageResponseMs: number | null; releaseGate: { ready: boolean; failures: string[] } };
+type OtaHealth = { sources: OtaHealthSource[]; error?: string };
 async function loadArgusHealth(): Promise<ArgusHealth> {
   try {
     const response = await fetch(`${process.env.WORKER_INTERNAL_URL ?? "http://tymra-worker-api:3100"}/worker/health`, { cache: "no-store", signal: AbortSignal.timeout(5_000) });
@@ -72,5 +84,15 @@ async function loadArgusHealth(): Promise<ArgusHealth> {
   } catch (error) { return { healthy: false, ready: false, message: error instanceof Error ? error.message : "Unavailable" }; }
 }
 
-const en = { title: "Production readiness", description: "One fail-closed view of source health, schedules, Argus, queue history and the bounded canary gate.", health: "Operational health", healthDetail: "Enabled sources currently healthy", schedules: "Enabled schedules", schedulerOn: "Scheduler runtime is on", schedulerOff: "Scheduler runtime is off", ready: "READY", blocked: "BLOCKED", queue: "Failed queue history", queueDetail: "{retry} retry eligible · {external} externally blocked", canary: "Canary gate", canaryDetail: "Ready only when every prerequisite is green", blockers: "Release blockers", blockersDetail: "Every item here must be resolved before running a production canary.", noBlockers: "No current blocker", noBlockersDetail: "The bounded canary may be run with its explicit confirmation token.", boundary: "Canary safety boundary", boundaryDetail: "The runner stops on the first unsafe result and never enables schedules.", mode: "Mode", passes: "Passes per source", stop: "Stop conditions", stopDetail: "configuration, schedule, parser, repeat growth, remote evidence", rollback: "Rollback", rollbackDetail: "Disable schedules and cancel pending collection work", healthBlocked: "source is not healthy", schedulerRuntimeBlocked: "Scheduler runtime must remain disabled", schedulesBlocked: "{count} schedule(s) are enabled", argusBlocked: "Argus is not healthy and ready" };
-const zh: typeof en = { title: "生产就绪", description: "集中查看来源健康、计划任务、Argus、失败队列和有界 canary 门禁。", health: "运行健康", healthDetail: "当前健康的已启用来源", schedules: "已启用计划", schedulerOn: "定时器运行时已开启", schedulerOff: "定时器运行时已关闭", ready: "就绪", blocked: "阻塞", queue: "失败队列历史", queueDetail: "可重试 {retry} · 外部阻塞 {external}", canary: "Canary 门禁", canaryDetail: "仅所有前置条件通过时才就绪", blockers: "发布阻塞项", blockersDetail: "执行生产 canary 前必须解决这里的所有项目。", noBlockers: "当前无阻塞项", noBlockersDetail: "可使用明确确认口令执行有界 canary。", boundary: "Canary 安全边界", boundaryDetail: "执行器遇到第一个不安全结果即停止，且不会启用计划任务。", mode: "模式", passes: "每来源轮数", stop: "停止条件", stopDetail: "配置、计划、解析、重复增长、远端证据", rollback: "回滚", rollbackDetail: "关闭计划并取消待执行采集任务", healthBlocked: "来源不健康", schedulerRuntimeBlocked: "定时器运行时必须关闭", schedulesBlocked: "有 {count} 个计划已启用", argusBlocked: "Argus 未达到健康且就绪状态" };
+async function loadOtaHealth(): Promise<OtaHealth> {
+  try {
+    const response = await fetch(`${process.env.WORKER_INTERNAL_URL ?? "http://tymra-worker-api:3100"}/worker/ota-health?windowDays=30`, { cache: "no-store", signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json() as OtaHealth;
+  } catch (error) { return { sources: [], error: error instanceof Error ? error.message : "Unavailable" }; }
+}
+
+function percent(value: number) { return `${Math.round(value * 100)}%`; }
+
+const en = { title: "Production readiness", description: "One fail-closed view of source health, schedules, Argus, queue history and the bounded canary gate.", health: "Operational health", healthDetail: "Enabled sources currently healthy", otaHealth: "OTA evidence health", otaHealthDetail: "Platforms passing recent positive listing and rate gates", schedules: "Enabled schedules", schedulerOn: "Scheduler runtime is on", schedulerOff: "Scheduler runtime is off", ready: "READY", blocked: "BLOCKED", queue: "Failed queue history", queueDetail: "{retry} retry eligible · {external} externally blocked", canary: "Canary gate", canaryDetail: "Ready only when every prerequisite is green", blockers: "Release blockers", blockersDetail: "Every item here must be resolved before running a production canary.", noBlockers: "No current blocker", noBlockersDetail: "The bounded canary may be run with its explicit confirmation token.", boundary: "Canary safety boundary", boundaryDetail: "The runner stops on the first unsafe result and never enables schedules.", mode: "Mode", passes: "Passes per source", stop: "Stop conditions", stopDetail: "configuration, schedule, parser, repeat growth, remote evidence", rollback: "Rollback", rollbackDetail: "Disable schedules and cancel pending collection work", healthBlocked: "source is not healthy", schedulerRuntimeBlocked: "Scheduler runtime must remain disabled", schedulesBlocked: "{count} schedule(s) are enabled", argusBlocked: "Argus is not healthy and ready", otaEvidence: "OTA evidence window", otaEvidenceDetail: "Thirty-day durable evidence; empty or policy-blocked responses never count as positive coverage.", otaCounts: "Listings {listings} · rates {rates} · empty {empty} · policy {blocked} · challenge {challenge} · 429 {limited} · parser {parser} · latency {latency}", otaUnavailable: "OTA health unavailable", otaUnavailableDetail: "The Worker did not return an OTA health report." };
+const zh: typeof en = { title: "生产就绪", description: "集中查看来源健康、计划任务、Argus、失败队列和有界 canary 门禁。", health: "运行健康", healthDetail: "当前健康的已启用来源", otaHealth: "OTA 证据健康", otaHealthDetail: "通过近期房源与价格正记录门槛的平台", schedules: "已启用计划", schedulerOn: "定时器运行时已开启", schedulerOff: "定时器运行时已关闭", ready: "就绪", blocked: "阻塞", queue: "失败队列历史", queueDetail: "可重试 {retry} · 外部阻塞 {external}", canary: "Canary 门禁", canaryDetail: "仅所有前置条件通过时才就绪", blockers: "发布阻塞项", blockersDetail: "执行生产 canary 前必须解决这里的所有项目。", noBlockers: "当前无阻塞项", noBlockersDetail: "可使用明确确认口令执行有界 canary。", boundary: "Canary 安全边界", boundaryDetail: "执行器遇到第一个不安全结果即停止，且不会启用计划任务。", mode: "模式", passes: "每来源轮数", stop: "停止条件", stopDetail: "配置、计划、解析、重复增长、远端证据", rollback: "回滚", rollbackDetail: "关闭计划并取消待执行采集任务", healthBlocked: "来源不健康", schedulerRuntimeBlocked: "定时器运行时必须关闭", schedulesBlocked: "有 {count} 个计划已启用", argusBlocked: "Argus 未达到健康且就绪状态", otaEvidence: "OTA 证据窗口", otaEvidenceDetail: "最近 30 天的持久化证据；空结果或策略阻塞不能算作正覆盖。", otaCounts: "房源 {listings} · 价格 {rates} · 空结果 {empty} · 策略 {blocked} · challenge {challenge} · 429 {limited} · 解析 {parser} · 延迟 {latency}", otaUnavailable: "OTA 健康不可用", otaUnavailableDetail: "Worker 未返回 OTA 健康报告。" };

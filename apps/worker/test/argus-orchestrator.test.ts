@@ -71,6 +71,7 @@ import {
   acknowledgePersistedArgusResults,
   captureBrowserTaskWithDurableArgus,
   durableArgusTraceId,
+  finalizeDirectArgusDelivery,
   pollArgusExecution,
 } from "../src/services/argus-orchestrator";
 
@@ -220,6 +221,21 @@ describe("durable Argus orchestration", () => {
       select: { argusJobId: true, collectionRunId: true, result: true },
     });
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
+  });
+
+  it("verifies direct delivery purge after acknowledgement", async () => {
+    const job = completedJob();
+    mocks.acknowledge.mockResolvedValue({ ok: true });
+    mocks.getResult.mockResolvedValue({ ok: false, httpStatus: 410, message: "purged" });
+
+    await finalizeDirectArgusDelivery(environment, "run-1", {
+      jobId: job.job_id,
+      resultSha256: job.result_sha256,
+      job,
+    }, true);
+
+    assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
+    assert.deepEqual(mocks.getResult.mock.calls[0], [environment, "argus-1"]);
   });
 
   it("downloads and verifies retained evidence before acknowledging Argus", async () => {

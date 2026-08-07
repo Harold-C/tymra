@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { sourceSchedulingBlockers } from "../src/services/worker-service";
-import { automaticSchedulingAllowed } from "../src/operations/source-access";
+import { automaticSchedulingAllowed, sourceCollectionBlockers } from "../src/operations/source-access";
 
 const readySource = {
   providerType: "PUBLIC",
@@ -15,6 +15,15 @@ describe("source schedule control", () => {
     expect(automaticSchedulingAllowed("development", false)).toBe(false);
     expect(automaticSchedulingAllowed("test", true)).toBe(true);
     expect(automaticSchedulingAllowed("production", true)).toBe(true);
+  });
+
+  it("allows explicit development validation for non-blocked source states", () => {
+    const validation = { allowDevelopmentValidation: true };
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "development", validation)).toEqual([]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DOWN" }, "development", validation)).toEqual([]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "BLOCKED" }, "development", validation)).toEqual(["source is not operationally available"]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "development")).toEqual(["source is not operationally available"]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "production")).toEqual(["source is not operationally available"]);
   });
 
   it("allows only an enabled, healthy public source", () => {

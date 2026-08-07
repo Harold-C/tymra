@@ -16,6 +16,7 @@ import {
   type ArgusCaptureInput,
   type ArgusEvidencePointer,
   type ArgusJobResult,
+  type ArgusResultDelivery,
   type CaptureResponse,
 } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
@@ -240,6 +241,31 @@ export async function acknowledgePersistedArgusResults(
     if (!acknowledgement.ok) {
       throw new Error(`Argus result acknowledgement failed: ${acknowledgement.message}`);
     }
+  }
+}
+
+export async function finalizeDirectArgusDelivery(
+  environment: Environment,
+  collectionRunId: string,
+  delivery: ArgusResultDelivery,
+  retainEvidence: boolean,
+): Promise<void> {
+  if (retainEvidence) {
+    await retainArgusEvidence(environment, [collectionRunId], delivery.job);
+    const remaining = await prisma.rawArtifact.count({
+      where: { collectionRunId, storageRef: { startsWith: "argus-evidence:" }, deletedAt: null },
+    });
+    if (remaining > 0) throw new Error(`${remaining} Argus evidence artifacts remain remote before ACK`);
+  } else {
+    for (const pointer of delivery.job.items.flatMap((item) => item.result?.evidence ?? [])) {
+      await downloadArgusEvidence(environment, pointer);
+    }
+  }
+  const acknowledgement = await acknowledgeArgusJobResult(environment, delivery.jobId, delivery.resultSha256);
+  if (!acknowledgement.ok) throw new Error(`Argus result acknowledgement failed: ${acknowledgement.message}`);
+  const purged = await getArgusJobResult(environment, delivery.jobId);
+  if (purged.ok || purged.httpStatus !== 410) {
+    throw new Error(`Argus result purge verification failed for ${delivery.jobId}`);
   }
 }
 

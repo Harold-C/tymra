@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { matchOtaListingToConfirmedAddress } from "../src/ota-address-match";
-import { otaDiscoveryUrlForSource, otaProviderDetails } from "../src/ota-argus-contracts";
+import { locateOtaDiscoveryCandidate, matchOtaListingToConfirmedAddress } from "../src/ota-address-match";
+import { otaArgusConnectorForSource, otaDiscoveryUrlForSource, otaProviderDetails } from "../src/ota-argus-contracts";
 import { parseOtaListingReference } from "../src/ota-adapters";
 
 const confirmed = { address: "20 Customhouse Quay, Wellington 6011", city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: -41.2818, longitude: 174.7792 };
@@ -18,6 +18,29 @@ describe("OTA listing to confirmed address match", () => {
 
   it("does not bind a city-only listing without precise location", () => {
     expect(matchOtaListingToConfirmedAddress(confirmed, { address: null, city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: null, longitude: null })).toMatchObject({ status: "INSUFFICIENT" });
+  });
+
+  it("accepts a coordinate-bounded comparable when the official listing omits city", () => {
+    expect(locateOtaDiscoveryCandidate(confirmed, {
+      address: "88 The Terrace",
+      city: null,
+      region: null,
+      countryCode: "NZ",
+      latitude: -41.278,
+      longitude: 174.773,
+    })).toMatchObject({ status: "COMPARABLE", city: "Wellington", citySource: "SEARCH_SCOPE", reasons: ["COORDINATES_IN_SEARCH_SCOPE"] });
+  });
+
+  it("excludes the target property and candidates outside the bounded discovery radius", () => {
+    expect(locateOtaDiscoveryCandidate(confirmed, { ...confirmed, city: null })).toMatchObject({ status: "TARGET" });
+    expect(locateOtaDiscoveryCandidate(confirmed, {
+      address: "1 Coast Road",
+      city: null,
+      region: null,
+      countryCode: "NZ",
+      latitude: -41.35,
+      longitude: 174.78,
+    })).toMatchObject({ status: "OUT_OF_SCOPE", reasons: ["DISCOVERY_RADIUS_EXCEEDED"] });
   });
 
   it("canonicalises supported URLs without accepting a non-New-Zealand Booking path", () => {
@@ -38,6 +61,7 @@ describe("OTA listing to confirmed address match", () => {
   });
 
   it.each([
+    ["booking", "BOOKING_HOLDINGS", "https://www.booking.com/searchresults.html"],
     ["expedia", "EXPEDIA_GROUP", "https://www.expedia.co.nz/Hotel-Search"],
     ["wotif", "EXPEDIA_GROUP", "https://www.wotif.co.nz/Hotel-Search"],
     ["hotels", "EXPEDIA_GROUP", "https://nz.hotels.com/Hotel-Search"],
@@ -48,5 +72,12 @@ describe("OTA listing to confirmed address match", () => {
   ])("maps %s to its family and bounded discovery route", (sourceId, family, url) => {
     expect(otaProviderDetails(sourceId)).toMatchObject({ family });
     expect(otaDiscoveryUrlForSource(sourceId, "20 Customhouse Quay, Wellington")).toBe(url);
+  });
+
+  it("routes every supported OTA source through its public browser connector", () => {
+    expect(otaArgusConnectorForSource("booking")).toBe("booking-public");
+    expect(otaArgusConnectorForSource("expedia")).toBe("expedia-public");
+    expect(otaArgusConnectorForSource("wotif")).toBe("wotif-public");
+    expect(otaArgusConnectorForSource("hotels")).toBe("hotels-public");
   });
 });

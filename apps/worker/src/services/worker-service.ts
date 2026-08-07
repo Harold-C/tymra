@@ -40,6 +40,7 @@ import {
   NZ_MAJOR_ACCOMMODATION_MARKETS,
   MOT_AIRLINE_PERFORMANCE_URL,
   matchOtaListingToConfirmedAddress,
+  locateOtaDiscoveryCandidate,
   otaArgusConnectorForSource,
   otaCollectRatesExtractionSchema,
   otaDiscoverListingsExtractionSchema,
@@ -129,6 +130,7 @@ import {
   ticketekListingExtractionSchema,
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
+import { calculateOtaHealthMetrics, OTA_SOURCE_KEYS, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
 import {
   isRegionalArgusEventSourceId,
   normaliseRegionalArgusEvents,
@@ -146,6 +148,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import {
   captureBrowserTaskWithDurableArgus,
   durableArgusTraceId,
+  finalizeDirectArgusDelivery,
   settleCancelledCollectionRun,
 } from "./argus-orchestrator";
 import { sourceCollectionBlockers, sourceSchedulingBlockers, type SourceAccessState } from "../operations/source-access";
@@ -258,14 +261,14 @@ export class WorkerService {
     }, { parentJobId, collectionRunId: run.id, dataSourceId: source.id });
 
     if (!response.ok) {
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", errorSummary: response.message.slice(0, 1_000), finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: otaCollectionFailureCode({ httpStatus: response.httpStatus }), errorSummary: response.message.slice(0, 1_000), finishedAt: new Date() } });
       await this.markOtaListingSourceUnavailable(priceCheckId, "The OTA source could not validate this listing. Please retry later.");
       return;
     }
     const result = response.payload;
     await this.persistArgusEvidence(source.id, run.id, result, connectorId, reference.canonicalUrl);
     if (result.status !== "success") {
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: result.status === "manual_required" ? "ACCESS_CHALLENGE" : "SOURCE_UNAVAILABLE", errorSummary: result.error?.message?.slice(0, 1_000) ?? "OTA listing validation failed", finishedAt: new Date() } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: otaCollectionFailureCode({ captureStatus: result.status, errorCategory: result.error?.category }), errorSummary: result.error?.message?.slice(0, 1_000) ?? "OTA listing validation failed", finishedAt: new Date() } });
       await this.markOtaListingSourceUnavailable(priceCheckId, result.status === "manual_required" ? "The OTA presented an access challenge. Please retry later." : "The OTA source could not validate this listing. Please retry later.");
       return;
     }
@@ -342,13 +345,14 @@ export class WorkerService {
     run ??= await prisma.collectionRun.create({ data: { jobId: parentJobId, dataSourceId: listing.dataSourceId, priceCheckId, mode: "ON_DEMAND", status: "RUNNING", scope: { operation: "OTA_RATE_COLLECTION", listingId: listing.id, propertyId: check.propertyId, unitId: check.unitId }, startedAt: new Date(), attemptCount: 1, isDemo: false } });
     const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
     const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
-    const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", listing.canonicalUrl);
-    const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "collect_rates", url: listing.canonicalUrl, checkIn, checkOut, adults: check.stayQuery.adults, children: check.stayQuery.children, units: check.stayQuery.units, currency: "NZD" }, { parentJobId, collectionRunId: run.id, dataSourceId: listing.dataSourceId });
+    const requestUrl = listing.canonicalUrl;
+    const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", `${listing.canonicalUrl}:${listing.sourceListingId}`);
+    const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "collect_rates", url: requestUrl, checkIn, checkOut, adults: check.stayQuery.adults, children: check.stayQuery.children, units: check.stayQuery.units, currency: "NZD" }, { parentJobId, collectionRunId: run.id, dataSourceId: listing.dataSourceId });
     if (!response.ok || response.payload.status !== "success") {
       const message = response.ok ? response.payload.error?.message ?? "OTA rate collection failed" : response.message;
       if (response.ok) await this.persistArgusEvidence(listing.dataSourceId, run.id, response.payload, connectorId, listing.canonicalUrl);
       await prisma.$transaction([
-        prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: response.ok && response.payload.status === "manual_required" ? "ACCESS_CHALLENGE" : "SOURCE_UNAVAILABLE", errorSummary: message.slice(0, 1_000), finishedAt: new Date() } }),
+        prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: otaCollectionFailureCode(response.ok ? { captureStatus: response.payload.status, errorCategory: response.payload.error?.category } : { httpStatus: response.httpStatus }), errorSummary: message.slice(0, 1_000), finishedAt: new Date() } }),
         prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "SOURCE_UNAVAILABLE" } }),
       ]);
       return { collected: false, outcome: "SOURCE_UNAVAILABLE" as const };
@@ -425,23 +429,22 @@ export class WorkerService {
       if (!response.ok || response.payload.status !== "success") {
         if (response.ok) await this.persistArgusEvidence(source.id, run.id, response.payload, connectorId, discoveryUrl);
         const message = response.ok ? response.payload.error?.message ?? "OTA discovery failed" : response.message;
-        await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "PARTIAL", failureCount: { increment: 1 }, errorCode: response.ok && response.payload.status === "manual_required" ? "ACCESS_CHALLENGE" : "SOURCE_UNAVAILABLE", errorSummary: message.slice(0, 1_000), finishedAt: new Date() } });
+        await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "PARTIAL", failureCount: { increment: 1 }, errorCode: otaCollectionFailureCode(response.ok ? { captureStatus: response.payload.status, errorCategory: response.payload.error?.category } : { httpStatus: response.httpStatus }), errorSummary: message.slice(0, 1_000), finishedAt: new Date() } });
         continue;
       }
       await this.persistArgusEvidence(source.id, run.id, response.payload, connectorId, discoveryUrl);
       const extraction = otaDiscoverListingsExtractionSchema.parse(response.payload.extracted);
       for (const candidate of extraction.listings) {
         if (discoveredListingIds.length >= 8) break;
-        if (candidate.provider !== source.key || candidate.countryCode !== "NZ" || !candidate.address || !candidate.city) continue;
-        if (normaliseComparableUnitName(candidate.city) !== normaliseComparableUnitName(check.property.city)) continue;
-        const propertyIdentity = candidate.latitude !== null && candidate.longitude !== null
-          ? `${candidate.latitude.toFixed(3)}:${candidate.longitude.toFixed(3)}`
-          : normaliseComparableUnitName(candidate.address);
+        if (candidate.provider !== source.key || !candidate.address) continue;
+        const discoveryLocation = locateOtaDiscoveryCandidate(check.property, candidate, 5_000);
+        if (discoveryLocation.status !== "COMPARABLE" || !discoveryLocation.city) continue;
+        const propertyIdentity = normaliseComparableUnitName(candidate.address);
         const propertyId = stableId("ota-property", propertyIdentity);
         const property = await prisma.property.upsert({
           where: { id: propertyId },
-          create: { id: propertyId, canonicalName: candidate.canonicalName, legalOrBrandName: candidate.canonicalName, address: candidate.address, city: candidate.city, countryCode: "NZ", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, timezone: "Pacific/Auckland", accommodationType: candidate.propertyType, supportStatus: check.property.supportStatus, identityConfidence: candidate.quality === "complete" ? 0.9 : 0.7, status: "ACTIVE", isDemo: false },
-          update: { canonicalName: candidate.canonicalName, address: candidate.address, city: candidate.city, latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, status: "ACTIVE" },
+          create: { id: propertyId, canonicalName: candidate.canonicalName, legalOrBrandName: candidate.canonicalName, address: candidate.address, city: discoveryLocation.city, countryCode: "NZ", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, timezone: "Pacific/Auckland", accommodationType: candidate.propertyType, supportStatus: check.property.supportStatus, identityConfidence: candidate.quality === "complete" && discoveryLocation.citySource === "LISTING" ? 0.9 : 0.7, status: "ACTIVE", isDemo: false },
+          update: { canonicalName: candidate.canonicalName, address: candidate.address, city: discoveryLocation.city, latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, status: "ACTIVE" },
         });
         const comparableUnits = [...candidate.units].sort((left, right) => {
           const leftTypePenalty = left.unitType === check.unit!.unitType ? 0 : 10;
@@ -460,8 +463,8 @@ export class WorkerService {
           const externalId = `${candidate.sourceListingId}:${unit.externalId}`;
           const listing = await prisma.listing.upsert({
             where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } },
-            create: { propertyId: property.id, unitId, dataSourceId: source.id, platform: candidate.provider, providerBrand: provider.brand, providerFamily: provider.family, externalId, sourceListingId: candidate.sourceListingId, canonicalUrl: candidate.canonicalUrl, rawUrl: candidate.canonicalUrl, url: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: candidate.quality === "complete" ? 0.9 : 0.7, operationalStatus: "HEALTHY", metadata: { discoveredFor: check.propertyId, fieldSources: candidate.fieldSources, warnings: candidate.warnings, quality: candidate.quality }, isDemo: false },
-            update: { propertyId: property.id, unitId, providerBrand: provider.brand, providerFamily: provider.family, canonicalUrl: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", operationalStatus: "HEALTHY" },
+            create: { propertyId: property.id, unitId, dataSourceId: source.id, platform: candidate.provider, providerBrand: provider.brand, providerFamily: provider.family, externalId, sourceListingId: candidate.sourceListingId, canonicalUrl: candidate.canonicalUrl, rawUrl: candidate.canonicalUrl, url: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: candidate.quality === "complete" && discoveryLocation.citySource === "LISTING" ? 0.9 : 0.7, operationalStatus: "HEALTHY", metadata: { discoveredFor: check.propertyId, discoveryLocation: { citySource: discoveryLocation.citySource, distanceMetres: discoveryLocation.distanceMetres, reasons: discoveryLocation.reasons }, fieldSources: candidate.fieldSources, warnings: candidate.warnings, quality: candidate.quality }, isDemo: false },
+            update: { propertyId: property.id, unitId, providerBrand: provider.brand, providerFamily: provider.family, canonicalUrl: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", operationalStatus: "HEALTHY", metadata: { discoveredFor: check.propertyId, discoveryLocation: { citySource: discoveryLocation.citySource, distanceMetres: discoveryLocation.distanceMetres, reasons: discoveryLocation.reasons }, fieldSources: candidate.fieldSources, warnings: candidate.warnings, quality: candidate.quality } },
           });
           if (listing.propertyId === check.propertyId && listing.unitId === check.unitId) continue;
           await prisma.competitorRelationship.upsert({
@@ -492,16 +495,17 @@ export class WorkerService {
     const run = await prisma.collectionRun.findFirstOrThrow({ where: { jobId: parentJobId, dataSourceId: listing.dataSourceId, scope: { path: ["operation"], equals: "OTA_COMPARABLE_DISCOVERY" } }, orderBy: { createdAt: "desc" } });
     const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
     const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
-    const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", listing.canonicalUrl);
+    const requestUrl = listing.canonicalUrl;
+    const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", `${listing.canonicalUrl}:${listing.sourceListingId}`);
     const response = await captureBrowserTaskWithDurableArgus(this.environment, {
-      traceId, connectorId, workflowId: "collect_rates", url: listing.canonicalUrl,
+      traceId, connectorId, workflowId: "collect_rates", url: requestUrl,
       checkIn, checkOut, adults: check.stayQuery.adults, children: check.stayQuery.children,
       units: check.stayQuery.units, currency: "NZD", maxRecords: 3,
     }, { parentJobId, collectionRunId: run.id, dataSourceId: listing.dataSourceId });
     if (!response.ok || response.payload.status !== "success") {
       if (response.ok) await this.persistArgusEvidence(listing.dataSourceId, run.id, response.payload, connectorId, listing.canonicalUrl);
       const message = response.ok ? response.payload.error?.message ?? "OTA comparable rate collection failed" : response.message;
-      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "PARTIAL", failureCount: { increment: 1 }, errorCode: response.ok && response.payload.status === "manual_required" ? "ACCESS_CHALLENGE" : "SOURCE_UNAVAILABLE", errorSummary: message.slice(0, 1_000) } });
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "PARTIAL", failureCount: { increment: 1 }, errorCode: otaCollectionFailureCode(response.ok ? { captureStatus: response.payload.status, errorCategory: response.payload.error?.category } : { httpStatus: response.httpStatus }), errorSummary: message.slice(0, 1_000) } });
       return false;
     }
     await this.persistArgusEvidence(listing.dataSourceId, run.id, response.payload, connectorId, listing.canonicalUrl);
@@ -1099,12 +1103,12 @@ export class WorkerService {
   }
 
   private assertLocalAcceptanceAllowed(
-    source: { name: string; enabled: boolean; environments: string[] },
+    source: { name: string; enabled: boolean; environments: string[]; operationalStatus: string },
     localAcceptance: boolean,
   ) {
     if (!localAcceptance) return;
     if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", "Local source acceptance is available only in development", false);
-    if (!source.enabled) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} must be enabled for local source acceptance`, false);
+    if (source.operationalStatus === "BLOCKED") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is explicitly blocked`, false);
     if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} does not allow the DEVELOPMENT environment`, false);
   }
 
@@ -2067,6 +2071,7 @@ export class WorkerService {
         throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
       }
       if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ourauckland", targetUrl);
+      if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
       if (result.status === "manual_required") {
         throw new AdapterError("SOURCE_UNAVAILABLE", "OurAuckland presented an access challenge; collection stopped without bypassing it", true);
       }
@@ -2135,6 +2140,7 @@ export class WorkerService {
     const result = response.payload;
     if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
     if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ticketmaster", url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Ticketmaster presented an access challenge; collection stopped without bypassing it", true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Argus capture failed", result.error?.retryable ?? true);
     return result;
@@ -2239,6 +2245,7 @@ export class WorkerService {
     const result = response.payload;
     if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
     if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "rbnz-fx", RBNZ_FX_URL);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "RBNZ presented an access challenge; collection stopped without bypassing it", true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Argus capture failed", result.error?.retryable ?? true);
     return result;
@@ -2277,6 +2284,7 @@ export class WorkerService {
     const result = response.payload;
     if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
     if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, config.connectorId, url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", `${sourceId} presented an access challenge; collection stopped without bypassing it`, true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? `${sourceId} Argus capture failed`, result.error?.retryable ?? true);
     const parsed = sourceId === "auckland_airport_monthly"
@@ -2313,6 +2321,7 @@ export class WorkerService {
     const result = response.payload;
     if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
     if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "lincoln-university-key-dates", url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Lincoln University presented an access challenge; collection stopped without bypassing it", true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Lincoln University Argus capture failed", result.error?.retryable ?? true);
     const parsed = lincolnKeyDatesExtractionSchema.safeParse(result.extracted);
@@ -2382,6 +2391,7 @@ export class WorkerService {
       throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
     }
     if (!input.dryRun) await this.persistArgusEvidence(input.dataSourceId, input.collectionRunId, result, input.connectorId, input.url);
+    if (!input.parentJobId) await finalizeDirectArgusDelivery(this.environment, input.collectionRunId, response.delivery, !input.dryRun);
     if (result.status === "manual_required") {
       throw new AdapterError("RATE_LIMITED", `${input.sourceId} presented an access challenge; collection stopped without bypassing it`, true);
     }
@@ -2470,8 +2480,35 @@ export class WorkerService {
   async sourceHealth(sourceId?: string) {
     const selected = sourceId ? { [sourceId]: otaAdapters[sourceId] ?? this.publicAdapters[sourceId] } : { ...otaAdapters, ...this.publicAdapters };
     const results = [];
+    const otaMetricsByKey = new Map((await this.otaHealth()).map((metrics) => [metrics.key, metrics]));
     for (const [key, adapter] of Object.entries(selected)) {
       if (!adapter) continue;
+      const otaMetrics = otaMetricsByKey.get(key);
+      if (otaMetrics) {
+        const source = await prisma.dataSource.findUnique({ where: { key } });
+        if (!source) continue;
+        const gate = otaReleaseGate(otaMetrics);
+        const status = source.operationalStatus === "BLOCKED" ? "BLOCKED" : gate.ready ? "HEALTHY" : "DEGRADED";
+        const checkedAt = new Date();
+        const message = gate.ready ? "OTA has recent positive discovery and rate evidence" : gate.failures.join("; ");
+        const failureRate = Math.max(otaMetrics.parsingFailureRate, otaMetrics.policyBlockedRate, otaMetrics.challengeRate, otaMetrics.rateLimitRate, otaMetrics.emptyResultRate);
+        const healthSummary = { checkedAt, mode: "durable-ota-evidence", metrics: otaMetrics, releaseGate: gate };
+        await prisma.$transaction([
+          prisma.sourceHealthCheck.create({ data: { dataSourceId: source.id, status, message, latencyMs: otaMetrics.averageResponseMs, metadata: healthSummary } }),
+          prisma.dataSource.update({
+            where: { id: source.id },
+            data: {
+              operationalStatus: gate.ready ? "HEALTHY" : source.operationalStatus,
+              healthStatus: status === "HEALTHY" ? "HEALTHY" : status === "BLOCKED" ? "DOWN" : "DEGRADED",
+              healthSummary,
+              errorRate: failureRate,
+              lastSuccessAt: otaMetrics.lastPositiveAt,
+            },
+          }),
+        ]);
+        results.push({ sourceId: key, status, message, latencyMs: otaMetrics.averageResponseMs, checkedAt, mode: "durable-ota-evidence", releaseGate: gate });
+        continue;
+      }
       const context = key in this.publicAdapters ? this.publicAdapterContext() : this.adapterContext();
       const health = await adapter.healthCheck(context);
       const source = await prisma.dataSource.findUnique({ where: { key } });
@@ -2484,6 +2521,46 @@ export class WorkerService {
       results.push({ sourceId: key, ...health });
     }
     return results;
+  }
+
+  async otaHealth(windowDays = 30) {
+    const boundedWindowDays = Math.min(90, Math.max(1, Math.trunc(windowDays)));
+    const cutoff = new Date(Date.now() - boundedWindowDays * 86_400_000);
+    const sources = await prisma.dataSource.findMany({
+      where: { key: { in: [...OTA_SOURCE_KEYS] } },
+      orderBy: { key: "asc" },
+    });
+    return Promise.all(sources.map(async (source) => {
+      const [runs, executions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListing, latestRate] = await Promise.all([
+        prisma.collectionRun.findMany({
+          where: { dataSourceId: source.id, createdAt: { gte: cutoff }, isDemo: false },
+          select: { status: true, successCount: true, failureCount: true, errorCode: true, scope: true, finishedAt: true },
+        }),
+        prisma.argusExecution.findMany({
+          where: { dataSourceId: source.id, submittedAt: { gte: cutoff } },
+          select: { status: true, result: true, errorCategory: true, submittedAt: true, completedAt: true },
+        }),
+        prisma.listing.count({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } } }),
+        prisma.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
+        prisma.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } }),
+        prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } }, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
+        prisma.rateObservation.findFirst({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
+      ]);
+      const metrics = calculateOtaHealthMetrics({
+        key: source.key,
+        enabled: source.enabled,
+        lifecycle: source.lifecycle,
+        operationalStatus: source.operationalStatus,
+        runs,
+        executions,
+        positiveListingCount,
+        positiveRateCount,
+        parserArtifactFailures,
+        latestListingAt: latestListing?.lastConfirmedAt ?? null,
+        latestRateAt: latestRate?.collectedAt ?? null,
+      });
+      return { ...metrics, windowDays: boundedWindowDays, releaseGate: otaReleaseGate(metrics) };
+    }));
   }
 
   async retentionCleanup(now = new Date()) {
@@ -2536,6 +2613,31 @@ export class WorkerService {
   }
 
   async activateSource(sourceId: string) {
+    if (otaAdapters[sourceId]) {
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
+      const metrics = (await this.otaHealth()).find((candidate) => candidate.key === sourceId);
+      if (!metrics) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No OTA source exists for ${sourceId}`, 404);
+      const gate = otaReleaseGate(metrics, new Date(), { requireLifecycle: false, requireOperationalStatus: false });
+      if (!gate.ready) throw new WorkerRequestError("SOURCE_UNAVAILABLE", `OTA source cannot be activated: ${gate.failures.join("; ")}`, 503);
+      const checkedAt = new Date();
+      return prisma.$transaction(async (transaction) => {
+        await transaction.sourceHealthCheck.create({ data: { dataSourceId: source.id, status: "HEALTHY", message: "OTA activation gate passed", latencyMs: metrics.averageResponseMs, metadata: { mode: "durable-ota-evidence", metrics, activationCheck: true } } });
+        return transaction.dataSource.update({
+          where: { id: source.id },
+          data: {
+            lifecycle: "PILOT",
+            operationalStatus: "HEALTHY",
+            status: "PILOT",
+            healthStatus: "HEALTHY",
+            enabled: true,
+            lastReviewedAt: checkedAt,
+            lastSuccessAt: metrics.lastPositiveAt,
+            healthSummary: { checkedAt, mode: "durable-ota-evidence", metrics, releaseGate: gate, activationCheck: true },
+            metadata: { ...jsonRecord(source.metadata), activation: { activatedAt: checkedAt.toISOString(), environment: this.environment.NODE_ENV, evidenceWindowDays: metrics.windowDays } },
+          },
+        });
+      });
+    }
     const adapter = this.publicAdapters[sourceId];
     if (!adapter) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No public adapter exists for ${sourceId}`, 404);
     const health = await adapter.healthCheck(this.publicAdapterContext());

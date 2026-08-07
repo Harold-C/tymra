@@ -10,11 +10,13 @@ export function automaticSchedulingAllowed(nodeEnv: string, schedulerEnabled: bo
 
 export function sourceCollectionBlockers(
   source: SourceAccessState,
-  _nodeEnv: string,
-  _options: { allowDegradedInProduction?: boolean } = {},
+  nodeEnv: string,
+  options: { allowDegradedInProduction?: boolean; allowDevelopmentValidation?: boolean } = {},
 ): string[] {
   const blockers = [...(!source.enabled ? ["source is not enabled"] : [])];
-  if (source.operationalStatus !== "HEALTHY") blockers.push("source is not operationally available");
+  const developmentValidation = nodeEnv === "development" && options.allowDevelopmentValidation === true;
+  const developmentStatusAllowed = developmentValidation && source.operationalStatus !== "BLOCKED";
+  if (source.operationalStatus !== "HEALTHY" && !developmentStatusAllowed) blockers.push("source is not operationally available");
   return blockers;
 }
 
@@ -26,6 +28,6 @@ export function sourceSchedulingBlockers(
   return [
     ...(source.providerType !== "PUBLIC" ? ["source is not a public-data source"] : []),
     ...(!adapterRegistered ? ["no public adapter is registered"] : []),
-    ...sourceCollectionBlockers(source, nodeEnv),
+    ...sourceCollectionBlockers(source, nodeEnv, { allowDevelopmentValidation: false }),
   ];
 }

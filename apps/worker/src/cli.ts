@@ -30,6 +30,7 @@ switch (command) {
   case "collect-source": print(await service.collectSource(requiredArg(args, 0), option(args, "--market") ?? "new-zealand", undefined, collectionOptions(args))); break;
   case "source-health":
   case "source:health": print(await service.sourceHealth(args[0])); break;
+  case "ota:health": print({ windowDays: integerOption(args, "--window-days") ?? 30, sources: await service.otaHealth(integerOption(args, "--window-days") ?? 30), mutationPerformed: false }); break;
   case "source:activate": print(await service.activateSource(requiredArg(args, 0))); break;
   case "source:suspend": print(await service.suspendSource(requiredArg(args, 0))); break;
   case "schedule:eventfinda:enable": print(await guardedSourceScheduleChange(["eventfinda"], true)); break;
@@ -78,12 +79,16 @@ switch (command) {
   }
   case "release:preflight": {
     const requested = csvOption(args, "--sources");
+    const technicalValidation = environment.NODE_ENV === "development";
     const sources = await prisma.dataSource.findMany({ where: requested.length ? { key: { in: requested } } : undefined });
+    const otaHealth = requested.length ? (await service.otaHealth()).filter((source) => requested.includes(source.key)) : [];
     const result = productionPreflight({
       schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED,
       enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }),
+      technicalValidation,
       requestedSourceKeys: requested,
       sources,
+      otaHealth,
     });
     print({ ...result, checkedSources: sources.map((source) => source.key), mutationPerformed: false });
     break;
@@ -91,21 +96,23 @@ switch (command) {
   case "release:canary-plan": {
     const requested = csvOption(args, "--sources");
     if (!requested.length) throw new Error("Missing --sources");
-    print({ ...canaryPlan(requested), mutationPerformed: false });
+    print({ ...canaryPlan(requested, { technicalValidation: environment.NODE_ENV === "development" }), mutationPerformed: false });
     break;
   }
   case "release:canary-run": {
     const requested = csvOption(args, "--sources");
     if (!requested.length) throw new Error("Missing --sources");
-    if (option(args, "--confirm") !== "RUN_BOUNDED_CANARY") throw new Error("Canary requires --confirm RUN_BOUNDED_CANARY");
+    const technicalValidation = environment.NODE_ENV === "development";
+    if (!technicalValidation && option(args, "--confirm") !== "RUN_BOUNDED_CANARY") throw new Error("Canary requires --confirm RUN_BOUNDED_CANARY");
     const sourceRows = await prisma.dataSource.findMany({ where: { key: { in: requested } } });
-    const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), requestedSourceKeys: requested, sources: sourceRows });
+    const otaHealth = (await service.otaHealth()).filter((source) => requested.includes(source.key));
+    const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), technicalValidation, requestedSourceKeys: requested, sources: sourceRows, otaHealth });
     if (!preflight.ready) throw new Error(`Canary preflight failed: ${preflight.failures.join("; ")}`);
     print(await executeCanary(requested, async (sourceKey, pass) => {
       const source = sourceRows.find((item) => item.key === sourceKey)!;
       const before = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
       try {
-        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: integerOption(args, "--limit") ?? 2, dryRun: false });
+        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: integerOption(args, "--limit") ?? 2, dryRun: false, localAcceptance: technicalValidation });
         const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: result.runId } });
         const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
         const after = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
@@ -115,7 +122,7 @@ switch (command) {
       } catch (error) {
         return { sourceKey, pass, configurationUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.message : "unknown" };
       }
-    }));
+    }, { technicalValidation }));
     break;
   }
   case "release:rollback": {
@@ -159,7 +166,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|ota:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
     process.exitCode = 2;
 }
 

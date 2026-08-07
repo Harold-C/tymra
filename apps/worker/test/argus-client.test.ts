@@ -28,6 +28,7 @@ describe("Argus async Job client", () => {
       return listingResult();
     });
     const environment = await listenEnvironment();
+    environment.NODE_ENV = "development";
 
     const result = await captureTicketmasterListingWithArgus(environment, {
       traceId: "ticketmaster-test",
@@ -40,6 +41,7 @@ describe("Argus async Job client", () => {
     assert.equal(result.ok && result.payload.evidence[0]?.storageRef, "argus-evidence:results/argus/ticketmaster-test/page.html");
     assert.equal(requestBody?.contract_version, "1.0");
     assert.equal(requestBody?.idempotency_key, "ticketmaster-test");
+    assert.equal(requestBody?.purpose, "development_technical_validation");
     const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
     assert.equal(capture.connector_id, "ticketmaster-public");
     assert.equal(capture.workflow_id, "collect_listing");
@@ -289,6 +291,9 @@ describe("Argus async Job client", () => {
     assert.match(response.ok ? "" : response.message, /invalid ota-public\.collect_rates data/u);
     const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
     assert.deepEqual({ checkIn: capture.check_in, checkOut: capture.check_out, adults: capture.adults, units: capture.units, currency: capture.currency }, { checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, units: 1, currency: "NZD" });
+    for (const removedField of ["context_url", "source_listing_id", "children_ages", "latitude", "longitude", "radius_km", "accommodation_ids", "language", "country_code", "booker_country", "booker_platform"]) {
+      assert.equal(removedField in capture, false);
+    }
   });
 
   it("accepts Ticketek listing/detail contracts and rejects internal identity drift", async () => {
@@ -726,13 +731,13 @@ function otaResolveListingResult(input: { traceId: string; connectorId: string; 
   };
 }
 
-function otaCollectRatesResult(): Record<string, unknown> {
+function otaCollectRatesResult(connectorId = "booking-public", provider = "booking", traceId = "booking-rates-test"): Record<string, unknown> {
   return {
-    ...baseResult("booking-rates-test", "collect_rates", "booking-public"),
+    ...baseResult(traceId, "collect_rates", connectorId),
     data: {
       data_schema: "ota-public.collect_rates",
       schema_version: "1.0.0",
-      provider: "booking",
+      provider,
       sourceListingId: "example-stay",
       rates: [{ sourceListingId: "example-stay", unitExternalId: "double-room", checkIn: "2026-09-10", checkOut: "2026-09-12", currency: "NZD", basePriceMinor: 40_000, mandatoryFeesMinor: 2_000, taxesMinor: 6_000, optionalFeesMinor: 0, totalPriceMinor: 48_000, availabilityStatus: "AVAILABLE", restrictionReason: null, minimumStay: null, mealPlan: "ROOM_ONLY", cancellationPolicy: "FLEXIBLE", paymentTerms: "PAY_LATER", rateFence: "PUBLIC", sourceUrl: "https://www.booking.com/hotel/nz/example-stay.html", collectedAt: "2026-08-07T00:00:00.000Z", qualityFlags: [], fieldSources: { totalPriceMinor: "rate card" } }],
       observedAt: "2026-08-07T00:00:00.000Z",

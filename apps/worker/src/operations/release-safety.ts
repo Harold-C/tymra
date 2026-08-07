@@ -1,3 +1,5 @@
+import { OTA_SOURCE_KEYS, otaReleaseGate, type OtaHealthMetrics } from "./ota-health";
+
 export type ReleaseSource = {
   key: string;
   enabled: boolean;
@@ -8,26 +10,37 @@ export type ReleaseSource = {
 export function productionPreflight(input: {
   schedulerRuntimeEnabled: boolean;
   enabledScheduleCount: number;
+  technicalValidation?: boolean;
   requestedSourceKeys?: string[];
   sources: ReleaseSource[];
+  otaHealth?: OtaHealthMetrics[];
 }) {
   const failures: string[] = [];
   if (input.schedulerRuntimeEnabled) failures.push("Scheduler runtime must remain disabled during preflight");
   if (input.enabledScheduleCount !== 0) failures.push(`Expected zero enabled schedules; found ${input.enabledScheduleCount}`);
   const available = new Set(input.sources.map((source) => source.key));
+  const otaKeys = new Set<string>(OTA_SOURCE_KEYS);
+  const otaHealthByKey = new Map((input.otaHealth ?? []).map((health) => [health.key, health]));
   for (const key of input.requestedSourceKeys ?? []) {
     if (!available.has(key)) failures.push(`${key}: source does not exist`);
+    if (!input.technicalValidation && otaKeys.has(key)) {
+      const health = otaHealthByKey.get(key);
+      if (!health) failures.push(`${key}: OTA release evidence is missing`);
+      else failures.push(...otaReleaseGate(health).failures.map((failure) => `${key}: ${failure}`));
+    }
   }
-  for (const source of input.sources) {
-    if (!source.enabled || source.operationalStatus !== "HEALTHY") failures.push(`${source.key}: source is not enabled and healthy`);
+  if (!input.technicalValidation) {
+    for (const source of input.sources) {
+      if (!source.enabled || source.operationalStatus !== "HEALTHY") failures.push(`${source.key}: source is not enabled and healthy`);
+    }
   }
-  return { ready: failures.length === 0, failures };
+  return { ready: failures.length === 0, failures, technicalValidation: input.technicalValidation === true };
 }
 
-export function canaryPlan(sourceKeys: string[]) {
+export function canaryPlan(sourceKeys: string[], options: { technicalValidation?: boolean } = {}) {
   const unique = [...new Set(sourceKeys.map((value) => value.trim()).filter(Boolean))].sort();
   return {
-    mode: "READ_ONLY_BOUNDED" as const,
+    mode: options.technicalValidation ? "DEVELOPMENT_TECHNICAL_VALIDATION" as const : "READ_ONLY_BOUNDED" as const,
     sources: unique,
     passes: 2,
     stopConditions: ["configuration_changed", "schedule_changed", "parser_failure", "lineage_growth_on_repeat", "remote_evidence_remaining"],
@@ -49,25 +62,31 @@ export type CanaryPassResult = {
 export async function executeCanary(
   sourceKeys: string[],
   executePass: (sourceKey: string, pass: number) => Promise<CanaryPassResult>,
+  options: { technicalValidation?: boolean } = {},
 ) {
-  const plan = canaryPlan(sourceKeys);
+  const plan = canaryPlan(sourceKeys, options);
   const results: CanaryPassResult[] = [];
   let stoppedBy: string | null = null;
   for (const sourceKey of plan.sources) {
     for (let pass = 1; pass <= plan.passes; pass += 1) {
       const result = await executePass(sourceKey, pass);
       results.push(result);
-      stoppedBy = canaryStopReason(result);
-      if (stoppedBy) break;
+      const failure = canaryStopReason(result);
+      stoppedBy ??= failure;
+      if (failure && !options.technicalValidation) break;
     }
-    if (stoppedBy) break;
+    if (stoppedBy && !options.technicalValidation) break;
   }
   return {
     ...plan,
     executedPasses: results.length,
     passed: stoppedBy === null,
     stoppedBy,
-    conclusion: stoppedBy ? `STOPPED: ${stoppedBy}; execute guarded rollback before further collection.` : "PASSED: every bounded pass satisfied the release gates.",
+    conclusion: stoppedBy
+      ? options.technicalValidation
+        ? `COMPLETED_WITH_FAILURES: first failure ${stoppedBy}; all requested development validation passes were attempted.`
+        : `STOPPED: ${stoppedBy}; execute guarded rollback before further collection.`
+      : "PASSED: every bounded pass satisfied the release gates.",
     results,
   };
 }

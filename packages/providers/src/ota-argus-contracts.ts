@@ -134,7 +134,10 @@ export function otaProviderDetails(sourceId: string) {
   return parsed.success ? otaProviderMetadata[parsed.data] : null;
 }
 
-export function otaDiscoveryUrlForSource(sourceId: string, searchQuery: string): string | null {
+export function otaDiscoveryUrlForSource(
+  sourceId: string,
+  searchQuery: string,
+): string | null {
   const parsed = otaProviderSchema.safeParse(sourceId);
   if (!parsed.success) return null;
   const urls: Record<OtaProvider, string> = {

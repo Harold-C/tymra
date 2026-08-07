@@ -193,7 +193,7 @@ async function seedDataSources() {
         acquisitionMethod: "accessMethod" in record ? record.accessMethod : record.providerType === ProviderType.MANUAL ? "Validated operator import" : "Deterministic fixture",
         retentionDays: record.isDemo ? null : 365,
         owner: "Tymra local development",
-        lastSuccessAt: record.healthStatus === SourceHealthStatus.DOWN ? null : seedDate,
+        lastSuccessAt: "lastSuccessAt" in record ? record.lastSuccessAt : record.healthStatus === SourceHealthStatus.DOWN ? null : seedDate,
         errorRate: record.errorRate,
         isDemo: record.isDemo,
       },
@@ -329,6 +329,7 @@ function registrySourceSeedRecords() {
       status: DataSourceStatus.PILOT, healthStatus: SourceHealthStatus.DEGRADED, enabled: true, isDemo: false, errorRate: 0,
       lifecycle: SourceLifecycle.RESEARCH,
       operationalStatus: OperationalStatus.HEALTHY,
+      lastSuccessAt: null,
       environments: ["DEVELOPMENT", "TEST"] as const, adapterKey: `ota:${key}:v1`, accessMethod: "PUBLIC_WEB_RESEARCH_FIXTURE",
     })),
     ...publicSources.map(([key, name, supportedDomains]) => {

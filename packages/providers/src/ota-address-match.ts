@@ -14,6 +14,14 @@ export type OtaAddressMatchResult = {
   reasons: string[];
 };
 
+export type OtaDiscoveryMarketResult = {
+  status: "COMPARABLE" | "TARGET" | "OUT_OF_SCOPE" | "INSUFFICIENT";
+  city: string | null;
+  citySource: "LISTING" | "SEARCH_SCOPE" | null;
+  distanceMetres: number | null;
+  reasons: string[];
+};
+
 export function matchOtaListingToConfirmedAddress(confirmed: OtaAddressMatchInput, listing: OtaAddressMatchInput): OtaAddressMatchResult {
   const reasons: string[] = [];
   if (normalizeCountry(confirmed.countryCode) !== "NZ" || normalizeCountry(listing.countryCode) !== "NZ") {
@@ -42,6 +50,43 @@ export function matchOtaListingToConfirmedAddress(confirmed: OtaAddressMatchInpu
     return { status: "MATCH", confidence: exactAddress ? 0.92 : 0.85, distanceMetres, reasons: ["ADDRESS_TEXT_AGREES"] };
   }
   return { status: "INSUFFICIENT", confidence: 0, distanceMetres, reasons: ["LISTING_LOCATION_NOT_PRECISE_ENOUGH"] };
+}
+
+export function locateOtaDiscoveryCandidate(
+  confirmed: OtaAddressMatchInput,
+  listing: OtaAddressMatchInput,
+  radiusMetres = 5_000,
+): OtaDiscoveryMarketResult {
+  if (normalizeCountry(confirmed.countryCode) !== "NZ" || normalizeCountry(listing.countryCode) !== "NZ") {
+    return { status: "OUT_OF_SCOPE", city: null, citySource: null, distanceMetres: null, reasons: ["COUNTRY_MISMATCH"] };
+  }
+  const confirmedCity = normalizeText(confirmed.city);
+  const listingCity = normalizeText(listing.city);
+  if (confirmedCity && listingCity && confirmedCity !== listingCity) {
+    return { status: "OUT_OF_SCOPE", city: null, citySource: null, distanceMetres: coordinateDistanceMetres(confirmed, listing), reasons: ["CITY_MISMATCH"] };
+  }
+  const distanceMetres = coordinateDistanceMetres(confirmed, listing);
+  if (distanceMetres !== null && distanceMetres > radiusMetres) {
+    return { status: "OUT_OF_SCOPE", city: null, citySource: null, distanceMetres, reasons: ["DISCOVERY_RADIUS_EXCEEDED"] };
+  }
+  const confirmedAddress = normalizeText(confirmed.address);
+  const listingAddress = normalizeText(listing.address);
+  const sameAddress = Boolean(confirmedAddress && listingAddress)
+    && (confirmedAddress === listingAddress || tokenOverlap(confirmedAddress, listingAddress) >= 0.9);
+  if (sameAddress && (distanceMetres === null || distanceMetres <= 500)) {
+    return { status: "TARGET", city: listing.city ?? confirmed.city ?? null, citySource: listingCity ? "LISTING" : confirmedCity ? "SEARCH_SCOPE" : null, distanceMetres, reasons: ["TARGET_ADDRESS_MATCH"] };
+  }
+  const city = listing.city?.trim() || confirmed.city?.trim() || null;
+  if (!city || (!listingCity && distanceMetres === null)) {
+    return { status: "INSUFFICIENT", city: null, citySource: null, distanceMetres, reasons: ["DISCOVERY_LOCATION_NOT_PRECISE_ENOUGH"] };
+  }
+  return {
+    status: "COMPARABLE",
+    city,
+    citySource: listingCity ? "LISTING" : "SEARCH_SCOPE",
+    distanceMetres,
+    reasons: listingCity ? ["LISTING_CITY_IN_SEARCH_SCOPE"] : ["COORDINATES_IN_SEARCH_SCOPE"],
+  };
 }
 
 function coordinateDistanceMetres(left: OtaAddressMatchInput, right: OtaAddressMatchInput) {

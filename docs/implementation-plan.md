@@ -53,7 +53,7 @@ docs/                     产品、架构、采集、证据、决策和状态
 | P1 | Event impact v2 | 结构化证据、可信场馆 enrichment、跨来源证据聚合、唯一信号和真实样本 pending/promotion | Tymra 侧已完成；人数证据与独立“官方规模 + 住宿需求”组合均有门槛，容量/重复刊登不提升；隔离数据库验证唯一 canonical signal 与完整 lineage |
 | P1 | 全国主要市场公开信号 | 15 个主要住宿市场具备全国发现、当地官方活动、住宿需求和扰动层 | Tymra 可直连的 14 个市场及 Dunedin Argus 路径已实现；ADP、TVF、MRTE、IVS、Stats NZ、DOC 关闭、Interislander 提醒、三大滑雪季窗口及主要航空流量已接入并通过有界实采/隔离落库 |
 | P1 | 全国地址身份解析 | 任意 NZ 街道地址先解析为标准地域身份，再进入 `FULL / REGIONAL / NATIONAL_ONLY` 信号路由；歧义不得自动选择 | LINZ 查询、进程 L1 + PostgreSQL L2、按结果 TTL、版本失效和 Redis 防击穿已实现；查询仅保存 HMAC，规范地址与候选关系独立于 Property，用户确认后才晋升 Property；重启后真实数据库命中及 17 Region 语料已验证 |
-| P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | Admin 就绪页、可执行 canary、事务回滚、队列动作和跨源对账已完成；来源启用与运行健康门禁阻止不安全执行 |
+| P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | 开发环境已改为显式技术验证：不要求生命周期或既有 OTA 正记录并会尝试全部两轮；生产 release gate 保留，Scheduler 保持关闭 |
 
 ## 交付顺序
 
@@ -68,7 +68,9 @@ docs/                     产品、架构、采集、证据、决策和状态
 
 ## 已知边界
 
-- Tymra 已实现九个 OTA 品牌的 Argus listing 身份、地址驱动的有界竞品发现、目标与竞品费率采集、平台族标识、跨品牌去重、证据复制后 ACK 和安全降级；在新增 Argus Connector 完成真实有界验收前，仍不能声明生产可用。
+- Tymra 已实现九个 OTA 品牌的 Argus listing 身份、地址驱动的有界竞品发现、目标与竞品费率采集、平台族标识、跨品牌去重、证据复制后 ACK、安全降级和证据驱动健康门槛；当前所有 OTA 只使用公开 connector。Booking Demand 与 Expedia Rapid 的可执行路由、合同和测试已删除，因为项目没有 Partner 凭证。
+- Partner API 集成作为暂缓能力记录：未来取得正式凭证后，按届时最新官方合同重新实现、隔离凭证、补齐真实双轮验收与生产门槛，不从当前代码中恢复陈旧死代码。
+- Booking 开发公开浏览器路径已通过真实 Wellington UI 验收：正常首页点击产生真实 listing，并取得明确含税费的 NZD 246 all-in rate；discover/rates 均通过 Tymra v1 合同，HTML/截图哈希、ACK 后 410 与证据清理已验证。Expedia 当前 robots 明确禁止 `/Hotel-Search`，因此保持 `POLICY_BLOCKED`，未启动浏览器，也不作为已覆盖来源。
 - Eventfinda 本地环境可验证实现、持久化、幂等、锁、租约和恢复逻辑，不能替代多日无人值守验收。
 - Ticketmaster 公开页面可能进入验证挑战；实现必须停止、冷却并保留证据，不得绕过。
 - 手工导入仍需要真实运营文件才能完成真实文件验收。

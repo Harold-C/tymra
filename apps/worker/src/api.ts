@@ -36,6 +36,10 @@ app.get("/worker/sources/:id/health", async (request, reply) => {
   const checks = await prisma.sourceHealthCheck.findMany({ where: { dataSourceId: source.id }, orderBy: { checkedAt: "desc" }, take: 20 });
   return { source, checks };
 });
+app.get("/worker/ota-health", async (request) => {
+  const { windowDays } = z.object({ windowDays: z.coerce.number().int().min(1).max(90).default(30) }).parse(request.query);
+  return { generatedAt: new Date().toISOString(), sources: await service.otaHealth(windowDays) };
+});
 app.get("/worker/markets", async () => prisma.marketCoverage.findMany({ orderBy: { key: "asc" } }));
 app.get("/worker/markets/:key/coverage", async (request, reply) => sendFound(reply, await prisma.marketCoverage.findUnique({ where: { key: pathId(request.params) } })));
 app.get("/worker/health", async () => service.health());

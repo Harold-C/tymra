@@ -210,8 +210,14 @@ export type ArgusCaptureInput = {
 };
 
 export type CaptureResponse =
-  | { ok: true; httpStatus: number; payload: ArgusBrowserTaskResult }
+  | { ok: true; httpStatus: number; payload: ArgusBrowserTaskResult; delivery: ArgusResultDelivery }
   | { ok: false; httpStatus: number; message: string };
+
+export type ArgusResultDelivery = {
+  jobId: string;
+  resultSha256: string;
+  job: ArgusJobResult;
+};
 
 const terminalJobStatuses = new Set<ArgusJobSummary["status"]>([
   "COMPLETED",
@@ -424,7 +430,12 @@ export function mapArgusJobResult(
     };
   }
   try {
-    return { ok: true, httpStatus: 200, payload: mapArgusResult(item.result, input.connectorId, input.workflowId) };
+    return {
+      ok: true,
+      httpStatus: 200,
+      payload: mapArgusResult(item.result, input.connectorId, input.workflowId),
+      delivery: { jobId: job.job_id, resultSha256: job.result_sha256, job },
+    };
   } catch (error) {
     return {
       ok: false,
@@ -620,6 +631,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
   return {
     contract_version: "1.0",
     idempotency_key: input.traceId,
+    ...(environment.NODE_ENV === "development" ? { purpose: "development_technical_validation" } : {}),
     captures: [{
       contract_version: "1.0",
       trace_id: input.traceId,

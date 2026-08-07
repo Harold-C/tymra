@@ -617,3 +617,89 @@ competitor counts.
 Argus fixture contracts and a final bounded cross-service run remain required before any new source
 is described as externally verified. User-triggered jobs remain the only OTA execution path and
 automatic scheduling stays disabled.
+
+## D-039 Gate OTA Enablement On Durable Positive Evidence
+
+**Status:** Implemented; source-by-source external acceptance remains required.
+
+**Decision:** OTA health is calculated from durable `CollectionRun`, `ArgusExecution`, `Listing`
+and `RateObservation` evidence over a bounded window. The operational report exposes the last
+positive result, positive listing and rate counts, empty-result rate, policy-block rate, challenge rate, rate-limit
+rate, parser-failure rate and average Argus response time. A source cannot pass the production
+release preflight without a positive listing, a positive rate, two bounded runs, a positive result
+within seven days, zero parser failures and bounded challenge, rate-limit and empty-result rates.
+Configuration-only adapter health never upgrades an OTA source. A previously blocked source stays
+blocked until durable evidence and an explicit operator action justify a transition.
+Positive listing evidence counts only non-demo listings produced by bounded address discovery, not
+a user-submitted target identity. Positive rate evidence counts only non-demo `AVAILABLE`
+observations with a complete fee breakdown and a positive total; unavailable, unknown, zero-price
+or partial-fee observations remain diagnostic evidence and cannot satisfy the release gate.
+
+**Reason:** A reachable browser process or a schema-valid empty response does not prove that an OTA
+can supply a usable market quote. Evidence-derived health prevents placeholder timestamps and
+fixture checks from being mistaken for production readiness.
+
+**Verification:** `ota-health.test.ts` covers positive, empty, rate-limited and blocked evidence.
+The Worker exposes a read-only `/worker/ota-health` endpoint and `ota:health` CLI command, while
+`release:preflight --sources` fails closed when OTA evidence is missing or outside the thresholds.
+Automatic scheduling remains disabled in development.
+
+## D-040 Treat Development Collection As Explicit Technical Validation
+
+**Status:** Implemented.
+
+**Decision:** In `NODE_ENV=development`, an explicitly invoked local-acceptance collection may run
+even when an internal enablement or production health gate is not satisfied, provided the source's
+operational state is not explicitly `BLOCKED` and it declares development support.
+Development release preflight does not require production lifecycle or prior positive OTA evidence,
+and its two-pass runner attempts every requested source even after an earlier validation failure.
+The development CLI does not require the production Canary confirmation phrase. Automatic
+scheduling and enabled schedules remain hard blockers. Booking and Expedia use their explicit
+public-browser connectors in this profile, so development validation does not depend on Partner
+credentials. A source explicitly marked `BLOCKED` remains unavailable, and fixed host/route
+validation, source policy, rate/concurrency limits, access challenges and authentication controls
+still apply.
+
+**Reason:** Development runs exist to discover integration failures and collect diagnostic evidence;
+requiring prior production-grade evidence creates a circular dependency. External access boundaries
+are not internal release gates and cannot be converted into a development override.
+
+**Verification:** `release-safety.test.ts` proves evidence-free development preflight and all-pass
+execution. `source-schedule-control.test.ts` proves direct validation accepts non-blocked degraded
+states while scheduling still requires a healthy source and development scheduling remains disabled.
+Direct CLI captures now copy and hash every Argus evidence object before ACK and require the result
+endpoint to return 410; dry runs hash evidence in memory before the same purge verification.
+The Booking public-browser path has additionally completed a bounded real Wellington discovery and
+all-in rate run with Tymra contract validation, evidence hash verification, ACK and 410 purge.
+Expedia `/Hotel-Search` remains policy-blocked by its current robots rules and was not opened.
+
+## D-041 Defer Partner OTA API Integrations Until Credentials Are Available
+
+**Status:** Deferred; executable Partner API modules removed.
+
+**Decision:** Tymra currently routes every supported OTA workflow through its public connector.
+The Booking Demand API and Expedia Rapid API connector IDs, endpoint routing, wire contracts,
+credential-specific request fields, tests and acceptance runner integration have been removed from
+the executable codebase because the project has no Partner credentials. This is intentional scope
+removal, not a runtime fallback.
+
+For the v1 public-browser contract, a consumer page that explicitly labels its displayed total as
+including taxes and mandatory fees may represent that bundled amount as both `basePriceMinor` and
+`totalPriceMinor`, with zero normalization components and the mandatory flags
+`ALL_IN_TOTAL_INCLUDES_TAXES_AND_FEES` and `PRICE_COMPONENTS_BUNDLED_NOT_ITEMIZED`. This preserves
+the observed all-in price without claiming a source-provided fee breakdown. A page without explicit
+all-in disclosure cannot produce an available complete rate.
+
+If formal credentials become available, Partner APIs must be restored as a new reviewed change:
+reconfirm current provider contracts, isolate credentials in Argus, add explicit connector IDs and
+routes, validate identity and price reconciliation, complete bounded real acceptance, and pass the
+D-039 production source gate before activation. Historical implementation notes are intentionally
+not retained as dead code because external API contracts may change before restoration.
+
+**Reason:** Maintaining unexecutable credential-gated paths increases code and test surface without
+providing current capability. A fresh implementation against the then-current official contracts
+is safer than preserving dormant integration code.
+
+**Verification:** Provider routing tests require Booking and Expedia to resolve only to their public
+connectors. Repository search must find no Partner connector IDs or endpoint hosts in executable
+Tymra code. Scheduler remains disabled.

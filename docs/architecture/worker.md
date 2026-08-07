@@ -106,6 +106,41 @@ unavailable for scheduled production collection until their operating gates pass
 catalog/panel scheduling and coverage models are implemented, but a real 1,000-1,500-unit
 accommodation panel still requires live OTA/catalog sources.
 
+OTA operational health is evidence-derived rather than a transport ping. `/worker/ota-health` and
+`ota:health` aggregate a bounded window of collection runs, Argus executions, real listings and rate
+observations into positive coverage, empty-result, policy-block, challenge, rate-limit, parser-failure and latency
+metrics. Release preflight requires recent positive discovery and price evidence per requested OTA;
+an empty but schema-valid response remains useful diagnostic evidence but does not make the source
+production-ready. Sources in `BLOCKED` are not automatically restored by a generic health check.
+
+Development uses an explicit technical-validation profile. Manual local acceptance can exercise
+disabled or non-healthy sources except those explicitly `BLOCKED`; release preflight does not require already-positive
+OTA evidence, and every requested two-pass validation is attempted so one integration failure does
+not hide later results. This profile never starts scheduling and does not override an explicit
+`BLOCKED` state, fixed routes, source policy, access challenges or remote
+rate/concurrency controls.
+Every Argus Job submitted by the development Worker is labelled
+`purpose=development_technical_validation`; production and test requests omit that field. In this
+profile Tymra routes Booking and Expedia discovery, listing validation and rate work to
+`booking-public` and `expedia-public`. Partner API routes are not present in the runtime.
+Direct local-acceptance captures retain verified evidence in Tymra storage, ACK the Argus result and
+verify HTTP 410 before returning success. Dry-run captures verify the evidence bytes in memory and
+perform the same ACK/purge sequence without persisting artifacts.
+
+Consumer pages commonly expose a single all-in amount rather than itemized tax and fee components.
+When the page explicitly says that total includes taxes and mandatory fees, the v1 browser contract
+stores the bundled total in both base and total fields with zero normalization components and flags
+it as bundled, not itemized. Tymra treats this as complete total-price coverage but does not describe
+the zero components as source-observed fee values. Without explicit inclusive wording the rate is
+incomplete and cannot be used as an available comparison.
+
+Booking and Expedia use only their public connectors for listing identity, discovery and rates.
+Booking has bounded real positive UI evidence; Expedia search remains policy-blocked by current
+robots rules. The earlier Booking Demand and Expedia Rapid modules were removed while credentials
+are unavailable. If credentials are obtained later, official API support must return as a separate
+reviewed implementation against the then-current contracts, with new acceptance evidence before
+any activation.
+
 ## Verification Baseline
 
 Verification totals are dated snapshots. On 2026-08-01 the current worktree passed Web lint,
