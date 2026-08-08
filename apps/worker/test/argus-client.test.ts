@@ -248,6 +248,62 @@ describe("Argus async Job client", () => {
     assert.equal((response.payload.extracted as { sourceListingId: string }).sourceListingId, "example-stay");
   });
 
+  it("requires and exposes an expiring noVNC session for a Booking CAPTCHA", async () => {
+    server = jobServer(async () => ({
+      ...baseResult("booking-captcha-test", "resolve_listing", "booking-public"),
+      ok: false,
+      status: "challenge",
+      data: null,
+      challenge: {
+        kind: "CAPTCHA",
+        signals: ["recaptcha"],
+        manual_session: {
+          session_id: "manual-booking-captcha-test",
+          no_vnc_url: "https://connect.argus.test/session/manual-booking-captcha-test",
+          expires_at: "2099-08-07T01:00:00.000Z",
+        },
+      },
+      error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
+    }));
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-captcha-test",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.deepEqual(response.payload.manualRequired, {
+      reason: "CAPTCHA",
+      sessionId: "manual-booking-captcha-test",
+      noVncUrl: "https://connect.argus.test/session/manual-booking-captcha-test",
+      expiresAt: "2099-08-07T01:00:00.000Z",
+    });
+  });
+
+  it("rejects a Booking CAPTCHA without a manual noVNC session", async () => {
+    server = jobServer(async () => ({
+      ...baseResult("booking-captcha-missing-session", "resolve_listing", "booking-public"),
+      ok: false,
+      status: "challenge",
+      data: null,
+      challenge: { kind: "CAPTCHA", signals: ["recaptcha"] },
+      error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
+    }));
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-captcha-missing-session",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /without a manual noVNC session/u);
+  });
+
   it.each([
     ["expedia-public", "expedia", "https://www.expedia.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
     ["wotif-public", "wotif", "https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],

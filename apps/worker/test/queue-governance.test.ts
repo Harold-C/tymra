@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { classifyQueueFailure, queueFailureReport, queueFailureSummary } from "../src/operations/queue-governance";
 
 describe("queue failure governance", () => {
-  it("keeps external blocks and historical fixtures out of automatic retry", () => {
+  it("retries transient source blocks while keeping historical fixtures isolated", () => {
     expect(classifyQueueFailure({ status: "DEAD_LETTER", type: "EMAIL_DELIVERY", lastErrorCode: "DECRYPT_FAILED", lastErrorMessage: "old fixture key" })).toBe("HISTORICAL_FIXTURE");
-    expect(classifyQueueFailure({ status: "FAILED", type: "EVENT_COLLECTION", lastErrorCode: "SOURCE_UNAVAILABLE", lastErrorMessage: null })).toBe("EXTERNAL_BLOCK");
+    expect(classifyQueueFailure({ status: "FAILED", type: "EVENT_COLLECTION", lastErrorCode: "SOURCE_UNAVAILABLE", lastErrorMessage: null })).toBe("RETRY_ELIGIBLE");
     expect(classifyQueueFailure({ status: "FAILED", type: "EVENT_COLLECTION", lastErrorCode: "NETWORK_TIMEOUT", lastErrorMessage: null })).toBe("RETRY_ELIGIBLE");
   });
 

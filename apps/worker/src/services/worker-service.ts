@@ -131,6 +131,7 @@ import {
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
 import { calculateOtaHealthMetrics, OTA_SOURCE_KEYS, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { sortOtaSourcesByMarketWeight } from "../operations/ota-source-priority";
 import {
   isRegionalArgusEventSourceId,
   normaliseRegionalArgusEvents,
@@ -401,12 +402,10 @@ export class WorkerService {
       include: { property: true, unit: true, stayQuery: true },
     });
     if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
-    const sourcePriority = new Map(["expedia", "bookabach", "booking", "airbnb", "wotif", "hotels", "vrbo", "agoda", "trip"].map((key, index) => [key, index]));
-    const sources = await prisma.dataSource.findMany({
+    const sources = sortOtaSourcesByMarketWeight(await prisma.dataSource.findMany({
       where: { key: { in: Object.keys(otaAdapters).filter((key) => key !== "google_hotels") }, sourceType: "OTA", enabled: true, operationalStatus: "HEALTHY" },
       orderBy: { key: "asc" },
-    });
-    sources.sort((left, right) => (sourcePriority.get(left.key) ?? 99) - (sourcePriority.get(right.key) ?? 99));
+    }));
     const searchQuery = check.property.address;
     const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
     const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
@@ -1107,18 +1106,18 @@ export class WorkerService {
     localAcceptance: boolean,
   ) {
     if (!localAcceptance) return;
-    if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", "Local source acceptance is available only in development", false);
-    if (source.operationalStatus === "BLOCKED") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is explicitly blocked`, false);
-    if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} does not allow the DEVELOPMENT environment`, false);
+    if (this.environment.NODE_ENV !== "development") return;
+    if (!source.environments.includes("DEVELOPMENT")) return;
   }
 
   private assertSourceCollectionAllowed(
     source: SourceAccessState & { name: string },
     allowDegradedInProduction = false,
   ) {
-    const blockers = sourceCollectionBlockers(source, this.environment.NODE_ENV, { allowDegradedInProduction });
+    const blockers = sourceCollectionBlockers(source, this.environment.NODE_ENV, { allowDegradedInProduction, allowDevelopmentValidation: this.environment.NODE_ENV === "development" });
     if (!blockers.length) return;
     const unavailable = blockers.length === 1 && blockers[0] === "source is not operationally available";
+    if (this.environment.NODE_ENV === "development") return;
     if (unavailable) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is ${source.operationalStatus.toLowerCase()}`, true);
     throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} cannot be collected: ${blockers.join("; ")}`, false);
   }

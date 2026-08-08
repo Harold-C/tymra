@@ -157,7 +157,15 @@ type ArgusCaptureResult = {
   } | null;
   data: unknown;
   evidence: ArgusEvidencePointer[];
-  challenge: { kind: string; signals: string[] } | null;
+  challenge: {
+    kind: string;
+    signals: string[];
+    manual_session?: {
+      session_id: string;
+      no_vnc_url: string;
+      expires_at: string;
+    } | null;
+  } | null;
   error: { category: string; message: string; retryable: boolean } | null;
 };
 
@@ -185,7 +193,12 @@ export type ArgusBrowserTaskResult = {
   page: { title: string; finalUrl: string; htmlBytes: number; screenshotBytes: number } | null;
   evidence: ArgusEvidencePointer[];
   error: { category: string; message: string; retryable: boolean } | null;
-  manualRequired: { reason: string } | null;
+  manualRequired: {
+    reason: string;
+    sessionId: string | null;
+    noVncUrl: string | null;
+    expiresAt: string | null;
+  } | null;
   readonlyOnly: true;
   externalSideEffectsPerformed: false;
   extracted: unknown;
@@ -490,10 +503,37 @@ function mapArgusResult(
     } : null,
     evidence: result.evidence,
     error: result.error,
-    manualRequired: manualRequired ? { reason: result.challenge?.kind ?? result.status } : null,
+    manualRequired: manualRequired ? mapManualRequired(result) : null,
     readonlyOnly: true,
     externalSideEffectsPerformed: false,
     extracted: adaptExtraction(result.data, connectorId, workflowId, result.page?.title),
+  };
+}
+
+function mapManualRequired(result: ArgusCaptureResult): ArgusBrowserTaskResult["manualRequired"] {
+  const reason = result.challenge?.kind ?? result.status;
+  if (!/captcha/iu.test(reason)) return { reason, sessionId: null, noVncUrl: null, expiresAt: null };
+
+  const session = result.challenge?.manual_session;
+  if (!session?.session_id || !session.no_vnc_url || !session.expires_at) {
+    throw new Error("Argus returned a CAPTCHA challenge without a manual noVNC session");
+  }
+  let noVncUrl: URL;
+  try {
+    noVncUrl = new URL(session.no_vnc_url);
+  } catch {
+    throw new Error("Argus returned an invalid CAPTCHA noVNC URL");
+  }
+  const expiresAt = Date.parse(session.expires_at);
+  const allowedHost = noVncUrl.hostname === "connect.argus.test" || noVncUrl.hostname === "connect.argus.nz";
+  if (noVncUrl.protocol !== "https:" || !allowedHost || Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+    throw new Error("Argus returned an invalid CAPTCHA manual-session contract");
+  }
+  return {
+    reason,
+    sessionId: session.session_id,
+    noVncUrl: noVncUrl.toString(),
+    expiresAt: new Date(expiresAt).toISOString(),
   };
 }
 

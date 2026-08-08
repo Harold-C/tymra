@@ -435,7 +435,7 @@ class RbnzFxBrowserAdapter implements PublicDataAdapter {
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     const started = Date.now();
     try {
-      const response = await fetch(new URL("/robots.txt", RBNZ_B1_URL), { headers: { accept: "text/plain" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
+      const response = await fetch(RBNZ_B1_URL, { headers: { accept: "text/html" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
       return { status: response.ok || response.status === 403 ? "DEGRADED" : "DOWN", checkedAt: new Date(), message: `RBNZ public web returned HTTP ${response.status}; browser collection is required`, latencyMs: Date.now() - started, mode: context.mode };
     } catch (error) {
       return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : "RBNZ public web health check failed", latencyMs: Date.now() - started, mode: context.mode };
@@ -957,7 +957,7 @@ class EventfindaWebAdapter implements PublicDataAdapter {
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     const started = Date.now();
     try {
-      const response = await fetch("https://www.eventfinda.co.nz/robots.txt", { headers: { accept: "text/plain" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
+      const response = await fetch("https://www.eventfinda.co.nz/", { headers: { accept: "text/html" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
       return { status: response.ok ? "HEALTHY" : response.status === 429 ? "DEGRADED" : "DOWN", checkedAt: new Date(), message: `Eventfinda public web returned HTTP ${response.status}`, latencyMs: Date.now() - started, mode: context.mode };
     } catch (error) {
       return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : "Eventfinda public web health check failed", latencyMs: Date.now() - started, mode: context.mode };
@@ -993,7 +993,7 @@ class TicketmasterWebAdapter implements PublicDataAdapter {
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     const started = Date.now();
     try {
-      const response = await fetch("https://www.ticketmaster.co.nz/robots.txt", { headers: { accept: "text/plain" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
+      const response = await fetch("https://www.ticketmaster.co.nz/", { headers: { accept: "text/html" }, signal: context.signal ?? AbortSignal.timeout(10_000) });
       return { status: response.ok ? "HEALTHY" : response.status === 429 ? "DEGRADED" : "DOWN", checkedAt: new Date(), message: `Ticketmaster public web returned HTTP ${response.status}`, latencyMs: Date.now() - started, mode: context.mode };
     } catch (error) {
       return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : "Ticketmaster public web health check failed", latencyMs: Date.now() - started, mode: context.mode };

@@ -44,7 +44,7 @@ describe("OTA operational health", () => {
     ]);
   });
 
-  it("exposes a robots or access-policy block as a release blocker", () => {
+  it("exposes an access-policy block as a release blocker", () => {
     const metrics = calculateOtaHealthMetrics({
       key: "vrbo", enabled: true, lifecycle: "PILOT", operationalStatus: "HEALTHY", positiveListingCount: 1, positiveRateCount: 1, parserArtifactFailures: 0,
       latestListingAt: now, latestRateAt: now,
@@ -56,5 +56,19 @@ describe("OTA operational health", () => {
     });
     expect(metrics.policyBlockedRate).toBe(1);
     expect(otaReleaseGate(metrics, now).failures).toContain("source policy blocked 1 execution(s)");
+  });
+
+  it("allows technical validation to continue past non-healthy status and policy evidence", () => {
+    const metrics = calculateOtaHealthMetrics({
+      key: "expedia", enabled: true, lifecycle: "PILOT", operationalStatus: "DEGRADED", positiveListingCount: 1, positiveRateCount: 1, parserArtifactFailures: 0,
+      latestListingAt: now, latestRateAt: now,
+      runs: [
+        { status: "SUCCEEDED", successCount: 1, failureCount: 0, errorCode: null, scope: { operation: "OTA_COMPARABLE_DISCOVERY" }, finishedAt: now },
+        { status: "SUCCEEDED", successCount: 1, failureCount: 0, errorCode: null, scope: { operation: "OTA_RATE_COLLECTION" }, finishedAt: now },
+      ],
+      executions: [{ status: "COMPLETED", result: { status: "COMPLETED", items: [{ result: { status: "failed", error: { category: "POLICY_BLOCKED" } } }] }, errorCategory: null, submittedAt: new Date(now.getTime() - 1_000), completedAt: now }],
+    });
+    const gate = otaReleaseGate(metrics, now, { requireOperationalStatus: false });
+    expect(gate.ready).toBe(true);
   });
 });

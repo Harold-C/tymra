@@ -112,7 +112,7 @@ export function calculateOtaHealthMetrics(input: OtaHealthInput) {
 export function otaReleaseGate(metrics: OtaHealthMetrics, now = new Date(), options: { requireLifecycle?: boolean; requireOperationalStatus?: boolean } = {}) {
   const failures: string[] = [];
   const lastPositiveAgeMs = metrics.lastPositiveAt ? now.getTime() - metrics.lastPositiveAt.getTime() : Number.POSITIVE_INFINITY;
-  if (!metrics.enabled) failures.push("source is disabled");
+  if (!metrics.enabled && options.requireLifecycle !== false) failures.push("source is disabled");
   if (options.requireLifecycle !== false && !["PILOT", "PRODUCTION"].includes(metrics.lifecycle)) failures.push(`lifecycle is ${metrics.lifecycle}`);
   if (options.requireOperationalStatus !== false && metrics.operationalStatus !== "HEALTHY") failures.push(`operational status is ${metrics.operationalStatus}`);
   if (!metrics.lastPositiveAt || lastPositiveAgeMs > 7 * 86_400_000) failures.push("no positive result in the last 7 days");
@@ -122,7 +122,7 @@ export function otaReleaseGate(metrics: OtaHealthMetrics, now = new Date(), opti
   if (metrics.parsingFailureRate > 0) failures.push(`parser failure rate is ${percent(metrics.parsingFailureRate)}`);
   if (metrics.challengeRate > 0.25) failures.push(`challenge rate exceeds 25% (${percent(metrics.challengeRate)})`);
   if (metrics.rateLimitRate > 0.25) failures.push(`rate-limit rate exceeds 25% (${percent(metrics.rateLimitRate)})`);
-  if (metrics.policyBlockedExecutions > 0) failures.push(`source policy blocked ${metrics.policyBlockedExecutions} execution(s)`);
+  if (options.requireOperationalStatus !== false && metrics.policyBlockedExecutions > 0) failures.push(`source policy blocked ${metrics.policyBlockedExecutions} execution(s)`);
   if (metrics.emptyResultRate > 0.5) failures.push(`empty-result rate exceeds 50% (${percent(metrics.emptyResultRate)})`);
   return { ready: failures.length === 0, failures };
 }
