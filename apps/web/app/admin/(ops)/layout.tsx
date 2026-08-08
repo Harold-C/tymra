@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { getEnvironment } from "@tymra/config";
 import { prisma } from "@tymra/db";
 import { redirect } from "next/navigation";
@@ -7,7 +6,6 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { getAdminForPage } from "@/lib/server/admin-auth";
 import { getAdminLocale } from "@/lib/server/admin-locale";
 
-export const metadata: Metadata = { title: "Tymra Operations", robots: { index: false, follow: false, nocache: true } };
 export const dynamic = "force-dynamic";
 
 export default async function OperationsLayout({ children }: { children: React.ReactNode }) {

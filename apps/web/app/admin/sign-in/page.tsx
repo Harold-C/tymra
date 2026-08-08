@@ -1,4 +1,3 @@
-import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { AdminSignInForm } from "@/components/admin/AdminSignInForm";
@@ -6,8 +5,6 @@ import { AdminLanguageSwitch } from "@/components/admin/AdminLanguageSwitch";
 import { adminText } from "@/lib/admin-i18n";
 import { getAdminForPage } from "@/lib/server/admin-auth";
 import { getAdminLocale } from "@/lib/server/admin-locale";
-
-export const metadata: Metadata = { title: "Tymra Operations Sign In", robots: { index: false, follow: false } };
 
 export default async function AdminSignInPage() {
   if (await getAdminForPage()) redirect("/admin/exceptions");
