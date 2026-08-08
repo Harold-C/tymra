@@ -224,7 +224,7 @@ export type ArgusCaptureInput = {
 
 export type CaptureResponse =
   | { ok: true; httpStatus: number; payload: ArgusBrowserTaskResult; delivery: ArgusResultDelivery }
-  | { ok: false; httpStatus: number; message: string };
+  | { ok: false; httpStatus: number; message: string; delivery?: ArgusResultDelivery };
 
 export type ArgusResultDelivery = {
   jobId: string;
@@ -454,6 +454,7 @@ export function mapArgusJobResult(
       ok: false,
       httpStatus: 502,
       message: error instanceof Error ? error.message : "Argus returned an invalid connector result",
+      delivery: { jobId: job.job_id, resultSha256: job.result_sha256, job },
     };
   }
 }

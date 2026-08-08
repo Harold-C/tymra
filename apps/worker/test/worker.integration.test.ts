@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 import { getEnvironment } from "@tymra/config";
@@ -1073,6 +1073,7 @@ type TestArgusCapture = {
 
 function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>) {
   const results = new Map<string, { capture: TestArgusCapture; result: Record<string, unknown> }>();
+  const acknowledged = new Set<string>();
   return createServer(async (request, response) => {
     expect(request.headers.authorization).toBe("Bearer integration-argus-token-with-thirty-two-characters");
     if (request.method === "POST" && request.url === "/v1/jobs") {
@@ -1087,6 +1088,7 @@ function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<
     }
     const match = request.url?.match(/^\/v1\/jobs\/([^/]+)(\/result)?$/u);
     if (request.method === "GET" && match) {
+      if (match[2] && acknowledged.has(match[1]!)) return sendJson(response, 410, { error: "PURGED" });
       const stored = results.get(match[1]!);
       if (!stored) return sendJson(response, 404, { error: "NOT_FOUND" });
       if (!match[2]) return sendJson(response, 200, { contract_version: "1.0", job_id: match[1], status: "COMPLETED" });
@@ -1098,6 +1100,21 @@ function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<
         items: [{ trace_id: stored.capture.trace_id, status: "COMPLETED", result: stored.result, error_category: null }],
         error: null,
       });
+    }
+    const acknowledgement = request.url?.match(/^\/v1\/jobs\/([^/]+)\/ack$/u);
+    if (request.method === "POST" && acknowledgement) {
+      if (!results.has(acknowledgement[1]!)) return sendJson(response, 404, { error: "NOT_FOUND" });
+      acknowledged.add(acknowledgement[1]!);
+      return sendJson(response, 200, { contract_version: "1.0", job_id: acknowledgement[1] });
+    }
+    const evidence = request.url?.match(/^\/v1\/event-captures\/([^/]+)\/evidence\/(html|screenshot)$/u);
+    if (request.method === "GET" && evidence) {
+      const stored = [...results.values()].find((value) => value.capture.trace_id === evidence[1]);
+      const pointer = (stored?.result.evidence as Array<{ kind: string; sha256: string }> | undefined)?.find((item) => item.kind === evidence[2]);
+      if (!pointer) return sendJson(response, 404, { error: "NOT_FOUND" });
+      const content = evidenceContent(evidence[2]!, pointer.sha256);
+      response.writeHead(200, { "content-type": evidence[2] === "html" ? "text/html" : "image/png", "x-argus-content-sha256": pointer.sha256 });
+      return response.end(content);
     }
     return sendJson(response, 404, { error: "NOT_FOUND" });
   });
@@ -1117,7 +1134,7 @@ function argusResult(capture: TestArgusCapture, ok: boolean, status: "success" |
     traceId: capture.trace_id,
     relativePath: `results/argus/${capture.trace_id}/${kind === "html" ? "page.html" : "screenshot.png"}`,
     storageRef: `argus-evidence:results/argus/${capture.trace_id}/${kind === "html" ? "page.html" : "screenshot.png"}`,
-    sha256: hashCharacter.repeat(64),
+    sha256: createHash("sha256").update(Buffer.alloc(100, `${hashCharacter}:${kind}`)).digest("hex"),
     sizeBytes: 100,
     containsSensitiveData: false,
     createdAt: "2026-08-02T00:00:00.000Z",
@@ -1137,6 +1154,14 @@ function argusResult(capture: TestArgusCapture, ok: boolean, status: "success" |
     challenge,
     error: null,
   };
+}
+
+function evidenceContent(kind: string, expectedSha256: string): Buffer {
+  for (const character of ["b", "c", "d", "e"]) {
+    const content = Buffer.alloc(100, `${character}:${kind}`);
+    if (createHash("sha256").update(content).digest("hex") === expectedSha256) return content;
+  }
+  throw new Error(`Unknown integration evidence hash for ${kind}`);
 }
 
 function sendJson(response: import("node:http").ServerResponse, status: number, body: unknown) {

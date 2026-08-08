@@ -95,11 +95,11 @@ describe("Argus async Job client", () => {
       url: "https://www.ticketmaster.co.nz/discover/christchurch",
     });
 
-    assert.deepEqual(response, {
-      ok: false,
-      httpStatus: 502,
-      message: "Argus returned unexpected data contract; expected ticketmaster-public.collect_listing@1.0.0",
-    });
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.equal(response.httpStatus, 502);
+    assert.equal(response.message, "Argus returned unexpected data contract; expected ticketmaster-public.collect_listing@1.0.0");
+    assert.equal(response.delivery?.jobId, "job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   });
 
   it("accepts the registered OurAuckland detail contract", async () => {
@@ -248,6 +248,24 @@ describe("Argus async Job client", () => {
     assert.equal((response.payload.extracted as { sourceListingId: string }).sourceListingId, "example-stay");
   });
 
+  it("accepts an unresolved public OTA unit capacity without inventing a value", async () => {
+    server = jobServer(async () => {
+      const result = otaResolveListingResult();
+      ((result.data as { units: Array<Record<string, unknown>> }).units[0]!).capacity = null;
+      return result;
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-resolve-test",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal((response.payload.extracted as { units: Array<{ capacity: number | null }> }).units[0]?.capacity, null);
+  });
+
   it("requires and exposes an expiring noVNC session for a Booking CAPTCHA", async () => {
     server = jobServer(async () => ({
       ...baseResult("booking-captcha-test", "resolve_listing", "booking-public"),
@@ -345,6 +363,7 @@ describe("Argus async Job client", () => {
     });
     assert.equal(response.ok, false);
     assert.match(response.ok ? "" : response.message, /invalid ota-public\.collect_rates data/u);
+    if (!response.ok) assert.equal(response.delivery?.jobId, "job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
     assert.deepEqual({ checkIn: capture.check_in, checkOut: capture.check_out, adults: capture.adults, units: capture.units, currency: capture.currency }, { checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, units: 1, currency: "NZD" });
     for (const removedField of ["context_url", "source_listing_id", "children_ages", "latitude", "longitude", "radius_km", "accommodation_ids", "language", "country_code", "booker_country", "booker_platform"]) {

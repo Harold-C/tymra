@@ -288,9 +288,15 @@ export class WorkerService {
       return;
     }
 
+    const usableUnits = extraction.units.filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null);
+    if (usableUnits.length === 0) {
+      await this.markOtaListingConflict(priceCheckId, run.id, "The public listing does not expose enough unit capacity data to verify a sellable unit.", ["UNIT_CAPACITY_UNRESOLVED"]);
+      return;
+    }
+
     const unitIds: string[] = [];
     await prisma.$transaction(async (transaction) => {
-      for (const unit of extraction.units) {
+      for (const unit of usableUnits) {
         const unitId = stableId("ota-unit", `${source.id}:${extraction.sourceListingId}:${unit.externalId}`);
         unitIds.push(unitId);
         await transaction.sellableUnit.upsert({
@@ -307,7 +313,7 @@ export class WorkerService {
       }
       await transaction.priceCheck.update({ where: { id: priceCheckId }, data: { unitId: unitIds.length === 1 ? unitIds[0] : null, listingUrl: extraction.canonicalUrl, listingValidationStatus: "VERIFIED", listingValidationMessage: null, listingValidatedAt: new Date(extraction.observedAt), status: "NEEDS_CONFIRMATION" } });
       await transaction.sellableUnit.updateMany({ where: { propertyId: check.propertyId!, unitType: "UNCONFIRMED", id: { notIn: unitIds } }, data: { status: "REPLACED" } });
-      await transaction.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: extraction.units.length, finishedAt: new Date() } });
+      await transaction.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: usableUnits.length, finishedAt: new Date() } });
     });
   }
 
@@ -445,7 +451,7 @@ export class WorkerService {
           create: { id: propertyId, canonicalName: candidate.canonicalName, legalOrBrandName: candidate.canonicalName, address: candidate.address, city: discoveryLocation.city, countryCode: "NZ", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, timezone: "Pacific/Auckland", accommodationType: candidate.propertyType, supportStatus: check.property.supportStatus, identityConfidence: candidate.quality === "complete" && discoveryLocation.citySource === "LISTING" ? 0.9 : 0.7, status: "ACTIVE", isDemo: false },
           update: { canonicalName: candidate.canonicalName, address: candidate.address, city: discoveryLocation.city, latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, status: "ACTIVE" },
         });
-        const comparableUnits = [...candidate.units].sort((left, right) => {
+        const comparableUnits = candidate.units.filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null).sort((left, right) => {
           const leftTypePenalty = left.unitType === check.unit!.unitType ? 0 : 10;
           const rightTypePenalty = right.unitType === check.unit!.unitType ? 0 : 10;
           return leftTypePenalty + Math.abs(left.capacity - check.unit!.capacity) - rightTypePenalty - Math.abs(right.capacity - check.unit!.capacity);
@@ -1106,8 +1112,9 @@ export class WorkerService {
     localAcceptance: boolean,
   ) {
     if (!localAcceptance) return;
-    if (this.environment.NODE_ENV !== "development") return;
-    if (!source.environments.includes("DEVELOPMENT")) return;
+    if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", "Local source acceptance is available only in development", false);
+    if (source.operationalStatus === "BLOCKED") throw new AdapterError("SOURCE_UNAVAILABLE", `${source.name} is explicitly blocked`, false);
+    if (!source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `${source.name} does not allow the DEVELOPMENT environment`, false);
   }
 
   private assertSourceCollectionAllowed(

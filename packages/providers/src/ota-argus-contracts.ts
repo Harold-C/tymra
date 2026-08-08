@@ -34,7 +34,7 @@ export const otaUnitExtractionSchema = z.object({
   externalId: z.string().min(1),
   officialName: z.string().min(1),
   unitType: z.string().min(1),
-  capacity: z.number().int().positive(),
+  capacity: z.number().int().positive().nullable(),
   bedrooms: z.number().int().nonnegative().nullable(),
   bathrooms: z.number().nonnegative().nullable(),
   bedTypes: z.array(z.string().min(1)),
