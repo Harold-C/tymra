@@ -1,4 +1,4 @@
-import { OTA_SOURCE_KEYS, otaReleaseGate, type OtaHealthMetrics } from "./ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, INACTIVE_OTA_SOURCE_KEYS, otaReleaseGate, type OtaHealthMetrics } from "./ota-health";
 
 export type ReleaseSource = {
   key: string;
@@ -19,10 +19,12 @@ export function productionPreflight(input: {
   if (input.schedulerRuntimeEnabled) failures.push("Scheduler runtime must remain disabled during preflight");
   if (input.enabledScheduleCount !== 0) failures.push(`Expected zero enabled schedules; found ${input.enabledScheduleCount}`);
   const available = new Set(input.sources.map((source) => source.key));
-  const otaKeys = new Set<string>(OTA_SOURCE_KEYS);
+  const otaKeys = new Set<string>(ACTIVE_OTA_SOURCE_KEYS);
+  const inactiveOtaKeys = new Set<string>(INACTIVE_OTA_SOURCE_KEYS);
   const otaHealthByKey = new Map((input.otaHealth ?? []).map((health) => [health.key, health]));
   for (const key of input.requestedSourceKeys ?? []) {
     if (!available.has(key)) failures.push(`${key}: source does not exist`);
+    if (inactiveOtaKeys.has(key)) failures.push(`${key}: OTA source is outside the active six-source scope`);
     if (!input.technicalValidation && otaKeys.has(key)) {
       const health = otaHealthByKey.get(key);
       if (!health) failures.push(`${key}: OTA release evidence is missing`);

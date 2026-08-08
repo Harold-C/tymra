@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ACTIVE_OTA_SOURCE_KEYS, INACTIVE_OTA_SOURCE_KEYS } from "../src/operations/ota-health";
 import { DEFAULT_OTA_MARKET_WEIGHTS, otaMarketWeight, sortOtaSourcesByMarketWeight } from "../src/operations/ota-source-priority";
 
 describe("OTA discovery source priority", () => {
@@ -15,10 +16,10 @@ describe("OTA discovery source priority", () => {
       "bookabach",
       "agoda",
       "trip",
-      "wotif",
-      "hotels",
-      "vrbo",
     ]);
+    expect(ACTIVE_OTA_SOURCE_KEYS).toEqual(["booking", "airbnb", "expedia", "bookabach", "agoda", "trip"]);
+    expect(INACTIVE_OTA_SOURCE_KEYS).toEqual(["wotif", "hotels", "vrbo"]);
+    expect(otaMarketWeight({ key: "wotif", metadata: {} })).toBe(0);
   });
 
   it("lets owned market evidence override bootstrap weights", () => {

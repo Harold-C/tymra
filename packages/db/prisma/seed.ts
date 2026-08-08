@@ -250,6 +250,7 @@ async function seedDataSources() {
 }
 
 function registrySourceSeedRecords() {
+  const activeOtaKeys = new Set<string>(["booking", "airbnb", "expedia", "bookabach", "agoda", "trip"]);
   const ota = [
     ["booking", "Booking.com", ["booking.com"]],
     ["airbnb", "Airbnb", ["airbnb.com", "airbnb.co.nz"]],
@@ -326,7 +327,7 @@ function registrySourceSeedRecords() {
   return [
     ...ota.map(([key, name, supportedDomains]) => ({
       key, name, supportedDomains, providerType: ProviderType.OTA, sourceType: key === "google_hotels" ? SourceType.META_SEARCH : SourceType.OTA,
-      status: DataSourceStatus.PILOT, healthStatus: SourceHealthStatus.DEGRADED, enabled: true, isDemo: false, errorRate: 0,
+      status: DataSourceStatus.PILOT, healthStatus: SourceHealthStatus.DEGRADED, enabled: activeOtaKeys.has(key), isDemo: false, errorRate: 0,
       lifecycle: SourceLifecycle.RESEARCH,
       operationalStatus: OperationalStatus.HEALTHY,
       lastSuccessAt: null,

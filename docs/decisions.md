@@ -602,8 +602,9 @@ disabled.
 
 **Status:** Tymra implementation complete; live cross-service acceptance pending.
 
-**Decision:** Tymra supports Booking.com, Airbnb, Expedia, Wotif, Hotels.com, Bookabach, Vrbo,
-Agoda and Trip.com through one versioned OTA contract. Every Listing stores both the public brand
+**Decision:** Tymra actively collects Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com
+through one versioned OTA contract. Wotif, Hotels.com and Vrbo remain disabled compatibility
+providers and are excluded from discovery, health gates and production claims. Every Listing stores both the public brand
 and its provider family. Expedia/Wotif/Hotels.com share `EXPEDIA_GROUP`; Bookabach/Vrbo share
 `VRBO_GROUP`; Booking/Agoda share `BOOKING_HOLDINGS`. Address-driven discovery is bounded to eight
 competitor listings, retains each observed brand quote, and maps equivalent property/unit identities
@@ -613,7 +614,8 @@ to the same canonical records before analysis so one accommodation is not counte
 family. Keeping both dimensions preserves evidence while preventing duplicated supply from inflating
 competitor counts.
 
-**Verification:** URL, provider contract and cross-brand duplicate tests cover all nine providers.
+**Verification:** URL, provider contract and cross-brand duplicate tests retain compatibility coverage
+for all nine providers; active-scope tests restrict execution to the six accepted providers.
 Argus fixture contracts and a final bounded cross-service run remain required before any new source
 is described as externally verified. User-triggered jobs remain the only OTA execution path and
 automatic scheduling stays disabled.

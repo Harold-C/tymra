@@ -18,6 +18,12 @@ describe("production release safety", () => {
     expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 1, technicalValidation: true, requestedSourceKeys: ["expedia"], sources: [degradedExpedia] }).ready).toBe(false);
   });
 
+  it("rejects OTA sources outside the active six-source scope", () => {
+    const inactive = { ...source, key: "wotif", enabled: false };
+    expect(productionPreflight({ schedulerRuntimeEnabled: false, enabledScheduleCount: 0, requestedSourceKeys: ["wotif"], sources: [inactive] }).failures)
+      .toContain("wotif: OTA source is outside the active six-source scope");
+  });
+
   it("creates a deterministic bounded canary and rollback plan", () => {
     expect(canaryPlan(["ticketek_events", "eventfinda", "eventfinda"])).toMatchObject({
       mode: "READ_ONLY_BOUNDED", sources: ["eventfinda", "ticketek_events"], passes: 2,

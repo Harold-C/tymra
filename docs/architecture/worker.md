@@ -93,8 +93,9 @@ an audit event.
 
 ## External Limits
 
-Tymra implements the durable Argus boundary for nine public OTA brands: Booking.com, Airbnb,
-Expedia, Wotif, Hotels.com, Bookabach, Vrbo, Agoda and Trip.com. Address-first checks validate a
+Tymra implements the active durable Argus boundary for six public OTA brands: Booking.com, Airbnb,
+Expedia, Bookabach, Agoda and Trip.com. Wotif, Hotels.com and Vrbo remain disabled contract-compatible
+providers and do not participate in discovery or health gates. Address-first checks validate a
 target listing against
 the confirmed LINZ address before rate collection; conflicts, imprecise locations, challenges and
 incomplete prices stop with an explicit confirmation or limited state. After target collection, a

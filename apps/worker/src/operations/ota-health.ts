@@ -12,6 +12,18 @@ export const OTA_SOURCE_KEYS = [
 
 export type OtaSourceKey = typeof OTA_SOURCE_KEYS[number];
 
+export const ACTIVE_OTA_SOURCE_KEYS = [
+  "booking",
+  "airbnb",
+  "expedia",
+  "bookabach",
+  "agoda",
+  "trip",
+] as const satisfies readonly OtaSourceKey[];
+
+export const INACTIVE_OTA_SOURCE_KEYS = ["wotif", "hotels", "vrbo"] as const satisfies readonly OtaSourceKey[];
+export type ActiveOtaSourceKey = typeof ACTIVE_OTA_SOURCE_KEYS[number];
+
 export type OtaHealthRun = {
   status: string;
   successCount: number;

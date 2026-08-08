@@ -130,7 +130,7 @@ import {
   ticketekListingExtractionSchema,
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
-import { calculateOtaHealthMetrics, OTA_SOURCE_KEYS, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
 import { sortOtaSourcesByMarketWeight } from "../operations/ota-source-priority";
 import {
   isRegionalArgusEventSourceId,
@@ -403,7 +403,7 @@ export class WorkerService {
     });
     if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
     const sources = sortOtaSourcesByMarketWeight(await prisma.dataSource.findMany({
-      where: { key: { in: Object.keys(otaAdapters).filter((key) => key !== "google_hotels") }, sourceType: "OTA", enabled: true, operationalStatus: "HEALTHY" },
+      where: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, sourceType: "OTA", enabled: true, operationalStatus: "HEALTHY" },
       orderBy: { key: "asc" },
     }));
     const searchQuery = check.property.address;
@@ -2526,7 +2526,7 @@ export class WorkerService {
     const boundedWindowDays = Math.min(90, Math.max(1, Math.trunc(windowDays)));
     const cutoff = new Date(Date.now() - boundedWindowDays * 86_400_000);
     const sources = await prisma.dataSource.findMany({
-      where: { key: { in: [...OTA_SOURCE_KEYS] } },
+      where: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] } },
       orderBy: { key: "asc" },
     });
     return Promise.all(sources.map(async (source) => {
