@@ -340,6 +340,60 @@ describe("Argus async Job client", () => {
     assert.equal((response.payload.extracted as { provider: string }).provider, provider);
   });
 
+  it("accepts Expedia property identity when public room identity is explicitly not public", async () => {
+    const traceId = "expedia-property-only-test";
+    const url = "https://www.expedia.co.nz/Christchurch-Hotels-Novotel-Christchurch-Airport.h18258191.Hotel-Information";
+    server = jobServer(async () => {
+      const result = otaResolveListingResult({ traceId, connectorId: "expedia-public", provider: "expedia", url });
+      const data = result.data as Record<string, unknown>;
+      data.sourceListingId = "expedia:18258191";
+      data.providerFamily = "EXPEDIA_GROUP";
+      data.unitIdentityStatus = "not_public";
+      data.units = [];
+      data.quality = "partial";
+      data.warnings = ["EXPEDIA_UNIT_IDENTITY_NOT_PUBLIC"];
+      return result;
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, { traceId, connectorId: "expedia-public", workflowId: "resolve_listing", url });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    const extraction = response.payload.extracted as { unitIdentityStatus: string; units: unknown[]; quality: string };
+    assert.equal(extraction.unitIdentityStatus, "not_public");
+    assert.deepEqual(extraction.units, []);
+    assert.equal(extraction.quality, "partial");
+  });
+
+  it("preserves Agoda partial nightly prices without manufacturing a stay total", async () => {
+    const traceId = "agoda-partial-rate-test";
+    const url = "https://www.agoda.com/en-nz/novotel-christchurch-airport/hotel/christchurch-nz.html";
+    server = jobServer(async () => {
+      const result = otaCollectRatesResult("agoda-public", "agoda", traceId);
+      const rate = (result.data as { rates: Array<Record<string, unknown>> }).rates[0]!;
+      Object.assign(rate, {
+        sourceListingId: "agoda:2402569",
+        ratePlanExternalId: "agoda:2402569:room:1:rate:public",
+        nightlyPriceMinor: 26_900,
+        basePriceMinor: null,
+        mandatoryFeesMinor: null,
+        taxesMinor: null,
+        totalPriceMinor: null,
+        priceStatus: "PARTIAL",
+        rateFence: "PUBLIC_SIGNED_OUT",
+        qualityFlags: ["AGODA_NIGHTLY_PRICE_NOT_TOTALLED"],
+        sourceUrl: url,
+      });
+      (result.data as Record<string, unknown>).sourceListingId = "agoda:2402569";
+      return result;
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, { traceId, connectorId: "agoda-public", workflowId: "collect_rates", url, checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, children: 0, units: 1, currency: "NZD" });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    const rate = (response.payload.extracted as { rates: Array<Record<string, unknown>> }).rates[0]!;
+    assert.deepEqual({ nightlyPriceMinor: rate.nightlyPriceMinor, totalPriceMinor: rate.totalPriceMinor, priceStatus: rate.priceStatus, rateFence: rate.rateFence }, { nightlyPriceMinor: 26_900, totalPriceMinor: null, priceStatus: "PARTIAL", rateFence: "PUBLIC_SIGNED_OUT" });
+  });
+
   it("sends bounded stay parameters and rejects inconsistent OTA totals", async () => {
     let requestBody: Record<string, unknown> | undefined;
     server = jobServer(async (request) => {

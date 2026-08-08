@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { locateOtaDiscoveryCandidate, matchOtaListingToConfirmedAddress } from "../src/ota-address-match";
-import { otaArgusConnectorForSource, otaDiscoveryUrlForSource, otaProviderDetails } from "../src/ota-argus-contracts";
+import { otaArgusConnectorForSource, otaDiscoverListingsExtractionSchema, otaDiscoveryUrlForSource, otaProviderDetails, otaResolveListingExtractionSchema } from "../src/ota-argus-contracts";
 import { parseOtaListingReference } from "../src/ota-adapters";
 
 const confirmed = { address: "20 Customhouse Quay, Wellington 6011", city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: -41.2818, longitude: 174.7792 };
@@ -18,6 +18,36 @@ describe("OTA listing to confirmed address match", () => {
 
   it("does not bind a city-only listing without precise location", () => {
     expect(matchOtaListingToConfirmedAddress(confirmed, { address: null, city: "Wellington", region: "Wellington", countryCode: "NZ", latitude: null, longitude: null })).toMatchObject({ status: "INSUFFICIENT" });
+  });
+
+  it("accepts an explicit property-only Expedia resolution without inventing a room", () => {
+    const result = otaResolveListingExtractionSchema.parse({
+      ...resolvedListing(),
+      provider: "expedia",
+      providerFamily: "EXPEDIA_GROUP",
+      sourceListingId: "expedia:18258191",
+      canonicalUrl: "https://www.expedia.co.nz/Christchurch-Hotels-Novotel-Christchurch-Airport.h18258191.Hotel-Information",
+      unitIdentityStatus: "not_public",
+      units: [],
+      quality: "partial",
+      warnings: ["EXPEDIA_UNIT_IDENTITY_NOT_PUBLIC"],
+    });
+    expect(result).toMatchObject({ unitIdentityStatus: "not_public", units: [], quality: "partial" });
+  });
+
+  it("rejects empty resolved units without not_public semantics and empty discovery units", () => {
+    expect(otaResolveListingExtractionSchema.safeParse({ ...resolvedListing(), units: [] }).success).toBe(false);
+    expect(otaResolveListingExtractionSchema.safeParse({ ...resolvedListing(), unitIdentityStatus: "not_public", quality: "complete", units: [] }).success).toBe(false);
+    expect(otaDiscoverListingsExtractionSchema.safeParse({
+      data_schema: "ota-public.discover_listings",
+      schema_version: "1.0.0",
+      provider: "booking",
+      query: "Christchurch",
+      listings: [{ ...resolvedListing(), data_schema: undefined, schema_version: undefined, units: [] }],
+      observedAt: "2026-08-09T00:00:00.000Z",
+      warnings: [],
+      quality: "partial",
+    }).success).toBe(false);
   });
 
   it("accepts a coordinate-bounded comparable when the official listing omits city", () => {
@@ -81,3 +111,28 @@ describe("OTA listing to confirmed address match", () => {
     expect(otaArgusConnectorForSource("hotels")).toBe("hotels-public");
   });
 });
+
+function resolvedListing() {
+  return {
+    data_schema: "ota-public.resolve_listing",
+    schema_version: "1.0.0",
+    provider: "booking",
+    sourceListingId: "booking:example",
+    canonicalUrl: "https://www.booking.com/hotel/nz/example.html",
+    canonicalName: "Example Stay",
+    address: "20 Customhouse Quay, Wellington 6011",
+    city: "Wellington",
+    region: "Wellington",
+    territorialAuthority: "Wellington City",
+    postcode: "6011",
+    countryCode: "NZ",
+    latitude: -41.2818,
+    longitude: 174.7792,
+    propertyType: "Accommodation",
+    units: [{ externalId: "room-1", officialName: "Room 1", unitType: "Room", capacity: 2, bedrooms: 1, bathrooms: 1, bedTypes: ["Queen"], amenities: [], entireOrShared: "PRIVATE" }],
+    observedAt: "2026-08-09T00:00:00.000Z",
+    fieldSources: { canonicalName: "heading" },
+    warnings: [],
+    quality: "complete",
+  };
+}

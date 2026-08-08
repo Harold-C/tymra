@@ -32,6 +32,7 @@ export type OtaArgusConnectorId = `${OtaProvider}-public`;
 
 export const otaUnitExtractionSchema = z.object({
   externalId: z.string().min(1),
+  identityQuality: z.enum(["complete", "partial"]).optional(),
   officialName: z.string().min(1),
   unitType: z.string().min(1),
   capacity: z.number().int().positive().nullable(),
@@ -44,6 +45,11 @@ export const otaUnitExtractionSchema = z.object({
 
 export const otaListingIdentitySchema = z.object({
   provider: otaProviderSchema,
+  providerBrand: z.enum(["TRIP_COM"]).optional(),
+  providerFamily: z.enum(["EXPEDIA_GROUP", "VRBO_GROUP", "BOOKING_HOLDINGS", "TRIP_COM"]).optional(),
+  providerPropertyId: z.string().min(1).optional(),
+  identityQuality: z.enum(["complete", "partial"]).optional(),
+  unitIdentityStatus: z.enum(["complete", "partial", "not_public"]).optional(),
   sourceListingId: z.string().min(1),
   canonicalUrl: z.string().url(),
   canonicalName: z.string().min(1),
@@ -56,7 +62,7 @@ export const otaListingIdentitySchema = z.object({
   latitude: z.number().min(-90).max(90).nullable(),
   longitude: z.number().min(-180).max(180).nullable(),
   propertyType: z.string().min(1),
-  units: z.array(otaUnitExtractionSchema).min(1).max(50),
+  units: z.array(otaUnitExtractionSchema).max(50),
   observedAt: z.string().datetime(),
   fieldSources: fieldSourcesSchema,
   warnings: z.array(z.string()),
@@ -66,6 +72,13 @@ export const otaListingIdentitySchema = z.object({
 export const otaResolveListingExtractionSchema = otaListingIdentitySchema.extend({
   data_schema: z.literal("ota-public.resolve_listing"),
   schema_version: z.literal("1.0.0"),
+}).superRefine((value, context) => {
+  if (value.units.length === 0 && value.unitIdentityStatus !== "not_public") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["unitIdentityStatus"], message: "Empty resolved units require not_public identity status" });
+  }
+  if (value.unitIdentityStatus === "not_public" && (value.units.length > 0 || value.quality !== "partial")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["unitIdentityStatus"], message: "not_public identity status requires empty units and partial quality" });
+  }
 });
 
 export const otaDiscoverListingsExtractionSchema = z.object({
@@ -77,11 +90,16 @@ export const otaDiscoverListingsExtractionSchema = z.object({
   observedAt: z.string().datetime(),
   warnings: z.array(z.string()),
   quality: qualitySchema,
+}).superRefine((value, context) => {
+  value.listings.forEach((listing, index) => {
+    if (listing.units.length === 0) context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Discovery listings require a summary unit" });
+  });
 });
 
 export const otaRateExtractionSchema = z.object({
   sourceListingId: z.string().min(1),
   unitExternalId: z.string().min(1),
+  ratePlanExternalId: z.string().min(1).optional(),
   checkIn: z.string().date(),
   checkOut: z.string().date(),
   currency: z.literal("NZD"),
@@ -90,7 +108,23 @@ export const otaRateExtractionSchema = z.object({
   taxesMinor: z.number().int().nonnegative().nullable(),
   optionalFeesMinor: z.number().int().nonnegative().nullable(),
   totalPriceMinor: z.number().int().nonnegative().nullable(),
-  availabilityStatus: z.enum(["AVAILABLE", "UNAVAILABLE", "MINIMUM_STAY_RESTRICTION", "OCCUPANCY_RESTRICTION", "SOLD_OUT", "NOT_LISTED", "UNKNOWN"]),
+  availabilityStatus: z.enum(["AVAILABLE", "UNAVAILABLE", "MINIMUM_STAY_RESTRICTION", "OCCUPANCY_RESTRICTION", "DATE_RESTRICTION", "SOLD_OUT", "NOT_LISTED", "UNKNOWN"]),
+  adults: z.number().int().positive().optional(),
+  children: z.number().int().nonnegative().optional(),
+  infants: z.number().int().nonnegative().optional(),
+  pets: z.number().int().nonnegative().optional(),
+  units: z.number().int().positive().optional(),
+  childrenAges: z.array(z.number().int().min(0).max(17)).max(16).optional(),
+  unitName: z.string().min(1).optional(),
+  nights: z.number().int().positive().optional(),
+  nightlyPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  accommodationSubtotalMinor: z.number().int().nonnegative().nullable().optional(),
+  cleaningFeeMinor: z.number().int().nonnegative().nullable().optional(),
+  serviceFeeMinor: z.number().int().nonnegative().nullable().optional(),
+  airbnbServiceFeeMinor: z.number().int().nonnegative().nullable().optional(),
+  taxMinor: z.number().int().nonnegative().nullable().optional(),
+  otherMandatoryFeeMinor: z.number().int().nonnegative().nullable().optional(),
+  priceStatus: z.enum(["ITEMIZED", "BUNDLED", "PARTIAL", "UNAVAILABLE"]).optional(),
   restrictionReason: z.string().nullable(),
   minimumStay: z.number().int().positive().nullable(),
   mealPlan: z.string().min(1),

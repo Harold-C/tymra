@@ -275,7 +275,9 @@ export class WorkerService {
     }
 
     const extraction = otaResolveListingExtractionSchema.parse(result.extracted);
-    if (extraction.provider !== reference.sourceId || extraction.sourceListingId !== reference.sourceListingId) {
+    const sourceListingIdentityMatches = extraction.sourceListingId === reference.sourceListingId
+      || extraction.sourceListingId === `${reference.sourceId}:${reference.sourceListingId}`;
+    if (extraction.provider !== reference.sourceId || !sourceListingIdentityMatches) {
       await this.markOtaListingConflict(priceCheckId, run.id, "The OTA response did not identify the submitted listing.", ["LISTING_IDENTITY_MISMATCH"]);
       return;
     }
@@ -290,7 +292,16 @@ export class WorkerService {
 
     const usableUnits = extraction.units.filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null);
     if (usableUnits.length === 0) {
-      await this.markOtaListingConflict(priceCheckId, run.id, "The public listing does not expose enough unit capacity data to verify a sellable unit.", ["UNIT_CAPACITY_UNRESOLVED"]);
+      const identityNotPublic = extraction.unitIdentityStatus === "not_public" && extraction.units.length === 0;
+      await this.markOtaListingConflict(
+        priceCheckId,
+        run.id,
+        identityNotPublic
+          ? "The public listing identifies the property but does not publish a physical room identity. Select or provide a verifiable room before collecting prices."
+          : "The public listing does not expose enough unit capacity data to verify a sellable unit.",
+        [identityNotPublic ? "UNIT_IDENTITY_NOT_PUBLIC" : "UNIT_CAPACITY_UNRESOLVED"],
+        identityNotPublic ? "UNIT_IDENTITY_NOT_PUBLIC" : "UNIT_CAPACITY_UNRESOLVED",
+      );
       return;
     }
 
@@ -321,10 +332,10 @@ export class WorkerService {
     await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "SOURCE_UNAVAILABLE", listingValidationStatus: "SOURCE_UNAVAILABLE", listingValidationMessage: message, listingValidatedAt: null } });
   }
 
-  private async markOtaListingConflict(priceCheckId: string, collectionRunId: string, message: string, reasons: string[]) {
+  private async markOtaListingConflict(priceCheckId: string, collectionRunId: string, message: string, reasons: string[], errorCode = "LISTING_ADDRESS_CONFLICT") {
     await prisma.$transaction([
       prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "NEEDS_CONFIRMATION", listingValidationStatus: "CONFLICT", listingValidationMessage: message, listingValidatedAt: null } }),
-      prisma.collectionRun.update({ where: { id: collectionRunId }, data: { status: "FAILED", failureCount: 1, errorCode: "LISTING_ADDRESS_CONFLICT", errorSummary: `${message} ${reasons.join(", ")}`.slice(0, 1_000), finishedAt: new Date() } }),
+      prisma.collectionRun.update({ where: { id: collectionRunId }, data: { status: "FAILED", failureCount: 1, errorCode, errorSummary: `${message} ${reasons.join(", ")}`.slice(0, 1_000), finishedAt: new Date() } }),
     ]);
   }
 
@@ -3501,7 +3512,7 @@ function stableId(prefix: string, value: string) {
   return `${prefix}-${createHash("sha256").update(value).digest("hex").slice(0, 24)}`;
 }
 
-function mapOtaAvailability(value: "AVAILABLE" | "UNAVAILABLE" | "MINIMUM_STAY_RESTRICTION" | "OCCUPANCY_RESTRICTION" | "SOLD_OUT" | "NOT_LISTED" | "UNKNOWN") {
+function mapOtaAvailability(value: "AVAILABLE" | "UNAVAILABLE" | "MINIMUM_STAY_RESTRICTION" | "OCCUPANCY_RESTRICTION" | "DATE_RESTRICTION" | "SOLD_OUT" | "NOT_LISTED" | "UNKNOWN") {
   if (value === "AVAILABLE") return "AVAILABLE" as const;
   if (value === "MINIMUM_STAY_RESTRICTION") return "MINIMUM_STAY_RESTRICTION" as const;
   if (value === "SOLD_OUT") return "SOLD_OUT" as const;

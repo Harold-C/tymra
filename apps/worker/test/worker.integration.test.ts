@@ -9,6 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";
 import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
+import { durableArgusTraceId } from "../src/services/argus-orchestrator";
 import { WorkerService } from "../src/services/worker-service";
 
 const environment = getEnvironment();
@@ -59,6 +60,56 @@ describe("Worker baseline pipeline", () => {
     expect(request).toMatchObject({ inputType: "ADDRESS", status: "NEEDS_CONFIRMATION" });
     expect(request?.confirmationCandidates).toHaveLength(2);
     await service.cancelAnalysis(request!.id);
+  });
+
+  it("keeps an Expedia property-only resolution out of SellableUnit persistence", async () => {
+    const request = await service.createFormalAnalysis({ input: `42 ${prefix.slice(-8)} Fixture Street, Christchurch 8011`, email: `expedia-property-only-${prefix.slice(-8)}@tymra.test`, serviceConsent: true, idempotencyKey: `${prefix}:expedia-property-only`, locale: "en", deviceId: `${prefix}:expedia-property-only-device`, ipAddress: testIp(23) });
+    const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! }, include: { property: true } });
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "expedia" } });
+    const sourceBefore = { enabled: source.enabled, operationalStatus: source.operationalStatus };
+    const job = await prisma.job.findFirstOrThrow({ where: { analysisRequestId: request!.id }, orderBy: { createdAt: "asc" } });
+    const canonicalUrl = "https://www.expedia.co.nz/Christchurch-Hotels-Novotel-Christchurch-Airport.h18258191.Hotel-Information";
+    const connectorId = "expedia-public" as const;
+    const traceId = durableArgusTraceId(job.id, connectorId, "resolve_listing", canonicalUrl);
+    try {
+      await prisma.$transaction([
+        prisma.priceCheck.update({ where: { id: check.id }, data: { listingUrl: canonicalUrl, listingValidationStatus: "PENDING", listingValidationMessage: null, listingValidatedAt: null, unitId: null, status: "VALIDATING" } }),
+        prisma.dataSource.update({ where: { id: source.id }, data: { enabled: true, operationalStatus: "HEALTHY" } }),
+      ]);
+      const run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, priceCheckId: check.id, mode: "ON_DEMAND", status: "RUNNING", scope: { operation: "OTA_LISTING_VALIDATION", listingUrl: canonicalUrl }, startedAt: new Date(), attemptCount: 1, isDemo: false } });
+      const result = {
+        contract_version: "1.0",
+        job_id: `job_${randomUUID().replaceAll("-", "")}`,
+        status: "COMPLETED",
+        result_sha256: "f".repeat(64),
+        items: [{
+          trace_id: traceId,
+          status: "COMPLETED",
+          error_category: null,
+          result: {
+            contract_version: "1.0", ok: true, status: "success", trace_id: traceId, connector_id: connectorId, workflow_id: "resolve_listing", readonly_only: true, external_side_effects_performed: false,
+            page: null, evidence: [], challenge: null, error: null,
+            data: {
+              data_schema: "ota-public.resolve_listing", schema_version: "1.0.0", provider: "expedia", providerFamily: "EXPEDIA_GROUP", identityQuality: "complete", unitIdentityStatus: "not_public",
+              sourceListingId: "expedia:18258191", canonicalUrl, canonicalName: "Novotel Christchurch Airport", address: check.property!.address, city: check.property!.city, region: check.property!.region, territorialAuthority: check.property!.territorialAuthority, postcode: check.property!.postcode, countryCode: check.property!.countryCode, latitude: check.property!.latitude, longitude: check.property!.longitude, propertyType: "Hotel", units: [], observedAt: "2026-08-09T00:00:00.000Z", fieldSources: { units: "not public" }, warnings: ["EXPEDIA_UNIT_IDENTITY_NOT_PUBLIC"], quality: "partial",
+            },
+          },
+        }],
+        error: null,
+      };
+      await prisma.argusExecution.create({ data: { orchestrationKey: `${job.id}:${traceId}`, parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id, argusJobId: result.job_id, traceId, connectorId, workflowId: "resolve_listing", requestedUrl: canonicalUrl, status: "COMPLETED", result: result as Prisma.InputJsonValue, deadlineAt: new Date(Date.now() + 60_000), completedAt: new Date() } });
+      const unitCountBefore = await prisma.sellableUnit.count({ where: { propertyId: check.propertyId! } });
+
+      await service.validatePriceCheckOtaListing(check.id, job.id);
+
+      expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } })).toMatchObject({ status: "NEEDS_CONFIRMATION", listingValidationStatus: "CONFLICT", unitId: null });
+      expect(await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: "FAILED", errorCode: "UNIT_IDENTITY_NOT_PUBLIC" });
+      expect(await prisma.sellableUnit.count({ where: { propertyId: check.propertyId! } })).toBe(unitCountBefore);
+      expect(await prisma.listing.count({ where: { propertyId: check.propertyId!, dataSourceId: source.id } })).toBe(0);
+    } finally {
+      await prisma.dataSource.update({ where: { id: source.id }, data: sourceBefore });
+      await service.cancelAnalysis(request!.id);
+    }
   });
 
   it("runs two idempotent nationwide address pipelines without cross-region market contamination", async () => {

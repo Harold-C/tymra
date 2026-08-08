@@ -64,13 +64,15 @@ for (const source of requestedSources) {
     assertRequiredEvidence(source.key, workflowId, copiedEvidence);
 
     const summary = summarize(response.payload.extracted);
+    const semanticFailure = targetSemanticFailure(source.key, workflowId, response.payload);
     await finalizeDirectArgusDelivery(environment, `ota-e2e-${source.key}-${workflowId}`, response.delivery, false);
     runs.push({
       source: source.key,
       connectorId: source.connectorId,
       workflowId,
-      ok: response.payload.ok,
+      ok: response.payload.ok && semanticFailure === null,
       status: response.payload.status,
+      semanticFailure,
       readonlyOnly: response.payload.readonlyOnly,
       externalSideEffectsPerformed: response.payload.externalSideEffectsPerformed,
       evidenceCopiedBeforeAck: true,
@@ -108,13 +110,35 @@ function summarize(value: unknown): Record<string, unknown> {
     dataSchema: data.data_schema,
     schemaVersion: data.schema_version,
     sourceListingId: data.sourceListingId ?? rates[0]?.sourceListingId ?? null,
+    unitIdentityStatus: data.unitIdentityStatus ?? null,
     unitCount: Array.isArray(data.units) ? data.units.length : null,
     rateCount: rates.length || null,
     availabilityStatuses: [...new Set(rates.map((rate) => rate.availabilityStatus).filter(Boolean))],
     priceStatuses: [...new Set(rates.map((rate) => rate.priceStatus).filter(Boolean))],
     totalPricesMinor: [...new Set(rates.map((rate) => rate.totalPriceMinor).filter((value) => typeof value === "number"))],
+    nightlyPricesMinor: [...new Set(rates.map((rate) => rate.nightlyPriceMinor).filter((value) => typeof value === "number"))],
+    rateFences: [...new Set(rates.map((rate) => rate.rateFence).filter(Boolean))],
     incompleteAvailableRates: rates.filter((rate) => rate.availabilityStatus === "AVAILABLE" && [rate.basePriceMinor, rate.mandatoryFeesMinor, rate.taxesMinor, rate.totalPriceMinor].some((amount) => amount === null)).length,
   };
+}
+
+function targetSemanticFailure(source: string, workflow: string, payload: { ok: boolean; status: string; extracted: unknown }): string | null {
+  if (!payload.ok || payload.status !== "success") return `Argus returned ${payload.status}`;
+  if (!payload.extracted || typeof payload.extracted !== "object" || Array.isArray(payload.extracted)) return "Argus returned no structured extraction";
+  const data = payload.extracted as Record<string, unknown>;
+  if (source === "expedia" && workflow === "resolve_listing") {
+    if (data.unitIdentityStatus !== "not_public" || !Array.isArray(data.units) || data.units.length !== 0 || data.quality !== "partial") {
+      return "Expedia property-only resolution did not preserve not_public/empty-unit/partial semantics";
+    }
+  }
+  if (source === "agoda" && workflow === "collect_rates") {
+    const rates = Array.isArray(data.rates) ? data.rates.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value)) : [];
+    if (rates.length === 0) return "Agoda returned no public rates";
+    if (rates.some((rate) => rate.availabilityStatus !== "AVAILABLE" || rate.priceStatus !== "PARTIAL" || rate.rateFence !== "PUBLIC_SIGNED_OUT" || typeof rate.nightlyPriceMinor !== "number" || rate.totalPriceMinor !== null)) {
+      return "Agoda rates did not preserve AVAILABLE/PARTIAL/public-nightly/null-total semantics";
+    }
+  }
+  return null;
 }
 
 function selectedValues(name: string): Set<string> {
