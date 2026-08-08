@@ -76,18 +76,17 @@ These sources have independent registry entries, raw artifacts, lineage and coll
 Their weekly/12-hour production candidates are seeded disabled in development.
 
 School Sport NZ, School Sport Canterbury and Ticketek are not Tymra direct sources: ordinary HTTP
-currently receives Cloudflare or Akamai access-control responses. Their browser work is assigned to
-Argus and is documented in [`argus.md`](argus.md). Tymra now registers all three sources, submits the
-fixed contracts through durable Argus Jobs, retains raw connector output, copies and verifies browser
-evidence before ACK, and normalises accepted series and occurrences through the canonical event and
-lineage pipeline. Administrative School Sport rows and rows without an explicit published location
-remain raw; source organisation is never used to invent a Canterbury location. All four development
+currently does not provide the required structured response. Their work is assigned to Argus and is
+documented in [`argus.md`](argus.md). Tymra now registers all three sources, submits the fixed
+contracts through durable Argus Jobs, retains raw connector output, copies and verifies evidence
+before ACK, and normalises accepted series and occurrences through the canonical event and lineage
+pipeline. Administrative School Sport rows and rows without an explicit published location remain
+raw; source organisation is never used to invent a Canterbury location. All four development
 schedules are seeded disabled. Tymra safely retains Ticketek evidence and keeps listing events when
-detail enrichment fails. Argus now has the hidden-`show.aspx` Akamai classifier regression, but the
-2026-08-06 real two-pass run was still intermittent: pass one completed, while pass two returned a
-detail `PARSING_ERROR`; both preserved evidence and added no duplicate rows. Real-detail robustness
-therefore remains an Argus item and no bypass is attempted; see
-[`argus-responsibilities.md`](argus-responsibilities.md).
+detail enrichment fails. Argus now has the hidden-`show.aspx` classifier regression, but the 2026-08-06
+real two-pass run was still intermittent: pass one completed, while pass two returned a detail
+`PARSING_ERROR`; both preserved evidence and added no duplicate rows. Real-detail robustness therefore
+remains an Argus item and no bypass is attempted; see [`argus-responsibilities.md`](argus-responsibilities.md).
 
 ## Verification
 

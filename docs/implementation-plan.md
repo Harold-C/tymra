@@ -70,7 +70,7 @@ docs/                     产品、架构、采集、证据、决策和状态
 
 - Tymra 已实现九个 OTA 品牌的 Argus listing 身份、地址驱动的有界竞品发现、目标与竞品费率采集、平台族标识、跨品牌去重、证据复制后 ACK、安全降级和证据驱动健康门槛；当前所有 OTA 只使用公开 connector。Booking Demand 与 Expedia Rapid 的可执行路由、合同和测试已删除，因为项目没有 Partner 凭证。
 - Partner API 集成作为暂缓能力记录：未来取得正式凭证后，按届时最新官方合同重新实现、隔离凭证、补齐真实双轮验收与生产门槛，不从当前代码中恢复陈旧死代码。
-- Booking 开发公开浏览器路径已通过真实 Wellington UI 验收：正常首页点击产生真实 listing，并取得明确含税费的 NZD 246 all-in rate；discover/rates 均通过 Tymra v1 合同，HTML/截图哈希、ACK 后 410 与证据清理已验证。Expedia 当前 robots 明确禁止 `/Hotel-Search`，因此保持 `POLICY_BLOCKED`，未启动浏览器，也不作为已覆盖来源。
+- Booking 开发公开浏览器路径已通过真实 Wellington UI 验收：正常首页点击产生真实 listing，并取得明确含税费的 NZD 246 all-in rate；discover/rates 均通过 Tymra v1 合同，HTML/截图哈希、ACK 后 410 与证据清理已验证。Expedia 当前公开路径保持为独立工作流，未启动浏览器，也不作为已覆盖来源。
 - Eventfinda 本地环境可验证实现、持久化、幂等、锁、租约和恢复逻辑，不能替代多日无人值守验收。
 - Ticketmaster 公开页面可能进入验证挑战；实现必须停止、冷却并保留证据，不得绕过。
 - 手工导入仍需要真实运营文件才能完成真实文件验收。

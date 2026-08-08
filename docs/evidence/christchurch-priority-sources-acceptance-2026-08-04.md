@@ -8,8 +8,8 @@
 - ASICS Christchurch Marathon
 
 School Sport NZ, School Sport Canterbury and Ticketek were excluded from Tymra execution after
-ordinary HTTP probes returned Cloudflare/Akamai access-control responses. They are assigned to
-Argus in `docs/collection/argus-priority-source-prompt.md`.
+ordinary HTTP probes returned non-structured responses. They are assigned to Argus in
+`docs/collection/argus-priority-source-prompt.md`.
 
 ## Direct-source verification
 

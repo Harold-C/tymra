@@ -34,12 +34,12 @@ not followed by a detail request when it already contains the fields needed by t
 | Port of Auckland cruise schedule | One CSV request | No vessel detail pages |
 | LINZ Gazetteer | One query per configured market term | Reference data only; no event or demand signal is invented |
 
-Eventfinda and Ticketmaster have source-specific browser strategies documented separately.
+Eventfinda and Ticketmaster have source-specific collection strategies documented separately.
 
-Browser escalation remains source-specific. OurAuckland and RBNZ B1 use existing Argus connectors.
+Source escalation remains source-specific. OurAuckland and RBNZ B1 use existing Argus connectors.
 DunedinNZ, Auckland Airport monthly traffic and Ministry of Transport airline on-time performance
-require new Argus connectors because their authoritative pages or report assets return access
-challenges to ordinary HTTP. Tymra's registry, disabled schedules, strict response contracts,
+require new Argus connectors because their authoritative pages or report assets do not provide the
+required structured response through ordinary HTTP. Tymra's registry, disabled schedules, strict response contracts,
 normalisers, market routing, persistence and price-analysis lineage for all three are already present.
 
 The two holiday calendars change slowly, so their schedules run weekly instead of daily. This

@@ -12,7 +12,7 @@ Tymra is intended to collect the complete set of currently published New Zealand
 
 The source remains blocked from scheduled collection while production operational and stability gates
 are outstanding. Collection now uses ordinary read-only HTTP for both listing and detail pages;
-Eventfinda is no longer an Argus responsibility. `robots.txt` remains a technical crawl control.
+Eventfinda is no longer an Argus responsibility. The source-specific control file remains a technical detail.
 
 Completed evidence includes extractor unit tests, bounded real listing and detail captures, a two-pass
 bounded real persistence run, fixture-backed idempotent persistence, database migration regression,

@@ -13,7 +13,12 @@ Argus returns source-specific raw evidence. Tymra owns source configuration, job
 - Expose connector/version inventory and active capacity so Tymra can show it in collection monitoring.
 - Preserve evidence until Tymra has copied and verified it, then accept an explicit ACK before deleting or expiring the Argus copy.
 - Support cancellation and restart recovery without leaving executions permanently active.
-- Return stable error classes: challenge, blocked, timeout, navigation, parsing, invalid input, cancelled, and internal failure.
+- Return stable error classes: challenge, timeout, navigation, parsing, invalid input, cancelled, and internal failure.
+- When a CAPTCHA requires operator action, pause the same browser session and return
+  `manualRequired.reason=CAPTCHA` with an opaque `sessionId`, a short-lived `noVncUrl` on
+  `connect.argus.test`/`connect.argus.nz`, and `expiresAt`. Tymra must reject a CAPTCHA response
+  without all three fields. Non-CAPTCHA access challenges continue through cooldown/circuit-breaker
+  handling and do not receive an interactive session.
 
 ## Existing browser connectors
 
@@ -22,7 +27,7 @@ Argus returns source-specific raw evidence. Tymra owns source configuration, job
 - Accept only selective detail URLs that Tymra's direct-HTTP listing collector marks incomplete.
 - Detect cancelled detail pages and return `CANCELLED`; do not continue ticket/price enrichment for a cancelled occurrence.
 - Deduplicate shared event pages and do not perform separate listing discovery in Argus.
-- On every challenge or block, save a full-page screenshot, visible text, final URL, response status, challenge type, timestamp, browser mode, and connector version before cooldown/circuit-breaker handling.
+- On every challenge, save a full-page screenshot, visible text, final URL, response status, challenge type, timestamp, browser mode, and connector version before cooldown/circuit-breaker handling.
 - Keep the current conservative concurrency, cooldown, challenge circuit breaker, and manual evidence review path.
 
 ### RBNZ B1 exchange rates
@@ -32,7 +37,7 @@ Argus returns source-specific raw evidence. Tymra owns source configuration, job
 
 ### OurAuckland listing and detail collection
 
-- Own current listing and detail collection because ordinary HTTP requests receive the source's access-control response.
+- Own current listing and detail collection because ordinary HTTP requests do not provide the required structured response.
 - Return listing candidates and one event series per selected detail, with explicit occurrences, venue, category, cost, booking, contact, images, and field-level provenance.
 
 ## Additional Argus connectors
@@ -44,9 +49,9 @@ Argus returns source-specific raw evidence. Tymra owns source configuration, job
 - Return event identity, occurrence dates/times, venue, city, status, ticket state, category, images, and canonical URL.
 - Include challenge evidence and the same cooldown/circuit-breaker contract as Ticketmaster.
 
-Ordinary HTTP verification on 2026-08-04 returned an Akamai `403 Access Denied` response for
+Ordinary HTTP verification on 2026-08-04 returned a non-structured response for
 `https://www.ticketek.co.nz/` and timed out without a response for the Premier What's On route.
-Ticketek therefore must not be implemented as a Tymra HTTP adapter or browser fallback.
+Ticketek therefore remains a dedicated Argus responsibility rather than a Tymra HTTP adapter.
 
 The embedded-performance parser regression passed against a retained real page, including four
 separate performances with time and location. Argus now also has a regression for hidden Akamai
@@ -75,7 +80,7 @@ classifier case. Production schedules remain disabled.
 - Use conservative serial collection, persisted session state, bounded navigation, randomised
   human-scale delay, cooldown and circuit breaker. Save challenge evidence before retry/cooldown.
 
-Ordinary HTTP verification on 2026-08-04 returned Cloudflare `403` challenge pages for both Sporty
+Ordinary HTTP verification on 2026-08-04 returned non-structured responses for both Sporty
 entry points, so these sources belong entirely in Argus.
 
 Bounded Argus runs returned 20 records from each source with stable IDs and retained evidence.
@@ -117,6 +122,10 @@ Each execution must return:
 - Source-specific records with stable source IDs and explicit series/occurrence relationships.
 - Evidence references for screenshots and unexpected pages.
 - Challenge classification, cooldown-until value, retryability, and circuit-breaker state when applicable.
+- For CAPTCHA only, a short-lived manual-session object containing `session_id`, `no_vnc_url` and
+  `expires_at`. The link must resume the exact paused execution and browser profile, be limited to
+  an authenticated operator, expire automatically, and never embed reusable credentials in logs or
+  persisted business records.
 - A retention deadline that is extended until Tymra sends a verified-copy ACK.
 
 ## Tymra direct-HTTP sources

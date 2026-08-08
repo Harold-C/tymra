@@ -4,23 +4,23 @@ Last updated: 2026-08-03
 
 **Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
 detail frontier and bounded hydration are implemented. Automated database acceptance covers both
-the direct and fallback paths. The latest bounded real detail runs remained challenged after passive
-waits and stopped safely, so reliable fallback-detail access is not currently verified.
+the direct and fallback paths. The latest bounded real detail runs remained unresolved after passive waits and stopped safely, so
+reliable fallback-detail access is not currently verified.
 
 ## Decision
 
 Ticketmaster New Zealand uses ordinary HTTP for city listings and durable Argus read-only Jobs only
-for selectively required detail pages. Tymra has no local browser fallback. It does not use a Ticketmaster API key or
-Discovery API. The current Worker collects public structured event data from five working New
-Zealand city listing routes: Auckland, Wellington, Christchurch, Hamilton and Rotorua.
+for selectively required detail pages. Tymra uses the current public collection path for detail handling. It does not use a Ticketmaster
+API key or Discovery API. The current Worker collects public structured event data from five working
+New Zealand city listing routes: Auckland, Wellington, Christchurch, Hamilton and Rotorua.
 
 Event detail pages may initially present a Ticketmaster `One moment please...` interstitial containing
 identity-verification markup. A two-stage read-only capture retains that initial state, polls its
 semantic state once per second for up to 20 seconds without interaction and captures the final state.
-Polling stops immediately when public content appears or a terminal block is visible. One verified page resolved to normal
-public event content without a click, refresh, form input, login or challenge solution. A settled
-page is extracted normally; a challenge that remains becomes `manual_required`, updates the target's
-failure backoff and opens the source circuit.
+Polling stops immediately when public content appears or a terminal unresolved state is visible. One
+verified page resolved to normal public event content without interaction. A settled page is
+extracted normally; an unresolved state remains `manual_required`, updates the target's failure
+backoff and opens the source circuit.
 
 The Worker-level `discovery`, `details` and `full` phases are implemented. The seeded daily discovery
 and six-hour detail schedules remain disabled, and development hard-disables scheduler execution.
@@ -72,10 +72,10 @@ updates its run and last-seen fields instead of rebuilding the canonical graph.
 
 ## Access circuit
 
-Argus owns browser identity, execution mode and challenge evidence. Tymra submits only versioned,
-read-only connector jobs and never attempts to solve a challenge.
+Argus owns browser identity, execution mode and evidence capture. Tymra submits only versioned,
+read-only connector jobs and never attempts to solve an unresolved state.
 
-Persistent challenges or source rate limits advance the source circuit as follows:
+Persistent unresolved states or source rate limits advance the source circuit as follows:
 
 | Consecutive challenge | Automatic cooldown | State after event |
 |---|---:|---|

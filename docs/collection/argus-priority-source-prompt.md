@@ -23,8 +23,8 @@ those responsibilities in Argus.
 - Keep the fixed `ticketek-public.collect_listing@1.0.0` and
   `ticketek-public.collect_detail@1.0.0` contracts.
 - Fix the intermittent legitimate detail-page shape retained by the 2026-08-06 Tymra acceptance,
-  or classify the observed response as an Akamai challenge with evidence. Do not return an
-  unclassified `PARSING_ERROR` for a known challenge page.
+  or classify the observed response with evidence. Do not return an unclassified
+  `PARSING_ERROR` for a known page shape.
 - Pass two consecutive real listing/detail runs with no second-pass row growth and verify cooldown,
   circuit-breaker and evidence ACK behaviour.
 

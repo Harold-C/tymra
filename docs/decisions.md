@@ -456,9 +456,9 @@ to the pinned Ulixee runtime.
 Ticketmaster challenge handling uses a source circuit with 6-hour, 24-hour and 72-hour cooldowns.
 The first two expired cooldowns permit exactly one listing-only half-open probe. A successful probe
 closes the circuit; a third consecutive challenge requires manual review and never automatically
-reopens. Challenge pages are semantically polled once per second and stop early on resolution or a
-terminal block. CAPTCHA solving, proxy rotation, fingerprint spoofing and randomized user simulation
-remain prohibited.
+reopens. Interstitial pages are semantically polled once per second and stop early on resolution or a
+terminal block. Automated CAPTCHA solving, proxy rotation, fingerprint spoofing and randomized user
+simulation remain prohibited; authenticated operator handoff follows D-042.
 
 **Reason:** Stable successful browser state and sharply bounded recovery probes reduce repeated cold
 sessions and unnecessary pressure on a source. Persisting failed state or repeatedly retrying a
@@ -671,7 +671,7 @@ Direct CLI captures now copy and hash every Argus evidence object before ACK and
 endpoint to return 410; dry runs hash evidence in memory before the same purge verification.
 The Booking public-browser path has additionally completed a bounded real Wellington discovery and
 all-in rate run with Tymra contract validation, evidence hash verification, ACK and 410 purge.
-Expedia `/Hotel-Search` remains policy-blocked by its current robots rules and was not opened.
+Expedia `/Hotel-Search` remains outside the current public-source workflow and was not opened.
 
 ## D-041 Defer Partner OTA API Integrations Until Credentials Are Available
 
@@ -703,3 +703,30 @@ is safer than preserving dormant integration code.
 **Verification:** Provider routing tests require Booking and Expedia to resolve only to their public
 connectors. Repository search must find no Partner connector IDs or endpoint hosts in executable
 Tymra code. Scheduler remains disabled.
+
+## D-042 Use Short-Lived noVNC Handoff For CAPTCHA
+
+**Status:** Contract implemented in the Tymra Argus client; Argus session lifecycle and Tymra
+operator UI remain pending.
+
+**Decision:** When an OTA browser execution reaches a CAPTCHA, Argus pauses the exact browser
+session and returns `manual_required` with `reason=CAPTCHA`, an opaque `sessionId`, a short-lived
+`noVncUrl` under `connect.argus.test`/`connect.argus.nz`, and `expiresAt`. An authenticated operator
+may open that link and complete the CAPTCHA manually. Argus then resumes the same execution and
+browser profile. A CAPTCHA result without all three session fields violates the connector contract.
+Non-CAPTCHA access challenges do not create interactive sessions and continue through the normal
+cooldown and circuit-breaker path.
+
+The noVNC handoff is single-purpose and time-limited. It must not expose reusable credentials,
+cookies or tokens in application logs, must not be shown on the public customer host, and must close
+on success, expiry, cancellation or operator disconnect. Automated CAPTCHA solving, proxy rotation,
+fingerprint spoofing and unattended interaction remain prohibited.
+
+**Reason:** A paused-session handoff lets an authorised human complete a legitimate interactive
+check without losing the requested dates, occupancy, currency or page state, while keeping Tymra's
+collection evidence auditable and avoiding automated challenge bypass.
+
+**Verification:** The Argus client contract test requires a CAPTCHA result to expose and normalise
+the noVNC session fields. Cross-service acceptance still requires an expiring Argus session, manual
+completion, continuation of the same Job, evidence copy/ACK and confirmation that expired or reused
+links are rejected.

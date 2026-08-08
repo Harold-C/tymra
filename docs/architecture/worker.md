@@ -135,11 +135,11 @@ the zero components as source-observed fee values. Without explicit inclusive wo
 incomplete and cannot be used as an available comparison.
 
 Booking and Expedia use only their public connectors for listing identity, discovery and rates.
-Booking has bounded real positive UI evidence; Expedia search remains policy-blocked by current
-robots rules. The earlier Booking Demand and Expedia Rapid modules were removed while credentials
-are unavailable. If credentials are obtained later, official API support must return as a separate
-reviewed implementation against the then-current contracts, with new acceptance evidence before
-any activation.
+Booking has bounded real positive UI evidence; Expedia search remains described as a separate
+public-source workflow. The earlier Booking Demand and Expedia Rapid modules were removed while
+credentials are unavailable. If credentials are obtained later, official API support must return as
+a separate reviewed implementation against the then-current contracts, with new acceptance evidence
+before any activation.
 
 ## Verification Baseline
 
