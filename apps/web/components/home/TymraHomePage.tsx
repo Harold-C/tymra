@@ -526,23 +526,26 @@ function SearchCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.48, delay: 0.22 }}
       className={clsx(
-        "relative z-10 mx-auto mt-[58px] w-full max-w-[1200px] rounded-[30px] bg-[linear-gradient(90deg,rgba(6,182,212,0.66),rgba(255,255,255,0.9),rgba(124,58,237,0.66))] p-px shadow-[0_22px_72px_rgba(37,99,235,0.15),0_0_38px_rgba(6,182,212,0.14)] transition duration-300 max-md:mt-8 max-md:rounded-[28px] 2xl:max-w-[1320px]",
-        hasValue && "shadow-[0_28px_84px_rgba(37,99,235,0.19),0_0_52px_rgba(124,58,237,0.15)]",
+        "relative z-10 mx-auto mt-[58px] w-full max-w-[1200px] rounded-[31px] bg-[linear-gradient(115deg,rgba(80,204,255,0.92)_0%,rgba(255,255,255,0.98)_47%,rgba(124,88,255,0.78)_100%)] p-[1.5px] shadow-[0_24px_72px_rgba(37,99,235,0.18),0_0_44px_rgba(56,189,248,0.16)] transition-[box-shadow,background] duration-300 focus-within:shadow-[0_30px_88px_rgba(37,99,235,0.24),0_0_0_4px_rgba(255,255,255,0.72),0_0_56px_rgba(56,189,248,0.22)] max-md:mt-8 max-md:rounded-[29px] 2xl:max-w-[1320px]",
+        hasValue && "shadow-[0_28px_84px_rgba(37,99,235,0.22),0_0_54px_rgba(96,165,250,0.2)]",
         hasValidationError && "bg-[linear-gradient(90deg,rgba(220,38,38,0.55),rgba(255,255,255,0.78),rgba(37,99,235,0.72))]",
       )}
     >
-      <div className="relative overflow-hidden rounded-[29px] border border-white/90 bg-white/[0.94] px-7 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.96)] backdrop-blur-[14px] max-md:rounded-[27px] max-md:bg-white/[0.92] max-md:px-5 max-md:py-5">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(6,182,212,0.04)_0%,rgba(255,255,255,0.7)_48%,rgba(124,58,237,0.04)_100%)] max-md:bg-[linear-gradient(90deg,rgba(6,182,212,0.055)_0%,rgba(255,255,255,0.64)_48%,rgba(124,58,237,0.055)_100%)]" />
-        <div className="relative flex items-center gap-6 max-lg:flex-col max-lg:items-stretch max-lg:gap-5">
-          <label className="group relative flex min-h-[70px] flex-1 items-center gap-6 rounded-[18px] max-md:min-h-[84px]">
+      <div className="relative overflow-hidden rounded-[29px] border border-white/90 bg-[linear-gradient(112deg,rgba(228,246,255,0.86)_0%,rgba(249,252,255,0.82)_49%,rgba(239,235,255,0.82)_100%)] px-8 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,1),inset_0_-1px_0_rgba(148,163,255,0.16)] backdrop-blur-[24px] max-md:rounded-[27px] max-md:px-5 max-md:py-5">
+        <div className="pointer-events-none absolute -left-20 -top-24 h-72 w-72 rounded-full bg-[#7DD3FC]/18 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 right-[-5%] h-72 w-72 rounded-full bg-[#A78BFA]/14 blur-3xl" />
+        <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.98),transparent)]" />
+
+        <div className="relative flex items-center gap-6 max-[860px]:flex-col max-[860px]:items-stretch max-[860px]:gap-4">
+          <label className="group relative flex min-h-[70px] flex-1 items-center gap-5 rounded-[18px] max-md:min-h-[76px] max-md:gap-3">
             <span className="sr-only">{t.search.label}</span>
             <span
               className={clsx(
-                "flex h-[64px] w-[64px] flex-none items-center justify-center rounded-full text-[#071A3D] transition max-md:h-[58px] max-md:w-[58px]",
+                "flex h-[60px] w-[60px] flex-none items-center justify-center text-[#071A3D] transition-colors duration-200 group-focus-within:text-[#0969FF] max-md:h-[54px] max-md:w-[54px]",
                 state.status === "typing" && "text-[#0969FF]",
               )}
             >
-              <Search className="h-11 w-11 max-md:h-9 max-md:w-9" strokeWidth={1.75} aria-hidden="true" />
+              <Search className="h-10 w-10 max-md:h-8 max-md:w-8" strokeWidth={1.8} aria-hidden="true" />
             </span>
             <input
               id="home-property-search"
@@ -554,10 +557,10 @@ function SearchCard({
               aria-describedby={hasValidationError ? "home-search-error home-search-support" : "home-search-support"}
               aria-invalid={hasValidationError}
               placeholder={t.search.placeholder}
-              className="h-[58px] min-w-0 flex-1 bg-transparent text-[1.13rem] font-medium text-[#26385E] outline-none placeholder:text-[#60708A] max-md:h-auto max-md:text-[1rem] max-md:leading-[1.45] max-md:placeholder:text-transparent"
+              className="h-[58px] min-w-0 flex-1 bg-transparent text-[1.13rem] font-semibold text-[#1E3A65] outline-none placeholder:font-medium placeholder:text-[#536B91] focus-visible:outline-none focus-visible:shadow-none max-md:h-auto max-md:text-[1rem] max-md:leading-[1.45] max-md:placeholder:text-transparent"
             />
             {!value ? (
-              <span aria-hidden="true" className="pointer-events-none absolute left-[82px] right-2 hidden truncate text-[0.95rem] font-medium text-[#60708A] max-md:block">
+              <span aria-hidden="true" className="pointer-events-none absolute left-[66px] right-2 hidden truncate text-[0.95rem] font-medium text-[#536B91] max-md:block">
                 {t.search.mobilePlaceholder}
               </span>
             ) : null}
@@ -566,19 +569,19 @@ function SearchCard({
                 type="button"
                 aria-label={t.search.clear}
                 onClick={onClear}
-                className="mr-1 flex h-11 w-11 flex-none items-center justify-center rounded-full text-[#60708A] transition hover:bg-white/80 hover:text-[#0969FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
+                className="mr-1 flex h-11 w-11 flex-none items-center justify-center rounded-full border border-transparent text-[#60708A] transition hover:border-white/90 hover:bg-white/65 hover:text-[#0969FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             ) : null}
           </label>
 
-          <div className="h-[72px] w-px bg-white/95 max-lg:h-px max-lg:w-full" />
+          <div className="h-[70px] w-px bg-[linear-gradient(180deg,transparent,rgba(141,170,211,0.72),transparent)] max-[860px]:h-px max-[860px]:w-full max-[860px]:bg-[linear-gradient(90deg,transparent,rgba(141,170,211,0.62),transparent)]" />
 
           <button
             type="submit"
             disabled={submitting}
-            className="group inline-flex h-[64px] min-w-[258px] items-center justify-center gap-3 rounded-[14px] border border-transparent bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_44%,#7C3AED_100%)] px-6 text-[1.02rem] font-bold text-white shadow-[0_16px_34px_rgba(37,99,235,0.24)] transition duration-250 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] max-lg:min-w-0 max-lg:w-full"
+            className="group inline-flex h-[66px] min-w-[250px] items-center justify-center gap-3 rounded-[16px] border border-white/70 bg-[linear-gradient(102deg,#1478FF_0%,#2563EB_54%,#5B4FE9_100%)] px-6 text-[1.02rem] font-bold text-white shadow-[0_15px_34px_rgba(37,99,235,0.26),inset_0_1px_0_rgba(255,255,255,0.3)] transition duration-250 hover:-translate-y-0.5 hover:shadow-[0_19px_42px_rgba(37,99,235,0.32),inset_0_1px_0_rgba(255,255,255,0.36)] disabled:cursor-wait disabled:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] max-[860px]:min-w-0 max-[860px]:w-full"
           >
             {submitting ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" /> : null}
             {submitting ? t.search.working : requiresChallenge ? (locale === "zh" ? "完成验证并继续" : "Complete verification") : t.search.cta}
@@ -586,7 +589,7 @@ function SearchCard({
           </button>
         </div>
 
-        <div className="relative mt-5 h-px w-full bg-white/95" />
+        <div className="relative mt-5 h-px w-full bg-[linear-gradient(90deg,transparent,rgba(147,173,211,0.68)_8%,rgba(255,255,255,0.92)_50%,rgba(147,173,211,0.68)_92%,transparent)] max-[860px]:mt-4" />
 
         <div className="relative">
           <SearchSupportingInfo copy={t} />
@@ -596,7 +599,7 @@ function SearchCard({
           {t.search.facts.map((fact) => fact.text).join(". ")}
         </div>
 
-        <div className="relative mt-3 min-h-[28px]" aria-live="polite" aria-atomic="true">
+        <div className="relative mt-2 min-h-4" aria-live="polite" aria-atomic="true">
           {hasValidationError ? (
             <p id="home-search-error" className="inline-flex items-start gap-2 text-[0.92rem] font-semibold text-[#B91C1C]">
               <CircleAlert className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
@@ -619,13 +622,19 @@ function SearchCard({
 
 function SearchSupportingInfo({ copy: t }: { copy: HomeCopy }) {
   return (
-    <ul className="mt-6 grid grid-cols-4 gap-0 text-[0.78rem] font-semibold text-[#26385E] max-lg:grid-cols-2 max-lg:gap-y-3 max-md:grid-cols-1 max-md:gap-y-3">
+    <ul className="mt-5 grid grid-cols-4 gap-0 text-[0.8rem] font-semibold text-[#28456F] max-[860px]:grid-cols-2 max-[860px]:gap-y-0 max-md:text-[0.76rem]">
       {t.search.facts.map((fact, index) => {
         const Icon = fact.icon;
         return (
-          <li key={fact.text} className="relative flex items-center justify-center gap-2.5 px-4 max-lg:justify-start max-md:px-0">
-            {index > 0 ? <span className="absolute left-0 top-1/2 h-6 w-px -translate-y-1/2 bg-[#BFD0E6] max-lg:hidden" aria-hidden="true" /> : null}
-            <Icon className="h-5 w-5 flex-none text-[#0969FF]" strokeWidth={2.1} aria-hidden="true" />
+          <li
+            key={fact.text}
+            className={clsx(
+              "relative flex min-h-9 items-center justify-center gap-2.5 px-4 max-[860px]:justify-start max-[860px]:px-3 max-md:gap-2 max-md:px-1",
+              index >= 2 && "max-[860px]:border-t max-[860px]:border-white/70",
+            )}
+          >
+            {index > 0 ? <span className="absolute left-0 top-1/2 h-7 w-px -translate-y-1/2 bg-[linear-gradient(180deg,transparent,#AFC4DF,transparent)] max-[860px]:hidden" aria-hidden="true" /> : null}
+            <Icon className="h-[19px] w-[19px] flex-none text-[#0A6CFA] max-md:h-[18px] max-md:w-[18px]" strokeWidth={2.05} aria-hidden="true" />
             <span>{fact.text}</span>
           </li>
         );
