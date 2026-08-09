@@ -8,6 +8,13 @@ import {
   ticketekListingExtractionSchema,
 } from "../collection/school-sport-ticketek";
 import { regionalArgusEventExtractionSchema } from "../collection/regional-argus-events";
+import {
+  officialVenueEventsExtractionSchema,
+  officialVenueResolveExtractionSchema,
+  publicAirportFlightBoardExtractionSchema,
+  publicCruiseScheduleExtractionSchema,
+  publicUniversityKeyDatesExtractionSchema,
+} from "../collection/public-market-argus";
 import { aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionSchema } from "../collection/aviation-argus-signals";
 import { otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaResolveListingExtractionSchema } from "@tymra/providers";
 
@@ -34,8 +41,8 @@ export type ArgusEvidencePointer = ArgusEvidencePointerBase & (
     }
 );
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates";
+export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public" | "eden-park-public" | "nzicc-public" | "sky-stadium-public" | "forsyth-barr-stadium-public" | "takina-public" | "claudelands-public" | "port-tauranga-cruise-public" | "centreport-cruise-public" | "port-otago-cruise-public" | "dunedin-airport-public" | "rotorua-airport-public" | "hamilton-airport-public" | "hawkes-bay-airport-public" | "new-plymouth-airport-public" | "palmerston-north-airport-public" | "otago-university-key-dates-public" | "victoria-university-key-dates-public" | "waikato-university-key-dates-public" | "massey-university-key-dates-public" | "aut-university-key-dates-public";
+export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates" | "resolve_venue" | "collect_cruise_schedule" | "collect_flights";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -126,7 +133,38 @@ const argusDataContracts = {
   "trip-public:resolve_listing": { dataSchema: "ota-public.resolve_listing", schemaVersion: "1.0.0" },
   "trip-public:discover_listings": { dataSchema: "ota-public.discover_listings", schemaVersion: "1.0.0" },
   "trip-public:collect_rates": { dataSchema: "ota-public.collect_rates", schemaVersion: "1.0.0" },
+  "eden-park-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "eden-park-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "nzicc-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "nzicc-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "sky-stadium-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "sky-stadium-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "forsyth-barr-stadium-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "forsyth-barr-stadium-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "takina-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "takina-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "claudelands-public:resolve_venue": { dataSchema: "official-venue-public.resolve_venue", schemaVersion: "1.0.0" },
+  "claudelands-public:collect_events": { dataSchema: "official-venue-public.collect_events", schemaVersion: "1.0.0" },
+  "port-tauranga-cruise-public:collect_cruise_schedule": { dataSchema: "public-cruise.collect_schedule", schemaVersion: "1.0.0" },
+  "centreport-cruise-public:collect_cruise_schedule": { dataSchema: "public-cruise.collect_schedule", schemaVersion: "1.0.0" },
+  "port-otago-cruise-public:collect_cruise_schedule": { dataSchema: "public-cruise.collect_schedule", schemaVersion: "1.0.0" },
+  "dunedin-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "rotorua-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "hamilton-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "hawkes-bay-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "new-plymouth-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "palmerston-north-airport-public:collect_flights": { dataSchema: "public-airport-flight-board.collect_flights", schemaVersion: "1.0.0" },
+  "otago-university-key-dates-public:collect_key_dates": { dataSchema: "public-university-key-dates.collect_key_dates", schemaVersion: "1.0.0" },
+  "victoria-university-key-dates-public:collect_key_dates": { dataSchema: "public-university-key-dates.collect_key_dates", schemaVersion: "1.0.0" },
+  "waikato-university-key-dates-public:collect_key_dates": { dataSchema: "public-university-key-dates.collect_key_dates", schemaVersion: "1.0.0" },
+  "massey-university-key-dates-public:collect_key_dates": { dataSchema: "public-university-key-dates.collect_key_dates", schemaVersion: "1.0.0" },
+  "aut-university-key-dates-public:collect_key_dates": { dataSchema: "public-university-key-dates.collect_key_dates", schemaVersion: "1.0.0" },
 } as const satisfies Record<string, ArgusDataContract>;
+
+const officialVenueConnectors = new Set<ArgusConnectorId>(["eden-park-public", "nzicc-public", "sky-stadium-public", "forsyth-barr-stadium-public", "takina-public", "claudelands-public"]);
+const cruiseConnectors = new Set<ArgusConnectorId>(["port-tauranga-cruise-public", "centreport-cruise-public", "port-otago-cruise-public"]);
+const liveAirportConnectors = new Set<ArgusConnectorId>(["dunedin-airport-public", "rotorua-airport-public", "hamilton-airport-public", "hawkes-bay-airport-public", "new-plymouth-airport-public", "palmerston-north-airport-public"]);
+const universityKeyDateConnectors = new Set<ArgusConnectorId>(["otago-university-key-dates-public", "victoria-university-key-dates-public", "waikato-university-key-dates-public", "massey-university-key-dates-public", "aut-university-key-dates-public"]);
 
 const otaArgusConnectors = new Set<ArgusConnectorId>([
   "booking-public",
@@ -212,6 +250,9 @@ export type ArgusCaptureInput = {
   entryUrl?: string;
   startDate?: string;
   endDate?: string;
+  from?: string;
+  to?: string;
+  academicYear?: number;
   maxRecords?: number;
   searchQuery?: string;
   checkIn?: string;
@@ -580,6 +621,7 @@ function adaptExtraction(
         priceCurrency: offers.priceCurrency,
       }],
       imageUrls: Array.isArray(event.imageUrls) ? event.imageUrls : [],
+      impactEvidence: event.impactEvidence,
     }],
     quality: detail.quality,
     missingFields: detail.missingFields,
@@ -627,6 +669,16 @@ function assertArgusDataContract(
                   ? otaDiscoverListingsExtractionSchema
                   : otaArgusConnectors.has(connectorId) && workflowId === "collect_rates"
                     ? otaCollectRatesExtractionSchema
+                    : officialVenueConnectors.has(connectorId) && workflowId === "resolve_venue"
+                      ? officialVenueResolveExtractionSchema
+                      : officialVenueConnectors.has(connectorId) && workflowId === "collect_events"
+                        ? officialVenueEventsExtractionSchema
+                        : cruiseConnectors.has(connectorId) && workflowId === "collect_cruise_schedule"
+                          ? publicCruiseScheduleExtractionSchema
+                          : liveAirportConnectors.has(connectorId) && workflowId === "collect_flights"
+                            ? publicAirportFlightBoardExtractionSchema
+                            : universityKeyDateConnectors.has(connectorId) && workflowId === "collect_key_dates"
+                              ? publicUniversityKeyDatesExtractionSchema
               : null;
   if (sourceSchema) {
     const parsed = sourceSchema.safeParse(data);
@@ -682,6 +734,9 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.entryUrl === undefined ? {} : { entry_url: input.entryUrl }),
       ...(input.startDate === undefined ? {} : { start_date: input.startDate }),
       ...(input.endDate === undefined ? {} : { end_date: input.endDate }),
+      ...(input.from === undefined ? {} : { from: input.from }),
+      ...(input.to === undefined ? {} : { to: input.to }),
+      ...(input.academicYear === undefined ? {} : { academic_year: input.academicYear }),
       ...(input.searchQuery === undefined ? {} : { search_query: input.searchQuery }),
       ...(input.checkIn === undefined ? {} : { check_in: input.checkIn }),
       ...(input.checkOut === undefined ? {} : { check_out: input.checkOut }),

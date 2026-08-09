@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { EventImpactEvidenceBundle } from "@tymra/domain";
 import type { PublicEvent } from "@tymra/providers";
 
 export const TICKETMASTER_ALLOWED_HOSTS = ["www.ticketmaster.co.nz", "ticketmaster.co.nz"] as const;
@@ -35,6 +36,7 @@ export type TicketmasterListingEvent = {
   offers?: Array<{ availability?: string; url?: string; price?: string | number; priceCurrency?: string }>;
   performers?: Array<{ name?: string; type?: string; url?: string }>;
   imageUrls?: string[];
+  impactEvidence?: EventImpactEvidenceBundle;
 };
 
 export type TicketmasterListingExtraction = {
@@ -169,7 +171,7 @@ export function normaliseTicketmasterEvent(event: TicketmasterListingEvent): Pub
     impactStatus: "PENDING_EVIDENCE",
     impactScore: null,
     impactConfidence: null,
-    impactEvidence: {},
+    impactEvidence: event.impactEvidence ?? {},
     sourceUpdatedAt: null,
     metadata: {
       sourceEventId: event.eventId,

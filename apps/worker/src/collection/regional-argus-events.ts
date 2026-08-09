@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { eventImpactEvidenceBundleSchema } from "@tymra/domain";
 import type { PublicEvent } from "@tymra/providers";
 
 import {
@@ -34,6 +35,7 @@ export const regionalArgusEventExtractionSchema = z.object({
     category: nullableString,
     description: nullableString,
     status: eventStatusSchema,
+    impactEvidence: eventImpactEvidenceBundleSchema.default({ schemaVersion: "event-impact-evidence-v1", policyVersion: "event-impact-promotion-v2", items: [] }),
     fieldSources: z.record(z.string(), z.string()),
   }).strict()),
   totalEvents: z.number().int().nonnegative(),
@@ -112,7 +114,7 @@ export function normaliseRegionalArgusEvents(
       impactStatus: "PENDING_EVIDENCE",
       impactScore: null,
       impactConfidence: null,
-      impactEvidence: { causalClaim: false, promotion: "requires explicit scale and accommodation-demand evidence" },
+      impactEvidence: event.impactEvidence,
       sourceUpdatedAt: null,
       metadata: {
         description: event.description,

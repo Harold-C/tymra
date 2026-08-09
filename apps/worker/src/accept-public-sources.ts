@@ -1,6 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
+import { ARGUS_PUBLIC_MARKET_SOURCES } from "@tymra/providers";
 import {
   enqueueJob,
   isTerminalJobStatus,
@@ -44,6 +45,8 @@ type PassReport = {
   retainedEvidenceCount: number;
   remoteEvidenceCount: number;
   lincolnSignalCount: number;
+  normalizedIdentityCount: number;
+  normalizedIdentityHash: string;
   countsBefore: SourceCounts;
   countsAfter: SourceCounts;
   newSourceRows: SourceCounts;
@@ -117,6 +120,13 @@ const sources: SourceSpec[] = [
   { key: "christchurch_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(0, 31) },
   { key: "port_and_cruise", jobType: "TRANSPORT_COLLECTION", marketScope: "auckland" },
   { key: "fx_rates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "new-zealand" },
+  ...ARGUS_PUBLIC_MARKET_SOURCES.map((source): SourceSpec => ({
+    key: source.sourceId,
+    jobType: source.kind === "cruise" || source.kind === "airport" ? "TRANSPORT_COLLECTION" : "EVENT_COLLECTION",
+    marketScope: source.marketKey,
+    payload: { limit: 2 },
+    ...(["cruise", "university"].includes(source.kind) ? { range: rollingAcceptanceWindow(365) } : {}),
+  })),
   {
     key: "eventfinda",
     jobType: "EVENT_COLLECTION",
@@ -218,6 +228,9 @@ async function main() {
             prisma.sourceMarketSignal.count({ where: { dataSourceId: source.id, externalId: { startsWith: "lincoln:" } } }),
           ])
         : [0, 0, 0, 0, 0, 0];
+      const normalizedIdentitySnapshot = run
+        ? await normalizedIdentitySnapshotForRun(source.id, run.id)
+        : { count: 0, hash: sha256Json([]) };
       if (spec.key === "christchurch_university_dates") {
         if (argusExecutions !== 1) failures.push(`Expected one Lincoln Argus execution; found ${argusExecutions}`);
         if (retainedEvidenceCount < 1) failures.push("Lincoln Argus evidence was not retained in Tymra storage");
@@ -230,6 +243,15 @@ async function main() {
         if (retainedEvidenceCount < 1) failures.push(`${spec.key} Argus evidence was not retained in Tymra storage`);
         if (remoteEvidenceCount !== 0) failures.push(`${remoteEvidenceCount} ${spec.key} artifacts still referenced remote Argus evidence after ACK`);
         if (spec.key === "ticketek_events" && countsAfter.sourceOccurrences < 1) failures.push("No normalised ticketek_events event occurrence was persisted");
+      }
+      const publicMarketSource = ARGUS_PUBLIC_MARKET_SOURCES.find((candidate) => candidate.sourceId === spec.key);
+      if (publicMarketSource) {
+        const expectedExecutions = publicMarketSource.kind === "venue" ? 2 : 1;
+        if (argusExecutions !== expectedExecutions) failures.push(`Expected ${expectedExecutions} ${spec.key} Argus execution(s); found ${argusExecutions}`);
+        if (retainedEvidenceCount < expectedExecutions) failures.push(`${spec.key} Argus evidence was not retained in Tymra storage`);
+        if (remoteEvidenceCount !== 0) failures.push(`${remoteEvidenceCount} ${spec.key} artifacts still referenced remote Argus evidence after ACK`);
+        if ((publicMarketSource.kind === "venue" || publicMarketSource.kind === "university") && countsAfter.sourceOccurrences < 1) failures.push(`No normalised ${spec.key} event occurrence was persisted`);
+        if ((publicMarketSource.kind === "cruise" || publicMarketSource.kind === "airport") && countsAfter.sourceSignals < 1) failures.push(`No normalised ${spec.key} market signal was persisted`);
       }
 
       const report: PassReport = {
@@ -248,6 +270,8 @@ async function main() {
         retainedEvidenceCount,
         remoteEvidenceCount,
         lincolnSignalCount,
+        normalizedIdentityCount: normalizedIdentitySnapshot.count,
+        normalizedIdentityHash: normalizedIdentitySnapshot.hash,
         countsBefore,
         countsAfter,
         newSourceRows: subtractCounts(countsAfter, countsBefore),
@@ -270,6 +294,12 @@ async function main() {
     for (const repeat of passes.slice(1)) {
       if (Object.values(repeat.newSourceRows).some((value) => value !== 0)) {
         repeat.failures.push(`Repeat pass changed source/link row counts: ${JSON.stringify(repeat.newSourceRows)}`);
+      }
+      const firstPass = passes[0];
+      if (firstPass && repeat.normalizedIdentityHash !== firstPass.normalizedIdentityHash) {
+        repeat.failures.push(
+          `Repeat pass changed the normalized identity snapshot: ${firstPass.normalizedIdentityCount}/${firstPass.normalizedIdentityHash} -> ${repeat.normalizedIdentityCount}/${repeat.normalizedIdentityHash}`,
+        );
       }
     }
     reports.push({
@@ -333,6 +363,11 @@ function annualAcceptanceWindow(month: number, durationDays: number) {
   return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
 }
 
+function rollingAcceptanceWindow(durationDays: number) {
+  const from = new Date();
+  return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
+}
+
 function acceptancePassCount(value: string | undefined) {
   if (!value) return 2;
   const parsed = Number(value);
@@ -367,6 +402,54 @@ async function sourceCounts(dataSourceId: string): Promise<SourceCounts> {
     prisma.eventOccurrenceSourceLink.count({ where: { sourceEventOccurrence: { dataSourceId } } }),
   ]);
   return { sourceSignals, signalLinks, sourceEvents, eventLinks, sourceOccurrences, occurrenceLinks };
+}
+
+async function normalizedIdentitySnapshotForRun(dataSourceId: string, collectionRunId: string) {
+  const [events, signals] = await Promise.all([
+    prisma.sourceEventOccurrence.findMany({
+      where: { dataSourceId, lastCollectionRunId: collectionRunId },
+      orderBy: { externalId: "asc" },
+      select: {
+        externalId: true,
+        canonicalKey: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+      },
+    }),
+    prisma.sourceMarketSignal.findMany({
+      where: { dataSourceId, lastCollectionRunId: collectionRunId },
+      orderBy: { externalId: "asc" },
+      select: {
+        externalId: true,
+        marketKey: true,
+        type: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+        direction: true,
+      },
+    }),
+  ]);
+  const identities = [
+    ...events.map((event) => ({
+      kind: "event",
+      ...event,
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt.toISOString(),
+    })),
+    ...signals.map((signal) => ({
+      kind: "signal",
+      ...signal,
+      startsAt: signal.startsAt.toISOString(),
+      endsAt: signal.endsAt.toISOString(),
+    })),
+  ];
+  return { count: identities.length, hash: sha256Json(identities) };
+}
+
+function sha256Json(value: unknown) {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function subtractCounts(after: SourceCounts, before: SourceCounts): SourceCounts {

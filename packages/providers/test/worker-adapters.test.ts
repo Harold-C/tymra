@@ -161,15 +161,15 @@ describe("public data adapter contract", () => {
     expect(rotorua).toEqual([expect.objectContaining({ title: "Blue Lake 24hr Challenge", city: "Rotorua", region: "Bay of Plenty", venueName: "Lake Tikitapu", startsAt: new Date("2026-09-25T12:00:00.000Z") })]);
   });
 
-  it("keeps the nationwide completion gate stricter than national aggregator presence", () => {
+  it("marks nationwide source implementation complete only after every market has an official layer", () => {
     expect(NZ_MAJOR_ACCOMMODATION_MARKETS).toHaveLength(15);
     const report = assessNzMarketCoverage(new Set(Object.keys(publicDataAdapters)));
-    expect(report.complete).toBe(false);
+    expect(report.complete).toBe(true);
     expect(report.markets.find((market) => market.key === "christchurch")?.implemented).toBe(true);
     expect(report.markets.find((market) => market.key === "wellington")?.implemented).toBe(true);
     expect(report.markets.find((market) => market.key === "northland")?.implemented).toBe(true);
-    expect(report.implementedMarkets).toBe(14);
-    expect(report.argusRequired.map((market) => market.key)).toEqual(["dunedin"]);
+    expect(report.implementedMarkets).toBe(15);
+    expect(report.argusRequired).toEqual([]);
   });
 
   it("uses one canonical market key across regional events, schedules and pricing", () => {
@@ -304,12 +304,13 @@ describe("public data adapter contract", () => {
       ...(["stats_nz", "mbie_ivs"].includes(sourceId) ? { marketKeys: ["new-zealand"] } : {}),
     }));
     const report = assessNzMarketOperationalCoverage(evidence, now);
-    expect(report.stableMarkets).toBe(14);
+    expect(report.stableMarkets).toBe(15);
     expect(report.markets.find((market) => market.key === "wellington")?.stable).toBe(true);
     expect(report.markets.find((market) => market.key === "rotorua")?.stable).toBe(true);
-    expect(report.markets.find((market) => market.key === "dunedin")?.stable).toBe(false);
+    expect(report.markets.find((market) => market.key === "dunedin")?.stable).toBe(true);
 
-    const staleWellington = evidence.map((item) => item.sourceId === "wellingtonnz_events" ? { ...item, lastSuccessAt: "2026-08-04T00:00:00.000Z" } : item);
+    const wellingtonOfficialSources = new Set(NZ_MAJOR_ACCOMMODATION_MARKETS.find((market) => market.key === "wellington")!.officialRegionalSources);
+    const staleWellington = evidence.map((item) => wellingtonOfficialSources.has(item.sourceId) ? { ...item, lastSuccessAt: "2026-08-04T00:00:00.000Z" } : item);
     expect(assessNzMarketOperationalCoverage(staleWellington, now).markets.find((market) => market.key === "wellington")?.layers.officialRegional).toBe(false);
 
     const missingLocalDemand = evidence.map((item) => item.sourceId === "mbie" ? { ...item, marketKeys: item.marketKeys?.filter((key) => key !== "taupo") } : item);

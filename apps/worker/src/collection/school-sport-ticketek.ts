@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { eventImpactEvidenceBundleSchema } from "@tymra/domain";
 import type { PublicEvent } from "@tymra/providers";
 
 export const SCHOOL_SPORT_NZ_SOURCE_ID = "school_sport_nz";
@@ -24,6 +25,7 @@ const nullableString = z.string().nullable();
 const fieldSourcesSchema = z.record(z.string(), z.string());
 const eventStatusSchema = z.enum(["SCHEDULED", "CANCELLED", "POSTPONED", "UNKNOWN"]);
 const timePrecisionSchema = z.enum(["DATE", "DATETIME"]);
+const impactEvidenceSchema = eventImpactEvidenceBundleSchema.default({ schemaVersion: "event-impact-evidence-v1", policyVersion: "event-impact-promotion-v2", items: [] });
 const qualityFields = {
   quality: z.enum(["complete", "partial"]),
   missingFields: z.array(z.string()),
@@ -65,6 +67,7 @@ const sportyOccurrenceSchema = z.object({
   imageUrl: z.string().url().nullable(),
   description: nullableString,
   canterburyHosted: z.boolean().nullable(),
+  impactEvidence: impactEvidenceSchema,
   fieldSources: fieldSourcesSchema,
 }).strict();
 
@@ -131,6 +134,7 @@ const ticketekOccurrenceSchema = z.object({
   status: eventStatusSchema,
   ticketState: z.enum(["AVAILABLE", "SOLD_OUT", "OFF_SALE", "CANCELLED", "UNKNOWN"]),
   canonicalUrl: z.string().url(),
+  impactEvidence: impactEvidenceSchema,
   fieldSources: fieldSourcesSchema,
 }).strict();
 
@@ -226,6 +230,7 @@ export function normaliseSportySchoolSportEvents(
       status: occurrence.status,
       ticketStatus: null,
       sourceUpdatedAt: parseOptionalDate(occurrence.sourceUpdated ?? series?.sourceUpdated ?? null),
+      impactEvidence: occurrence.impactEvidence,
       metadata: {
         sourceOrganisation: occurrence.sourceOrganisation,
         canterburyHosted: occurrence.canterburyHosted,
@@ -274,6 +279,7 @@ export function normaliseTicketekEvents(
       status: occurrence.status,
       ticketStatus: occurrence.ticketState,
       sourceUpdatedAt: parseOptionalDate(parent?.sourceUpdated ?? null),
+      impactEvidence: occurrence.impactEvidence,
       metadata: {
         description: parent?.description ?? null,
         imageUrl: parent?.imageUrl ?? null,
@@ -306,6 +312,7 @@ function eventRecord(input: {
   status: "SCHEDULED" | "CANCELLED" | "POSTPONED" | "UNKNOWN";
   ticketStatus: string | null;
   sourceUpdatedAt: Date | null;
+  impactEvidence: Record<string, unknown>;
   metadata: Record<string, unknown>;
 }): PublicEvent {
   return {
@@ -332,7 +339,7 @@ function eventRecord(input: {
     impactStatus: "PENDING_EVIDENCE",
     impactScore: null,
     impactConfidence: null,
-    impactEvidence: { causalClaim: false, promotion: "requires explicit scale and accommodation-demand evidence" },
+    impactEvidence: input.impactEvidence,
     sourceUpdatedAt: input.sourceUpdatedAt,
     metadata: { ...input.metadata, seriesId: input.seriesId, seriesUrl: input.seriesUrl },
     fixture: false,

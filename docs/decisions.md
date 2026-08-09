@@ -708,8 +708,7 @@ Tymra code. Scheduler remains disabled.
 
 ## D-042 Use Short-Lived noVNC Handoff For CAPTCHA
 
-**Status:** Contract implemented in the Tymra Argus client; Argus session lifecycle and Tymra
-operator UI remain pending.
+**Status:** Shared Argus session lifecycle and Tymra client contract implemented; Tymra operator UI remains pending.
 
 **Decision:** When an OTA browser execution reaches a CAPTCHA, Argus pauses the exact browser
 session and returns `manual_required` with `reason=CAPTCHA`, an opaque `sessionId`, a short-lived
@@ -732,3 +731,50 @@ collection evidence auditable and avoiding automated challenge bypass.
 the noVNC session fields. Cross-service acceptance still requires an expiring Argus session, manual
 completion, continuation of the same Job, evidence copy/ACK and confirmation that expired or reused
 links are rejected.
+
+## D-043 Derive OTA Market Movement Only From Matched Time-Series Evidence
+
+**Status:** Implemented.
+
+**Decision:** `PRICE_RISING`, `AVAILABILITY_TIGHTENING` and `RESTRICTION_INCREASING`
+are internal Tymra signals derived from non-demo, operationally healthy OTA observations. The
+current window is the latest 24 hours and the baseline is 24–72 hours before evaluation. A signal
+requires at least three listings observed in both windows and at least two OTA providers for the
+same market, stay dates, adults and unit count. Price movement additionally requires three complete,
+available matched rates, a median increase of at least 5%, and at least NZD 10.00 per night.
+Availability and restriction signals require an adverse share movement of at least 20 percentage
+points. Signals retain the contributing observation IDs, provider keys, sample size, thresholds and
+policy version; they are retracted when the evidence no longer qualifies.
+
+**Reason:** Cross-sectional OTA prices show market position, not movement. Matching the same listing
+and stay query across time prevents inventory-mix changes, fee-incomplete prices and single-provider
+page behaviour from being presented as a market trend.
+
+**Verification:** Pure policy tests cover all three positive signals and fail-closed behaviour for
+insufficient or single-provider samples. Persistence uses stable policy/query identities and the
+normal pricing signal selector consumes confirmed signals only.
+
+## D-044 Route Argus Public Market Facts Through Source-Isolated Lineage
+
+**Status:** Implemented; production schedules remain disabled pending operational activation.
+
+**Decision:** Tymra integrates the accepted Argus official-venue, cruise, live-airport and university
+contracts as 20 distinct public sources. Venue and university records enter the canonical event
+pipeline. Cruise calls and airport board rows enter the source-isolated `TRANSPORT_FLOW` pipeline.
+Official venue capacity is retained on `CanonicalVenue` but is never event attendance. Vessel
+maximum capacity remains separate from actual passenger count, and airport rows never infer aircraft
+capacity, passenger count or load factor. Every browser result is schema-validated, its evidence is
+copied and hash-verified, and the exact result hash is acknowledged before Argus purge.
+
+The following remain explicit coverage gaps rather than implemented sources: Auckland Airport live,
+Tauranga Airport, Nelson Airport, Invercargill Airport, Napier cruise and Bay of Islands cruise are
+public but not yet machine-stable; Whangārei Airport and Bluebridge do not expose a stable complete
+public record. No proxy source or same-group brand evidence substitutes for them.
+
+**Reason:** Public schedules and calendars add useful local demand context only when identity,
+timestamps, source ownership and non-inference boundaries remain auditable through the full pipeline.
+
+**Verification:** Contract and normalisation tests cover identity/count consistency, impact evidence,
+capacity separation and passenger non-inference. The public acceptance runner includes every new
+source, requires the expected one or two Argus executions, retained local evidence, zero remote
+evidence references after ACK, and canonical source lineage on both passes.

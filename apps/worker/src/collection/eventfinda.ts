@@ -72,6 +72,7 @@ type EventfindaOccurrence = {
   offers: EventfindaOffer[];
   performers: EventfindaEntity[];
   organizer: EventfindaEntity | null;
+  impactEvidence?: Record<string, unknown>;
 };
 
 export type EventfindaDetailExtraction = {
@@ -189,7 +190,7 @@ export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction
       impactStatus: "PENDING_EVIDENCE",
       impactScore: null,
       impactConfidence: null,
-      impactEvidence: { reason: "VENUE_CAPACITY_OR_ATTENDANCE_REQUIRED" },
+      impactEvidence: occurrence.impactEvidence ?? { reason: "VENUE_CAPACITY_OR_ATTENDANCE_REQUIRED" },
       sourceUpdatedAt: null,
       metadata: {
         eventfindaEventId: extraction.eventId,

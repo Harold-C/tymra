@@ -36,6 +36,29 @@ const resultStatuses = new Set<PriceCheckStatus>([
   PriceCheckStatus.WITHDRAWN,
 ]);
 
+const ARGUS_PUBLIC_MARKET_SEED_SOURCES = [
+  ["venue_eden_park", "Eden Park official events", ["edenpark.co.nz", "www.edenpark.co.nz"], "auckland", "event"],
+  ["venue_nzicc", "NZICC official events", ["nzicc.co.nz", "www.nzicc.co.nz"], "auckland", "event"],
+  ["venue_sky_stadium", "Hnry Stadium official events", ["hnrystadium.co.nz", "www.hnrystadium.co.nz"], "wellington", "event"],
+  ["venue_forsyth_barr", "Forsyth Barr Stadium official events", ["dunedinvenues.co.nz", "www.dunedinvenues.co.nz"], "dunedin", "event"],
+  ["venue_takina", "Tākina official events", ["takina.co.nz", "www.takina.co.nz"], "wellington", "event"],
+  ["venue_claudelands", "Claudelands official events", ["claudelands.co.nz", "www.claudelands.co.nz"], "waikato", "event"],
+  ["cruise_port_tauranga", "Port of Tauranga cruise schedule", ["port-tauranga.co.nz", "www.port-tauranga.co.nz"], "tauranga", "transport"],
+  ["cruise_centreport", "CentrePort cruise schedule", ["centreport.co.nz", "www.centreport.co.nz"], "wellington", "transport"],
+  ["cruise_port_otago", "Port Otago cruise schedule", ["portotago.co.nz", "www.portotago.co.nz"], "dunedin", "transport"],
+  ["airport_dunedin_live", "Dunedin Airport live flight board", ["dunedinairport.co.nz", "www.dunedinairport.co.nz"], "dunedin", "transport"],
+  ["airport_rotorua_live", "Rotorua Airport live flight board", ["rotorua-airport.co.nz", "www.rotorua-airport.co.nz"], "rotorua", "transport"],
+  ["airport_hamilton_live", "Hamilton Airport live flight board", ["hamiltonairport.co.nz", "www.hamiltonairport.co.nz"], "waikato", "transport"],
+  ["airport_hawkes_bay_live", "Hawke's Bay Airport live flight board", ["hawkesbay-airport.co.nz", "www.hawkesbay-airport.co.nz"], "hawkes-bay", "transport"],
+  ["airport_new_plymouth_live", "New Plymouth Airport live flight board", ["nplairport.co.nz", "www.nplairport.co.nz"], "taranaki", "transport"],
+  ["airport_palmerston_north_live", "Palmerston North Airport live flight board", ["pnairport.co.nz", "www.pnairport.co.nz"], "manawatu", "transport"],
+  ["university_otago_key_dates", "University of Otago key dates", ["www.otago.ac.nz"], "dunedin", "event"],
+  ["university_victoria_key_dates", "Victoria University of Wellington key dates", ["www.wgtn.ac.nz", "search.wgtn.ac.nz"], "wellington", "event"],
+  ["university_waikato_key_dates", "University of Waikato key dates", ["www.waikato.ac.nz"], "waikato", "event"],
+  ["university_massey_key_dates", "Massey University key dates", ["www.massey.ac.nz"], "manawatu", "event"],
+  ["university_aut_key_dates", "AUT key dates", ["www.aut.ac.nz"], "auckland", "event"],
+] as const;
+
 async function main() {
   await seedAdmin();
   const sources = await seedDataSources();
@@ -322,7 +345,9 @@ function registrySourceSeedRecords() {
     ["christchurch_airport_monthly", "Christchurch Airport Monthly Passengers", ["www.christchurchairport.co.nz"]],
     ["port_and_cruise", "Port and Cruise Schedules", ["poal.co.nz"]],
     ["fx_rates", "Reserve Bank of New Zealand Exchange Rates", ["rbnz.govt.nz"]],
+    ...ARGUS_PUBLIC_MARKET_SEED_SOURCES.map(([key, name, domains]) => [key, name, domains] as const),
   ] as const;
+  const argusPublicMarketSourceKeys = new Set<string>(ARGUS_PUBLIC_MARKET_SEED_SOURCES.map(([key]) => key));
 
   return [
     ...ota.map(([key, name, supportedDomains]) => ({
@@ -334,10 +359,11 @@ function registrySourceSeedRecords() {
       environments: ["DEVELOPMENT", "TEST"] as const, adapterKey: `ota:${key}:v1`, accessMethod: "PUBLIC_WEB_RESEARCH_FIXTURE",
     })),
     ...publicSources.map(([key, name, supportedDomains]) => {
-      const liveTransportImplemented = ["public_holidays_nz", "school_holidays_nz", "ski_seasons_nz", "geonet", "doc_alerts", "interislander_alerts", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "wellingtonnz_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "hawkesbaynz_events", "taranakienz_events", "nelsontasman_events", "tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance", "wellington_airport", "wellington_airport_monthly", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
+      const liveTransportImplemented = argusPublicMarketSourceKeys.has(key) || ["public_holidays_nz", "school_holidays_nz", "ski_seasons_nz", "geonet", "doc_alerts", "interislander_alerts", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "wellingtonnz_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "hawkesbaynz_events", "taranakienz_events", "nelsontasman_events", "tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance", "wellington_airport", "wellington_airport_monthly", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
       const locallyVerified = ["public_holidays_nz", "school_holidays_nz", "geonet"].includes(key);
-      const browserSource = ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key);
-      const adapterKey = key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
+      const browserSource = argusPublicMarketSourceKeys.has(key) || ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key);
+      const adapterKey = argusPublicMarketSourceKeys.has(key) ? `public:${key}:argus-v1`
+        : key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
         : key === "eventfinda" ? "public:eventfinda:http-v1"
           : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v1"
             : key === "humanitix_events" ? "public:humanitix:jsonld-listing-v1"
@@ -393,7 +419,8 @@ function registrySourceSeedRecords() {
                                   : key === "wellington_airport_monthly" ? "public:wellington-airport:monthly-passengers-xlsx-v1"
                                 : key === "port_and_cruise" ? "public:port-and-cruise:poal-csv-v1"
               : `public:${key}:v1`;
-      const accessMethod = key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
+      const accessMethod = argusPublicMarketSourceKeys.has(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
+        : key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
         : key === "eventfinda" ? "PUBLIC_HTTP_HTML_JSONLD"
           : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD"
             : ["school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
@@ -487,7 +514,7 @@ async function seedMarketCoverage() {
     ["rotorua", "Rotorua", "IMPLEMENTED"],
     ["tauranga", "Tauranga and Mount Maunganui", "IMPLEMENTED"],
     ["waikato", "Hamilton and Waikato", "IMPLEMENTED"],
-    ["dunedin", "Dunedin", "ARGUS_REQUIRED"],
+    ["dunedin", "Dunedin", "IMPLEMENTED"],
     ["nelson-tasman", "Nelson and Tasman", "IMPLEMENTED"],
     ["hawkes-bay", "Napier and Hastings", "IMPLEMENTED"],
     ["taranaki", "New Plymouth and Taranaki", "IMPLEMENTED"],
@@ -581,6 +608,13 @@ async function seedSchedules() {
     { key: "christchurch-cruise-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "christchurch_cruise", marketScope: "christchurch" } },
     { key: "christchurch-airport-monthly-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "christchurch_airport_monthly", marketScope: "christchurch" } },
     { key: "poal-cruise-daily", jobType: JobType.TRANSPORT_COLLECTION, queueName: "transport-collection", cronExpression: "daily", payload: { sourceId: "port_and_cruise", marketScope: "auckland" } },
+    ...ARGUS_PUBLIC_MARKET_SEED_SOURCES.map(([sourceId, , , marketScope, kind]) => ({
+      key: `${sourceId.replaceAll("_", "-")}-${sourceId.startsWith("airport_") ? "30-minute" : sourceId.startsWith("university_") ? "weekly" : sourceId.startsWith("cruise_") ? "daily" : "12-hour"}`,
+      jobType: kind === "transport" ? JobType.TRANSPORT_COLLECTION : JobType.EVENT_COLLECTION,
+      queueName: kind === "transport" ? "transport-collection" : "event-collection",
+      cronExpression: sourceId.startsWith("airport_") ? "every-30-minutes" : sourceId.startsWith("university_") ? "weekly" : sourceId.startsWith("cruise_") ? "daily" : "every-12-hours",
+      payload: { sourceId, marketScope },
+    })),
     { key: "future-rates-regular", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-12-hours", payload: { marketScope: "new-zealand", horizon: "regular" } },
     { key: "future-rates-high-frequency", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "every-3-hours", payload: { marketScope: "new-zealand", horizon: "near-term-or-event" } },
     { key: "eventfinda-discovery-daily", jobType: JobType.EVENT_COLLECTION, queueName: "event-collection", cronExpression: "daily", payload: { sourceId: "eventfinda", marketScope: "new-zealand", phase: "discovery", maxPages: 250 } },

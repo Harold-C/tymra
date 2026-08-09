@@ -20,6 +20,7 @@ import { queenstownAirportMonthlyAdapters } from "./queenstown-airport-monthly-a
 import { accessDisruptionAdapters } from "./access-disruption-adapters";
 import { skiSeasonAdapters } from "./ski-season-adapter";
 import { aviationArgusAdapters } from "./aviation-argus-adapters";
+import { argusPublicMarketAdapters } from "./argus-public-market-adapters";
 import { marketKeysForAnniversaryRegion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysWithinDistance } from "./nz-market-coverage";
 import { parse } from "csv-parse/sync";
 import { DOMParser, parseHTML } from "linkedom";
@@ -1083,6 +1084,7 @@ export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   ...accessDisruptionAdapters,
   ...skiSeasonAdapters,
   ...aviationArgusAdapters,
+  ...argusPublicMarketAdapters,
 };
 
 function calendarTableRows(table: Element): string[][] {

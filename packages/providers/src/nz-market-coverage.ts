@@ -103,20 +103,20 @@ const REGION_ALIASES: Readonly<Record<string, (typeof NZ_REGIONS)[number]>> = {
  * airport, port or cruise feed.
  */
 export const NZ_MAJOR_ACCOMMODATION_MARKETS: readonly NzMajorMarketCoverage[] = [
-  market("auckland", "Auckland", ["Auckland"], ["venue_calendars", "council_calendars", "university_calendars"], ["port_and_cruise", "auckland_airport_monthly"]),
-  market("wellington", "Wellington", ["Wellington"], ["wellingtonnz_events"], ["wellington_airport", "wellington_airport_monthly"]),
+  market("auckland", "Auckland", ["Auckland"], ["venue_calendars", "council_calendars", "university_calendars", "venue_eden_park", "venue_nzicc", "university_aut_key_dates"], ["port_and_cruise", "auckland_airport_monthly"]),
+  market("wellington", "Wellington", ["Wellington"], ["wellingtonnz_events", "venue_sky_stadium", "venue_takina", "university_victoria_key_dates"], ["wellington_airport", "wellington_airport_monthly", "cruise_centreport"]),
   market("christchurch", "Christchurch", ["Canterbury"], ["rto_calendars", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "christchurch_sports", "christchurch_racing"], ["christchurch_airport", "christchurch_cruise", "christchurch_airport_monthly"], ["ski_seasons_nz"]),
   market("queenstown-wanaka", "Queenstown and Wānaka", ["Queenstown Lakes", "Otago"], ["queenstownnz_events"], ["airport_data", "queenstown_airport_monthly"], ["ski_seasons_nz"]),
-  market("rotorua", "Rotorua", ["Bay of Plenty"], ["rotoruanz_events"], []),
-  market("tauranga", "Tauranga and Mount Maunganui", ["Bay of Plenty"], ["tauranga_events"], []),
-  market("waikato", "Hamilton and Waikato", ["Waikato"], ["waikatonz_events"], []),
-  market("dunedin", "Dunedin", ["Otago"], ["dunedinnz_events"], [], [], "ARGUS_REQUIRED", "DunedinNZ official event calendar is protected by a Cloudflare browser challenge"),
+  market("rotorua", "Rotorua", ["Bay of Plenty"], ["rotoruanz_events"], ["airport_rotorua_live"]),
+  market("tauranga", "Tauranga and Mount Maunganui", ["Bay of Plenty"], ["tauranga_events"], ["cruise_port_tauranga"]),
+  market("waikato", "Hamilton and Waikato", ["Waikato"], ["waikatonz_events", "venue_claudelands", "university_waikato_key_dates"], ["airport_hamilton_live"]),
+  market("dunedin", "Dunedin", ["Otago"], ["dunedinnz_events", "venue_forsyth_barr", "university_otago_key_dates"], ["airport_dunedin_live", "cruise_port_otago"]),
   market("nelson-tasman", "Nelson and Tasman", ["Nelson", "Tasman"], ["nelsontasman_events"], []),
-  market("hawkes-bay", "Napier and Hastings", ["Hawke's Bay"], ["hawkesbaynz_events"], []),
-  market("taranaki", "New Plymouth and Taranaki", ["Taranaki"], ["taranakienz_events"], []),
+  market("hawkes-bay", "Napier and Hastings", ["Hawke's Bay"], ["hawkesbaynz_events"], ["airport_hawkes_bay_live"]),
+  market("taranaki", "New Plymouth and Taranaki", ["Taranaki"], ["taranakienz_events"], ["airport_new_plymouth_live"]),
   market("taupo", "Taupō", ["Waikato"], ["tauponz_events"], [], ["ski_seasons_nz"]),
   market("northland", "Whangārei and Bay of Islands", ["Northland"], ["northland_events"], []),
-  market("manawatu", "Palmerston North and Manawatū", ["Manawatū-Whanganui"], ["manawatunz_events"], []),
+  market("manawatu", "Palmerston North and Manawatū", ["Manawatū-Whanganui"], ["manawatunz_events", "university_massey_key_dates"], ["airport_palmerston_north_live"]),
   market("southland-fiordland", "Invercargill, Southland and Fiordland", ["Southland"], ["southlandnz_events"], []),
 ] as const;
 
@@ -452,6 +452,9 @@ function sourceHasMarketSignal(evidence: NzSourceOperationalEvidence | undefined
 }
 
 function sourceFreshnessHours(sourceId: string) {
+  if (sourceId.startsWith("university_")) return 216;
+  if (sourceId.startsWith("airport_")) return 3;
+  if (sourceId.startsWith("cruise_") || sourceId.startsWith("venue_")) return 30;
   if (["public_holidays_nz", "school_holidays_nz", "ski_seasons_nz", "mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "wellington_airport_monthly", "christchurch_airport_monthly", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance"].includes(sourceId)) return 216;
   if (sourceId === "metservice") return 0.5;
   if (["nzta", "geonet", "airport_data", "wellington_airport", "christchurch_airport", "interislander_alerts"].includes(sourceId)) return 3;

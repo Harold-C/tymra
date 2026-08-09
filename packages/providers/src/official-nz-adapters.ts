@@ -376,6 +376,7 @@ function normaliseOurAucklandDetail(event: JsonRecord): PublicEvent[] {
       startsAt,
       endsAt,
       ticketStatus: event.isFree === true ? "FREE" : null,
+      impactEvidence: isRecord(occurrence.impactEvidence) ? occurrence.impactEvidence : undefined,
       metadata: {
         description: nullableString(event.description),
         occurrence,
@@ -790,6 +791,7 @@ function baseEvent(input: {
   endsAt: Date;
   ticketStatus: string | null;
   sourceUpdatedAt?: Date | null;
+  impactEvidence?: Record<string, unknown>;
   metadata: Record<string, unknown>;
 }): PublicEvent {
   return {
@@ -816,7 +818,7 @@ function baseEvent(input: {
     impactStatus: "PENDING_EVIDENCE",
     impactScore: null,
     impactConfidence: null,
-    impactEvidence: { reason: "CAPACITY_OR_ATTENDANCE_EVIDENCE_REQUIRED" },
+    impactEvidence: input.impactEvidence ?? { reason: "CAPACITY_OR_ATTENDANCE_EVIDENCE_REQUIRED" },
     sourceUpdatedAt: input.sourceUpdatedAt ?? null,
     metadata: { ...input.metadata, sourceEventId: input.sourceEventId },
     fixture: false,

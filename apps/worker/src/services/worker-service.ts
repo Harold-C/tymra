@@ -53,6 +53,7 @@ import {
   publicSignalCollectionPlanForAddress,
   resolveNzAddressSignalCoverage,
   resolveNzMarketKey,
+  argusPublicMarketSource,
   type AdapterContext,
   type OtaAdapter,
   type PublicDataAdapter,
@@ -131,6 +132,7 @@ import {
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
 import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import { sortOtaSourcesByMarketWeight } from "../operations/ota-source-priority";
 import {
   isRegionalArgusEventSourceId,
@@ -144,7 +146,15 @@ import {
   motAirlinePerformanceExtractionRecords,
   motAirlinePerformanceExtractionSchema,
 } from "../collection/aviation-argus-signals";
-import { captureBrowserTaskWithArgus, getArgusHealth, type ArgusBrowserTaskResult } from "../clients/argus-client";
+import {
+  normaliseArgusPublicMarketRecords,
+  officialVenueEventsExtractionSchema,
+  officialVenueResolveExtractionSchema,
+  publicAirportFlightBoardExtractionSchema,
+  publicCruiseScheduleExtractionSchema,
+  publicUniversityKeyDatesExtractionSchema,
+} from "../collection/public-market-argus";
+import { captureBrowserTaskWithArgus, getArgusHealth, type ArgusBrowserTaskResult, type ArgusCaptureInput } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import {
   captureBrowserTaskWithDurableArgus,
@@ -956,7 +966,9 @@ export class WorkerService {
     const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
     const localBounds = {
       maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
-      maxRecords: sourceId === "mbie_tourism_flows" ? 250
+      maxRecords: argusPublicMarketSource(sourceId)?.kind === "venue" ? 200
+        : argusPublicMarketSource(sourceId) ? 500
+        : sourceId === "mbie_tourism_flows" ? 250
         : sourceId === "mbie" || sourceId === "mbie_mrte" ? 100
           : sourceId === "mbie_ivs" ? 10
             : sourceId === "university_calendars" ? 50
@@ -965,10 +977,10 @@ export class WorkerService {
                   : sourceId === "ski_seasons_nz" ? 3
                     : ["queenstown_airport_monthly", "auckland_airport_monthly"].includes(sourceId) ? 13
                       : sourceId === "mot_airline_performance" ? 100 : 2,
-      maxWindowDays: 31,
+      maxWindowDays: ["cruise", "university"].includes(argusPublicMarketSource(sourceId)?.kind ?? "") ? 366 : 31,
       maxBytes: 2_000_000,
       concurrency: 1,
-      timeoutMs: sourceId === "council_calendars" ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
+      timeoutMs: sourceId === "council_calendars" || argusPublicMarketSource(sourceId) ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
     } as const;
     const from = requestedFrom;
     const to = localAcceptance
@@ -1045,6 +1057,8 @@ export class WorkerService {
               ? await this.executeLincolnKeyDatesBrowserTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : sourceId === "auckland_airport_monthly" || sourceId === "mot_airline_performance"
                 ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+              : argusPublicMarketSource(sourceId)
+                ? await this.executePublicMarketArgusTask(sourceId, source.id, run.id, context, options.dryRun === true, options.jobId)
               : await adapter.fetch(reference, context);
           counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
@@ -2316,6 +2330,67 @@ export class WorkerService {
       : motAirlinePerformanceExtractionRecords(parsed.data as ReturnType<typeof motAirlinePerformanceExtractionSchema.parse>);
   }
 
+  private async executePublicMarketArgusTask(
+    sourceId: string,
+    dataSourceId: string,
+    collectionRunId: string,
+    context: AdapterContext,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    const definition = argusPublicMarketSource(sourceId);
+    if (!definition) throw new AdapterError("CONFIGURATION_ERROR", `${sourceId} is not an Argus public-market source`, false);
+    const capture = async (input: Omit<ArgusCaptureInput, "traceId" | "connectorId">) => {
+      const connectorId = definition.connectorId as ArgusCaptureInput["connectorId"];
+      const traceId = parentJobId
+        ? durableArgusTraceId(parentJobId, connectorId, input.workflowId, input.url)
+        : `${sourceId}-${input.workflowId}-${randomUUID()}`;
+      const captureInput: ArgusCaptureInput = { ...input, traceId, connectorId };
+      const response = parentJobId
+        ? await captureBrowserTaskWithDurableArgus(this.environment, captureInput, { parentJobId, collectionRunId, dataSourceId })
+        : await captureBrowserTaskWithArgus(this.environment, captureInput);
+      if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+      if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+      const result = response.payload;
+      if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+      if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, definition.connectorId, input.url);
+      if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
+      if (result.status === "manual_required") {
+        const handoff = result.manualRequired?.noVncUrl ? "; a same-session noVNC handoff is available" : "";
+        throw new AdapterError("RATE_LIMITED", `${definition.sourceName} presented ${result.manualRequired?.reason ?? "an access challenge"}${handoff}`, true);
+      }
+      if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? `${definition.sourceName} Argus capture failed`, result.error?.retryable ?? true);
+      return result;
+    };
+
+    const maxRecords = Math.min(context.collectionLimits?.maxRecords ?? 200, definition.kind === "venue" ? 200 : 500);
+    if (definition.kind === "venue") {
+      const resolvedResult = await capture({ url: definition.url, workflowId: "resolve_venue", maxRecords });
+      const resolved = officialVenueResolveExtractionSchema.parse(resolvedResult.extracted);
+      const eventsResult = await capture({ url: definition.eventUrl!, workflowId: "collect_events", maxRecords });
+      const events = officialVenueEventsExtractionSchema.parse(eventsResult.extracted);
+      if (resolved.provider !== definition.connectorId || events.provider !== definition.connectorId || events.venueId !== resolved.venueId) throw new AdapterError("PARSING_ERROR", `${definition.sourceName} identity drifted between venue and event workflows`, false);
+      return normaliseArgusPublicMarketRecords(sourceId, events, resolved);
+    }
+    if (definition.kind === "cruise") {
+      const from = context.collectionRange?.from ?? new Date();
+      const requestedTo = context.collectionRange?.to ?? new Date(from.getTime() + 365 * 86_400_000);
+      const maxTo = new Date(from); maxTo.setUTCMonth(maxTo.getUTCMonth() + 18);
+      const result = await capture({ url: definition.url, workflowId: "collect_cruise_schedule", from: from.toISOString().slice(0, 10), to: new Date(Math.min(requestedTo.getTime(), maxTo.getTime())).toISOString().slice(0, 10), maxRecords });
+      return normaliseArgusPublicMarketRecords(sourceId, publicCruiseScheduleExtractionSchema.parse(result.extracted));
+    }
+    if (definition.kind === "airport") {
+      const from = context.collectionRange?.from ?? new Date();
+      const requestedTo = context.collectionRange?.to ?? new Date(from.getTime() + 48 * 3_600_000);
+      const to = new Date(Math.min(requestedTo.getTime(), from.getTime() + 48 * 3_600_000));
+      const result = await capture({ url: definition.url, workflowId: "collect_flights", from: from.toISOString(), to: to.toISOString(), maxRecords });
+      return normaliseArgusPublicMarketRecords(sourceId, publicAirportFlightBoardExtractionSchema.parse(result.extracted));
+    }
+    const academicYear = (context.collectionRange?.from ?? new Date()).getFullYear();
+    const result = await capture({ url: definition.url, workflowId: "collect_key_dates", academicYear, maxRecords });
+    return normaliseArgusPublicMarketRecords(sourceId, publicUniversityKeyDatesExtractionSchema.parse(result.extracted));
+  }
+
   private async executeLincolnKeyDatesBrowserTask(
     dataSourceId: string,
     collectionRunId: string,
@@ -2695,7 +2770,29 @@ export class WorkerService {
     for (const [marketKey, marketMembers] of byMarket) {
       await prisma.marketCoverage.updateMany({ where: { key: marketKey }, data: { coverage24h: average(marketMembers.map((member) => member.coverage24h)) ?? 0, coverage72h: average(marketMembers.map((member) => member.coverage72h)) ?? 0, lastHealthAt: new Date() } });
     }
-    return { marketScope, membershipType, activeMembers: members.length, markets: byMarket.size };
+    const otaSignals = await this.refreshOtaMarketSignals(marketScope);
+    return { marketScope, membershipType, activeMembers: members.length, markets: byMarket.size, otaSignals };
+  }
+
+  async refreshOtaMarketSignals(marketScope = "new-zealand", asOf = new Date()) {
+    const observations = await prisma.rateObservation.findMany({
+      where: { isDemo: false, operationalStatus: "HEALTHY", collectedAt: { gte: new Date(asOf.getTime() - 72 * 3_600_000), lte: asOf } },
+      include: { property: { select: { city: true, region: true, territorialAuthority: true, rto: true } }, dataSource: { select: { key: true } } },
+    });
+    const eligible: OtaSignalObservation[] = observations.flatMap((observation) => {
+      const marketKey = resolveNzMarketKey(observation.property);
+      if (!marketKey || marketScope !== "new-zealand" && marketScope !== marketKey) return [];
+      return [{ id: observation.id, marketKey, region: observation.property.region ?? observation.property.city, providerKey: observation.dataSource.key, listingId: observation.listingId, checkIn: observation.checkIn, checkOut: observation.checkOut, adults: observation.adults, units: observation.units, collectedAt: observation.collectedAt, effectiveNightlyTotalMinor: observation.effectiveNightlyTotalMinor, availabilityStatus: observation.availabilityStatus, minimumStay: observation.minimumStay, restrictionReason: observation.restrictionReason, feeCompleteness: observation.feeCompleteness }];
+    });
+    const signals = deriveOtaMarketSignals(eligible, asOf);
+    const activeIds: string[] = [];
+    for (const signal of signals) {
+      const id = stableId("ota-market-signal", `${OTA_MARKET_SIGNAL_POLICY_VERSION}:${signal.key}:${signal.type}`);
+      activeIds.push(id);
+      await prisma.marketSignal.upsert({ where: { id }, create: { id, marketKey: signal.marketKey, type: signal.type, region: signal.region, startsAt: signal.startsAt, endsAt: signal.endsAt, status: "CONFIRMED", evidence: signal.evidence as Prisma.InputJsonValue, isDemo: false }, update: { marketKey: signal.marketKey, type: signal.type, region: signal.region, startsAt: signal.startsAt, endsAt: signal.endsAt, status: "CONFIRMED", evidence: signal.evidence as Prisma.InputJsonValue, isDemo: false } });
+    }
+    await prisma.marketSignal.updateMany({ where: { id: { startsWith: "ota-market-signal-", notIn: activeIds }, dataSourceId: null, type: { in: ["PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING"] }, status: "CONFIRMED", ...(marketScope === "new-zealand" ? {} : { marketKey: marketScope }) }, data: { status: "RETRACTED" } });
+    return { policyVersion: OTA_MARKET_SIGNAL_POLICY_VERSION, observations: eligible.length, emitted: signals.length, retractionScope: marketScope };
   }
 
   async suspendSource(sourceId: string) {
@@ -3312,13 +3409,17 @@ export class WorkerService {
       }
 
       const cachedVenueId = venueCanonicalKey ? cache.venues.get(venueCanonicalKey) : undefined;
+      const eventMetadata = event.metadata;
+      const publishedVenueCapacity = typeof eventMetadata.venueCapacity === "number" && Number.isInteger(eventMetadata.venueCapacity) && eventMetadata.venueCapacity > 0 ? eventMetadata.venueCapacity : null;
+      const publishedVenueCapacityUrl = typeof eventMetadata.venueCapacitySourceUrl === "string" ? eventMetadata.venueCapacitySourceUrl : null;
+      const publishedVenueCapacityObservedAt = typeof eventMetadata.venueCapacityObservedAt === "string" && !Number.isNaN(Date.parse(eventMetadata.venueCapacityObservedAt)) ? new Date(eventMetadata.venueCapacityObservedAt) : null;
       const venue = cachedVenueId
         ? { id: cachedVenueId }
         : venueCanonicalKey
           ? await tx.canonicalVenue.upsert({
             where: { canonicalKey: venueCanonicalKey },
-            create: { canonicalKey: venueCanonicalKey, name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: venueEnrichment.reference?.capacity, capacitySourceUrl: venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined, metadata: { canonicalisationVersion: "venue-exact-v1", ...(venueEnrichment.reference ? { venueReferenceKey: venueEnrichment.reference.key, venueReferenceVersion: "trusted-venue-v1" } : {}) } },
-            update: { name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: venueEnrichment.reference?.capacity, capacitySourceUrl: venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined },
+            create: { canonicalKey: venueCanonicalKey, name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: publishedVenueCapacity ?? venueEnrichment.reference?.capacity, capacitySourceUrl: publishedVenueCapacityUrl ?? venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: publishedVenueCapacityObservedAt ?? (venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined), metadata: { canonicalisationVersion: "venue-exact-v1", capacityIsEventAttendance: false, ...(venueEnrichment.reference ? { venueReferenceKey: venueEnrichment.reference.key, venueReferenceVersion: "trusted-venue-v1" } : {}) } },
+            update: { name: event.venueName, address: event.address, city: event.city, region: event.region, territorialAuthority: event.territorialAuthority, postcode: event.postcode, countryCode: event.countryCode.toUpperCase(), latitude: event.latitude, longitude: event.longitude, capacity: publishedVenueCapacity ?? venueEnrichment.reference?.capacity, capacitySourceUrl: publishedVenueCapacityUrl ?? venueEnrichment.reference?.capacitySourceUrl, capacityObservedAt: publishedVenueCapacityObservedAt ?? (venueEnrichment.reference ? new Date(venueEnrichment.reference.capacityObservedAt) : undefined) },
             })
           : null;
       if (venueCanonicalKey && venue) cache.venues.set(venueCanonicalKey, venue.id);
@@ -3743,7 +3844,7 @@ export function selectPricingMarketSignals(signals: SnapshotMarketSignal[], stay
 
 export function summariseMarketSignals(signals: SnapshotMarketSignal[]) {
   const eventSignals = signals.filter((signal) => signal.type === "MAJOR_EVENT");
-  const demandSignals = signals.filter((signal) => ["MAJOR_EVENT", "PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "TOURISM_DEMAND", "TRANSPORT_FLOW"].includes(signal.type));
+  const demandSignals = signals.filter((signal) => ["MAJOR_EVENT", "PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "TOURISM_DEMAND", "TRANSPORT_FLOW", "PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING"].includes(signal.type));
   const demandValues = demandSignals.map((signal) => {
     const evidence = jsonRecord(signal.evidence);
     const direction = typeof evidence.direction === "string" ? evidence.direction : signal.type === "TRANSPORT_FLOW" ? "UNKNOWN" : "POSITIVE";
