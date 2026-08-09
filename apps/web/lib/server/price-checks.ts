@@ -9,6 +9,7 @@ import {
 } from "@tymra/db";
 import {
   createPriceCheckSchema,
+  nzCalendarDayDifference,
   propertySearchSchema,
   stayQuerySchema,
   type PriceCheckStatus,
@@ -171,7 +172,7 @@ export async function createPriceCheck(inputValue: unknown) {
   const status: PriceCheckStatus = "NEEDS_CONFIRMATION";
   const accessKey = deriveCheckAccessKey(input.idempotencyKey);
   const stay = stayQuerySchema.parse(input.stayQuery);
-  const nights = Math.max(1, Math.round((stay.checkOut.getTime() - stay.checkIn.getTime()) / 86_400_000));
+  const nights = Math.max(1, nzCalendarDayDifference(stay.checkOut, stay.checkIn));
 
   const check = await prisma.$transaction(async (transaction) => {
     const stayQuery = await transaction.stayQuery.create({ data: { ...stay, nights } });
@@ -316,7 +317,7 @@ export async function confirmUnit(checkId: string, unitId: string) {
 
 export async function confirmQuery(checkId: string, inputValue: unknown) {
   const input = stayQuerySchema.parse(inputValue);
-  const nights = Math.max(1, Math.round((input.checkOut.getTime() - input.checkIn.getTime()) / 86_400_000));
+  const nights = Math.max(1, nzCalendarDayDifference(input.checkOut, input.checkIn));
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
   if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
   if (["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");

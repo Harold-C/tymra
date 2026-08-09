@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { parseHTML } from "linkedom";
+import { addNzCalendarMonths, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -103,15 +104,16 @@ class WellingtonAirportMonthlyAdapter implements PublicDataAdapter {
       const payload = raw.payload as { record?: AirportMonthlyPassengerRecord; sourceUrl?: string };
       const record = payload.record;
       if (!record) return [];
-      const startsAt = new Date(Date.UTC(record.year, record.month, 1));
-      const endsAt = new Date(Date.UTC(record.year, record.month + 1, 1));
+      const period = `${record.year}-${String(record.month + 1).padStart(2, "0")}-01`;
+      const startsAt = nzStartOfDay(period);
+      const endsAt = nzStartOfDay(addNzCalendarMonths(period, 1));
       const annualChange = record.annualChangePercent;
       return [{
         sourceId: "wellington_airport_monthly",
         externalId: raw.externalId,
         marketKey: "wellington",
         type: "TOURISM_DEMAND",
-        title: `Wellington Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "UTC" })}`,
+        title: `Wellington Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "Pacific/Auckland" })}`,
         region: "Wellington",
         startsAt,
         endsAt,

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseHTML } from "linkedom";
+import { addNzCalendarMonths, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -124,12 +125,13 @@ class QueenstownAirportMonthlyAdapter implements PublicDataAdapter {
       const payload = raw.payload as { record?: QueenstownAirportMonthlyRecord; sourceUrl?: string };
       const record = payload.record;
       if (!record) return [];
-      const startsAt = new Date(Date.UTC(record.year, record.month, 1));
+      const period = `${record.year}-${String(record.month + 1).padStart(2, "0")}-01`;
+      const startsAt = nzStartOfDay(period);
       const annualChange = record.annualChangePercent;
       return [{
         sourceId: "queenstown_airport_monthly", externalId: raw.externalId, marketKey: "queenstown-wanaka", type: "TOURISM_DEMAND",
-        title: `Queenstown Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "UTC" })}`,
-        region: "Queenstown Lakes", startsAt, endsAt: new Date(Date.UTC(record.year, record.month + 1, 1)),
+        title: `Queenstown Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "Pacific/Auckland" })}`,
+        region: "Queenstown Lakes", startsAt, endsAt: nzStartOfDay(addNzCalendarMonths(period, 1)),
         direction: annualChange === null ? "UNKNOWN" : annualChange > 2 ? "POSITIVE" : annualChange < -2 ? "NEGATIVE" : "MIXED",
         confidence: 0.9, evidenceRef: payload.sourceUrl ?? FACTS_URL,
         metadata: { contextSeriesKey: "airport-monthly-passengers", temporalUse: "LAGGED_TREND_CONTEXT", sourceTimezone: "Pacific/Auckland", ...record }, fixture: false,

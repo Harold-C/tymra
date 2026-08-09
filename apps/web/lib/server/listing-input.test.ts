@@ -25,6 +25,14 @@ describe("supported OTA listing input", () => {
     });
   });
 
+  it("uses the Auckland date when UTC is still on the previous day", () => {
+    const resolved = resolveSupportedListingUrl(
+      "https://www.booking.com/hotel/nz/christchurch-central-stay.html",
+      new Date("2026-08-08T12:30:00.000Z"),
+    );
+    expect(resolved.context).toMatchObject({ checkIn: "2026-08-16", checkOut: "2026-08-17" });
+  });
+
   it("uses valid pricing context carried by a supported OTA URL", () => {
     const resolved = resolveSupportedListingUrl(
       "https://booking.com/hotel/nz/example.html?checkin=2026-08-10&checkout=2026-08-12&group_adults=3&group_children=1&no_rooms=2",

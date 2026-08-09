@@ -1,3 +1,5 @@
+import { addNzCalendarMonths, nzDateKey, nzStartOfDay } from "@tymra/domain";
+
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
 
@@ -67,10 +69,10 @@ class AucklandAirportMonthlyArgusAdapter implements PublicDataAdapter {
         externalId: raw.externalId,
         marketKey: "auckland",
         type: "TOURISM_DEMAND",
-        title: `Auckland Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "UTC" })}`,
+        title: `Auckland Airport passengers - ${startsAt.toLocaleString("en-NZ", { month: "long", year: "numeric", timeZone: "Pacific/Auckland" })}`,
         region: "Auckland",
         startsAt,
-        endsAt: new Date(Date.UTC(startsAt.getUTCFullYear(), startsAt.getUTCMonth() + 1, 1)),
+        endsAt: nzStartOfDay(addNzCalendarMonths(nzDateKey(startsAt), 1)),
         direction: trendDirection(record.annualChangePercent),
         confidence: 0.9,
         evidenceRef: payload.sourceUrl ?? AUCKLAND_AIRPORT_MONTHLY_URL,
@@ -113,7 +115,7 @@ class MotAirlinePerformanceArgusAdapter implements PublicDataAdapter {
         title: `${record.originAirportCode}-${record.destinationAirportCode} airline performance - ${record.period}`,
         region: market.region,
         startsAt,
-        endsAt: new Date(Date.UTC(startsAt.getUTCFullYear(), startsAt.getUTCMonth() + 1, 1)),
+        endsAt: nzStartOfDay(addNzCalendarMonths(nzDateKey(startsAt), 1)),
         direction: performance.direction,
         confidence: performance.confidence,
         evidenceRef: payload.sourceUrl ?? MOT_AIRLINE_PERFORMANCE_URL,
@@ -142,7 +144,7 @@ function metadata(sourceId: string, sourceName: string, supportedDomains: string
   return { sourceId, sourceName, sourceType: "PUBLIC_DATA", supportedDomains, adapterKey, accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1, dailyBudget: 4, collectorVersion: "argus-browser-v1", parserVersion: `${sourceId}-contract-v1` };
 }
 function argusOnly(sourceName: string) { return new AdapterError("CONFIGURATION_ERROR", `${sourceName} collection is orchestrated by Argus`, false); }
-function periodStart(period: string) { const match = /^(\d{4})-(0[1-9]|1[0-2])$/u.exec(period); return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)) : null; }
+function periodStart(period: string) { const match = /^(\d{4})-(0[1-9]|1[0-2])$/u.exec(period); return match ? nzStartOfDay(`${match[1]}-${match[2]}-01`) : null; }
 function trendDirection(value: number | null): PublicSignal["direction"] { return value === null ? "UNKNOWN" : value > 2 ? "POSITIVE" : value < -2 ? "NEGATIVE" : "MIXED"; }
 function conservativePerformance(record: MotAirlinePerformanceRecord): { direction: PublicSignal["direction"]; confidence: number } {
   const cancellation = record.cancellationPercent;

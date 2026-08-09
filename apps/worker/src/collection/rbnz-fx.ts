@@ -1,3 +1,4 @@
+import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 import type { PublicSignal } from "@tymra/providers";
 
 export const RBNZ_FX_URL = "https://www.rbnz.govt.nz/statistics/series/exchange-and-interest-rates/exchange-rates-and-the-trade-weighted-index";
@@ -38,9 +39,10 @@ export function isRbnzFxExtraction(value: unknown): value is RbnzFxExtraction {
 }
 
 export function normaliseRbnzFxSignals(extraction: RbnzFxExtraction, maxRecords = extraction.rates.length): PublicSignal[] {
-  const startsAt = new Date(`${extraction.asOf}T00:00:00.000Z`);
-  if (Number.isNaN(startsAt.getTime())) throw new Error("RBNZ B1 extraction has an invalid as-of date");
-  const endsAt = new Date(startsAt.getTime() + 86_400_000);
+  let startsAt: Date;
+  try { startsAt = nzStartOfDay(extraction.asOf); }
+  catch { throw new Error("RBNZ B1 extraction has an invalid as-of date"); }
+  const endsAt = nzStartOfDay(addNzCalendarDays(extraction.asOf, 1));
   return extraction.rates.slice(0, maxRecords).map((rate) => {
     const percentageChange = rate.previousValue === null || rate.previousValue === 0
       ? null

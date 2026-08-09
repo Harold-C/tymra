@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
 import { hashPersonalIdentifier, prisma, syncCollectionIncident, type Prisma } from "@tymra/db";
+import { nzCalendarDayDifference } from "@tymra/domain";
 import { previewManualImport, type ManualImportPreview, type ManualImportRow } from "@tymra/providers";
 import { withRedisLock } from "@tymra/queue";
 
@@ -237,7 +238,7 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
     "manual-stay",
     `${row.check_in.toISOString()}:${row.check_out.toISOString()}:${row.cancellation_category}`,
   );
-  const nights = Math.max(1, Math.round((row.check_out.getTime() - row.check_in.getTime()) / 86_400_000));
+  const nights = Math.max(1, nzCalendarDayDifference(row.check_out, row.check_in));
 
   await tx.property.upsert({
     where: { id: propertyId },

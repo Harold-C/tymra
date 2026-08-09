@@ -778,3 +778,26 @@ timestamps, source ownership and non-inference boundaries remain auditable throu
 capacity separation and passenger non-inference. The public acceptance runner includes every new
 source, requires the expected one or two Argus executions, retained local evidence, zero remote
 evidence references after ACK, and canonical source lineage on both passes.
+
+## D-045 Use Pacific/Auckland For Every Business Calendar Date
+
+**Status:** Implemented.
+
+**Decision:** Tymra derives, compares and displays accommodation stay dates, query-plan dates,
+source date ranges, daily collection boundaries and date-only public events in
+`Pacific/Auckland`. Date-only database values continue to use a UTC-midnight storage sentinel, but
+their calendar label is interpreted as a New Zealand date. Timestamped observations, evidence and
+security expiries remain absolute UTC instants. Rolling 24/72-hour freshness, retention and abuse
+windows remain elapsed durations rather than calendar-day calculations.
+
+New Zealand local-day boundaries are calculated with IANA timezone rules instead of a fixed
+`+12:00` offset, so both NZST and NZDT transitions are preserved. A date-only event ends one
+millisecond before the next New Zealand local midnight, including 23-hour and 25-hour days.
+
+**Reason:** UTC date truncation can select the previous New Zealand business day during the local
+morning, and a fixed offset fails during daylight saving. Mixing those meanings can shift the
+formal 30-day horizon, OTA request dates and event overlap by one day.
+
+**Verification:** Domain tests cover the UTC/New Zealand midnight boundary, year rollover, the
+23-hour September transition and the 25-hour April transition. Web, worker and public-event tests
+cover default stay dates, OTA grouping, early-morning event overlap and date-only Argus events.

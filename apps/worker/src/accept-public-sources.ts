@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
+import { addNzCalendarDays, nzDateKey, nzStartOfDay } from "@tymra/domain";
 import { ARGUS_PUBLIC_MARKET_SOURCES } from "@tymra/providers";
 import {
   enqueueJob,
@@ -94,8 +95,8 @@ const sources: SourceSpec[] = [
   { key: "venues_otautahi_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
   { key: "isaac_theatre_royal_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
   { key: "christchurch_council_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
-  { key: "ara_academic_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: { from: "2026-02-01T00:00:00.000Z", to: "2026-03-01T00:00:00.000Z" } },
-  { key: "canterbury_major_annual_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: { from: "2026-11-01T00:00:00.000Z", to: "2026-12-01T00:00:00.000Z" } },
+  { key: "ara_academic_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: acceptanceRange("2026-02-01", "2026-03-01") },
+  { key: "canterbury_major_annual_events", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: acceptanceRange("2026-11-01", "2026-12-01") },
   { key: "eventbrite_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "humanitix_events", jobType: "EVENT_COLLECTION", marketScope: "new-zealand" },
   { key: "school_sport_nz", jobType: "EVENT_COLLECTION", marketScope: "christchurch", payload: { phase: "full", limit: 20 } },
@@ -114,7 +115,7 @@ const sources: SourceSpec[] = [
   { key: "wellington_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "wellington" },
   { key: "christchurch_airport", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch" },
   { key: "christchurch_sports", jobType: "EVENT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(1, 32) },
-  { key: "christchurch_university_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: { from: "2026-08-01T00:00:00.000Z", to: "2026-09-01T00:00:00.000Z" } },
+  { key: "christchurch_university_dates", jobType: "PUBLIC_DATA_COLLECTION", marketScope: "christchurch", range: acceptanceRange("2026-08-01", "2026-09-01") },
   { key: "christchurch_racing", jobType: "EVENT_COLLECTION", marketScope: "christchurch" },
   { key: "christchurch_cruise", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(0, 31) },
   { key: "christchurch_airport_monthly", jobType: "TRANSPORT_COLLECTION", marketScope: "christchurch", range: annualAcceptanceWindow(0, 31) },
@@ -157,8 +158,8 @@ async function main() {
   }
 
   const startedAt = new Date();
-  const rangeFrom = startedAt;
-  const rangeTo = new Date(startedAt.getTime() + 31 * 86_400_000);
+  const rangeFrom = nzStartOfDay(startedAt);
+  const rangeTo = nzStartOfDay(addNzCalendarDays(startedAt, 31));
   const acceptanceId = `public-sources-${startedAt.toISOString()}-${randomUUID().slice(0, 8)}`;
   const acceptancePasses = acceptancePassCount(process.env.ACCEPTANCE_PASSES);
   const requestedSourceKeys = new Set((process.env.ACCEPTANCE_SOURCES ?? "").split(",").map((value) => value.trim()).filter(Boolean));
@@ -358,14 +359,14 @@ async function main() {
 }
 
 function annualAcceptanceWindow(month: number, durationDays: number) {
-  const year = new Date().getFullYear();
-  const from = new Date(Date.UTC(year, month, 1));
-  return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
+  const year = nzDateKey(new Date()).slice(0, 4);
+  const from = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  return { from: nzStartOfDay(from).toISOString(), to: nzStartOfDay(addNzCalendarDays(from, durationDays)).toISOString() };
 }
 
 function rollingAcceptanceWindow(durationDays: number) {
-  const from = new Date();
-  return { from: from.toISOString(), to: new Date(from.getTime() + durationDays * 86_400_000).toISOString() };
+  const from = nzDateKey(new Date());
+  return { from: nzStartOfDay(from).toISOString(), to: nzStartOfDay(addNzCalendarDays(from, durationDays)).toISOString() };
 }
 
 function acceptancePassCount(value: string | undefined) {
@@ -450,6 +451,10 @@ async function normalizedIdentitySnapshotForRun(dataSourceId: string, collection
 
 function sha256Json(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function acceptanceRange(from: string, to: string) {
+  return { from: nzStartOfDay(from).toISOString(), to: nzStartOfDay(to).toISOString() };
 }
 
 function subtractCounts(after: SourceCounts, before: SourceCounts): SourceCounts {

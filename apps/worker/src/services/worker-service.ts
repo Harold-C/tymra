@@ -26,6 +26,12 @@ import {
   evaluateBlockingQualityGates,
   evaluateEventImpactEvidence,
   mergeEventImpactEvidence,
+  addNzCalendarDays,
+  addNzCalendarMonths,
+  nzCalendarDayDifference,
+  nzDateKey,
+  nzDateStorageValue,
+  nzStartOfDay,
   type ComparableRate,
   type QueryPlanDate,
 } from "@tymra/domain";
@@ -371,8 +377,8 @@ export class WorkerService {
     }
     let run = await prisma.collectionRun.findFirst({ where: { jobId: parentJobId, dataSourceId: listing.dataSourceId }, orderBy: { createdAt: "desc" } });
     run ??= await prisma.collectionRun.create({ data: { jobId: parentJobId, dataSourceId: listing.dataSourceId, priceCheckId, mode: "ON_DEMAND", status: "RUNNING", scope: { operation: "OTA_RATE_COLLECTION", listingId: listing.id, propertyId: check.propertyId, unitId: check.unitId }, startedAt: new Date(), attemptCount: 1, isDemo: false } });
-    const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
-    const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
+    const checkIn = nzDateKey(check.stayQuery.checkIn);
+    const checkOut = nzDateKey(check.stayQuery.checkOut);
     const requestUrl = listing.canonicalUrl;
     const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", `${listing.canonicalUrl}:${listing.sourceListingId}`);
     const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "collect_rates", url: requestUrl, checkIn, checkOut, adults: check.stayQuery.adults, children: check.stayQuery.children, units: check.stayQuery.units, currency: "NZD" }, { parentJobId, collectionRunId: run.id, dataSourceId: listing.dataSourceId });
@@ -434,8 +440,8 @@ export class WorkerService {
       orderBy: { key: "asc" },
     }));
     const searchQuery = check.property.address;
-    const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
-    const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
+    const checkIn = nzDateKey(check.stayQuery.checkIn);
+    const checkOut = nzDateKey(check.stayQuery.checkOut);
     const discoveredListingIds: string[] = [];
 
     for (const source of sources) {
@@ -519,8 +525,8 @@ export class WorkerService {
     const connectorId = otaArgusConnectorForSource(listing.dataSource.key);
     if (!connectorId) return false;
     const run = await prisma.collectionRun.findFirstOrThrow({ where: { jobId: parentJobId, dataSourceId: listing.dataSourceId, scope: { path: ["operation"], equals: "OTA_COMPARABLE_DISCOVERY" } }, orderBy: { createdAt: "desc" } });
-    const checkIn = check.stayQuery.checkIn.toISOString().slice(0, 10);
-    const checkOut = check.stayQuery.checkOut.toISOString().slice(0, 10);
+    const checkIn = nzDateKey(check.stayQuery.checkIn);
+    const checkOut = nzDateKey(check.stayQuery.checkOut);
     const requestUrl = listing.canonicalUrl;
     const traceId = durableArgusTraceId(parentJobId, connectorId, "collect_rates", `${listing.canonicalUrl}:${listing.sourceListingId}`);
     const response = await captureBrowserTaskWithDurableArgus(this.environment, {
@@ -814,23 +820,24 @@ export class WorkerService {
       publicSignalRuns.map((run) => ({ sourceId: run.dataSource.key, status: run.status, errorCode: run.errorCode })),
     );
     const publicSignalCoverage = { ...collectionCoverage, addressCoverage };
-    const dates = [...new Set(observations.map((item) => item.checkIn.toISOString().slice(0, 10)))].sort();
+    const dates = [...new Set(observations.map((item) => nzDateKey(item.checkIn)))].sort();
     const dateSnapshotIds: string[] = [];
     const allFlags = new Set<string>();
 
     for (const date of dates) {
-      const items = observations.filter((item) => item.checkIn.toISOString().slice(0, 10) === date);
-      const stayDate = new Date(`${date}T00:00:00.000Z`);
-      const nextDate = new Date(stayDate.getTime() + 86_400_000);
-      const contextFloor = new Date(stayDate.getTime() - 400 * 86_400_000);
+      const items = observations.filter((item) => nzDateKey(item.checkIn) === date);
+      const stayDate = nzDateStorageValue(date);
+      const stayDayStart = nzStartOfDay(date);
+      const nextDate = nzStartOfDay(addNzCalendarDays(date, 1));
+      const contextFloor = new Date(stayDayStart.getTime() - 400 * 86_400_000);
       const candidateSignals = await prisma.marketSignal.findMany({
         where: {
           marketKey: { in: [...new Set([analysisMarketKey, addressCoverage.level === "REGIONAL" ? addressCoverage.regionKey : null, "new-zealand"].filter((key): key is string => Boolean(key)))] },
           startsAt: { lt: nextDate },
           status: "CONFIRMED",
           OR: [
-            { endsAt: { gt: stayDate } },
-            { type: "TOURISM_DEMAND", endsAt: { gte: contextFloor, lte: stayDate } },
+            { endsAt: { gt: stayDayStart } },
+            { type: "TOURISM_DEMAND", endsAt: { gte: contextFloor, lte: stayDayStart } },
           ],
         },
         select: { id: true, dataSourceId: true, type: true, region: true, startsAt: true, endsAt: true, evidence: true },
@@ -847,8 +854,8 @@ export class WorkerService {
         demandSignalCount: signalSummary.demandSignalCount,
         demandPressure: signalSummary.demandPressure,
         marketKey: analysisMarketKey,
-        weekday: stayDate.toLocaleDateString("en-NZ", { weekday: "long", timeZone: "UTC" }),
-        bookingHorizonDays: Math.max(0, Math.round((stayDate.getTime() - Date.now()) / 86_400_000)),
+        weekday: stayDayStart.toLocaleDateString("en-NZ", { weekday: "long", timeZone: "Pacific/Auckland" }),
+        bookingHorizonDays: Math.max(0, nzCalendarDayDifference(date, new Date())),
         accommodationType: targetUnit.unitType,
         publicSignalCoverage,
         policyVersion: "event-impact-v2",
@@ -864,7 +871,7 @@ export class WorkerService {
       const oldest = minDate(items.map((item) => item.collectedAt));
       const maxSkewMinutes = newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null;
       const ageHours = newest ? Math.max(0, (Date.now() - newest.getTime()) / 3_600_000) : null;
-      const horizonDays = Math.max(0, Math.round((new Date(`${date}T00:00:00.000Z`).getTime() - Date.now()) / 86_400_000));
+      const horizonDays = Math.max(0, nzCalendarDayDifference(date, new Date()));
       const flags = evaluateBlockingQualityGates({ targetRatePresent: Boolean(target), unitConfirmed: Boolean(request.sellableUnitId), feesKnown: target?.feeCompleteness === "COMPLETE", comparable: unique.length >= 3, sourceAvailable: items.every((item) => item.operationalStatus === "HEALTHY"), severeConflict: false, freshnessExpired: ageHours === null || ageHours > this.environment.FRESHNESS_CORE_HOURS, snapshotCoherent: maxSkewMinutes !== null && maxSkewMinutes <= (horizonDays <= 7 ? this.environment.FRESHNESS_NEAR_TERM_SKEW_HOURS * 60 : this.environment.FRESHNESS_LONG_TERM_SKEW_HOURS * 60), competitorCount: distribution.count });
       flags.forEach((flag) => allFlags.add(flag));
       const confidence = confidenceForDate({ competitorCount: distribution.count, freshnessHours: ageHours, feeComplete: target?.feeCompleteness === "COMPLETE", maxSkewMinutes, horizonDays, blockingFlags: flags });
@@ -882,7 +889,7 @@ export class WorkerService {
     const contentHash = stableHash({ analysisRequestId, observationIds: [...observationIds].sort(), dateSnapshotIds: [...dateSnapshotIds].sort(), competitorSetVersionId: competitorSet.id, queryPlanId: plan.id, publicSignalCoverage });
     const marketSnapshot = await prisma.marketSnapshot.upsert({
       where: { contentHash },
-      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: analysisMarketKey, country: "NZ", addressCoverage, publicSignalCoverage }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }, ...publicSignalRegistry.map((source) => ({ sourceId: source.key, version: source.adapterKey ?? "unversioned", operational: source.operationalStatus }))], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => item.checkIn.toISOString().startsWith(date))).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
+      create: { analysisRequestId, priceCheckId: request.priceCheckId, targetPropertyId: request.propertyId!, targetSellableUnitId: request.sellableUnitId!, targetListingId: request.targetListingId!, queryPlanId: plan.id, queryPlanVersion: plan.version, competitorSetVersionId: competitorSet.id, asOf: new Date(), marketScope: { market: analysisMarketKey, country: "NZ", addressCoverage, publicSignalCoverage }, observationIds, sourceRegistryVersions: [{ sourceId: fixtureSourceKey, version: "seed-v1" }, ...publicSignalRegistry.map((source) => ({ sourceId: source.key, version: source.adapterKey ?? "unversioned", operational: source.operationalStatus }))], collectionProfileVersions: [{ key: collectionProfileKey, version: 1 }], newestObservationAt: newest, oldestObservationAt: oldest, maxObservationSkewMinutes: newest && oldest ? Math.round((newest.getTime() - oldest.getTime()) / 60_000) : null, sourceCoverage: observations.length > 0 ? 1 : 0, competitorCoverage: competitorSet.members.length / 8, missingRate: dates.length ? dates.filter((date) => !observations.some((item) => nzDateKey(item.checkIn) === date)).length / dates.length : 1, conflicts: [], exclusionReasons: [], qualityGateResult: allFlags.size ? "BLOCKED" : "PASSED", qualityFlags: [...allFlags], snapshotVersion: "market-snapshot-v1", generationPolicyVersion: "snapshot-generation-v1", freshnessPolicyVersion: "freshness-v1", qualityGateVersion: "blocking-gates-v1", contentHash, status: allFlags.size ? "BLOCKED" : "READY" },
       update: {},
     });
     await prisma.dateSnapshot.updateMany({ where: { id: { in: dateSnapshotIds }, marketSnapshotId: null }, data: { marketSnapshotId: marketSnapshot.id } });
@@ -900,7 +907,7 @@ export class WorkerService {
     }
     const ranked = usable.map((date) => ({
       id: date.id,
-      date: date.stayDate.toISOString().slice(0, 10),
+      date: nzDateKey(date.stayDate),
       target: date.targetRateMinor!,
       median: date.marketMedianMinor!,
       gap: date.marketMedianMinor! - date.targetRateMinor!,
@@ -926,7 +933,7 @@ export class WorkerService {
       : [];
     const eventEvidence = eventDates.length ? {
       affectedDateCount: eventDates.length,
-      affectedDates: eventDates.map((date) => date.stayDate.toISOString().slice(0, 10)),
+      affectedDates: eventDates.map((date) => nzDateKey(date.stayDate)),
       dateSnapshotIds: eventDates.map((date) => date.id),
       signalIds: [...new Set(eventDates.flatMap((date) => jsonStringArray(jsonRecord(date.eventEvidence).majorEventSignalIds)))],
       publicSignalCoverage,
@@ -1329,8 +1336,8 @@ export class WorkerService {
             connectorId: "sporty-school-sport-public",
             workflowId: "collect_events",
             url: definition.url,
-            startDate: requestedFrom.toISOString().slice(0, 10),
-            endDate: to.toISOString().slice(0, 10),
+            startDate: nzDateKey(requestedFrom),
+            endDate: nzDateKey(to),
             maxRecords,
             dryRun: options.dryRun === true,
             parentJobId: options.jobId,
@@ -1354,8 +1361,8 @@ export class WorkerService {
             connectorId: definition.connectorId,
             workflowId: "collect_events",
             url: definition.url,
-            startDate: requestedFrom.toISOString().slice(0, 10),
-            endDate: to.toISOString().slice(0, 10),
+            startDate: nzDateKey(requestedFrom),
+            endDate: nzDateKey(to),
             maxRecords,
             dryRun: options.dryRun === true,
             parentJobId: options.jobId,
@@ -1593,7 +1600,7 @@ export class WorkerService {
         throw new AdapterError("RATE_LIMITED", `Ticketmaster collection ${reason}`, true);
       }
       const collectionResult = await withRedisLock("source:ticketmaster", 60 * 60_000, async () => {
-        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: startOfUtcDay(now) } } });
+        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
         let lastRequestAt = 0;
         let rateLimited = false;
         const discovered = new Map<string, { events: TicketmasterListingEvent[]; discoveredFrom: string[] }>();
@@ -1842,7 +1849,7 @@ export class WorkerService {
         throw new AdapterError("RATE_LIMITED", `Eventfinda collection is cooling down until ${cooldownUntil.toISOString()}`, true);
       }
       const result = await withRedisLock("source:eventfinda", 60 * 60_000, async () => {
-        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: startOfUtcDay(now) } } });
+        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
         let requests = 0;
         let lastRequestAt = 0;
         let rateLimited = false;
@@ -2374,9 +2381,10 @@ export class WorkerService {
     }
     if (definition.kind === "cruise") {
       const from = context.collectionRange?.from ?? new Date();
-      const requestedTo = context.collectionRange?.to ?? new Date(from.getTime() + 365 * 86_400_000);
-      const maxTo = new Date(from); maxTo.setUTCMonth(maxTo.getUTCMonth() + 18);
-      const result = await capture({ url: definition.url, workflowId: "collect_cruise_schedule", from: from.toISOString().slice(0, 10), to: new Date(Math.min(requestedTo.getTime(), maxTo.getTime())).toISOString().slice(0, 10), maxRecords });
+      const fromDate = nzDateKey(from);
+      const requestedToDate = context.collectionRange?.to ? nzDateKey(context.collectionRange.to) : addNzCalendarDays(fromDate, 365);
+      const maxToDate = addNzCalendarMonths(fromDate, 18);
+      const result = await capture({ url: definition.url, workflowId: "collect_cruise_schedule", from: fromDate, to: requestedToDate < maxToDate ? requestedToDate : maxToDate, maxRecords });
       return normaliseArgusPublicMarketRecords(sourceId, publicCruiseScheduleExtractionSchema.parse(result.extracted));
     }
     if (definition.kind === "airport") {
@@ -2386,7 +2394,7 @@ export class WorkerService {
       const result = await capture({ url: definition.url, workflowId: "collect_flights", from: from.toISOString(), to: to.toISOString(), maxRecords });
       return normaliseArgusPublicMarketRecords(sourceId, publicAirportFlightBoardExtractionSchema.parse(result.extracted));
     }
-    const academicYear = (context.collectionRange?.from ?? new Date()).getFullYear();
+    const academicYear = Number(nzDateKey(context.collectionRange?.from ?? new Date()).slice(0, 4));
     const result = await capture({ url: definition.url, workflowId: "collect_key_dates", academicYear, maxRecords });
     return normaliseArgusPublicMarketRecords(sourceId, publicUniversityKeyDatesExtractionSchema.parse(result.extracted));
   }
@@ -2858,7 +2866,7 @@ export class WorkerService {
   }
 
   async enqueueOperationalJob(type: "CATALOG_DISCOVERY" | "MARKET_COVERAGE_COLLECTION" | "ANCHOR_PANEL_COLLECTION" | "ROTATING_PANEL_COLLECTION", payload: Prisma.InputJsonValue = {}) {
-    return enqueueJob({ type, payload, idempotencyKey: `cli:${type}:${new Date().toISOString().slice(0, 10)}` });
+    return enqueueJob({ type, payload, idempotencyKey: `cli:${type}:${nzDateKey(new Date())}` });
   }
 
   async health() {
@@ -3017,7 +3025,7 @@ export class WorkerService {
     const property = request.propertyId ? await prisma.property.findUnique({ where: { id: request.propertyId } }) : null;
     const addressCoverage = property ? resolveNzAddressSignalCoverage(property) : null;
     if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to New Zealand", 422);
-    const stayQuery = await prisma.stayQuery.create({ data: { checkIn: start, checkOut: new Date(start.getTime() + 86_400_000), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: "Worker Baseline default formal analysis" } });
+    const stayQuery = await prisma.stayQuery.create({ data: { checkIn: start, checkOut: nzDateStorageValue(addNzCalendarDays(start, 1)), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: "Worker Baseline default formal analysis" } });
     const accessToken = randomBytes(32).toString("base64url");
     const check = await prisma.priceCheck.create({ data: { rawInput: request.rawInput, locale: request.locale, emailHash: request.emailHash, encryptedEmail: request.encryptedEmail, serviceConsent: true, marketingConsent: request.marketingConsent, propertyId: request.propertyId, unitId: request.sellableUnitId, stayQueryId: stayQuery.id, marketKey: addressCoverage.marketKey, status: request.status === "NEEDS_CONFIRMATION" ? "NEEDS_CONFIRMATION" : "QUEUED", accessKeyHash: hashOpaqueToken(accessToken, this.environment.ACCESS_KEY_SECRET), idempotencyKey: `${request.idempotencyKey}:price-check`, rulesVersion: "worker-baseline-v1", isDemo: request.isFixture } });
     await prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { priceCheckId: check.id } });
@@ -3028,8 +3036,8 @@ export class WorkerService {
     if (existing) return existing;
     if (!request.targetListingId || !request.sellableUnitId) throw new WorkerRequestError("UNIT_UNCONFIRMED", "A specific Sellable Unit and Listing are required", 409);
     const dateBasket = request.isPreview ? buildNationalDateBasket(new Date()).slice(0, 2) : buildFormalThirtyDayDates(new Date());
-    const firstDate = new Date(`${dateBasket[0].checkIn}T00:00:00.000Z`);
-    const stayQuery = await prisma.stayQuery.create({ data: { checkIn: firstDate, checkOut: new Date(firstDate.getTime() + 86_400_000), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: request.isPreview ? "Anonymous preliminary date basket" : "Formal 30-day date basket" } });
+    const firstDate = nzDateStorageValue(dateBasket[0].checkIn);
+    const stayQuery = await prisma.stayQuery.create({ data: { checkIn: firstDate, checkOut: nzDateStorageValue(addNzCalendarDays(dateBasket[0].checkIn, 1)), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: request.isPreview ? "Anonymous preliminary date basket" : "Formal 30-day date basket" } });
     const signature = createQuerySignature({ sourceId: request.dataSourceId!, listingId: request.targetListingId, sellableUnitId: request.sellableUnitId, checkIn: firstDate, nights: 1, adults: 2, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", currency: "NZD", taxAndFeePolicy: "MANDATORY_INCLUDED", collectionProfileId: collectionProfileKey, publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1" });
     await prisma.stayQuery.update({ where: { id: stayQuery.id }, data: { querySignatureHash: signature.hash } });
     return prisma.queryPlan.create({ data: { analysisRequestId: request.id, priceCheckId: request.priceCheckId, stayQueryId: stayQuery.id, dataSourceId: request.dataSourceId, version: 1, dateBasket: dateBasket as unknown as Prisma.InputJsonValue, querySignatureHash: signature.hash, querySignaturePayload: signature.payload as unknown as Prisma.InputJsonValue, collectionProfileKey, generationPolicyVersion: request.isPreview ? "preview-plan-v1" : "formal-30-day-plan-v1", freshnessPolicyVersion: "freshness-v1" } });
@@ -3095,8 +3103,8 @@ export class WorkerService {
 
   private async ensureStayQueryForDate(date: string, analysisRequestId: string) {
     const id = stableId("worker-stay-query", `${analysisRequestId}:${date}:1:2:0:1`);
-    const checkIn = new Date(`${date}T00:00:00.000Z`);
-    return prisma.stayQuery.upsert({ where: { id }, create: { id, checkIn, checkOut: new Date(checkIn.getTime() + 86_400_000), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: "Worker query plan date" }, update: {} });
+    const checkIn = nzDateStorageValue(date);
+    return prisma.stayQuery.upsert({ where: { id }, create: { id, checkIn, checkOut: nzDateStorageValue(addNzCalendarDays(date, 1)), nights: 1, adults: 2, children: 0, childrenAges: [], units: 1, unitConstraints: {}, mealPlan: "ANY_PUBLIC", currency: "NZD", cancellationCategory: "STANDARD", cancellationPolicy: "ANY_PUBLIC", ratePlan: "PUBLIC", taxAndFeePolicy: "MANDATORY_INCLUDED", publicRateContext: "PUBLIC_ANONYMOUS", querySemanticsVersion: "v1", timezone: "Pacific/Auckland", reason: "Worker query plan date" }, update: {} });
   }
 
   private async analysisObservationIds(request: WorkerAnalysisRequest, querySignatureHash: string) {
@@ -3125,7 +3133,7 @@ export class WorkerService {
     const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, payload: { priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length, publicSignalCoverage }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
     if (current) await prisma.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
     for (const [index, item] of keyDates.entries()) {
-      await prisma.insight.create({ data: { id: `${result.id}:insight:${index + 1}`, resultVersionId: result.id, stayDate: new Date(`${item.date}T00:00:00.000Z`), risk: item.gap > item.median * 0.15 ? "REVIEW" : "WATCH", reasonCodes: item.gap > 0 ? ["BELOW_COMPARABLE_RANGE", ...(item.hasMajorEvent ? ["MAJOR_LOCAL_EVENT"] : [])] : [], marketSignalIds: item.marketSignalIds, targetPriceMinor: item.target, competitorMedianMinor: item.median, competitorLowMinor: Math.round(item.median * 0.9), competitorHighMinor: Math.round(item.median * 1.1), recommendedAction: item.gap > 0 ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidence: item.confidence as "HIGH" | "MEDIUM" | "LOW", limitations: [...(request.isFixture ? ["Development fixture data. Not real market data."] : []), ...(publicSignalIncomplete ? ["PUBLIC_SIGNAL_COVERAGE_INCOMPLETE"] : [])], explanation: { whatChanged: "The observed public target rate is compared with the unique CORE cohort.", whyItMatters: item.hasMajorEvent ? "A promoted local event corroborates the price comparison for this date; it does not prove causation by itself." : "This date may warrant a rate review; this is not a guaranteed optimal price.", suggestedAction: item.gap > 0 ? "Review the public rate and operational context before changing price." : "Monitor this date." } } });
+      await prisma.insight.create({ data: { id: `${result.id}:insight:${index + 1}`, resultVersionId: result.id, stayDate: nzDateStorageValue(item.date), risk: item.gap > item.median * 0.15 ? "REVIEW" : "WATCH", reasonCodes: item.gap > 0 ? ["BELOW_COMPARABLE_RANGE", ...(item.hasMajorEvent ? ["MAJOR_LOCAL_EVENT"] : [])] : [], marketSignalIds: item.marketSignalIds, targetPriceMinor: item.target, competitorMedianMinor: item.median, competitorLowMinor: Math.round(item.median * 0.9), competitorHighMinor: Math.round(item.median * 1.1), recommendedAction: item.gap > 0 ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidence: item.confidence as "HIGH" | "MEDIUM" | "LOW", limitations: [...(request.isFixture ? ["Development fixture data. Not real market data."] : []), ...(publicSignalIncomplete ? ["PUBLIC_SIGNAL_COVERAGE_INCOMPLETE"] : [])], explanation: { whatChanged: "The observed public target rate is compared with the unique CORE cohort.", whyItMatters: item.hasMajorEvent ? "A promoted local event corroborates the price comparison for this date; it does not prove causation by itself." : "This date may warrant a rate review; this is not a guaranteed optimal price.", suggestedAction: item.gap > 0 ? "Review the public rate and operational context before changing price." : "Monitor this date." } } });
     }
     await prisma.$transaction([
       prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { status: "COMPLETED", completedAt: new Date() } }),
@@ -3660,19 +3668,14 @@ function redactUrlForStorage(value: string) {
 }
 
 function tomorrow() {
-  const date = new Date();
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
-}
-
-function startOfUtcDay(value: Date) {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  return nzDateStorageValue(addNzCalendarDays(new Date(), 1));
 }
 
 function listingPriority(startsAt: string | null, now: Date) {
   if (!startsAt) return 100;
   const date = new Date(startsAt);
   if (Number.isNaN(date.getTime())) return 100;
-  const days = (date.getTime() - now.getTime()) / 86_400_000;
+  const days = nzCalendarDayDifference(date, now);
   if (days <= 2) return 10;
   if (days <= 14) return 20;
   if (days <= 60) return 40;
@@ -3823,15 +3826,17 @@ export function summarisePublicSignalCollectionCoverage(
 }
 
 export function selectPricingMarketSignals(signals: SnapshotMarketSignal[], stayDate: Date) {
-  const overlapping = signals.filter((signal) => !signal.startsAt || !signal.endsAt || (signal.startsAt < new Date(stayDate.getTime() + 86_400_000) && signal.endsAt > stayDate));
+  const stayDayStart = nzStartOfDay(nzDateKey(stayDate));
+  const nextDayStart = nzStartOfDay(addNzCalendarDays(stayDate, 1));
+  const overlapping = signals.filter((signal) => !signal.startsAt || !signal.endsAt || (signal.startsAt < nextDayStart && signal.endsAt > stayDayStart));
   const latestContext = new Map<string, SnapshotMarketSignal>();
   for (const signal of signals) {
-    if (signal.type !== "TOURISM_DEMAND" || !signal.endsAt || signal.endsAt > stayDate || overlapping.some((item) => item.id === signal.id)) continue;
+    if (signal.type !== "TOURISM_DEMAND" || !signal.endsAt || signal.endsAt > stayDayStart || overlapping.some((item) => item.id === signal.id)) continue;
     const evidence = jsonRecord(signal.evidence);
     const metadata = jsonRecord(evidence.metadata);
     if (metadata.temporalUse === "DETERMINISTIC_SEASON_WINDOW") continue;
     const contextMaxAgeDays = jsonNumber(metadata.contextMaxAgeDays) ?? 120;
-    if (stayDate.getTime() - signal.endsAt.getTime() > contextMaxAgeDays * 86_400_000) continue;
+    if (stayDayStart.getTime() - signal.endsAt.getTime() > contextMaxAgeDays * 86_400_000) continue;
     const contextSeriesKey = typeof metadata.contextSeriesKey === "string"
       ? metadata.contextSeriesKey
       : typeof evidence.title === "string" ? evidence.title : signal.type;

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { nzCalendarDayDifference } from "@tymra/domain";
 
 import type { PublicEvent } from "@tymra/providers";
 
@@ -226,7 +227,7 @@ export function normaliseEventfindaDetail(extraction: EventfindaDetailExtraction
 export function eventfindaRefreshPolicy(events: PublicEvent[], now = new Date(), unchangedFetchCount = 0) {
   const activeDates = events.filter((event) => event.endsAt.getTime() >= now.getTime()).map((event) => event.startsAt < now ? now : event.startsAt).sort((left, right) => left.getTime() - right.getTime());
   if (!activeDates.length) return { active: false, priority: 900, nextFetchAt: new Date(now.getTime() + 30 * 86_400_000) };
-  const days = (activeDates[0].getTime() - now.getTime()) / 86_400_000;
+  const days = nzCalendarDayDifference(activeDates[0], now);
   if (events.length > 1) {
     if (days <= 2) return refreshWithStableBackoff(now, 10, 12, 24, unchangedFetchCount);
     if (days <= 14) return refreshWithStableBackoff(now, 20, 24, 72, unchangedFetchCount);

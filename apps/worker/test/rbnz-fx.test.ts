@@ -24,7 +24,7 @@ describe("RBNZ B1 normalisation", () => {
       expect.objectContaining({
         externalId: "rbnz-b1:2026-07-20:twi",
         type: "FX_RATE",
-        startsAt: new Date("2026-07-20T00:00:00.000Z"),
+        startsAt: new Date("2026-07-19T12:00:00.000Z"),
         metadata: expect.objectContaining({ value: 66.94, previousValue: 66.87, baseCurrency: "NZD" }),
       }),
     ]);

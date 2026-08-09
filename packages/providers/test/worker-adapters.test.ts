@@ -238,10 +238,10 @@ describe("public data adapter contract", () => {
   });
 
   it("parses official ski-season windows as date-specific demand context", async () => {
-    expect(parseSkiSeasonHtml("<main><h4>27 June - 11 October 2026</h4></main>", { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i })).toMatchObject({ opensAt: "2026-06-27T00:00:00.000Z", closesAt: "2026-10-11T00:00:00.000Z" });
-    const signals = await publicDataAdapters.ski_seasons_nz.normalise([{ sourceId: "ski_seasons_nz", externalId: "ski-season:mt-hutt:2026", payload: { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", opensAt: "2026-06-27T00:00:00.000Z", closesAt: "2026-10-11T00:00:00.000Z", sourceUrl: "https://www.mthutt.co.nz/mountain-info" }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(parseSkiSeasonHtml("<main><h4>27 June - 11 October 2026</h4></main>", { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i })).toMatchObject({ opensAt: "2026-06-26T12:00:00.000Z", closesAt: "2026-10-10T11:00:00.000Z" });
+    const signals = await publicDataAdapters.ski_seasons_nz.normalise([{ sourceId: "ski_seasons_nz", externalId: "ski-season:mt-hutt:2026", payload: { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", opensAt: "2026-06-26T12:00:00.000Z", closesAt: "2026-10-10T11:00:00.000Z", sourceUrl: "https://www.mthutt.co.nz/mountain-info" }, fetchedAt: new Date(), fixture: false }], fixtureContext);
     expect(signals[0]).toMatchObject({ marketKey: "christchurch", type: "TOURISM_DEMAND", direction: "POSITIVE", confidence: 0.8 });
-    expect(signals[0]!.endsAt.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+    expect(signals[0]!.endsAt.toISOString()).toBe("2026-10-11T11:00:00.000Z");
   });
 
   it("parses and routes official ferry and DOC access alerts conservatively", async () => {
@@ -250,7 +250,7 @@ describe("public data adapter contract", () => {
     const fetchedAt = new Date("2026-08-06T14:00:00.000Z");
     const ferry = await publicDataAdapters.interislander_alerts.normalise([{ sourceId: "interislander_alerts", externalId: "service-alert:7", payload: { alert: { id: 7, title: "Sailings cancelled", summary: "Weather", content: "", start: null, end: null, last_edited: null, version: 3 } }, fetchedAt, fixture: false }], fixtureContext);
     expect(ferry.map((signal) => signal.marketKey)).toEqual(["wellington", "nelson-tasman"]);
-    expect(ferry.every((signal) => signal.direction === "NEGATIVE" && signal.endsAt.toISOString() === "2026-08-08T00:00:00.000Z")).toBe(true);
+    expect(ferry.every((signal) => signal.direction === "NEGATIVE" && signal.startsAt.toISOString() === "2026-08-06T12:00:00.000Z" && signal.endsAt.toISOString() === "2026-08-08T12:00:00.000Z")).toBe(true);
     const doc = await publicDataAdapters.doc_alerts.normalise([{ sourceId: "doc_alerts", externalId: "doc-alert:otago:x", payload: { region: { slug: "otago", name: "Otago", guid: "x", markets: ["dunedin", "queenstown-wanaka"] }, group: { name: "Routeburn", staticLink: "/track/", alerts: [], isGeneral: false }, alert: { summary: "Track closed", description: "<p>Unsafe access.</p>", subText: "", sortDate: "2026-08-05", displayDate: "", associatedBookingIDs: "" }, sourceUrl: "https://www.doc.govt.nz/track/" }, fetchedAt, fixture: false }], fixtureContext);
     expect(doc.map((signal) => signal.marketKey)).toEqual(["dunedin", "queenstown-wanaka"]);
     expect(doc.every((signal) => signal.type === "WEATHER_OR_ACCESS_DISRUPTION" && signal.direction === "NEGATIVE")).toBe(true);
@@ -491,7 +491,7 @@ describe("public data adapter contract", () => {
     ]);
     expect(records.at(-1)).toMatchObject({ periodEnd: "2026-03-31", totalSpendNzd: 11_000_000_000, meanSpendPerVisitorNzd: 3_030, medianLengthOfStayDays: 11, annualChangePercent: 10, publishedAt: "2026-06-02 11:00:00" });
     const [signal] = await publicDataAdapters.mbie_ivs.normalise([{ sourceId: "mbie_ivs", externalId: "ivs-annual:2026-03-31", payload: { record: records.at(-1) }, fetchedAt: new Date(), fixture: false }], fixtureContext);
-    expect(signal).toMatchObject({ marketKey: "new-zealand", type: "TOURISM_DEMAND", direction: "POSITIVE", startsAt: new Date("2025-04-01T00:00:00.000Z"), endsAt: new Date("2026-04-01T00:00:00.000Z"), metadata: { contextSeriesKey: "ivs-rolling-annual-total-spend", temporalUse: "LAGGED_TREND_CONTEXT" } });
+    expect(signal).toMatchObject({ marketKey: "new-zealand", type: "TOURISM_DEMAND", direction: "POSITIVE", startsAt: new Date("2025-03-31T11:00:00.000Z"), endsAt: new Date("2026-03-31T11:00:00.000Z"), metadata: { contextSeriesKey: "ivs-rolling-annual-total-spend", temporalUse: "LAGGED_TREND_CONTEXT" } });
   });
 
   it("routes RBNZ B1 through Argus", async () => {

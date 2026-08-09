@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { eventImpactEvidenceBundleSchema } from "@tymra/domain";
+import { eventImpactEvidenceBundleSchema, nzDateKey, nzDateTime, nzEndOfDay } from "@tymra/domain";
 import type { PublicEvent } from "@tymra/providers";
 
 export const SCHOOL_SPORT_NZ_SOURCE_ID = "school_sport_nz";
@@ -382,8 +382,8 @@ function isAdministrativeSchoolSport(title: string, description: string | null):
 
 export function normalisedEnd(startsAt: Date, rawEnd: string | null, precision: "DATE" | "DATETIME") {
   const parsed = rawEnd ? parseAucklandDate(rawEnd) : null;
-  if (parsed && parsed >= startsAt) return precision === "DATE" ? new Date(parsed.getTime() + 86_399_999) : parsed;
-  return precision === "DATE" ? new Date(startsAt.getTime() + 86_399_999) : startsAt;
+  if (parsed && parsed >= startsAt) return precision === "DATE" ? nzEndOfDay(nzDateKey(parsed)) : parsed;
+  return precision === "DATE" ? nzEndOfDay(nzDateKey(startsAt)) : startsAt;
 }
 
 function parseOptionalDate(value: string | null) {
@@ -396,25 +396,10 @@ export function parseAucklandDate(value: string): Date | null {
   const trimmed = value.trim();
   if (!/^20\d{2}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?(?:Z|[+-]\d{2}:\d{2})?$/u.test(trimmed)) return null;
   const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/u.test(trimmed);
-  const local = trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`;
-  const parsed = new Date(explicitZone ? local : `${local}${aucklandOffset(trimmed.slice(0, 10))}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function aucklandOffset(date: string) {
-  const noonUtc = new Date(`${date}T12:00:00Z`);
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: "Pacific/Auckland",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(noonUtc).map((part) => [part.type, part.value]));
-  const localAsUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
-  const offsetMinutes = Math.round((localAsUtc - noonUtc.getTime()) / 60_000);
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absolute = Math.abs(offsetMinutes);
-  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
+  if (explicitZone) {
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  try { return nzDateTime(trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`); }
+  catch { return null; }
 }

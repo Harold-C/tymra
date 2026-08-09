@@ -1,15 +1,11 @@
-import { funnelEventSchema, type FunnelEvent } from "@tymra/domain";
+import { funnelEventSchema, nzDateStorageValue, type FunnelEvent } from "@tymra/domain";
 
 import { prisma } from "./index";
 
 export async function recordFunnelEvent(input: FunnelEvent) {
   const event = funnelEventSchema.parse(input);
   const occurredAt = event.occurredAt ?? new Date();
-  const bucketDate = new Date(Date.UTC(
-    occurredAt.getUTCFullYear(),
-    occurredAt.getUTCMonth(),
-    occurredAt.getUTCDate(),
-  ));
+  const bucketDate = nzDateStorageValue(occurredAt);
   const dimensions = orderedDimensions(event.dimensions);
   const dimensionKey = JSON.stringify(dimensions);
 

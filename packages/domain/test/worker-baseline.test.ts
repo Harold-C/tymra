@@ -37,7 +37,7 @@ describe("Worker baseline domain contracts", () => {
     const first = createQuerySignature(baseQuery);
     const second = createQuerySignature({ ...baseQuery, childrenAges: [2, 7], unitConstraints: { accessible: false, bedrooms: 1 } });
     expect(first.hash).toBe(second.hash);
-    expect(first.payload.checkIn).toBe("2026-08-01");
+    expect(first.payload.checkIn).toBe("2026-08-02");
   });
 
   it("builds deterministic preview and formal date baskets", () => {

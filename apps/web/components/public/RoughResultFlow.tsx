@@ -186,7 +186,7 @@ export function RoughResultExperience({ locale, checkId }: { locale: Locale; che
             <div><strong>{copy.contextTitle}</strong><p>{context.checkIn} → {context.checkOut} · {context.adults} {copy.adults} · {context.units} {context.units === 1 ? copy.unit : copy.units}</p></div>
             <span>{context.source === "URL" ? copy.urlContext : copy.defaultContext}</span>
           </div>
-          <p className="rough-source">{copy.captured}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(result.capturedAt))} · {result.sourceLabel}</p>
+          <p className="rough-source">{copy.captured}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(result.capturedAt))} · {result.sourceLabel}</p>
         </div>
       </section>
 

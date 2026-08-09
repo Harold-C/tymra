@@ -95,6 +95,17 @@ describe("nationwide market signals in pricing", () => {
     assert.deepEqual(selected.map((item) => item.id).sort(), ["event", "mbie-latest"]);
   });
 
+  it("matches an early-morning New Zealand event to its local stay date", () => {
+    const selected = selectPricingMarketSignals([
+      {
+        ...datedSignal("morning-event", "MAJOR_EVENT", "2026-08-19", "2026-08-20", "events"),
+        startsAt: new Date("2026-08-19T13:00:00.000Z"),
+        endsAt: new Date("2026-08-19T15:00:00.000Z"),
+      },
+    ], new Date("2026-08-20T00:00:00.000Z"));
+    assert.deepEqual(selected.map((item) => item.id), ["morning-event"]);
+  });
+
   it("carries only the latest monthly airport trend even when display titles change", () => {
     const stayDate = new Date("2026-08-20T00:00:00.000Z");
     const selected = selectPricingMarketSignals([

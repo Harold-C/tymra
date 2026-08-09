@@ -1,5 +1,6 @@
 import { parse } from "csv-parse/sync";
 import { parseHTML } from "linkedom";
+import { addNzCalendarDays, nzDateKey, nzDateTime } from "@tymra/domain";
 
 import type {
   AdapterContext,
@@ -540,7 +541,7 @@ async function collectWellingtonAirport(reference: string, context: AdapterConte
   const flights = new Map<string, WellingtonAirportFlight>();
   let requests = 0;
   for (let day = 0; day < days && requests < requestLimit; day += 1) {
-    const date = isoDate(new Date(firstDate.getTime() + day * 86_400_000));
+    const date = addNzCalendarDays(firstDate, day);
     for (const direction of ["arrival", "departure"] as const) {
       if (requests >= requestLimit || flights.size >= maxRecords(context)) break;
       const url = new URL(reference);
@@ -961,20 +962,8 @@ function parseIsoDateTime(value: string) {
 function parseNzDateTime(value: string) {
   if (!value) return null;
   if (/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return parseIsoDateTime(value);
-  const match = value.match(/^(20\d{2})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
-  const parts = match.slice(1).map(Number);
-  const naive = Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!, parts[5] ?? 0);
-  let instant = new Date(naive);
-  for (let index = 0; index < 2; index += 1) instant = new Date(naive - timeZoneOffsetMs(instant, "Pacific/Auckland"));
-  return Number.isNaN(instant.getTime()) ? null : instant;
-}
-
-function timeZoneOffsetMs(value: Date, timeZone: string) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-NZ", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).formatToParts(value).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
-  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
+  try { return nzDateTime(value.replace(" ", "T")); }
+  catch { return null; }
 }
 
 function nzDate(value: Date) {
@@ -1034,4 +1023,4 @@ function firstString(values: unknown[]): string | null { for (const value of val
 function stableEventOrder(left: JsonRecord, right: JsonRecord, dateKey: string, identityKey: string) { return stringValue(left[dateKey]).localeCompare(stringValue(right[dateKey])) || stringValue(left[identityKey]).localeCompare(stringValue(right[identityKey])); }
 function cleanText(value: string) { return value.replace(/\s+/g, " ").trim(); }
 function slug(value: string) { return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
-function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
+function isoDate(value: Date) { return nzDateKey(value); }

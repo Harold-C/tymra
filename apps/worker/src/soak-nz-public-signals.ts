@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { nzDateKey } from "@tymra/domain";
 
 type CycleResult = {
   cycle: number;
@@ -95,7 +96,7 @@ if (checkpoint.completedCycles >= cycles && !checkpoint.stable) process.exitCode
 
 function buildCheckpoint(cycleResults: CycleResult[]): SoakCheckpoint {
   const failures = cycleResults.filter((item) => !item.passed).length;
-  const successfulDays = [...new Set(cycleResults.filter((item) => item.passed).map((item) => item.startedAt.slice(0, 10)))];
+  const successfulDays = [...new Set(cycleResults.filter((item) => item.passed).map((item) => nzDateKey(new Date(item.startedAt))))];
   const failureRate = cycleResults.length ? failures / cycleResults.length : 0;
   const completed = cycleResults.length >= cycles;
   return {

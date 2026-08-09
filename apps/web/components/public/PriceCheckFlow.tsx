@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { addNzCalendarDays } from "@tymra/domain/nz-time";
+
 type Locale = "en" | "zh";
 
 type PropertyCandidate = {
@@ -476,16 +478,6 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function defaultStayDates() {
-  const checkIn = new Date();
-  checkIn.setDate(checkIn.getDate() + 7);
-  const checkOut = new Date(checkIn);
-  checkOut.setDate(checkOut.getDate() + 1);
-  return { checkIn: localDate(checkIn), checkOut: localDate(checkOut) };
-}
-
-function localDate(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const checkIn = addNzCalendarDays(new Date(), 7);
+  return { checkIn, checkOut: addNzCalendarDays(checkIn, 1) };
 }

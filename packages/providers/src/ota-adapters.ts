@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, OtaAdapter, OtaPolicy, OtaRate, OtaRateQuery, OtaUnit, ResolvedOtaListing } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -98,14 +99,13 @@ export class ResearchOtaAdapter implements OtaAdapter {
     if (context.mode === "live") throw new AdapterError("SOURCE_UNAVAILABLE", `${this.definition.name} live rate collection is not enabled`, false);
     const day = Math.floor(new Date(`${query.checkIn}T00:00:00.000Z`).getTime() / 86_400_000);
     const basis = 17_000 + (numericHash(`${this.definition.sourceId}:${query.sourceListingId}:${query.unitExternalId}`) % 7_000) + (day % 7) * 350;
-    const checkOut = new Date(`${query.checkIn}T00:00:00.000Z`);
-    checkOut.setUTCDate(checkOut.getUTCDate() + query.nights);
+    const checkOut = addNzCalendarDays(query.checkIn, query.nights);
     const taxes = Math.round((basis + 1_500) * 0.15);
     return [{
       sourceListingId: query.sourceListingId,
       unitExternalId: query.unitExternalId,
       checkIn: query.checkIn,
-      checkOut: checkOut.toISOString().slice(0, 10),
+      checkOut,
       basePriceMinor: basis,
       taxesMinor: taxes,
       mandatoryFeesMinor: 1_500,
@@ -120,7 +120,7 @@ export class ResearchOtaAdapter implements OtaAdapter {
       restrictionReason: null,
       evidenceRef: `fixture://${this.definition.sourceId}/${query.sourceListingId}/${query.checkIn}/${query.unitExternalId}`,
       sourceUrl: this.canonicalUrl(query.sourceListingId),
-      collectedAt: new Date(`${query.checkIn}T00:00:00.000Z`),
+      collectedAt: nzStartOfDay(query.checkIn),
       qualityFlags: ["FIXTURE_RECORD_REPLAY"],
       fixture: true,
     }];

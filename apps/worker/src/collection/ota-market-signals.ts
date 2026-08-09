@@ -1,3 +1,5 @@
+import { nzDateKey } from "@tymra/domain";
+
 export const OTA_MARKET_SIGNAL_POLICY_VERSION = "ota-market-timeseries-v1";
 
 export type OtaSignalObservation = {
@@ -64,4 +66,4 @@ function isPriced(value: OtaSignalObservation) { return value.availabilityStatus
 function isRestricted(value: OtaSignalObservation) { return value.minimumStay !== null && value.minimumStay > 1 || ["MINIMUM_STAY_RESTRICTION", "CLOSED_TO_ARRIVAL"].includes(value.availabilityStatus) || Boolean(value.restrictionReason); }
 function ratio<T>(values: T[], predicate: (value: T) => boolean) { return values.filter(predicate).length / values.length; }
 function median(values: number[]) { const sorted = [...values].sort((left, right) => left - right); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2; }
-function day(value: Date) { return value.toISOString().slice(0, 10); }
+function day(value: Date) { return nzDateKey(value); }

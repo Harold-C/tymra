@@ -23,6 +23,21 @@ describe("OTA time-series market signals", () => {
     const observations = [pair("booking", "one", 20_000, 25_000), pair("booking", "two", 20_000, 25_000)].flatMap((factory) => factory(asOf));
     assert.deepEqual(deriveOtaMarketSignals(observations, asOf), []);
   });
+
+  it("groups stay dates by the New Zealand calendar day", () => {
+    const asOf = new Date("2026-08-09T00:00:00Z");
+    const observations = [
+      pair("booking", "one", 20_000, 22_000),
+      pair("booking", "two", 20_000, 22_000),
+      pair("airbnb", "three", 20_000, 22_000),
+    ].flatMap((factory) => factory(asOf)).map((item) => ({
+      ...item,
+      checkIn: new Date("2026-08-08T12:30:00Z"),
+      checkOut: new Date("2026-08-09T12:30:00Z"),
+    }));
+    const signal = deriveOtaMarketSignals(observations, asOf).find((item) => item.type === "PRICE_RISING");
+    assert.match(signal?.key ?? "", /christchurch\|2026-08-09\|2026-08-10/u);
+  });
 });
 
 function pair(providerKey: string, listingId: string, baselinePrice: number, currentPrice: number, baselineAvailability = "AVAILABLE", currentAvailability = "AVAILABLE", baselineRestricted = false, currentRestricted = false) {

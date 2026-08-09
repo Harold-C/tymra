@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { addNzCalendarDays, addNzCalendarMonths, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -164,8 +165,8 @@ class MbieWorkbookAdapter implements PublicDataAdapter {
       const record = payload.record;
       if (!record) return [];
       const area = "destination" in record ? record.destination : record.rto;
-      const startsAt = new Date(`${record.period}T00:00:00.000Z`);
-      const endsAt = new Date(Date.UTC(startsAt.getUTCFullYear(), startsAt.getUTCMonth() + 1, 1));
+      const startsAt = nzStartOfDay(record.period);
+      const endsAt = nzStartOfDay(addNzCalendarMonths(record.period, 1));
       const annualChange = record.annualChangePercent;
       const series = "destination" in record ? `tvf-monthly-unique:${record.destinationCode}` : `mrte-monthly-spend:${slug(record.rto)}`;
       const measures = "destination" in record
@@ -219,13 +220,13 @@ class MbieIvsAdapter implements PublicDataAdapter {
       const payload = raw.payload as { record?: IvsAnnualRecord; sourceUrl?: string };
       const record = payload.record;
       if (!record) return [];
-      const periodEnd = new Date(`${record.periodEnd}T00:00:00.000Z`);
-      const startsAt = new Date(Date.UTC(periodEnd.getUTCFullYear() - 1, periodEnd.getUTCMonth(), periodEnd.getUTCDate() + 1));
+      const periodEnd = record.periodEnd;
+      const startsAt = nzStartOfDay(addNzCalendarDays(addNzCalendarMonths(periodEnd, -12), 1));
       const annualChange = record.annualChangePercent;
       return [{
         sourceId: "mbie_ivs", externalId: raw.externalId, marketKey: "new-zealand", type: "TOURISM_DEMAND",
         title: `MBIE international visitor spend - year ended ${record.periodEnd}`,
-        region: "New Zealand", startsAt, endsAt: new Date(periodEnd.getTime() + 86_400_000),
+        region: "New Zealand", startsAt, endsAt: nzStartOfDay(addNzCalendarDays(periodEnd, 1)),
         direction: annualChange === null ? "UNKNOWN" : annualChange > 2 ? "POSITIVE" : annualChange < -2 ? "NEGATIVE" : "MIXED",
         confidence: annualChange === null ? 0.6 : 0.8, evidenceRef: payload.sourceUrl ?? IVS_ANNUAL_SUMMARY_URL,
         metadata: { dataset: "International Visitor Survey (rolling annual)", contextSeriesKey: "ivs-rolling-annual-total-spend", temporalUse: "LAGGED_TREND_CONTEXT", contextMaxAgeDays: 400, ...record }, fixture: false,

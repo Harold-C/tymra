@@ -7,6 +7,7 @@ import type {
   PublicRawRecord,
   PublicSignal,
 } from "./adapter-types";
+import { addNzCalendarDays, addNzCalendarMonths, nzDateKey, nzDateTime, nzStartOfDay } from "@tymra/domain";
 import { AdapterError } from "./adapter-types";
 import { officialNzSourceAdapters } from "./official-nz-adapters";
 import { christchurchEventAdapters } from "./christchurch-event-adapters";
@@ -79,7 +80,7 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
     const from = context.collectionRange?.from.getTime() ?? Number.NEGATIVE_INFINITY;
     const to = context.collectionRange?.to.getTime() ?? Number.POSITIVE_INFINITY;
     return records
-      .filter((record) => new Date(`${record.endsAt}T00:00:00.000Z`).getTime() >= from && new Date(`${record.startsAt}T00:00:00.000Z`).getTime() <= to)
+      .filter((record) => nzStartOfDay(record.endsAt).getTime() >= from && nzStartOfDay(record.startsAt).getTime() <= to)
       .slice(0, context.collectionLimits?.maxRecords ?? records.length)
       .map((record) => ({ sourceId: this.metadata.sourceId, externalId: record.id, payload: record, fetchedAt: new Date(), fixture: false }));
   }
@@ -95,8 +96,8 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
         type: value.type,
         title: value.title,
         region: value.region,
-        startsAt: new Date(`${value.startsAt}T00:00:00.000Z`),
-        endsAt: new Date(`${value.endsAt}T00:00:00.000Z`),
+        startsAt: nzStartOfDay(value.startsAt),
+        endsAt: nzStartOfDay(value.endsAt),
         direction: "POSITIVE",
         confidence: 1,
         evidenceRef: `${this.sourceUrl}#${value.id}`,
@@ -196,8 +197,8 @@ class GeoNetAdapter implements PublicDataAdapter {
         const coordinate = pointCoordinate(feature.geometry?.coordinates);
         if (!coordinate) return [];
         const marketKeys = nzMarketKeysWithinDistance(coordinate.latitude, coordinate.longitude, level >= 3 ? 350 : level >= 2 ? 180 : 120);
-        const observedDay = record.fetchedAt.toISOString().slice(0, 10);
-        const startsAt = new Date(`${observedDay}T00:00:00.000Z`);
+        const observedDay = nzDateKey(record.fetchedAt);
+        const startsAt = nzStartOfDay(observedDay);
         return marketKeys.map((marketKey, index) => ({
           sourceId: "geonet",
           externalId: index === 0 ? record.externalId : `${record.externalId}:market:${marketKey}`,
@@ -367,8 +368,8 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
   async normalise(records: PublicRawRecord[], _context: AdapterContext): Promise<PublicSignal[]> {
     return records.flatMap((raw) => {
       const record = raw.payload as MbieAccommodationRecord & { sourceUrl?: string; contentRange?: string | null };
-      const startsAt = new Date(`${record.period}T00:00:00.000Z`);
-      const endsAt = new Date(Date.UTC(startsAt.getUTCFullYear(), startsAt.getUTCMonth() + 1, 1));
+      const startsAt = nzStartOfDay(record.period);
+      const endsAt = nzStartOfDay(addNzCalendarMonths(record.period, 1));
       const occupancy = numericMeasure(record.measures, "Occupancy rate");
       const quality = String(record.measures["Quality indicator"]?.value ?? "Unknown");
       const marketKeys = marketKeysForMbieArea(record.area);
@@ -546,8 +547,8 @@ class StatsNzInternationalTravelAdapter implements PublicDataAdapter {
         type: "TOURISM_DEMAND",
         title: `Stats NZ tourism demand: ${record.name}`,
         region: "New Zealand",
-        startsAt: new Date(`${record.observationStart}T00:00:00.000Z`),
-        endsAt: addUtcDays(new Date(`${record.observationEnd}T00:00:00.000Z`), 1),
+        startsAt: nzStartOfDay(record.observationStart),
+        endsAt: nzStartOfDay(addNzCalendarDays(record.observationEnd, 1)),
         direction: !annualChange ? "UNKNOWN" : annualChange.value > 0 ? "POSITIVE" : annualChange.value < 0 ? "NEGATIVE" : "MIXED",
         confidence: 0.85,
         evidenceRef: `${STATS_NZ_INTERNATIONAL_TRAVEL_URL}#featured-indicator`,
@@ -1138,20 +1139,8 @@ function parseLongEnglishDate(value: string | undefined): Date | null {
 }
 
 function parseNewZealandLocalDate(value: string): Date | null {
-  const match = value.match(/^(20\d{2})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
-  if (!match) return null;
-  const parts = match.slice(1).map(Number);
-  const naive = Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!, parts[5]!);
-  let instant = new Date(naive);
-  for (let index = 0; index < 2; index += 1) instant = new Date(naive - timeZoneOffsetMs(instant, "Pacific/Auckland"));
-  return Number.isNaN(instant.getTime()) ? null : instant;
-}
-
-function timeZoneOffsetMs(value: Date, timeZone: string): number {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-NZ", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).formatToParts(value).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
-  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
+  try { return nzDateTime(value.replace(" ", "T")); }
+  catch { return null; }
 }
 
 function nullableIsoInstant(value: string): string | null {
@@ -1292,7 +1281,7 @@ export function marketKeysForMbieArea(area: string): string[] {
 }
 
 function addUtcDays(value: Date, days: number) { return new Date(value.getTime() + days * 86_400_000); }
-function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
+function isoDate(value: Date) { return nzDateKey(value); }
 function cleanText(value: string) { return value.replace(/\s+/g, " ").trim(); }
 function slug(value: string) { return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 

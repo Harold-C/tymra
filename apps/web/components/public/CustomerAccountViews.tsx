@@ -107,7 +107,7 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
           <span className="rough-eyebrow"><ShieldCheck aria-hidden="true" />{copy.secureReport}</span>
           <h1>{check.property?.canonicalName}</h1>
           <p>{check.unit?.officialName} · {check.property?.city}</p>
-          <div className="formal-result-meta"><span>{copy.confidence}: <strong>{check.result.confidence}</strong></span><span>{copy.version}: {check.result.version}</span><span>{copy.generated}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(check.result.generatedAt))}</span></div>
+          <div className="formal-result-meta"><span>{copy.confidence}: <strong>{check.result.confidence}</strong></span><span>{copy.version}: {check.result.version}</span><span>{copy.generated}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(check.result.generatedAt))}</span></div>
         </div>
       </section>
       {check.isDemo ? <div className="rough-shell rough-demo formal-demo"><AlertTriangle aria-hidden="true" /><strong>{copy.demoTitle}</strong><span>{copy.demoBody}</span></div> : null}
@@ -120,7 +120,7 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
           <div className="formal-section-heading"><span>{copy.priorityEyebrow}</span><h2>{copy.priorityTitle}</h2><p>{copy.priorityBody}</p></div>
           {check.result.insights.length ? <div className="formal-insight-list">{check.result.insights.map((insight) => (
             <article key={insight.id} className="formal-insight-row">
-              <div><span>{new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "full" }).format(new Date(insight.stayDate))}</span><strong>{copy.risk[insight.risk as keyof typeof copy.risk] ?? insight.risk}</strong></div>
+              <div><span>{new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "full", timeZone: "Pacific/Auckland" }).format(new Date(insight.stayDate))}</span><strong>{copy.risk[insight.risk as keyof typeof copy.risk] ?? insight.risk}</strong></div>
               <div><span>{copy.target}</span><strong>{insight.targetPriceMinor == null ? "-" : money.format(insight.targetPriceMinor / 100)}</strong></div>
               <div><span>{copy.comparable}</span><strong>{insight.competitorLowMinor == null || insight.competitorHighMinor == null ? "-" : `${money.format(insight.competitorLowMinor / 100)}-${money.format(insight.competitorHighMinor / 100)}`}</strong></div>
               <div><span>{copy.action}</span><strong>{copy.actionValue}</strong></div>

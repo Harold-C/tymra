@@ -1,3 +1,4 @@
+import { addNzCalendarDays } from "@tymra/domain";
 import { otaProviderDetails, parseOtaListingReference, type OtaProvider } from "@tymra/providers";
 
 export type SupportedOta = "BOOKING" | "AIRBNB" | "EXPEDIA" | "WOTIF" | "HOTELS_COM" | "BOOKABACH" | "VRBO" | "AGODA" | "TRIP_COM";
@@ -87,14 +88,12 @@ function firstParameter(url: URL, names: string[]) {
 }
 
 function defaultContext(now: Date): ListingPricingContext {
-  const checkIn = startOfUtcDay(now);
-  checkIn.setUTCDate(checkIn.getUTCDate() + 7);
-  const checkOut = new Date(checkIn);
-  checkOut.setUTCDate(checkOut.getUTCDate() + 1);
+  const checkIn = addNzCalendarDays(now, 7);
+  const checkOut = addNzCalendarDays(checkIn, 1);
   return {
     source: "OTA_DEFAULT",
-    checkIn: isoDate(checkIn),
-    checkOut: isoDate(checkOut),
+    checkIn,
+    checkOut,
     adults: 2,
     children: 0,
     units: 1,
@@ -110,12 +109,4 @@ function boundedInteger(value: string | null, fallback: number, minimum: number,
 
 function isIsoDate(value: string | null): value is string {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()));
-}
-
-function startOfUtcDay(value: Date) {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-}
-
-function isoDate(value: Date) {
-  return value.toISOString().slice(0, 10);
 }

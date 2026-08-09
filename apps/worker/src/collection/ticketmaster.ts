@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { EventImpactEvidenceBundle } from "@tymra/domain";
+import { nzCalendarDayDifference, nzDateTime, type EventImpactEvidenceBundle } from "@tymra/domain";
 import type { PublicEvent } from "@tymra/providers";
 
 export const TICKETMASTER_ALLOWED_HOSTS = ["www.ticketmaster.co.nz", "ticketmaster.co.nz"] as const;
@@ -201,7 +201,7 @@ export function ticketmasterRefreshPolicy(events: PublicEvent[], now = new Date(
     .map((event) => event.startsAt < now ? now : event.startsAt)
     .sort((left, right) => left.getTime() - right.getTime());
   if (!activeDates.length) return { active: false, priority: 900, nextFetchAt: null };
-  const days = (activeDates[0].getTime() - now.getTime()) / 86_400_000;
+  const days = nzCalendarDayDifference(activeDates[0], now);
   if (days <= 2) return refreshWithStableBackoff(now, 10, 6, 24, unchangedFetchCount);
   if (days <= 14) return refreshWithStableBackoff(now, 20, 12, 72, unchangedFetchCount);
   if (days <= 60) return refreshWithStableBackoff(now, 40, 48, 7 * 24, unchangedFetchCount);
@@ -281,14 +281,12 @@ function nzDate(value: string): Date | null {
   const trimmed = value.trim();
   if (!/^20\d{2}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?(?:Z|[+-]\d{2}:\d{2})?$/.test(trimmed)) return null;
   const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/.test(trimmed);
-  const localValue = trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`;
-  const parsed = new Date(explicitZone ? localValue : `${localValue}${nzOffset(trimmed.slice(0, 10))}`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function nzOffset(date: string) {
-  const month = Number(date.slice(5, 7));
-  return month >= 4 && month <= 9 ? "+12:00" : "+13:00";
+  if (explicitZone) {
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  try { return nzDateTime(trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00`); }
+  catch { return null; }
 }
 
 function statusValue(value?: string): PublicEvent["status"] {

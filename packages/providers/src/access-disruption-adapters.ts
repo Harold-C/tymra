@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { parseHTML } from "linkedom";
+import { addNzCalendarDays, nzDateKey, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -120,8 +121,9 @@ class InterislanderDisruptionAdapter implements PublicDataAdapter {
     return records.flatMap((raw): PublicSignal[] => {
       const alert = isRecord(raw.payload) && isRecord(raw.payload.alert) ? raw.payload.alert as unknown as InterislanderAlert : null;
       if (!alert) return [];
-      const observedDay = utcDay(raw.fetchedAt);
-      const endsAt = new Date(observedDay.getTime() + 2 * 86_400_000);
+      const observedDate = nzDateKey(raw.fetchedAt);
+      const observedDay = nzStartOfDay(observedDate);
+      const endsAt = nzStartOfDay(addNzCalendarDays(observedDate, 2));
       const description = cleanHtml([alert.summary, alert.content].filter(Boolean).join(" "));
       const markets: readonly NzMajorMarketKey[] = ["wellington", "nelson-tasman"];
       return markets.map((marketKey, index) => ({
@@ -130,7 +132,7 @@ class InterislanderDisruptionAdapter implements PublicDataAdapter {
         startsAt: observedDay, endsAt, direction: /cancel|closed|suspend|severe|large swell/i.test(`${alert.title} ${description}`) ? "NEGATIVE" : "MIXED",
         confidence: /cancel|closed|suspend/i.test(`${alert.title} ${description}`) ? 0.9 : 0.75,
         evidenceRef: "https://www.interislander.co.nz/plan/service-alerts",
-        metadata: { providerAlertId: alert.id, version: alert.version, sourceStart: alert.start, sourceEnd: alert.end, lastEdited: alert.last_edited, description, activeObservationDay: observedDay.toISOString().slice(0, 10) },
+        metadata: { providerAlertId: alert.id, version: alert.version, sourceStart: alert.start, sourceEnd: alert.end, lastEdited: alert.last_edited, description, activeObservationDay: observedDate },
         fixture: false,
       }));
     });
@@ -183,8 +185,9 @@ class DocRegionalAlertsAdapter implements PublicDataAdapter {
       const region = payload.region as unknown as DocRegion;
       const group = payload.group as unknown as DocAlertGroup;
       const alert = payload.alert as unknown as DocAlert;
-      const observedDay = utcDay(raw.fetchedAt);
-      const endsAt = new Date(observedDay.getTime() + 2 * 86_400_000);
+      const observedDate = nzDateKey(raw.fetchedAt);
+      const observedDay = nzStartOfDay(observedDate);
+      const endsAt = nzStartOfDay(addNzCalendarDays(observedDate, 2));
       const description = cleanHtml(alert.description);
       const negative = /closed|closure|do not use|impassable|no access|cancel|suspend|unsafe|danger/i.test(`${alert.summary} ${description}`);
       return region.markets.map((marketKey, index) => ({
@@ -192,7 +195,7 @@ class DocRegionalAlertsAdapter implements PublicDataAdapter {
         marketKey, type: "WEATHER_OR_ACCESS_DISRUPTION", title: `DOC: ${alert.summary}`, region: region.name,
         startsAt: observedDay, endsAt, direction: negative ? "NEGATIVE" : "MIXED", confidence: negative ? 0.85 : 0.7,
         evidenceRef: stringValue(payload.sourceUrl) || DOC_ALERTS_ROOT,
-        metadata: { place: group.name, isGeneral: group.isGeneral, description, sourceReviewedAt: alert.sortDate, sourceDisplayDate: alert.displayDate, associatedBookingIDs: alert.associatedBookingIDs, activeObservationDay: observedDay.toISOString().slice(0, 10) },
+        metadata: { place: group.name, isGeneral: group.isGeneral, description, sourceReviewedAt: alert.sortDate, sourceDisplayDate: alert.displayDate, associatedBookingIDs: alert.associatedBookingIDs, activeObservationDay: observedDate },
         fixture: false,
       }));
     });
@@ -227,7 +230,6 @@ async function jsonHealth(url: string, sourceName: string, context: AdapterConte
 }
 
 function requestHeaders() { return { accept: "application/json", "accept-language": "en-NZ,en;q=0.9", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)", "x-requested-with": "XMLHttpRequest" }; }
-function utcDay(value: Date) { return new Date(`${value.toISOString().slice(0, 10)}T00:00:00.000Z`); }
 function shortHash(value: string) { return createHash("sha256").update(value).digest("hex").slice(0, 20); }
 function cleanHtml(value: string) { const { document } = parseHTML(`<body>${value}</body>`); return (document.body.textContent ?? "").replace(/\s+/g, " ").trim(); }
 function isAccommodationRelevantDocAlert(value: string) { return /closed|closure|do not use|impassable|no access|cancel|suspend|unsafe|danger|restricted|not available|unavailable|road.{0,30}closed/i.test(value); }

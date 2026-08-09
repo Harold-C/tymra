@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { feedbackTypeSchema, localeSchema } from "./enums";
+import { NEW_ZEALAND_TIME_ZONE } from "./nz-time";
 
 export const stayQuerySchema = z
   .object({
@@ -11,7 +12,7 @@ export const stayQuerySchema = z
     units: z.number().int().min(1).max(10).default(1),
     currency: z.literal("NZD").default("NZD"),
     cancellationCategory: z.string().min(1).max(80).default("STANDARD"),
-    timezone: z.string().min(1).max(80),
+    timezone: z.literal(NEW_ZEALAND_TIME_ZONE),
   })
   .superRefine((value, context) => {
     if (value.checkOut <= value.checkIn) {

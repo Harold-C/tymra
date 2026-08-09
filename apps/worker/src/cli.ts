@@ -1,5 +1,6 @@
 import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma } from "@tymra/db";
+import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 import { closeRedis } from "@tymra/queue";
 
 import { handleJob } from "./jobs/job-handlers";
@@ -188,9 +189,9 @@ function locale(args: string[]): "en" | "zh" { return option(args, "--locale") =
 function dateOption(args: string[], name: string, inclusiveEnd = false) {
   const value = option(args, name);
   if (!value) return undefined;
-  const date = new Date(value.includes("T") ? value : `${value}T00:00:00.000Z`);
+  const date = value.includes("T") ? new Date(value) : nzStartOfDay(value);
   if (Number.isNaN(date.getTime())) throw new Error(`Invalid ${name}`);
-  return inclusiveEnd && !value.includes("T") ? new Date(date.getTime() + 86_400_000) : date;
+  return inclusiveEnd && !value.includes("T") ? nzStartOfDay(addNzCalendarDays(value, 1)) : date;
 }
 function integerOption(args: string[], name: string) {
   const value = option(args, name);

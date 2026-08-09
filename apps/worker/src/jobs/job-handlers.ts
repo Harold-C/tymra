@@ -10,7 +10,7 @@ import {
   type Job,
   type Prisma,
 } from "@tymra/db";
-import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence } from "@tymra/domain";
+import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence, nzDateKey } from "@tymra/domain";
 import {
   buildServiceEmail,
   DemoProvider,
@@ -739,7 +739,7 @@ async function refreshMarketCoverage() {
       lastSuccessAt: latestDate(sourceRuns.filter((run) => run.status === "SUCCEEDED").map((run) => run.finishedAt ?? run.createdAt)),
       successfulRuns72h: runs72h.filter((run) => run.status === "SUCCEEDED").length,
       failedRuns72h: runs72h.filter((run) => run.status === "FAILED").length,
-      successfulRunDays: new Set(sourceRuns.filter((run) => run.status === "SUCCEEDED").map((run) => run.createdAt.toISOString().slice(0, 10))).size,
+      successfulRunDays: new Set(sourceRuns.filter((run) => run.status === "SUCCEEDED").map((run) => nzDateKey(run.createdAt))).size,
       enabled: source.enabled,
       available: sourceAvailableForOperationalCoverage(source),
       ...(marketKeys.length ? { marketKeys } : {}),

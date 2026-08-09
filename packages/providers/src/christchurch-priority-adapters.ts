@@ -1,5 +1,5 @@
 import { parseHTML } from "linkedom";
-import { emptyEventImpactEvidence } from "@tymra/domain";
+import { emptyEventImpactEvidence, nzDateKey, nzDateTime as newZealandDateTime } from "@tymra/domain";
 
 import type {
   AdapterContext,
@@ -307,11 +307,7 @@ function namedDate(year: number, monthName: string, day: number) {
 function startOfNzDay(date: Date) { return nzDateTime(isoDate(date), "00:00:00"); }
 function endOfNzDay(date: Date) { return nzDateTime(isoDate(date), "23:59:59"); }
 function nzDateTime(date: string, time: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute, second] = time.split(":").map(Number);
-  const guess = new Date(Date.UTC(year!, month! - 1, day!, hour!, minute!, second!));
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-NZ", { timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(guess).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
-  return new Date(guess.getTime() - (Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - guess.getTime()));
+  return newZealandDateTime(`${date}T${time}`);
 }
 
 function eventRawRecords(sourceId: string, events: PublicEvent[], requests: number): PublicRawRecord[] {
@@ -355,7 +351,7 @@ function maxRequests(context: AdapterContext, fallback: number) { return Math.ma
 function maxRecords(context: AdapterContext, fallback: number) { return Math.max(1, context.collectionLimits?.maxRecords ?? fallback); }
 function clean(value: string) { return value.replace(/\s+/g, " ").trim(); }
 function slug(value: string) { return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 100); }
-function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
+function isoDate(value: Date) { return nzDateKey(value); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isEvent(value: unknown): value is PublicEvent { return isRecord(value) && typeof value.externalId === "string" && value.startsAt instanceof Date; }
 function isSignal(value: unknown): value is PublicSignal { return isRecord(value) && typeof value.externalId === "string" && value.startsAt instanceof Date; }

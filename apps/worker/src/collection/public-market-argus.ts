@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { eventImpactEvidenceBundleSchema } from "@tymra/domain";
+import { eventImpactEvidenceBundleSchema, nzEndOfDay, nzStartOfDay } from "@tymra/domain";
 import { argusPublicMarketSource, type ArgusPublicMarketSourceDefinition, type PublicEvent, type PublicRawRecord, type PublicSignal } from "@tymra/providers";
 
 const fieldSources = z.record(z.string(), z.string());
@@ -56,7 +56,10 @@ export function normaliseArgusPublicMarketRecords(sourceId: string, extraction: 
 }
 
 function venueEvent(source: ArgusPublicMarketSourceDefinition, extraction: OfficialVenueEventsExtraction, event: OfficialVenueEventsExtraction["events"][number], venue?: OfficialVenueResolveExtraction): PublicEvent {
-  const startsAt = parseSourceDate(event.startsAt); const endsAt = event.endsAt ? parseSourceDate(event.endsAt) : new Date(startsAt.getTime() + (event.timePrecision === "DATE" ? 86_400_000 - 1 : 3_600_000));
+  const startsAt = parseSourceDate(event.startsAt);
+  const endsAt = event.endsAt
+    ? event.timePrecision === "DATE" ? nzEndOfDay(event.endsAt) : parseSourceDate(event.endsAt)
+    : event.timePrecision === "DATE" ? nzEndOfDay(event.startsAt) : new Date(startsAt.getTime() + 3_600_000);
   return { sourceId: source.sourceId, externalId: event.eventId, title: event.title, category: "Official venue event", subcategory: null, sourceUrl: event.canonicalUrl, venueName: venue?.canonicalName ?? extraction.venueId, address: venue?.address ?? null, city: venue?.city ?? source.city, region: venue?.region ?? source.region, territorialAuthority: null, postcode: venue?.postcode ?? null, countryCode: "NZ", latitude: venue?.latitude ?? null, longitude: venue?.longitude ?? null, timezone: event.timezone, timePrecision: event.timePrecision, startsAt, endsAt: endsAt >= startsAt ? endsAt : startsAt, observedAt: new Date(extraction.observedAt), evidenceRef: extraction.sourceUrl, status: event.status, ticketStatus: null, impactStatus: "PENDING_EVIDENCE", impactScore: null, impactConfidence: null, impactEvidence: event.impactEvidence, sourceUpdatedAt: null, metadata: { provider: extraction.provider, venueId: extraction.venueId, venueCapacity: venue?.maximumCapacity ?? null, venueCapacitySourceUrl: venue?.capacitySourceUrl ?? null, venueCapacityObservedAt: venue?.observedAt ?? null, venueCapacityIsAttendance: false, capacityConfigurations: venue?.capacityConfigurations ?? [], argusQuality: extraction.quality, argusWarnings: extraction.warnings, fieldSources: event.fieldSources }, fixture: false };
 }
 
@@ -78,5 +81,5 @@ function airportSignal(source: ArgusPublicMarketSourceDefinition, extraction: Pu
 function rawEvent(source: ArgusPublicMarketSourceDefinition, externalId: string, event: PublicEvent, index: number): PublicRawRecord { return { sourceId: source.sourceId, externalId, payload: { kind: "event", event }, fetchedAt: event.observedAt ?? new Date(), fixture: false, networkRequestCount: index === 0 ? source.kind === "venue" ? 2 : 1 : 0 }; }
 function rawSignal(source: ArgusPublicMarketSourceDefinition, externalId: string, signal: PublicSignal, index: number): PublicRawRecord { return { sourceId: source.sourceId, externalId, payload: { kind: "signal", signal }, fetchedAt: new Date(), fixture: false, networkRequestCount: index === 0 ? 1 : 0 }; }
 function requiredSource(sourceId: string) { const source = argusPublicMarketSource(sourceId); if (!source) throw new Error(`${sourceId} is not an Argus public market source`); return source; }
-function parseSourceDate(value: string) { const parsed = /^\d{4}-\d{2}-\d{2}$/u.test(value) ? new Date(`${value}T00:00:00+12:00`) : new Date(value); if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid public event date ${value}`); return parsed; }
-function endOfSourceDate(value: string) { const start = parseSourceDate(value); return new Date(start.getTime() + 86_400_000 - 1); }
+function parseSourceDate(value: string) { const parsed = /^\d{4}-\d{2}-\d{2}$/u.test(value) ? nzStartOfDay(value) : new Date(value); if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid public event date ${value}`); return parsed; }
+function endOfSourceDate(value: string) { return nzEndOfDay(value); }

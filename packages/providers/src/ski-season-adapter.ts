@@ -1,4 +1,5 @@
 import { parseHTML } from "linkedom";
+import { addNzCalendarDays, nzDateKey, nzStartOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -46,7 +47,7 @@ class SkiSeasonAdapter implements PublicDataAdapter {
     let season: SkiSeasonRecord;
     try { season = parseSkiSeasonHtml(html, source); }
     catch (error) { throw new AdapterError("PARSING_ERROR", error instanceof Error ? error.message : `${source.resort} season parsing failed`, false); }
-    return [{ sourceId: "ski_seasons_nz", externalId: `ski-season:${slug(source.resort)}:${season.opensAt.slice(0, 4)}`, payload: season, fetchedAt: new Date(), fixture: false, networkRequestCount: 1 }];
+    return [{ sourceId: "ski_seasons_nz", externalId: `ski-season:${slug(source.resort)}:${nzDateKey(new Date(season.opensAt)).slice(0, 4)}`, payload: season, fetchedAt: new Date(), fixture: false, networkRequestCount: 1 }];
   }
 
   async normalise(records: PublicRawRecord[]): Promise<PublicSignal[]> {
@@ -55,7 +56,7 @@ class SkiSeasonAdapter implements PublicDataAdapter {
       const opensAt = new Date(stringValue(raw.payload.opensAt));
       const closingDay = new Date(stringValue(raw.payload.closesAt));
       if (Number.isNaN(opensAt.getTime()) || Number.isNaN(closingDay.getTime())) return [];
-      const closesAt = new Date(closingDay.getTime() + 86_400_000);
+      const closesAt = nzStartOfDay(addNzCalendarDays(closingDay, 1));
       const resort = stringValue(raw.payload.resort);
       return [{
         sourceId: "ski_seasons_nz", externalId: raw.externalId, marketKey: stringValue(raw.payload.marketKey), type: "TOURISM_DEMAND",
@@ -86,8 +87,9 @@ function parseNzDate(value: string, year: number) {
   const month = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].indexOf(match[2]!.toLowerCase());
   const day = Number(match[1]);
   if (month < 0 || day < 1 || day > 31) return null;
-  const date = new Date(Date.UTC(year, month, day));
-  return date.getUTCDate() === day ? date : null;
+  const key = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  try { return nzStartOfDay(key); }
+  catch { return null; }
 }
 
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }

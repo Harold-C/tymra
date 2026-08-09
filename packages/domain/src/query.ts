@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
+import { addNzCalendarDays, nzDateKey, nzDayOfWeek } from "./nz-time";
+
 export const querySignatureInputSchema = z.object({
   sourceId: z.string().min(1),
   listingId: z.string().min(1).optional(),
@@ -42,7 +44,7 @@ export function createQuerySignature(input: QuerySignatureInput): QuerySignature
   const parsed = querySignatureInputSchema.parse(input);
   const payload = {
     ...parsed,
-    checkIn: parsed.checkIn.toISOString().slice(0, 10),
+    checkIn: nzDateKey(parsed.checkIn),
     childrenAges: [...parsed.childrenAges].sort((a, b) => a - b),
     unitConstraints: sortObject(parsed.unitConstraints),
   };
@@ -62,23 +64,24 @@ export type QueryPlanDate = {
 export function buildNationalDateBasket(now: Date, specialDates: Array<{ date: Date; reason: QueryPlanDate["reason"] }> = []): QueryPlanDate[] {
   const dates = new Map<string, QueryPlanDate>();
   for (const [days, reason] of [[7, "D7"], [14, "D14"], [30, "D30"], [60, "D60"], [90, "D90"]] as const) {
-    const date = addDays(startOfUtcDay(now), days);
-    dates.set(dateKey(date), { checkIn: dateKey(date), reason });
+    const date = addNzCalendarDays(now, days);
+    dates.set(date, { checkIn: date, reason });
   }
 
   const weekday = nextDayOfWeek(now, 2);
   const weekend = nextDayOfWeek(now, 6);
-  dates.set(dateKey(weekday), { checkIn: dateKey(weekday), reason: "WEEKDAY" });
-  dates.set(dateKey(weekend), { checkIn: dateKey(weekend), reason: "WEEKEND" });
-  for (const item of specialDates) dates.set(dateKey(item.date), { checkIn: dateKey(item.date), reason: item.reason });
+  dates.set(weekday, { checkIn: weekday, reason: "WEEKDAY" });
+  dates.set(weekend, { checkIn: weekend, reason: "WEEKEND" });
+  for (const item of specialDates) dates.set(nzDateKey(item.date), { checkIn: nzDateKey(item.date), reason: item.reason });
   return [...dates.values()].sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
 export function buildFormalThirtyDayDates(now: Date): QueryPlanDate[] {
-  const start = addDays(startOfUtcDay(now), 1);
+  const start = addNzCalendarDays(now, 1);
   return Array.from({ length: 30 }, (_, index) => {
-    const date = addDays(start, index);
-    return { checkIn: dateKey(date), reason: date.getUTCDay() === 0 || date.getUTCDay() === 6 ? "WEEKEND" : "WEEKDAY" };
+    const date = addNzCalendarDays(start, index);
+    const weekday = nzDayOfWeek(date);
+    return { checkIn: date, reason: weekday === 0 || weekday === 6 ? "WEEKEND" : "WEEKDAY" };
   });
 }
 
@@ -92,20 +95,8 @@ function sortObject(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, sortObject(item)]));
 }
 
-function startOfUtcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-}
-
-function addDays(value: Date, days: number): Date {
-  return new Date(value.getTime() + days * 86_400_000);
-}
-
-function dateKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function nextDayOfWeek(value: Date, targetDay: number): Date {
-  const date = startOfUtcDay(value);
-  const distance = (targetDay - date.getUTCDay() + 7) % 7 || 7;
-  return addDays(date, distance);
+function nextDayOfWeek(value: Date, targetDay: number): string {
+  const date = nzDateKey(value);
+  const distance = (targetDay - nzDayOfWeek(date) + 7) % 7 || 7;
+  return addNzCalendarDays(date, distance);
 }

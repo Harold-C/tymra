@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./nz-time": "./src/nz-time.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -18,4 +19,3 @@
     "vitest": "^3.2.4"
   }
 }
-

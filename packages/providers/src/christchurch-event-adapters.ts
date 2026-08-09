@@ -1,4 +1,5 @@
 import { parseHTML } from "linkedom";
+import { nzDateKey, nzDateTime as newZealandDateTime } from "@tymra/domain";
 
 import type {
   AdapterContext,
@@ -345,19 +346,7 @@ function parseNzSourceDate(value: string): Date | null {
 }
 
 function nzDateTime(date: string, time: string): Date {
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute, second] = time.split(":").map(Number);
-  const naive = Date.UTC(year!, month! - 1, day!, hour!, minute!, second!);
-  let instant = new Date(naive);
-  for (let index = 0; index < 2; index += 1) instant = new Date(naive - timeZoneOffsetMs(instant));
-  return instant;
-}
-
-function timeZoneOffsetMs(value: Date) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).formatToParts(value).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
-  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - value.getTime();
+  return newZealandDateTime(`${date}T${time}`);
 }
 
 function richTextValue(value: unknown): string | null {
@@ -422,7 +411,7 @@ function stringValue(value: unknown) { return typeof value === "string" || typeo
 function nullableText(value: unknown) { const text = cleanText(stringValue(value)); return text || null; }
 function cleanText(value: string) { return value.replace(/\s+/g, " ").trim(); }
 function slug(value: string) { return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
-function isoDate(value: Date) { return value.toISOString().slice(0, 10); }
+function isoDate(value: Date) { return nzDateKey(value); }
 function postcodeFromAddress(value: string) { return value.match(/\b(\d{4})\b/)?.[1] ?? null; }
 function maxRecords(context: AdapterContext) { return context.collectionLimits?.maxRecords ?? 5_000; }
 function maxRequests(context: AdapterContext, defaultValue: number) { return context.collectionLimits?.maxRequests ?? defaultValue; }

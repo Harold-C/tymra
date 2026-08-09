@@ -26,7 +26,7 @@ const encryptionSecret = required("DATA_ENCRYPTION_KEY");
 const adminEmail = required("ADMIN_EMAIL").toLowerCase();
 const adminPasswordHash = required("ADMIN_PASSWORD_HASH");
 const demoEmail = "development-demo@tymra.test";
-const seedDate = startOfUtcDay(new Date());
+const seedDate = newZealandDateStorageDay(new Date());
 const checkIn = addDays(seedDate, 5);
 const checkOut = addDays(seedDate, 6);
 const resultStatuses = new Set<PriceCheckStatus>([
@@ -530,7 +530,7 @@ async function seedMarketCoverage() {
       create: {
         key,
         name: christchurch ? "Christchurch Development Demo Coverage" : name,
-        status: christchurch ? MarketStatus.SUPPORTED : publicSignalStatus === "ARGUS_REQUIRED" ? MarketStatus.COMING_SOON : MarketStatus.PILOT_AVAILABLE,
+        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PILOT_AVAILABLE,
         region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
         knownPropertyCount: christchurch ? 12 : 0,
         knownUnitCount: christchurch ? 21 : 0,
@@ -544,7 +544,7 @@ async function seedMarketCoverage() {
       },
       update: {
         name: christchurch ? "Christchurch Development Demo Coverage" : name,
-        status: christchurch ? MarketStatus.SUPPORTED : publicSignalStatus === "ARGUS_REQUIRED" ? MarketStatus.COMING_SOON : MarketStatus.PILOT_AVAILABLE,
+        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PILOT_AVAILABLE,
         region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
         acceptNewChecks: christchurch,
       },
@@ -1307,8 +1307,9 @@ function required(name: string): string {
   return value;
 }
 
-function startOfUtcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+function newZealandDateStorageDay(value: Date): Date {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value).map((part) => [part.type, part.value]));
+  return new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00.000Z`);
 }
 
 function addDays(value: Date, days: number): Date {
@@ -1320,7 +1321,7 @@ function addMinutes(value: Date, minutes: number): Date {
 }
 
 function dateKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
 }
 
 main()

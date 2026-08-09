@@ -4,6 +4,8 @@ import { describe, it } from "vitest";
 import {
   normaliseSportySchoolSportEvents,
   normaliseTicketekEvents,
+  normalisedEnd,
+  parseAucklandDate,
   sportySchoolSportExtractionSchema,
   ticketekDetailExtractionSchema,
   ticketekListingExtractionSchema,
@@ -12,6 +14,12 @@ import {
 const range = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-10-01T00:00:00Z") };
 
 describe("School Sport and Ticketek Argus contracts", () => {
+  it("uses New Zealand local boundaries across daylight-saving changes", () => {
+    const startsAt = parseAucklandDate("2026-09-27")!;
+    assert.equal(startsAt.toISOString(), "2026-09-26T12:00:00.000Z");
+    assert.equal(normalisedEnd(startsAt, null, "DATE").toISOString(), "2026-09-27T10:59:59.999Z");
+  });
+
   it("retains Sporty raw rows but promotes only explicitly located, non-administrative Canterbury occurrences", () => {
     const extraction = sportySchoolSportExtractionSchema.parse(sportyExtraction());
     const events = normaliseSportySchoolSportEvents(extraction, "school_sport_canterbury", range);

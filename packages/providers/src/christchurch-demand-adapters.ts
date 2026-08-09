@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseHTML } from "linkedom";
+import { nzDateKey, nzDateTime as newZealandDateTime, nzEndOfDay } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -104,7 +105,7 @@ export function parseChristchurchSports(html: string, finalUrl: string): HtmlRes
     });
     return { events };
   }
-  const year = Number(clean(document.querySelector("h1")?.textContent ?? html).match(/\b(20\d{2})\b/)?.[1]) || new Date().getFullYear();
+  const year = Number(clean(document.querySelector("h1")?.textContent ?? html).match(/\b(20\d{2})\b/)?.[1]) || Number(nzDateKey(new Date()).slice(0, 4));
   const events = [...document.querySelectorAll(".match.home-game")].flatMap((match) => {
     const day = clean(match.querySelector(".date .day")?.textContent ?? "");
     const month = clean(match.querySelector(".date .month")?.textContent ?? "");
@@ -256,9 +257,8 @@ function isDemandRelevantUniversityDate(title: string) { return /graduation|open
 function parseDateRange(value: string, year: number) { const matches = [...value.matchAll(/(\d{1,2})(?:\s+([A-Za-z]+))?/g)]; if (!matches.length) return null; const endMonth = monthIndex(value.match(/([A-Za-z]+)\s*$/)?.[1] ?? ""); const startMonth = monthIndex(matches[0]?.[2] ?? "") >= 0 ? monthIndex(matches[0]![2]!) : endMonth; if (startMonth < 0 || endMonth < 0) return null; return { start: nzDate(year, startMonth, Number(matches[0]![1]), 0, 0), end: nzDate(year, endMonth, Number(matches.at(-1)![1]), 0, 0) }; }
 function parseDayMonthTime(value: string, year: number) { const match = value.match(/(?:[A-Za-z]{3}\s+)?(\d{1,2})\s+([A-Za-z]{3,9})\s*\|\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i); if (!match || !year) return null; let hour = Number(match[3]); if (match[5]?.toLowerCase() === "pm" && hour < 12) hour += 12; if (match[5]?.toLowerCase() === "am" && hour === 12) hour = 0; const month = monthIndex(match[2]!); return month < 0 ? null : nzDate(year, month, Number(match[1]), hour, Number(match[4])); }
 function parseLongDateTime(value: string) { const match = value.match(/(\d{1,2})\s+([A-Za-z]+)\s+(20\d{2})\s+(\d{1,2}):(\d{2})(am|pm)/i); if (!match) return null; let hour = Number(match[4]) % 12; if (match[6]!.toLowerCase() === "pm") hour += 12; const month = monthIndex(match[2]!); return month < 0 ? null : nzDate(Number(match[3]), month, Number(match[1]), hour, Number(match[5])); }
-function nzDate(year: number, month: number, day: number, hour: number, minute: number) { const utcGuess = new Date(Date.UTC(year, month, day, hour, minute)); return new Date(utcGuess.getTime() - timezoneOffset(utcGuess)); }
-function endOfDay(date: Date) { return new Date(date.getTime() + 86_400_000 - 1); }
-function timezoneOffset(date: Date) { const values = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(date).map((part) => [part.type, part.value])); return Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour), Number(values.minute), Number(values.second)) - date.getTime(); }
+function nzDate(year: number, month: number, day: number, hour: number, minute: number) { return newZealandDateTime(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`); }
+function endOfDay(date: Date) { return nzEndOfDay(nzDateKey(date)); }
 function monthIndex(value: string) { const token = value?.trim().toLowerCase().slice(0, 3); return token ? ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"].findIndex((month) => month.startsWith(token)) : -1; }
 function parseCount(value?: string) { if (!value) return null; const number = Number(value.replace(/,/g, "")); return Number.isFinite(number) ? number : null; }
 function clean(value: string) { return value.replace(/\s+/g, " ").trim(); }

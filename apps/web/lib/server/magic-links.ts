@@ -9,7 +9,7 @@ import {
   recordFunnelEvent,
   type Prisma,
 } from "@tymra/db";
-import { stayQuerySchema, unlockRoughResultSchema } from "@tymra/domain";
+import { nzCalendarDayDifference, stayQuerySchema, unlockRoughResultSchema } from "@tymra/domain";
 import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers";
 
 import { issueCustomerSessionToken } from "./customer-auth";
@@ -201,7 +201,7 @@ export async function consumeMagicLink(rawToken: string) {
           adults: context.adults,
           children: context.children,
           units: context.units,
-          nights: Math.max(1, Math.round((context.checkOut.getTime() - context.checkIn.getTime()) / 86_400_000)),
+          nights: Math.max(1, nzCalendarDayDifference(context.checkOut, context.checkIn)),
           currency: "NZD",
           cancellationCategory: "STANDARD",
           timezone: "Pacific/Auckland",
