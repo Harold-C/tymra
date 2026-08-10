@@ -95,7 +95,21 @@ export class DemoProvider implements DataProvider {
 
   async fetchRates(request: RateRequest, _context: ProviderContext): Promise<ProviderRate[]> {
     const dayOffset = Math.floor(request.checkIn.getTime() / 86_400_000) % 7;
-    return Array.from({ length: 8 }, (_, index) => ({
+    const targetRate: ProviderRate = {
+      listingExternalId: "demo-target-listing",
+      currency: "NZD",
+      baseAmountMinor: 16_000 + dayOffset * 250,
+      mandatoryFeesMinor: 2_000,
+      taxesMinor: 2_400,
+      platformFeesMinor: 0,
+      cancellationCategory: "STANDARD",
+      minimumStay: null,
+      availabilityStatus: "AVAILABLE",
+      feeCompleteness: "COMPLETE",
+      collectedAt: new Date(request.checkIn.getTime() - 3_600_000),
+      isDemo: true,
+    };
+    const comparableRates = Array.from({ length: 8 }, (_, index) => ({
       listingExternalId: `demo-comparable-${index + 1}`,
       currency: "NZD" as const,
       baseAmountMinor: 18_000 + dayOffset * 300 + index * 550,
@@ -109,6 +123,7 @@ export class DemoProvider implements DataProvider {
       collectedAt: new Date(request.checkIn.getTime() - 3_600_000),
       isDemo: true,
     }));
+    return [targetRate, ...comparableRates];
   }
 
   async healthCheck(_context: ProviderContext): Promise<ProviderHealth> {

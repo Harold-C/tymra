@@ -57,6 +57,7 @@ Anonymous supported OTA listing URL
 - Low-cost cached or aggregate rough analysis.
 - Email verification through a one-time magic link.
 - Automatic creation or resumption of a customer account after verification.
+- Independent returning-customer sign-in and sign-out without a listing or pricing side effect.
 - Authenticated customer sessions and account-owned Price Checks.
 - Formal Price Check started only after verification.
 - Authenticated report history and result access.
@@ -71,12 +72,14 @@ Anonymous supported OTA listing URL
 - Team membership, invitations and organisation roles.
 - Exclusive property ownership claims.
 - PMS or Channel Manager ownership verification.
-- Billing, subscriptions or paid quota upgrades.
+- Billing, subscriptions or paid quota upgrades are not defined by this authentication document; the approved product contract is in `membership-plans.md`.
 - Public report sharing by default.
 - Password authentication.
 - Property-name or natural-address input that directly starts pricing analysis.
 - Mandatory date, guest-count or room-type selection in the new-visitor flow.
 - Live OTA scraping or unrestricted raw competitor export.
+
+Billing and paid upgrades remain outside this authentication/funnel document, not outside the approved Post-Release product.
 
 ## 4. End-to-End User Flow
 
@@ -109,10 +112,13 @@ Anonymous supported OTA listing URL
 
 ### 4.2 Returning customer
 
-1. A returning customer may request another magic link from the same unlock or sign-in form.
-2. The public response must not reveal whether the email already has an account.
-3. After verification, the customer resumes the existing account and sees account-owned checks.
-4. Existing unexpired sessions should not require another email for each eligible formal check.
+1. A returning customer opens the independent `/{locale}/sign-in` page.
+2. The independent sign-in page does not require a listing URL, rough result, Price Check, pricing unit or paid plan.
+3. The customer submits the membership email and password plus an optional safe same-origin `returnTo`.
+4. Tymra returns one neutral invalid-credentials state for unknown, suspended, passwordless and incorrect-password identities and rate-limits repeated attempts.
+5. A valid login creates an opaque customer session and resumes the existing account without creating a check, unit, job or quota entry.
+6. A new customer registers at `/{locale}/sign-up`; registration creates a Free membership and no pricing work.
+7. Signing out revokes the current customer session but does not cancel membership, delete data or revoke an Admin session.
 
 ### 4.3 Supported listing URL and default-context contract
 
@@ -259,15 +265,29 @@ blocked or unknown customer identities wherever operationally possible.
   expiring and revocable.
 - Existing Release 1 secure result tokens remain supported only for a bounded migration period.
 
-Recommended customer routes:
+Required customer authentication and account routes:
 
 ```text
 /{locale}/sign-in
+/{locale}/sign-up
 /{locale}/auth/verify
 /{locale}/account
 /{locale}/account/checks
 /{locale}/account/checks/{checkId}
 ```
+
+Required authentication endpoints:
+
+```text
+POST   /api/v1/customer/auth/register
+POST   /api/v1/customer/auth/password
+PUT    /api/v1/customer/auth/password
+DELETE /api/v1/customer/session
+```
+
+Registration and password login never create or reserve a Price Check, Job, pricing unit or membership usage record. `PUT /api/v1/customer/auth/password` changes the authenticated customer's password and revokes their other sessions. `DELETE /api/v1/customer/session` revokes the current server-side customer session and clears only the customer cookie.
+
+Direct unauthenticated access to an account route redirects to `/{locale}/sign-in` with a validated same-origin return target. Unsafe, absolute, cross-origin or Admin return targets are rejected.
 
 ## 9. Email Policy
 
@@ -473,6 +493,10 @@ with the verified core funnel.
 | R15-ID-001 | Email submission does not activate a customer before verification | Database/API integration test |
 | R15-ID-002 | A valid magic link creates or resumes one customer and one session | Auth integration and E2E |
 | R15-ID-003 | Customer identity cannot access or receive Admin privileges | Authorization tests |
+| R15-AUTH-001 | A customer can register and later sign in with email and password without creating a rough/formal check, job, pricing unit or quota entry | API, database integration and EN/ZH browser tests |
+| R15-AUTH-002 | Unlock and sign-in tokens are purpose-bound and cannot exchange side effects | Purpose-confusion, replay and concurrent-consume integration tests |
+| R15-AUTH-003 | Sign-out revokes the current customer session and leaves membership, customer data and Admin sessions unchanged | Session lifecycle and browser tests |
+| R15-AUTH-004 | Protected account routes preserve only allowlisted same-origin return targets through sign-in | Open-redirect and route-guard tests |
 | R15-SEC-001 | Magic links are hashed, single-use, 15-minute and removed from the URL | Security integration and browser test |
 | R15-SEC-002 | Invalid links and neutral email responses do not enumerate accounts | API and timing-class tests |
 | R15-SEC-003 | Customer sessions rotate, expire, revoke and remain isolated from Admin sessions | Session lifecycle and authorization tests |

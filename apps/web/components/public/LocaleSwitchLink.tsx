@@ -8,7 +8,12 @@ export function LocaleSwitchLink({ locale, label, className }: { locale: "en" | 
   const searchParams = useSearchParams();
   const targetLocale = locale === "en" ? "zh" : "en";
   const localizedPath = pathname.replace(/^\/(en|zh)(?=\/|$)/, `/${targetLocale}`);
-  const query = searchParams.toString();
+  const localizedQuery = new URLSearchParams(searchParams.toString());
+  const returnTo = localizedQuery.get("returnTo");
+  if (returnTo && /^\/(en|zh)\/account(?:[/?]|$)/u.test(returnTo)) {
+    localizedQuery.set("returnTo", returnTo.replace(/^\/(en|zh)(?=\/|$)/u, `/${targetLocale}`));
+  }
+  const query = localizedQuery.toString();
 
   return <Link className={className} href={`${localizedPath}${query ? `?${query}` : ""}`}>{label}</Link>;
 }

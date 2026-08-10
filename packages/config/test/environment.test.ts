@@ -98,3 +98,24 @@ describe("Argus configuration", () => {
     })).toThrow("must exceed ARGUS_TIMEOUT_MS");
   });
 });
+
+describe("membership billing launch gates", () => {
+  const billing = {
+    ...required,
+    BILLING_ENABLED: "true",
+    STRIPE_SECRET_KEY: "sk_test_membership",
+    STRIPE_WEBHOOK_SECRET: "whsec_membership",
+    STRIPE_PORTAL_CONFIGURATION_ID: "bpc_membership_restricted",
+    STRIPE_HOST_PRICE_ID: "price_host_monthly_nzd",
+  };
+
+  it("requires a signed webhook, restricted portal configuration and Host Price", () => {
+    expect(() => environmentSchema.parse({ ...billing, STRIPE_PORTAL_CONFIGURATION_ID: undefined })).toThrow("restricted Customer Portal");
+    expect(() => environmentSchema.parse({ ...billing, STRIPE_WEBHOOK_SECRET: undefined })).toThrow("restricted Customer Portal");
+  });
+
+  it("keeps Pro and Portfolio unavailable without their mapped Stripe Prices", () => {
+    expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PRO_LAUNCH_ENABLED: "true" })).toThrow("Pro launch gate");
+    expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true" })).toThrow("Portfolio launch gate");
+  });
+});

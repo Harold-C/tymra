@@ -77,8 +77,13 @@ export function buildNationalDateBasket(now: Date, specialDates: Array<{ date: D
 }
 
 export function buildFormalThirtyDayDates(now: Date): QueryPlanDate[] {
+  return buildDailyPriceDates(now, 30);
+}
+
+export function buildDailyPriceDates(now: Date, horizonDays: number): QueryPlanDate[] {
+  if (!Number.isInteger(horizonDays) || horizonDays < 1 || horizonDays > 366) throw new Error("Daily price horizon must be between 1 and 366 days");
   const start = addNzCalendarDays(now, 1);
-  return Array.from({ length: 30 }, (_, index) => {
+  return Array.from({ length: horizonDays }, (_, index) => {
     const date = addNzCalendarDays(start, index);
     const weekday = nzDayOfWeek(date);
     return { checkIn: date, reason: weekday === 0 || weekday === 6 ? "WEEKEND" : "WEEKDAY" };

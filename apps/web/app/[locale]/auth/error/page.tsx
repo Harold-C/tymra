@@ -11,8 +11,8 @@ export default function AuthErrorPage({ params }: { params: { locale: "en" | "zh
         <div>
           <AlertTriangle aria-hidden="true" />
           <h1>{zh ? "此验证链接无效" : "This verification link is invalid"}</h1>
-          <p>{zh ? "链接可能已经使用、过期或被撤销。请从粗略结果页面重新申请。" : "The link may have been used, expired or revoked. Request a new one from the rough result page."}</p>
-          <Link className="button button-primary" href={`/${params.locale}`}>{zh ? "返回首页" : "Return home"}</Link>
+          <p>{zh ? "Price Check 验证链接可能已经使用、过期或被撤销。请重新开始检查。" : "The Price Check verification link may have been used, expired or revoked. Start the check again."}</p>
+          <Link className="button button-primary" href={`/${params.locale}/check`}>{zh ? "重新开始 Price Check" : "Start a new Price Check"}</Link>
         </div>
       </section>
     </PublicShell>

@@ -14,7 +14,7 @@ export default async function globalSetup() {
   await prisma.usageLedger.deleteMany({ where: { action: "ROUGH_CHECK" } });
   await prisma.abuseDecision.deleteMany({ where: { action: "ROUGH_CHECK" } });
   await prisma.$disconnect();
-  recreateRuntime({ ...environment, PROVIDER_MODE: "demo", COMPOSE_EMAIL_PROVIDER: "smtp", WORKER_POLL_INTERVAL_MS: "100" });
+  recreateRuntime({ ...environment, PROVIDER_MODE: "demo", PUBLIC_COLLECTION_MODE: "fixture", COMPOSE_EMAIL_PROVIDER: "smtp", WORKER_POLL_INTERVAL_MS: "100" });
 }
 
 function e2eEnvironment(): NodeJS.ProcessEnv {
@@ -36,6 +36,7 @@ function e2eEnvironment(): NodeJS.ProcessEnv {
     DATA_ENCRYPTION_KEY: launchValue("DATA_ENCRYPTION_KEY") || derivedSecret("encryption"),
     CRON_SECRET: launchValue("CRON_SECRET") || derivedSecret("cron"),
     PROVIDER_MODE: "demo",
+    PUBLIC_COLLECTION_MODE: "fixture",
     DEFAULT_MARKET: "christchurch",
     AUTO_PUBLISH_ENABLED: "true",
     ACCEPT_NEW_CHECKS: "true",

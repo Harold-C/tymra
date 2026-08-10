@@ -100,7 +100,7 @@ describe("Release 1.5 verification and session boundaries", () => {
     expect(await prisma.anonymousCheck.findUnique({ where: { id: check.id } })).toMatchObject({ customerUserId: null });
   });
 
-  it("enforces the one-per-24-hour formal quota before enqueue while still creating a rotated session", async () => {
+  it("allows the one additional rolling Free check after the included report", async () => {
     const email = `${prefix}@tymra.test`;
     const emailHash = hashPersonalIdentifier(email, process.env.ACCESS_KEY_SECRET!);
     const customer = await prisma.customerUser.findUniqueOrThrow({ where: { emailHash } });
@@ -123,8 +123,13 @@ describe("Release 1.5 verification and session boundaries", () => {
 
     const result = await consumeMagicLink(token.token);
 
-    expect(result).toMatchObject({ quotaReached: true, priceCheckId: null, customerUserId: customer.id });
-    expect(await prisma.priceCheck.count({ where: { customerUserId: customer.id } })).toBe(beforeChecks);
+    expect(result).toMatchObject({ quotaReached: false, priceCheckId: expect.any(String), customerUserId: customer.id });
+    expect(await prisma.priceCheck.count({ where: { customerUserId: customer.id } })).toBe(beforeChecks + 1);
+    if (result.priceCheckId) {
+      created.priceCheckIds.push(result.priceCheckId);
+      const createdCheck = await prisma.priceCheck.findUniqueOrThrow({ where: { id: result.priceCheckId } });
+      if (createdCheck.stayQueryId) created.stayQueryIds.push(createdCheck.stayQueryId);
+    }
     expect(await prisma.customerSession.count({ where: { customerUserId: customer.id, revokedAt: null } })).toBe(1);
   });
 
@@ -152,14 +157,14 @@ describe("Release 1.5 verification and session boundaries", () => {
     const outcomes = await Promise.allSettled(tokens.map((token) => consumeMagicLink(token.token)));
     expect(outcomes.every((outcome) => outcome.status === "fulfilled")).toBe(true);
     const results = outcomes.flatMap((outcome) => outcome.status === "fulfilled" ? [outcome.value] : []);
-    expect(results.filter((result) => result.priceCheckId !== null)).toHaveLength(1);
-    expect(results.filter((result) => result.quotaReached && result.priceCheckId === null)).toHaveLength(1);
+    expect(results.filter((result) => result.priceCheckId !== null)).toHaveLength(2);
+    expect(results.filter((result) => result.quotaReached && result.priceCheckId === null)).toHaveLength(0);
 
     const priceChecks = await prisma.priceCheck.findMany({ where: { customerUserId: customer.id } });
-    expect(priceChecks).toHaveLength(1);
-    created.priceCheckIds.push(priceChecks[0]!.id);
-    if (priceChecks[0]!.stayQueryId) created.stayQueryIds.push(priceChecks[0]!.stayQueryId);
-    expect(await prisma.job.count({ where: { priceCheckId: priceChecks[0]!.id, type: "RATE_COLLECTION" } })).toBe(1);
+    expect(priceChecks).toHaveLength(2);
+    created.priceCheckIds.push(...priceChecks.map((item) => item.id));
+    created.stayQueryIds.push(...priceChecks.flatMap((item) => item.stayQueryId ? [item.stayQueryId] : []));
+    expect(await prisma.job.count({ where: { priceCheckId: { in: priceChecks.map((item) => item.id) }, type: "RATE_COLLECTION" } })).toBe(2);
   });
 });
 

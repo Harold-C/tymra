@@ -8,7 +8,10 @@
     "contact": "联系我们",
     "reference": "参考编号",
     "demoLabel": "Development Demo Data",
-    "demoDisclaimer": "Not real market data"
+    "demoDisclaimer": "Not real market data",
+    "signIn": "会员登录",
+    "account": "会员账户",
+    "signOut": "退出"
   },
   "Nav": {
     "how": "使用方式",
@@ -21,10 +24,46 @@
     "primaryNavigation": "主导航",
     "skipToContent": "跳转到主要内容"
   },
+  "MembershipAuth": {
+    "eyebrow": "会员访问",
+    "title": "登录你的 Tymra 账户",
+    "intro": "使用会员邮箱和密码登录。",
+    "emailLabel": "会员邮箱",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "密码",
+    "submit": "登录",
+    "signingIn": "正在登录",
+    "error": "邮箱或密码不正确。",
+    "noAccount": "还没有 Tymra 账户？",
+    "createAccount": "创建账户",
+    "privacy": "隐私政策",
+    "back": "返回首页"
+  },
+  "MembershipRegistration": {
+    "eyebrow": "创建账户",
+    "title": "创建你的 Tymra 会员账户",
+    "intro": "先创建 Free 账户，之后可以选择付费方案。",
+    "emailLabel": "会员邮箱",
+    "passwordLabel": "密码",
+    "passwordHint": "密码至少需要 12 个字符。",
+    "confirmPasswordLabel": "确认密码",
+    "serviceConsent": "我同意条款和隐私政策，并同意接收账户运行所必需的服务消息。",
+    "submit": "创建账户",
+    "creating": "正在创建账户",
+    "passwordMismatch": "两次输入的密码不一致。",
+    "error": "暂时无法创建账户。",
+    "hasAccount": "已经有账户？",
+    "signIn": "登录"
+  },
   "Check": {
     "steps": { "label": "Price Check 进度", "property": "房源", "listing": "房源链接", "unit": "房型", "query": "查询条件", "processing": "处理中", "result": "结果" },
     "startTitle": "开始 Price Check",
     "startIntro": "搜索一个新西兰房源。开始采集前，你需要确认具体房源、房型和入住条件。",
+    "analysisTypeLabel": "你希望分析什么？",
+    "analysisType": {
+      "listing": { "title": "分析一个具体 OTA 房源", "body": "验证受支持的公开房源链接，并将采集价格与附近可比房源比较。" },
+      "location": { "title": "查询真实地址周边行情", "body": "无需提供 OTA 链接。Tymra 会搜索该地址附近的公开住宿价格。" }
+    },
     "propertyLabel": "房源名称、地址或房源链接",
     "propertyPlaceholder": "例如 Christchurch Central Stay",
     "emailLabel": "接收服务进度的邮箱",
@@ -66,12 +105,14 @@
     "queryTitle": "确认入住条件",
     "queryIntro": "为 {unit} 设置日期和入住人数。",
     "queryIntroFallback": "为本次 Price Check 设置日期和入住人数。",
+    "queryIntroLocation": "为该地址周边行情设置日期和入住人数。",
     "checkIn": "入住日期",
     "checkOut": "退房日期",
     "adults": "成人",
     "children": "儿童",
     "queryNoticeTitle": "一次聚焦的查询",
     "queryNoticeBody": "Release 1 比较一个 Sellable Unit 和一组确认的入住条件。Tymra 仅提供决策支持，不会自动修改房价。",
+    "queryNoticeLocationBody": "只要采集到至少一个有效的周边公开价格，Tymra 就会返回该价格。只有至少 3 个可比观察采用一致价格口径时，才会给出市场区间或调价建议。",
     "confirmQuery": "确认并开始检查",
     "submitting": "正在启动 Price Check",
     "statusTitle": "Price Check 正在运行",
@@ -189,7 +230,7 @@
   },
   "Content": {
     "methodology": { "eyebrow": "透明方法", "title": "方法说明", "intro": "Tymra 如何将可靠观察转化为可解释的决策支持。", "section1Title": "一个可观察的房源配置", "section1Body": "匿名检查优先使用 OTA 链接中的入住日期、人数和房型配置；链接没有这些值时，使用 OTA 当前可观察的默认展示配置，不要求用户手动设置。", "section2Title": "可比证据", "section2Body": "只有已启用且运行健康的数据源可以支持自动发布。价格记录采用追加模式，并关联 Collection Run。", "section3Title": "置信度与限制", "section3Body": "置信度综合竞品数量、新鲜度、费用完整性、房源配置和可比性。证据缺失会降低置信度或返回明确的受限结果。", "section4Title": "决策支持而非自动调价", "section4Body": "Tymra 最多突出五个日期。经营者仍负责价格决定，Tymra 不会自动修改房价。" },
-    "faq": { "eyebrow": "产品问题", "title": "常见问题", "intro": "关于当前 Price Check 流程的实用说明。", "section1Title": "Tymra 会修改我的价格吗？", "section1Body": "不会。Tymra 仅提供决策支持，不连接 PMS，也不会自动修改价格。", "section2Title": "支持哪些房源链接？", "section2Body": "支持 Booking.com、Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 的公开住宿链接。", "section3Title": "日期、人数和房型如何确定？", "section3Body": "OTA 链接包含这些值时优先使用；否则使用 OTA 当前可观察的默认展示配置。新用户无需手动选择这些字段。", "section4Title": "数据不可用时怎么办？", "section4Body": "Tymra 会返回 Source unavailable、Partial 或 Insufficient data，而不会编造结果。人工审核只处理可修复冲突。" },
+    "faq": { "eyebrow": "产品问题", "title": "常见问题", "intro": "关于当前 Price Check 流程的实用说明。", "section1Title": "Tymra 会修改我的价格吗？", "section1Body": "不会。Tymra 仅提供决策支持，不连接 PMS，也不会自动修改价格。", "section2Title": "支持哪些房源链接？", "section2Body": "支持 Booking.com、Airbnb、Expedia、Bookabach、Agoda 和 Trip.com 的公开住宿链接。", "section3Title": "日期、人数和房型如何确定？", "section3Body": "OTA 链接包含这些值时优先使用；否则使用 OTA 当前可观察的默认展示配置。新用户无需手动选择这些字段。", "section4Title": "市场证据不足时怎么办？", "section4Body": "只要采集到至少一个有效的目标 OTA 价格，Tymra 就会返回该观察价格。推荐是否可用及其置信度会单独判断，系统不会编造缺失证据。" },
     "privacy": { "eyebrow": "法律文本骨架", "title": "隐私政策", "intro": "供本地开发和评审使用的 Release 1 隐私说明，最终法律审批尚未完成。", "section1Title": "收集的信息", "section1Body": "Tymra 处理服务联系方式、Price Check 输入、同意选项及交付和审计所需的运营记录。", "section2Title": "信息用途", "section2Body": "服务数据用于房源识别、分析、结果交付、安全、支持和合规。营销用途需要独立同意。", "section3Title": "安全与保留", "section3Body": "敏感值会按需要加密或哈希。结果 token 仅保存哈希，并按政策过期。", "section4Title": "你的选择", "section4Body": "你可以通过联系表单申请访问、更正或删除。必要的非个人审计历史可能会保留。" },
     "terms": { "eyebrow": "法律文本骨架", "title": "使用条款", "intro": "供本地评审使用的 Release 1 服务条款草案，最终法律文本尚未完成。", "section1Title": "服务范围", "section1Body": "Tymra 为获支持的新西兰市场提供住宿价格情报及相关服务消息。", "section2Title": "经营者责任", "section2Body": "你仍需自行核验证据、决定价格，并遵守平台、税务和消费者义务。", "section3Title": "可接受使用", "section3Body": "不得滥用服务、尝试未授权访问，或提交无权处理的内容。", "section4Title": "可用性", "section4Body": "数据源和市场覆盖可能变化。缺乏可靠证据时，Tymra 可能返回受限或不可用结果。" },
     "cookies": { "eyebrow": "法律文本骨架", "title": "Cookie 说明", "intro": "本地应用使用的 Cookie。", "section1Title": "必要 Cookie", "section1Body": "Tymra 使用必要 Cookie 保存语言偏好、匿名滥用防护、客户访问和管理员会话。", "section2Title": "客户访问", "section2Body": "安全 HttpOnly Cookie 让已验证浏览器保持登录客户账户，同时避免客户端脚本读取会话密钥。", "section3Title": "管理员会话", "section3Body": "受保护的运营页面使用有时限且可撤销的 HttpOnly 会话 Cookie。", "section4Title": "Analytics", "section4Body": "本地开发不依赖外部 Analytics。未来接入必须遵守同意和数据最小化规则。" },

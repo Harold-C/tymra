@@ -630,6 +630,7 @@ async function seedSchedules() {
     { key: "anchor-panel-daily", jobType: JobType.ANCHOR_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "daily", payload: { marketScope: "new-zealand" } },
     { key: "rotating-panel-daily", jobType: JobType.ROTATING_PANEL_COLLECTION, queueName: "market-coverage", cronExpression: "daily", payload: { marketScope: "new-zealand" } },
     { key: "retention-cleanup-daily", jobType: JobType.RETENTION_CLEANUP, queueName: "retention-cleanup", cronExpression: "daily", payload: {} },
+    { key: "membership-incremental-analysis-six-hour", jobType: JobType.MEMBERSHIP_SCHEDULE, queueName: "membership-schedule", cronExpression: "every-6-hours", payload: {} },
   ] as const;
   for (const schedule of schedules) {
     await prisma.scheduleDefinition.upsert({

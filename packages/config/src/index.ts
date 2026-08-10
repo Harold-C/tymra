@@ -47,6 +47,16 @@ export const environmentSchema = z
     AUTO_PUBLISH_ENABLED: booleanFromEnvironment.default("true"),
     ACCEPT_NEW_CHECKS: booleanFromEnvironment.default("true"),
     CUSTOMER_FUNNEL_ENABLED: booleanFromEnvironment.default("true"),
+    BILLING_ENABLED: booleanFromEnvironment.default("false"),
+    STRIPE_SECRET_KEY: optionalString,
+    STRIPE_WEBHOOK_SECRET: optionalString,
+    STRIPE_PORTAL_CONFIGURATION_ID: optionalString,
+    STRIPE_HOST_PRICE_ID: optionalString,
+    STRIPE_PRO_PRICE_ID: optionalString,
+    STRIPE_PORTFOLIO_PRICE_ID: optionalString,
+    MEMBERSHIP_HOST_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_PRO_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
     EMAIL_FROM: z.string().min(3),
     SMTP_URL: optionalUrl,
@@ -160,6 +170,22 @@ export const environmentSchema = z
         path: ["SMTP_URL"],
         message: "SMTP_URL is required when EMAIL_PROVIDER=smtp",
       });
+    }
+
+    if (value.BILLING_ENABLED && (!value.STRIPE_SECRET_KEY || !value.STRIPE_WEBHOOK_SECRET || !value.STRIPE_PORTAL_CONFIGURATION_ID || !value.STRIPE_HOST_PRICE_ID)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["BILLING_ENABLED"],
+        message: "Billing requires Stripe credentials, a restricted Customer Portal configuration, and the Host Price ID",
+      });
+    }
+
+    if (value.MEMBERSHIP_PRO_LAUNCH_ENABLED && !value.STRIPE_PRO_PRICE_ID) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_PRO_PRICE_ID"], message: "The Pro launch gate requires a Stripe Price ID" });
+    }
+
+    if (value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED && !value.STRIPE_PORTFOLIO_PRICE_ID) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_PORTFOLIO_PRICE_ID"], message: "The Portfolio launch gate requires a Stripe Price ID" });
     }
 
     if (value.ARGUS_JOB_POLL_TIMEOUT_MS <= value.ARGUS_TIMEOUT_MS) {

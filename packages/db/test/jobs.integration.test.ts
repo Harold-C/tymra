@@ -92,4 +92,33 @@ describe("persistent job queue", () => {
     const failed = await markJobFailed(claimed!, "worker-dead-letter", "SOURCE_DOWN", "Source remained unavailable", true);
     expect(failed.status).toBe("DEAD_LETTER");
   });
+
+  it("ages old best-effort work ahead of newly queued priority work", async () => {
+    const queueName = `${prefix}:aging-queue`;
+    const now = new Date("2099-01-02T00:00:00.000Z");
+    const oldBestEffort = await prisma.job.create({
+      data: {
+        type: "RATE_COLLECTION",
+        payload: {},
+        idempotencyKey: `${prefix}:aging:free`,
+        queueName,
+        priority: 300,
+        runAt: new Date("2099-01-01T00:00:00.000Z"),
+        createdAt: new Date("2099-01-01T00:00:00.000Z"),
+      },
+    });
+    await prisma.job.create({
+      data: {
+        type: "RATE_COLLECTION",
+        payload: {},
+        idempotencyKey: `${prefix}:aging:portfolio`,
+        queueName,
+        priority: 50,
+        runAt: new Date("2099-01-01T23:59:00.000Z"),
+        createdAt: new Date("2099-01-01T23:59:00.000Z"),
+      },
+    });
+
+    expect((await claimNextJob("worker-aging", 30, now, [queueName]))?.id).toBe(oldBestEffort.id);
+  });
 });

@@ -4,6 +4,7 @@ export * from "./events";
 export * from "./event-impact";
 export * from "./funnel-analytics";
 export * from "./nz-time";
+export * from "./membership";
 export * from "./pricing";
 export * from "./query";
 export * from "./quality-gates";

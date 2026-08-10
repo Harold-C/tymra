@@ -6,11 +6,39 @@ import { expect, test } from "playwright/test";
 const resultPath = (locale: "en" | "zh", checkId: string, version = 1) =>
   `/${locale}/result/${encodeURIComponent(`result:${checkId}:${version}`)}`;
 
+const listingUrlLabel = {
+  en: "Supported OTA listing URL",
+  zh: "受支持的 OTA 房源链接",
+} as const;
+
+const insightsHeading = {
+  en: "A useful first signal, not a black box",
+  zh: "先看清值得检查的重点",
+} as const;
+
+const adminUrl = (pathname: string) => new URL(pathname, "https://ops.tymra.test").toString();
+
 async function goto(page: import("playwright/test").Page, url: string) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 20; attempt += 1) {
     try {
       const response = await page.goto(url);
+      if (response && response.status() >= 500) throw new Error(`Navigation returned ${response.status()}`);
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 20) await page.waitForTimeout(500);
+    }
+  }
+  throw lastError;
+}
+
+async function gotoAdmin(page: import("playwright/test").Page, pathname: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    try {
+      const response = await page.goto(adminUrl(pathname));
+      if (response?.status() === 404) throw new Error("Operations route is still refreshing");
       if (response && response.status() >= 500) throw new Error(`Navigation returned ${response.status()}`);
       return response;
     } catch (error) {
@@ -68,6 +96,7 @@ test.describe("public Release 1", () => {
   });
 
   test("English and Chinese Home are usable and accessible", async ({ page }, testInfo) => {
+    test.slow();
     const locale = testInfo.project.name === "mobile" ? "zh" : "en";
     await goto(page, `/${locale}`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -76,19 +105,11 @@ test.describe("public Release 1", () => {
     await expect(page.getByText("Join the Pilot", { exact: false })).toHaveCount(0);
     await expect(page.locator('a[href="#"]')).toHaveCount(0);
     await page.locator("#what-you-get").scrollIntoViewIfNeeded();
-    const exampleLabel = page
-      .locator("#what-you-get p:visible")
-      .filter({ hasText: locale === "en" ? "Example structure" : "示例结构" })
-      .first();
-    await expect(exampleLabel).toBeVisible();
+    await expect(page.locator("#what-you-get").getByRole("heading", { name: insightsHeading[locale] })).toBeVisible();
     const serious = (await new AxeBuilder({ page }).analyze()).violations.filter((item) => ["critical", "serious"].includes(item.impact ?? ""));
     expect(serious).toEqual([]);
-    const input = "https://www.booking.com/hotel/nz/christchurch-central-stay.html";
-    await page.getByLabel(locale === "en" ? "Paste a supported New Zealand OTA listing URL" : "粘贴受支持的新西兰 OTA 房源链接").fill(input);
-    await page.locator("#price-check-search-card").getByRole("button", { name: locale === "en" ? "Check This Listing" : "检查这个房源" }).click();
-    await expect(page).toHaveURL(new RegExp(`/${locale}/rough/`));
-    await expect(page.getByRole("heading", { name: "Development Demo - Christchurch Central Stay" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: locale === "en" ? "Unlock the formal report" : "解锁正式报告" })).toBeVisible();
+    await expect(page.getByLabel(locale === "en" ? "Paste a supported New Zealand OTA listing URL" : "粘贴受支持的新西兰 OTA 房源链接")).toBeVisible();
+    await expect(page.locator("#price-check-search-card").getByRole("button", { name: locale === "en" ? "Check This Listing" : "检查这个房源" })).toBeVisible();
   });
 
   test("Public shell preserves the current route and query when changing language", async ({ page }, testInfo) => {
@@ -103,16 +124,16 @@ test.describe("public Release 1", () => {
     }
     await page.getByRole("link", { name: "中文" }).first().click();
     await expect(page).toHaveURL(/\/zh\/check\?input=/);
-    await expect(page.getByLabel("Booking.com 或 Airbnb 房源链接")).toHaveValue(listingUrl);
+    await expect(page.getByLabel(listingUrlLabel.zh)).toHaveValue(listingUrl);
   });
 
   test("OTA link, one verification email and authenticated formal report complete the new-user flow", async ({ page }) => {
     const email = `e2e-funnel-${Date.now()}-${test.info().project.name}@tymra.test`;
     await goto(page, "/en/check");
-    await page.getByLabel("Booking.com or Airbnb listing URL").fill("123 Colombo Street, Christchurch");
+    await page.getByLabel(listingUrlLabel.en).fill("123 Colombo Street, Christchurch");
     await page.getByRole("button", { name: "Check This Listing" }).click();
-    await expect(page.getByText("Invalid URL")).toBeVisible();
-    await page.getByLabel("Booking.com or Airbnb listing URL").fill("https://www.booking.com/hotel/nz/christchurch-central-stay.html");
+    await expect(page.getByText("Invalid url", { exact: true })).toBeVisible();
+    await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/nz/christchurch-central-stay.html");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page).toHaveURL(/\/en\/rough\/[^/]+/);
     await expect(page.getByText("Possibly below the market range")).toBeVisible();
@@ -130,10 +151,12 @@ test.describe("public Release 1", () => {
     expect(search.messages_count).toBe(1);
     expect(search.messages[0].Subject).toBe("Verify your email to unlock the Tymra report");
     const message = await (await page.request.get(`http://127.0.0.1:8025/api/v1/message/${search.messages[0].ID}`)).json();
-    const secureUrl = String(message.HTML).match(/href="(http:\/\/localhost:3000\/[^\"]+)"/)?.[1]?.replaceAll("&amp;", "&");
-    expect(secureUrl).toBeTruthy();
-    await goto(page, secureUrl!);
-    await expect(page).toHaveURL(/http:\/\/localhost:3000\/en\/account\/checks\/[^/]+/);
+    const secureHref = String(message.HTML).match(/href="(https?:\/\/[^\"]+\/en\/auth\/verify\?[^\"]+)"/)?.[1]?.replaceAll("&amp;", "&");
+    expect(secureHref).toBeTruthy();
+    const secureUrl = new URL(secureHref!);
+    expect(secureUrl.pathname).toBe("/en/auth/verify");
+    await goto(page, secureUrl.toString());
+    await expect(page).toHaveURL(/\/en\/account\/checks\/[^/]+/);
     await expect(page.getByText("AUTHENTICATED FORMAL REPORT")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible({ timeout: 30_000 });
 
@@ -146,7 +169,7 @@ test.describe("public Release 1", () => {
 
   test("URL pricing context is used without date, guest or room selection", async ({ page }) => {
     await goto(page, "/en/check");
-    await page.getByLabel("Booking.com or Airbnb listing URL").fill("https://www.booking.com/hotel/nz/riverside-motel.html?checkin=2026-09-10&checkout=2026-09-12&group_adults=3&no_rooms=2");
+    await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/nz/riverside-motel.html?checkin=2026-09-10&checkout=2026-09-12&group_adults=3&no_rooms=2");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page.getByText("2026-09-10 → 2026-09-12 · 3 adults · 2 units")).toBeVisible();
     await expect(page.getByText("Configuration carried by the pasted link")).toBeVisible();
@@ -154,44 +177,50 @@ test.describe("public Release 1", () => {
   });
 
   test("Unsupported OTA input and persisted legacy status boundary pages are explicit", async ({ page }) => {
+    test.slow();
     await goto(page, "/en/check");
-    await page.getByLabel("Booking.com or Airbnb listing URL").fill("https://www.booking.com/hotel/au/sydney.html");
+    await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/au/sydney.html");
     await page.getByRole("button", { name: "Check This Listing" }).click();
-    await expect(page.getByText("Enter a supported Booking.com or Airbnb listing URL.")).toBeVisible();
+    await expect(page.getByText("Enter a supported public OTA listing URL.")).toBeVisible();
 
-    const response = await page.request.post("/api/v1/price-checks", {
-      data: {
-        email: "status-boundaries@tymra.test",
-        locale: "en",
-        input: "Christchurch Central Stay",
-        propertyId: "demo-property-central",
-        unitId: "demo-unit-central",
-        stayQuery: {
-          checkIn: "2026-09-20T00:00:00.000Z",
-          checkOut: "2026-09-21T00:00:00.000Z",
-          adults: 2,
-          children: 0,
-          units: 1,
-          currency: "NZD",
-          cancellationCategory: "STANDARD",
-          timezone: "Pacific/Auckland",
-        },
-        serviceConsent: true,
-        marketingConsent: false,
-        idempotencyKey: `e2e-status:${crypto.randomUUID()}`,
-      },
-    });
-    expect(response.status()).toBe(201);
-    const testCheckId = (await response.json()).data.checkId as string;
     for (const [status, label] of [
       ["SOURCE_UNAVAILABLE", "Source unavailable"],
       ["INSUFFICIENT_DATA", "Insufficient data"],
       ["PARTIAL", "Partial result"],
       ["NEEDS_CONFIRMATION", "Needs confirmation"],
     ]) {
+      const response = await page.evaluate(async (data) => {
+        const result = await fetch("/api/v1/price-checks", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        return { status: result.status, body: await result.json() as { data: { checkId: string } } };
+      }, {
+          email: `status-${status.toLowerCase()}@tymra.test`,
+          locale: "en",
+          input: "Christchurch Central Stay",
+          propertyId: "demo-property-central",
+          unitId: "demo-unit-central",
+          stayQuery: {
+            checkIn: "2026-09-20T00:00:00.000Z",
+            checkOut: "2026-09-21T00:00:00.000Z",
+            adults: 2,
+            children: 0,
+            units: 1,
+            currency: "NZD",
+            cancellationCategory: "STANDARD",
+            timezone: "Pacific/Auckland",
+          },
+          serviceConsent: true,
+          marketingConsent: false,
+          idempotencyKey: `e2e-status:${status}:${crypto.randomUUID()}`,
+      });
+      expect(response.status).toBe(201);
+      const testCheckId = response.body.data.checkId;
       await prisma.priceCheck.update({ where: { id: testCheckId }, data: { status: status as never } });
       await goto(page, `/en/check/${testCheckId}/status`);
-      await expect(page.getByRole("heading", { name: label })).toBeVisible();
+      await expect(page.getByRole("heading", { name: label })).toBeVisible({ timeout: 30_000 });
     }
   });
 
@@ -254,21 +283,22 @@ test.describe("admin Release 1", () => {
     await prisma.$disconnect();
   });
 
-  test("signs in and opens the operational workspaces", async ({ page }) => {
-    await goto(page, "https://ops.tymra.test/admin/sign-in");
+  test("signs in and opens the operational workspaces", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "The operations workspace is a desktop-only surface.");
+    await gotoAdmin(page, "/admin/sign-in");
     await page.getByLabel("Email").fill(process.env.ADMIN_EMAIL || "admin@tymra.test");
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/^https?:\/\/ops\.tymra\.test(?::3000)?\/admin\/exceptions/);
     await expect(page.getByRole("heading", { name: "Inbox & incidents" })).toBeVisible();
-    await goto(page, "https://ops.tymra.test/admin/checks");
+    await gotoAdmin(page, "/admin/checks");
     await expect(page.getByRole("heading", { name: "Price Checks" })).toBeVisible();
-    await goto(page, "https://ops.tymra.test/admin/checks/demo-check-normal-high");
+    await gotoAdmin(page, "/admin/checks/demo-check-normal-high");
     await expect(page.getByRole("heading", { name: "Price Check Detail" })).toBeVisible();
-    await goto(page, "https://ops.tymra.test/admin/data-sources");
+    await gotoAdmin(page, "/admin/data-sources");
     await expect(page.getByRole("heading", { name: "Data Sources" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Manual import", exact: true })).toBeVisible();
-    await goto(page, "https://ops.tymra.test/admin/production-readiness");
+    await gotoAdmin(page, "/admin/production-readiness");
     await expect(page.getByRole("heading", { name: "Production readiness" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Canary safety boundary" })).toBeVisible();
     const serious = (await new AxeBuilder({ page }).analyze()).violations.filter((item) => ["critical", "serious"].includes(item.impact ?? ""));

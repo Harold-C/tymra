@@ -1,7 +1,7 @@
 import { getEnvironment } from "@tymra/config";
 import {
   encryptPersonalData,
-  enqueueJob,
+  decryptPersonalData,
   hashOpaqueToken,
   hashPersonalIdentifier,
   issueOpaqueToken,
@@ -13,13 +13,61 @@ import { nzCalendarDayDifference, stayQuerySchema, unlockRoughResultSchema } fro
 import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers";
 
 import { issueCustomerSessionToken } from "./customer-auth";
+import { ensureFreeMembership, MembershipAccessError, membershipQueuePriority, reserveSpotCheck } from "./membership";
 import { padNeutralResponse } from "./security-controls";
+import { bindMemberRiskContext, ensureBenefitGroup, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./member-risk";
 
 export class InvalidMagicLinkError extends Error {
   constructor() {
     super("This verification link is invalid or has expired.");
     this.name = "InvalidMagicLinkError";
   }
+}
+
+export async function issueCustomerEmailVerification(customerUserId: string, localeValue?: "en" | "zh") {
+  const environment = getEnvironment();
+  const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
+  if (customer.emailVerifiedAt) return { alreadyVerified: true as const };
+  const locale = localeValue ?? (customer.locale === "zh" ? "zh" : "en");
+  const issued = issueOpaqueToken(environment.SESSION_SECRET);
+  const now = new Date();
+  const magicLink = await prisma.$transaction(async (transaction) => {
+    await transaction.magicLink.updateMany({
+      where: { customerUserId, purpose: "VERIFY_CUSTOMER_EMAIL", status: "PENDING", revokedAt: null },
+      data: { status: "REVOKED", revokedAt: now },
+    });
+    return transaction.magicLink.create({
+      data: {
+        tokenHash: issued.tokenHash,
+        idempotencyKey: `verify-email:${customerUserId}:${now.getTime()}`,
+        purpose: "VERIFY_CUSTOMER_EMAIL",
+        emailHash: customer.emailHash,
+        encryptedEmail: customer.encryptedEmail,
+        locale,
+        customerUserId,
+        expiresAt: new Date(now.getTime() + environment.MAGIC_LINK_TTL_MINUTES * 60_000),
+      },
+    });
+  });
+  const delivery = await prisma.emailDelivery.create({
+    data: { type: "VERIFY_AND_SIGN_IN", locale, recipientHash: customer.emailHash, encryptedRecipient: customer.encryptedEmail, provider: "pending", idempotencyKey: `${magicLink.id}:verify-email` },
+  });
+  const recipient = decryptPersonalData(customer.encryptedEmail, environment.DATA_ENCRYPTION_KEY);
+  const provider: EmailProvider = environment.EMAIL_PROVIDER === "smtp" && environment.SMTP_URL ? new SmtpEmailProvider(environment.SMTP_URL) : new LogEmailProvider();
+  const message = buildServiceEmail({ type: "VERIFY_AND_SIGN_IN", locale, recipient, recipientHash: customer.emailHash, from: environment.EMAIL_FROM, safeActionUrl: `${environment.PUBLIC_ORIGIN}/${locale}/auth/verify?token=${encodeURIComponent(issued.token)}`, referenceId: magicLink.id });
+  await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENDING", attemptCount: { increment: 1 } } });
+  try {
+    const result = await provider.send(message);
+    if (!result.accepted) throw new Error("The email provider did not accept the verification message.");
+    await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENT", provider: environment.EMAIL_PROVIDER, sentAt: new Date() } });
+  } catch (error) {
+    await prisma.$transaction([
+      prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 1_000) : "Email delivery failed" } }),
+      prisma.magicLink.update({ where: { id: magicLink.id }, data: { status: "REVOKED", revokedAt: new Date() } }),
+    ]);
+    throw error;
+  }
+  return { alreadyVerified: false as const, expiresInMinutes: environment.MAGIC_LINK_TTL_MINUTES };
 }
 
 export async function requestMagicLink(
@@ -127,7 +175,7 @@ export async function requestMagicLink(
   return neutralMagicLinkResponseAfter(responseStartedAt, environment.MAGIC_LINK_TTL_MINUTES, environment.NEUTRAL_RESPONSE_MIN_MS);
 }
 
-export async function consumeMagicLink(rawToken: string) {
+export async function consumeMagicLink(rawToken: string, requestIdentity?: MemberRequestIdentity) {
   const environment = getEnvironment();
   const tokenHash = hashOpaqueToken(rawToken, environment.SESSION_SECRET);
   const magicLink = await prisma.magicLink.findUnique({
@@ -138,10 +186,13 @@ export async function consumeMagicLink(rawToken: string) {
     throw new InvalidMagicLinkError();
   }
   const verifiedLink = magicLink;
+  const unlockCheck = verifiedLink.anonymousCheck;
+  if (verifiedLink.purpose === "UNLOCK_FORMAL_CHECK" && !unlockCheck) throw new InvalidMagicLinkError();
+  if (verifiedLink.purpose === "VERIFY_CUSTOMER_EMAIL" && unlockCheck) throw new InvalidMagicLinkError();
 
   const session = issueCustomerSessionToken();
   const sessionExpiresAt = new Date(Date.now() + environment.CUSTOMER_SESSION_TTL_DAYS * 86_400_000);
-  const context = parsePricingContext(verifiedLink.anonymousCheck.pricingContext);
+  const context = unlockCheck ? parsePricingContext(unlockCheck.pricingContext) : null;
   const consumedAt = new Date();
 
   let outcome: Awaited<ReturnType<typeof activateCustomer>> | undefined;
@@ -179,21 +230,41 @@ export async function consumeMagicLink(rawToken: string) {
       update: {
         encryptedEmail: verifiedLink.encryptedEmail,
         locale: verifiedLink.locale,
-        marketingConsent: verifiedLink.marketingConsent ? true : undefined,
+        marketingConsent: unlockCheck && verifiedLink.marketingConsent ? true : undefined,
         status: "ACTIVE",
+        emailVerifiedAt: consumedAt,
       },
     });
+    if (!customer.emailVerifiedAt) await transaction.customerUser.update({ where: { id: customer.id }, data: { emailVerifiedAt: consumedAt } });
+    await ensureBenefitGroup(transaction, customer.id, consumedAt);
+    await ensureFreeMembership(transaction, customer.id, consumedAt);
+    const riskBinding = unlockCheck?.propertyId && requestIdentity
+      ? await bindMemberRiskContext(transaction, { customerUserId: customer.id, propertyId: unlockCheck.propertyId, querySignature: memberQuerySignature(unlockCheck.pricingContext), identity: requestIdentity, now: consumedAt })
+      : null;
 
-    const [existingCheck, allChecks, checks24h, checks30d] = await Promise.all([
-      transaction.priceCheck.findUnique({ where: { anonymousCheckId: verifiedLink.anonymousCheckId } }),
-      transaction.priceCheck.count({ where: { customerUserId: customer.id } }),
-      transaction.priceCheck.count({ where: { customerUserId: customer.id, createdAt: { gte: new Date(consumedAt.getTime() - 86_400_000) } } }),
-      transaction.priceCheck.count({ where: { customerUserId: customer.id, createdAt: { gte: new Date(consumedAt.getTime() - 30 * 86_400_000) } } }),
-    ]);
-    const quotaReached = allChecks > 0 && (checks24h >= 1 || checks30d >= 5);
+    const existingCheck = unlockCheck
+      ? await transaction.priceCheck.findUnique({ where: { anonymousCheckId: unlockCheck.id } })
+      : null;
+    let quotaReached = false;
+    let blockReason: MembershipAccessError["code"] | null = null;
+    let reservation: Awaited<ReturnType<typeof reserveSpotCheck>> | null = null;
+    if (unlockCheck && !existingCheck) {
+      try {
+        reservation = await reserveSpotCheck(transaction, {
+          customerUserId: customer.id,
+          sellableUnitId: unlockCheck.unitId,
+          idempotencyKey: `formal-check:${unlockCheck.id}`,
+          now: consumedAt,
+        });
+      } catch (error) {
+        if (!(error instanceof MembershipAccessError)) throw error;
+        quotaReached = error.code === "SPOT_CHECK_QUOTA_REACHED";
+        blockReason = error.code;
+      }
+    }
     let priceCheck = existingCheck;
     let createdPriceCheck = false;
-    if (!priceCheck && !quotaReached) {
+    if (unlockCheck && context && !priceCheck && reservation) {
       const stayQuery = await transaction.stayQuery.create({
         data: {
           checkIn: context.checkIn,
@@ -210,23 +281,37 @@ export async function consumeMagicLink(rawToken: string) {
       const access = issueOpaqueToken(environment.ACCESS_KEY_SECRET);
       priceCheck = await transaction.priceCheck.create({
         data: {
-          rawInput: `${verifiedLink.anonymousCheck.platform}:${verifiedLink.anonymousCheck.listingId}`,
+          rawInput: `${unlockCheck.platform}:${unlockCheck.listingId}`,
           locale: verifiedLink.locale,
           emailHash: verifiedLink.emailHash,
           encryptedEmail: verifiedLink.encryptedEmail,
           serviceConsent: true,
           marketingConsent: verifiedLink.marketingConsent,
-          propertyId: verifiedLink.anonymousCheck.propertyId,
-          unitId: verifiedLink.anonymousCheck.unitId,
+          propertyId: unlockCheck.propertyId,
+          unitId: unlockCheck.unitId,
           stayQueryId: stayQuery.id,
           marketKey: "christchurch",
           status: "QUEUED",
           accessKeyHash: access.tokenHash,
-          idempotencyKey: `customer-formal:${verifiedLink.anonymousCheckId}`,
+          idempotencyKey: `customer-formal:${unlockCheck.id}`,
           rulesVersion: "BR-v1.2+R15-D025",
-          isDemo: verifiedLink.anonymousCheck.isDemo,
+          isDemo: unlockCheck.isDemo,
           customerUserId: customer.id,
-          anonymousCheckId: verifiedLink.anonymousCheckId,
+          anonymousCheckId: unlockCheck.id,
+        },
+      });
+      await transaction.membershipUsage.update({ where: { id: reservation.usage.id }, data: { priceCheckId: priceCheck.id } });
+      if (riskBinding && requestIdentity && unlockCheck.propertyId) await recordMemberAction(transaction, { customerUserId: customer.id, benefitGroupId: riskBinding.benefitGroupId, priceCheckId: priceCheck.id, propertyId: unlockCheck.propertyId, querySignature: memberQuerySignature(unlockCheck.pricingContext), identity: requestIdentity });
+      await transaction.job.create({
+        data: {
+          type: "RATE_COLLECTION",
+          status: "PENDING",
+          payload: { priceCheckId: priceCheck.id },
+          idempotencyKey: `${priceCheck.id}:rate-collection`,
+          priceCheckId: priceCheck.id,
+          queueName: "rate-collection",
+          priority: membershipQueuePriority(reservation.membership.plan),
+          runAt: environment.NODE_ENV === "test" ? new Date(consumedAt.getTime() + 3_600_000) : consumedAt,
         },
       });
       createdPriceCheck = true;
@@ -236,7 +321,7 @@ export async function consumeMagicLink(rawToken: string) {
       where: { id: verifiedLink.id },
       data: { customerUserId: customer.id },
     });
-    await transaction.anonymousCheck.update({ where: { id: verifiedLink.anonymousCheckId }, data: { customerUserId: customer.id } });
+    if (unlockCheck) await transaction.anonymousCheck.update({ where: { id: unlockCheck.id }, data: { customerUserId: customer.id } });
     await transaction.customerSession.updateMany({
       where: { customerUserId: customer.id, revokedAt: null, expiresAt: { gt: consumedAt } },
       data: { revokedAt: consumedAt },
@@ -244,37 +329,29 @@ export async function consumeMagicLink(rawToken: string) {
     await transaction.customerSession.create({
       data: { customerUserId: customer.id, tokenHash: session.tokenHash, expiresAt: sessionExpiresAt },
     });
-    return { customer, priceCheck, quotaReached, allChecks, createdPriceCheck };
+    return { customer, priceCheck, quotaReached, blockReason, reservation, createdPriceCheck };
   }
 
-  const analyticsDimensions = {
+  const analyticsDimensions = unlockCheck ? {
     locale: verifiedLink.locale === "zh" ? "zh" as const : "en" as const,
-    platform: verifiedLink.anonymousCheck.platform,
-    isDemo: verifiedLink.anonymousCheck.isDemo,
-  };
-  await recordFunnelEvent({ name: "verification_completed", dimensions: analyticsDimensions });
-  await recordFunnelEvent({ name: "customer_session_created", dimensions: analyticsDimensions });
-  if (outcome.quotaReached) await recordFunnelEvent({ name: "quota_reached", dimensions: { ...analyticsDimensions, reasonCode: "FORMAL_CHECK_QUOTA" } });
+    platform: unlockCheck.platform,
+    isDemo: unlockCheck.isDemo,
+  } : null;
+  if (analyticsDimensions) {
+    await recordFunnelEvent({ name: "verification_completed", dimensions: analyticsDimensions });
+    await recordFunnelEvent({ name: "customer_session_created", dimensions: analyticsDimensions });
+    if (outcome.blockReason) await recordFunnelEvent({ name: "quota_reached", dimensions: { ...analyticsDimensions, reasonCode: outcome.blockReason } });
+  }
 
-  if (outcome.priceCheck && outcome.createdPriceCheck) {
-    await enqueueJob({
-      type: "RATE_COLLECTION",
-      payload: { priceCheckId: outcome.priceCheck.id },
-      idempotencyKey: `${outcome.priceCheck.id}:rate-collection`,
-      priceCheckId: outcome.priceCheck.id,
-      // Integration tests share the development database with an optional local Worker. Keeping
-      // their jobs non-runnable prevents that external process from creating immutable history
-      // before the test can assert and clean up its own records.
-      runAt: environment.NODE_ENV === "test" ? new Date(Date.now() + 3_600_000) : undefined,
-    });
+  if (unlockCheck && analyticsDimensions && outcome.priceCheck && outcome.createdPriceCheck) {
     await prisma.usageLedger.create({
       data: {
         action: "FORMAL_CHECK",
         subjectType: "CUSTOMER",
         subjectHash: outcome.customer.id,
-        anonymousCheckId: verifiedLink.anonymousCheckId,
+        anonymousCheckId: unlockCheck.id,
         customerUserId: outcome.customer.id,
-        metadata: { included: outcome.allChecks === 0 },
+        metadata: { included: outcome.reservation?.usage.type === "INITIAL_REPORT", plan: outcome.reservation?.membership.plan },
       },
     });
     await recordFunnelEvent({ name: "formal_check_queued", dimensions: analyticsDimensions });
@@ -285,9 +362,12 @@ export async function consumeMagicLink(rawToken: string) {
     customerUserId: outcome.customer.id,
     priceCheckId: outcome.priceCheck?.id ?? null,
     quotaReached: outcome.quotaReached,
+    blockReason: outcome.blockReason,
+    purpose: verifiedLink.purpose,
     sessionToken: session.token,
   };
 }
+
 
 function parsePricingContext(value: Prisma.JsonValue) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new InvalidMagicLinkError();

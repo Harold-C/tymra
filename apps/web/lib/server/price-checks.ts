@@ -27,6 +27,8 @@ import { withRedisLockWait } from "@tymra/queue";
 
 import { checkAccessHash, deriveCheckAccessKey } from "./check-access";
 import { queuePriceCheckEmail } from "./email-deliveries";
+import { ensureFreeMembership, membershipQueuePriority, reserveSpotCheck, runMembershipTransaction } from "./membership";
+import { bindMemberRiskContext, enforceMemberRisk, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./member-risk";
 import { getDataProvider } from "./providers";
 
 const nonNewZealandPattern = /\b(australia|sydney|melbourne|brisbane|london|singapore|usa|united states)\b|澳大利亚|悉尼|墨尔本|伦敦|新加坡|美国/i;
@@ -145,10 +147,13 @@ function addressSupportStatus(level: "FULL" | "REGIONAL" | "NATIONAL_ONLY" | und
   return "INSUFFICIENT_MARKET_DATA" as const;
 }
 
-export async function createPriceCheck(inputValue: unknown) {
+export async function createPriceCheck(inputValue: unknown, options: { customerUserId?: string } = {}) {
   const input = createPriceCheckSchema.parse(inputValue);
   const environment = getEnvironment();
   if (!environment.ACCEPT_NEW_CHECKS) return { accepted: false as const, reason: "CHECKS_PAUSED" as const };
+  const customer = options.customerUserId
+    ? await prisma.customerUser.findFirst({ where: { id: options.customerUserId, status: "ACTIVE" }, select: { id: true, emailHash: true, encryptedEmail: true } })
+    : null;
 
   const existing = await prisma.priceCheck.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
   if (existing) {
@@ -178,10 +183,11 @@ export async function createPriceCheck(inputValue: unknown) {
     const stayQuery = await transaction.stayQuery.create({ data: { ...stay, nights } });
     return transaction.priceCheck.create({
       data: {
+        analysisType: input.analysisType,
         rawInput: input.input,
         locale: input.locale,
-        emailHash: hashPersonalIdentifier(input.email, environment.ACCESS_KEY_SECRET),
-        encryptedEmail: encryptPersonalData(input.email, environment.DATA_ENCRYPTION_KEY),
+        emailHash: customer?.emailHash ?? hashPersonalIdentifier(input.email, environment.ACCESS_KEY_SECRET),
+        encryptedEmail: customer?.encryptedEmail ?? encryptPersonalData(input.email, environment.DATA_ENCRYPTION_KEY),
         serviceConsent: input.serviceConsent,
         marketingConsent: input.marketingConsent,
         propertyId: property?.id,
@@ -191,7 +197,8 @@ export async function createPriceCheck(inputValue: unknown) {
         status,
         accessKeyHash: checkAccessHash(accessKey),
         idempotencyKey: input.idempotencyKey,
-        isDemo: environment.PROVIDER_MODE === "demo",
+        isDemo: ["demo", "fixture"].includes(environment.PROVIDER_MODE),
+        customerUserId: customer?.id,
       },
     });
   });
@@ -203,7 +210,7 @@ export async function createPriceCheck(inputValue: unknown) {
 }
 
 export async function confirmProperty(checkId: string, input: { propertyId?: string; addressExternalId?: string }) {
-  const current = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId }, select: { rawInput: true } });
+  const current = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId }, select: { rawInput: true, analysisType: true } });
   const propertyId = input.propertyId ?? await promoteAddressIdentity(input.addressExternalId!, current.rawInput);
   const property = await prisma.property.findUniqueOrThrow({
     where: { id: propertyId },
@@ -213,7 +220,7 @@ export async function confirmProperty(checkId: string, input: { propertyId?: str
     },
   });
   const unitId = property.units.length === 1 ? property.units[0].id : null;
-  const requiresListingConfirmation = Boolean(input.addressExternalId) && property.listings.length === 0;
+  const requiresListingConfirmation = current.analysisType === "LISTING_PRICING" && Boolean(input.addressExternalId) && property.listings.length === 0;
   const check = await prisma.priceCheck.update({
     where: { id: checkId },
     data: {
@@ -315,29 +322,54 @@ export async function confirmUnit(checkId: string, unitId: string) {
   return check;
 }
 
-export async function confirmQuery(checkId: string, inputValue: unknown) {
+export async function confirmQuery(checkId: string, inputValue: unknown, risk?: { identity: MemberRequestIdentity; challengeVerified: boolean }) {
   const input = stayQuerySchema.parse(inputValue);
   const nights = Math.max(1, nzCalendarDayDifference(input.checkOut, input.checkIn));
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
-  if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
-  if (["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
-  await prisma.stayQuery.update({ where: { id: check.stayQueryId! }, data: { ...input, nights } });
-  const updated = await prisma.priceCheck.update({ where: { id: checkId }, data: { status: "QUEUED" } });
+  const reserved = await runMembershipTransaction(async (transaction) => {
+    const check = await transaction.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
+    if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
+    if (check.analysisType === "LISTING_PRICING" && ["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
+    await transaction.stayQuery.update({ where: { id: check.stayQueryId! }, data: { ...input, nights } });
+    const querySignature = memberQuerySignature({ checkIn: input.checkIn.toISOString(), checkOut: input.checkOut.toISOString(), adults: input.adults, children: input.children, units: input.units, currency: input.currency, propertyId: check.propertyId });
+    const membership = check.customerUserId ? await ensureFreeMembership(transaction, check.customerUserId) : null;
+    const riskBinding = check.customerUserId && risk
+      ? await bindMemberRiskContext(transaction, { customerUserId: check.customerUserId, propertyId: check.propertyId, otaListing: check.listingUrl, querySignature, identity: risk.identity })
+      : null;
+    if (check.customerUserId && risk && riskBinding && membership) {
+      await enforceMemberRisk(transaction, { customerUserId: check.customerUserId, benefitGroupId: riskBinding.benefitGroupId, propertyId: check.propertyId, querySignature, identity: risk.identity, plan: membership.plan, challengeVerified: risk.challengeVerified });
+    }
+    const reservation = check.customerUserId
+      ? await reserveSpotCheck(transaction, {
+          customerUserId: check.customerUserId,
+          sellableUnitId: check.unitId,
+          idempotencyKey: `price-check:${check.id}`,
+        })
+      : null;
+    const updated = await transaction.priceCheck.update({ where: { id: checkId }, data: { status: "QUEUED" } });
+    if (reservation) {
+      await transaction.membershipUsage.update({ where: { id: reservation.usage.id }, data: { priceCheckId: check.id } });
+      if (risk && riskBinding) await recordMemberAction(transaction, { customerUserId: check.customerUserId!, benefitGroupId: riskBinding.benefitGroupId, priceCheckId: check.id, propertyId: check.propertyId, querySignature, identity: risk.identity });
+    }
+    return { updated, plan: reservation?.membership.plan ?? null };
+  });
   await enqueueJob({
     type: "RATE_COLLECTION",
-    payload: { priceCheckId: check.id },
-    idempotencyKey: `${check.id}:rate-collection:${stableAddressIdentityId(`${check.listingValidatedAt?.toISOString() ?? "not-required"}:${input.checkIn.toISOString()}:${input.checkOut.toISOString()}:${input.adults}:${input.children}:${input.units}`)}`,
-    priceCheckId: check.id,
+    payload: { priceCheckId: reserved.updated.id },
+    idempotencyKey: `${reserved.updated.id}:rate-collection:${stableAddressIdentityId(`${reserved.updated.listingValidatedAt?.toISOString() ?? "not-required"}:${input.checkIn.toISOString()}:${input.checkOut.toISOString()}:${input.adults}:${input.children}:${input.units}`)}`,
+    priceCheckId: reserved.updated.id,
+    priority: reserved.plan ? membershipQueuePriority(reserved.plan) : undefined,
   });
-  await queuePriceCheckEmail(check.id, "CHECK_PROCESSING", "check-processing");
-  return updated;
+  await queuePriceCheckEmail(reserved.updated.id, "CHECK_PROCESSING", "check-processing");
+  return reserved.updated;
 }
+
 
 export async function getPublicCheck(checkId: string) {
   const check = await prisma.priceCheck.findUnique({
     where: { id: checkId },
     select: {
       id: true,
+      analysisType: true,
       rawInput: true,
       locale: true,
       status: true,

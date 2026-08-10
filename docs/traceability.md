@@ -1,9 +1,9 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-07
+Last updated: 2026-08-10
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
-Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, and `verified`. No
+Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, `verified_gated_off`, and `verified`. No
 Release 1.5 row may inherit `verified` from Release 1 evidence.
 
 The tables below contain both current status and explicitly dated historical evidence. A historical
@@ -188,6 +188,47 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | D-023 Retention defaults | R15-RET-001, R15-AN-001 | Recommended 7/30/90-day defaults implemented and tested; final production privacy approval remains external | implemented_not_verified |
 | D-024 Real-state motion | R15-MOTION-001 | Server-backed stages plus desktop/mobile reduced-motion E2E | verified |
 | D-025 Supported OTA link with automatic default context | R15-INPUT-001, R15-INPUT-002, R15-INPUT-003, R15-AN-001 | Resolver tests plus desktop/mobile browser evidence | verified |
+
+## Post-Release Membership System
+
+Authoritative commercial and functional contract: [Membership plans](product/membership-plans.md). Authentication requirements remain in [Release 1.5 customer funnel requirements](product/customer-funnel.md); customer routes and page composition remain in [page structure](product/page-structure.md); responsive, state and visual acceptance remain in [visual interaction](product/visual-interaction.md).
+
+The statuses below describe the current implementation, not the target specification. Price Check unlock Magic Links are separate from the member email/password login and do not verify membership authentication. A membership backend, plan card or authenticated check page does not by itself verify the complete customer membership module.
+
+| Requirement | Planned implementation boundary | Required evidence | Current status |
+| --- | --- | --- | --- |
+| `MEM-AUTH-001`, `R15-AUTH-001` | Independent registration and email/password sign-in with zero pricing side effects | Real browser registration/login plus isolated PostgreSQL proof of Free membership creation with zero `AnonymousCheck`, `PriceCheck`, Job, unit and usage creation | `verified` |
+| `MEM-AUTH-002`, `R15-AUTH-002` | Bcrypt password storage, neutral invalid credentials, throttling, duplicate protection and return-target validation | Credential/API integration, password-hash inspection, middleware return-target tests, old-password rejection and real password-change browser acceptance | `verified` |
+| `MEM-AUTH-003`, `R15-AUTH-003` | Customer current-session and all-session sign-out, isolated from membership and Admin | Session API integration plus real browser current-session and settings all-session paths | `verified` |
+| `MEM-AUTH-004`, `R15-AUTH-004` | Protected-route redirect through password sign-in with allowlisted same-origin `returnTo` | Middleware exact-route/query, open-redirect and EN/ZH locale-continuity tests/browser evidence | `verified` |
+| `MEM-RISK-001` | Email verification before collection plus Benefit Group identity across account/device/property/payment subjects | Isolated PostgreSQL verifies unverified denial, same-device/same-Property shared Free usage, and shared-IP/different-device separation | `verified` |
+| `MEM-RISK-002` | Unique Free/promotion claims, serializable retries, concurrent collection/noVNC limits and independent export/API quotas | Three-way concurrent Free claim, idempotent NZ-month export and payment-promotion uniqueness integration | `verified` |
+| `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence test plus customer risk API and Admin review boundary | `implemented_not_verified` |
+| `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API/retention lifecycle tests and browser operations acceptance | `implemented_not_verified` |
+| `MEM-NAV-001` | Session-aware public/customer navigation with Sign in, Account and Sign out | Real EN/ZH authenticated/anonymous browser QA at desktop, 390px and 320px | `verified` |
+| `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
+| `MEM-UNIT-001` | Pricing-unit list/detail, add/confirm, activation, deactivation, reactivation and downgrade selection | Ownership, stable-identity, unit-limit and transactional job-cancellation tests plus browser flows | `implemented_not_verified` |
+| `MEM-CHECK-001` | Owner-only filterable history and result detail with observed-price/recommendation separation | Cross-account, pagination/filter, retention and one-valid-price acceptance | `implemented_not_verified` |
+| `MEM-CAL-001` | Plan-aware exact daily calendar and separately labelled monitoring extension in `Pacific/Auckland` | NZ-time/domain boundaries, owner-only API, no-fabrication data states and responsive browser QA | `verified` |
+| `MEM-ALERT-001` | Host core alerts and Pro/Portfolio settings/controls behind entitlement and launch gates | Entitlement-aware unavailable state is implemented and browser-verified; delivery remains closed pending the documented alert gate | `verified_gated_off` |
+| `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Portfolio/export/integration routes expose an honest entitlement/launch-gate state; no API or webhook secret is exposed while gates are closed | `verified_gated_off` |
+| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Signed/idempotent test-mode webhooks, out-of-order events, browser flows and production configuration gate | `implemented_not_verified` |
+| `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Time-controlled isolated PostgreSQL lifecycle matrix | `implemented_not_verified` |
+| `MEM-OPS-001` | Admin customer/membership/billing-event operations, safe reconciliation, session revoke, suspension and deletion support | Isolated PostgreSQL verifies unauthorised denial, audited plan/status corrections, session revoke, export completion evidence and minimised deletion; Stripe-backed manual drift fails closed | `verified` |
+| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health exposes aggregate plan/status/usage/unit/failure metrics without PII; production dashboard and injected-alert acceptance remain outstanding | `implemented_not_verified` |
+| `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Manual semantic/overflow/responsive browser QA passed; a fresh axe/keyboard/reduced-motion membership run remains outstanding | `implemented_not_verified` |
+| `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Returning Free real Mailpit/browser flow and all server/database gates pass; Stripe test-mode paid lifecycle and advanced-feature launch acceptance remain outstanding | `implemented_not_verified` |
+
+The generally available Free customer module is implemented. Paid billing, production telemetry and complete accessibility/end-to-end launch evidence remain release gates, not claims of production readiness. Plan-specific features may remain unavailable only when the customer UI, API and marketing all enforce the corresponding documented Launch Gate; `verified_gated_off` means that closed state itself has been verified and the feature must not be marketed as available.
+
+### Membership development verification (2026-08-10)
+
+- Prisma Client generation and TypeScript checks passed for every workspace package.
+- Web/domain/config/provider/database unit suites passed 199 tests; five external provider fixtures remained intentionally skipped. Worker unit suites passed 123 tests.
+- A disposable PostgreSQL 18.3 database applied all 25 migrations from zero. The focused authentication, membership, Admin and session-security run passed all 16 tests; the preceding complete database run passed all 88 tests before the password-auth migration. The disposable container and database were removed afterwards.
+- Web lint passed. The Web production build generated 101 pages and the Worker production build completed; only the existing optional LinkeDOM `canvas` warning appeared.
+- Fresh real-browser acceptance covered account registration, automatic Free-account session, sign-out, password login with exact protected-route return, password change, old-password rejection and new-password login. Chinese copy and locale routing are implemented; the broader full membership accessibility matrix remains a separate gate.
+- The development database applied migration `20260810210000_customer_data_request_resolution`. No Stripe production configuration, paid-plan launch, advanced-feature launch or production SLA is asserted by this evidence.
 
 ## Required Commands
 

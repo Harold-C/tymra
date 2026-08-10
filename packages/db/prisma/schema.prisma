@@ -30,6 +30,11 @@ enum PriceCheckStatus {
   ARCHIVED
 }
 
+enum PriceCheckAnalysisType {
+  LISTING_PRICING
+  LOCATION_BENCHMARK
+}
+
 enum MarketStatus {
   SUPPORTED
   PILOT_AVAILABLE
@@ -233,6 +238,7 @@ enum CollectionStatus {
 }
 
 enum JobType {
+  MEMBERSHIP_SCHEDULE
   ARGUS_JOB_POLL
   INPUT_RESOLUTION
   LISTING_RESOLUTION
@@ -289,6 +295,18 @@ enum ResultVersionStatus {
   WITHDRAWN
 }
 
+enum PriceResultStatus {
+  COMPLETED
+  NOT_AVAILABLE
+  BLOCKED
+}
+
+enum RecommendationStatus {
+  COMPLETED
+  LIMITED_EVIDENCE
+  NOT_AVAILABLE
+}
+
 enum FeedbackType {
   COMPETITORS_RELEVANT
   COMPETITORS_NOT_RELEVANT
@@ -331,6 +349,27 @@ enum CustomerStatus {
   DELETED
 }
 
+enum MembershipPlan {
+  FREE
+  HOST
+  PRO
+  PORTFOLIO
+}
+
+enum MembershipSubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  INCOMPLETE
+  PAUSED
+}
+
+enum MembershipUsageType {
+  INITIAL_REPORT
+  SPOT_CHECK
+  SCHEDULED_ANALYSIS
+}
+
 enum VerificationStatus {
   PENDING
   CONSUMED
@@ -339,11 +378,59 @@ enum VerificationStatus {
   BLOCKED
 }
 
+enum MagicLinkPurpose {
+  UNLOCK_FORMAL_CHECK
+  VERIFY_CUSTOMER_EMAIL
+}
+
+enum CustomerDataRequestType {
+  EXPORT
+  DELETE
+}
+
+enum CustomerDataRequestStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
 enum AbuseOutcome {
   ALLOW
   CHALLENGE
   COOLDOWN
   REJECT
+}
+
+enum BenefitGroupStatus {
+  ACTIVE
+  REVIEW
+  LIMITED
+}
+
+enum RiskSubjectType {
+  ACCOUNT
+  DEVICE
+  IP_PREFIX
+  EMAIL
+  PAYMENT_INSTRUMENT
+  PROPERTY
+  OTA_LISTING
+  QUERY_SIGNATURE
+  GEO_TILE
+}
+
+enum BenefitClaimType {
+  FREE_INITIAL_REPORT
+  FREE_SPOT_CHECK
+  PROMOTION
+}
+
+enum RiskCaseStatus {
+  OPEN
+  APPROVED
+  DENIED
+  RESOLVED
 }
 
 enum DeliveryStatus {
@@ -378,15 +465,16 @@ enum ImportStatus {
 }
 
 model AdminUser {
-  id           String          @id @default(cuid())
-  email        String          @unique
-  passwordHash String
-  active       Boolean         @default(true)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  sessions     AdminSession[]
-  auditEvents  AuditEvent[]
-  merges       IdentityMerge[]
+  id                String               @id @default(cuid())
+  email             String               @unique
+  passwordHash      String
+  active            Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  sessions          AdminSession[]
+  auditEvents       AuditEvent[]
+  merges            IdentityMerge[]
+  riskCasesResolved MembershipRiskCase[] @relation("RiskCaseResolver")
 }
 
 model AdminSession {
@@ -403,20 +491,51 @@ model AdminSession {
 }
 
 model CustomerUser {
-  id               String            @id @default(cuid())
-  emailHash        String            @unique
-  encryptedEmail   String
-  locale           String
-  status           CustomerStatus    @default(ACTIVE)
-  marketingConsent Boolean           @default(false)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  sessions         CustomerSession[]
-  magicLinks       MagicLink[]
-  anonymousChecks  AnonymousCheck[]
-  priceChecks      PriceCheck[]
+  id                 String                      @id @default(cuid())
+  emailHash          String                      @unique
+  encryptedEmail     String
+  passwordHash       String?
+  passwordChangedAt  DateTime?
+  emailVerifiedAt    DateTime?
+  benefitGroupId     String?
+  locale             String
+  status             CustomerStatus              @default(ACTIVE)
+  marketingConsent   Boolean                     @default(false)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  sessions           CustomerSession[]
+  magicLinks         MagicLink[]
+  anonymousChecks    AnonymousCheck[]
+  priceChecks        PriceCheck[]
+  membership         MembershipSubscription?
+  pricingUnits       CustomerPricingUnit[]
+  membershipUsage    MembershipUsage[]
+  dataRequests       CustomerDataRequest[]
+  benefitGroup       BenefitGroup?               @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)
+  riskIdentities     RiskIdentity[]
+  benefitClaims      BenefitClaim[]
+  paymentInstruments PaymentInstrumentIdentity[]
+  riskCases          MembershipRiskCase[]
 
   @@index([status, createdAt])
+  @@index([benefitGroupId])
+  @@index([emailVerifiedAt])
+}
+
+model CustomerDataRequest {
+  id                  String                    @id @default(cuid())
+  customerUserId      String
+  type                CustomerDataRequestType
+  status              CustomerDataRequestStatus @default(PENDING)
+  reason              String?
+  resolutionReference String?
+  requestedAt         DateTime                  @default(now())
+  completedAt         DateTime?
+  updatedAt           DateTime                  @updatedAt
+  customerUser        CustomerUser              @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  @@index([customerUserId, requestedAt])
+  @@index([status, requestedAt])
 }
 
 model CustomerSession {
@@ -427,10 +546,95 @@ model CustomerSession {
   revokedAt      DateTime?
   lastSeenAt     DateTime     @default(now())
   createdAt      DateTime     @default(now())
+  deviceHash     String?
+  ipPrefixHash   String?
   customerUser   CustomerUser @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
 
   @@index([customerUserId, expiresAt])
   @@index([expiresAt, revokedAt])
+  @@index([deviceHash, createdAt])
+  @@index([ipPrefixHash, createdAt])
+}
+
+model MembershipSubscription {
+  id                   String                       @id @default(cuid())
+  customerUserId       String                       @unique
+  plan                 MembershipPlan               @default(FREE)
+  status               MembershipSubscriptionStatus @default(ACTIVE)
+  stripeCustomerId     String?                      @unique
+  stripeSubscriptionId String?                      @unique
+  stripePriceId        String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean                      @default(false)
+  graceEndsAt          DateTime?
+  pendingPlan          MembershipPlan?
+  entitlementStartedAt DateTime                     @default(now())
+  version              Int                          @default(1)
+  lastStripeEventAt    DateTime?
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  customerUser         CustomerUser                 @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  @@index([plan, status])
+  @@index([status, graceEndsAt])
+  @@index([currentPeriodEnd])
+  @@index([lastStripeEventAt])
+}
+
+model CustomerPricingUnit {
+  id                String       @id @default(cuid())
+  customerUserId    String
+  sellableUnitId    String
+  quotaIdentityKey  String
+  active            Boolean      @default(true)
+  activatedAt       DateTime     @default(now())
+  deactivatedAt     DateTime?
+  slotRetainedUntil DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  customerUser      CustomerUser @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  sellableUnit      SellableUnit @relation(fields: [sellableUnitId], references: [id], onDelete: Restrict)
+
+  @@unique([customerUserId, sellableUnitId])
+  @@unique([customerUserId, quotaIdentityKey])
+  @@index([customerUserId, active])
+  @@index([customerUserId, slotRetainedUntil])
+  @@index([sellableUnitId, active])
+}
+
+model MembershipUsage {
+  id             String              @id @default(cuid())
+  customerUserId String
+  benefitGroupId String?
+  type           MembershipUsageType
+  idempotencyKey String              @unique
+  pricingUnitId  String?
+  priceCheckId   String?
+  metadata       Json                @default("{}")
+  countedAt      DateTime            @default(now())
+  createdAt      DateTime            @default(now())
+  customerUser   CustomerUser        @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  benefitGroup   BenefitGroup?       @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)
+  benefitClaim   BenefitClaim?
+
+  @@index([customerUserId, type, countedAt])
+  @@index([benefitGroupId, type, countedAt])
+  @@index([pricingUnitId, countedAt])
+}
+
+model StripeBillingEvent {
+  id              String    @id @default(cuid())
+  stripeEventId   String    @unique
+  eventType       String
+  eventCreatedAt  DateTime
+  payloadHash     String
+  processingError String?
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([eventType, createdAt])
+  @@index([processedAt])
 }
 
 model AnonymousCheck {
@@ -488,19 +692,19 @@ model MagicLink {
   id               String             @id @default(cuid())
   tokenHash        String             @unique
   idempotencyKey   String             @unique
-  purpose          String             @default("VERIFY_AND_SIGN_IN")
+  purpose          MagicLinkPurpose   @default(UNLOCK_FORMAL_CHECK)
   status           VerificationStatus @default(PENDING)
   emailHash        String
   encryptedEmail   String
   locale           String
-  anonymousCheckId String
+  anonymousCheckId String?
   customerUserId   String?
   marketingConsent Boolean            @default(false)
   expiresAt        DateTime
   consumedAt       DateTime?
   revokedAt        DateTime?
   createdAt        DateTime           @default(now())
-  anonymousCheck   AnonymousCheck     @relation(fields: [anonymousCheckId], references: [id], onDelete: Cascade)
+  anonymousCheck   AnonymousCheck?    @relation(fields: [anonymousCheckId], references: [id], onDelete: Cascade)
   customerUser     CustomerUser?      @relation(fields: [customerUserId], references: [id])
 
   @@index([emailHash, createdAt])
@@ -510,16 +714,21 @@ model MagicLink {
 
 model UsageLedger {
   id               String   @id @default(cuid())
+  operationKey     String?  @unique
   action           String
   subjectType      String
   subjectHash      String
   anonymousCheckId String?
   customerUserId   String?
+  benefitGroupId   String?
+  priceCheckId     String?
   metadata         Json
   createdAt        DateTime @default(now())
 
   @@index([action, subjectType, subjectHash, createdAt])
   @@index([customerUserId, action, createdAt])
+  @@index([benefitGroupId, action, createdAt])
+  @@index([priceCheckId, action, createdAt])
 }
 
 model AbuseDecision {
@@ -529,11 +738,123 @@ model AbuseDecision {
   outcome          AbuseOutcome
   reasonCodes      Json
   anonymousCheckId String?
+  customerUserId   String?
+  benefitGroupId   String?
+  policyVersion    String       @default("member-abuse-v1")
   cooldownUntil    DateTime?
   createdAt        DateTime     @default(now())
 
   @@index([action, subjectHash, createdAt])
   @@index([cooldownUntil])
+  @@index([customerUserId, action, createdAt])
+  @@index([benefitGroupId, action, createdAt])
+}
+
+model BenefitGroup {
+  id                 String                      @id @default(cuid())
+  status             BenefitGroupStatus          @default(ACTIVE)
+  riskScore          Int                         @default(0)
+  policyVersion      String                      @default("member-abuse-v1")
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  customers          CustomerUser[]
+  identities         RiskIdentity[]
+  claims             BenefitClaim[]
+  membershipUsage    MembershipUsage[]
+  paymentInstruments PaymentInstrumentIdentity[]
+  riskCases          MembershipRiskCase[]
+
+  @@index([status, updatedAt])
+}
+
+model RiskIdentity {
+  id             String          @id @default(cuid())
+  benefitGroupId String
+  customerUserId String?
+  subjectType    RiskSubjectType
+  subjectHash    String
+  hashVersion    Int             @default(1)
+  confidence     Int             @default(50)
+  reasonCodes    Json            @default("[]")
+  metadata       Json            @default("{}")
+  firstSeenAt    DateTime        @default(now())
+  lastSeenAt     DateTime        @default(now())
+  benefitGroup   BenefitGroup    @relation(fields: [benefitGroupId], references: [id], onDelete: Cascade)
+  customerUser   CustomerUser?   @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([benefitGroupId, subjectType, subjectHash, hashVersion])
+  @@index([subjectType, subjectHash, lastSeenAt])
+  @@index([customerUserId, subjectType, lastSeenAt])
+}
+
+model BenefitClaim {
+  id                      String           @id @default(cuid())
+  benefitGroupId          String
+  customerUserId          String
+  type                    BenefitClaimType
+  windowKey               String
+  propertyId              String?
+  promotionInstrumentHash String?
+  membershipUsageId       String?          @unique
+  metadata                Json             @default("{}")
+  claimedAt               DateTime         @default(now())
+  expiresAt               DateTime?
+  revokedAt               DateTime?
+  benefitGroup            BenefitGroup     @relation(fields: [benefitGroupId], references: [id], onDelete: Cascade)
+  customerUser            CustomerUser     @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  membershipUsage         MembershipUsage? @relation(fields: [membershipUsageId], references: [id], onDelete: SetNull)
+
+  @@unique([benefitGroupId, type, windowKey])
+  @@unique([type, windowKey, promotionInstrumentHash])
+  @@index([customerUserId, type, claimedAt])
+  @@index([propertyId, type, claimedAt])
+  @@index([expiresAt])
+}
+
+model PaymentInstrumentIdentity {
+  id                String        @id @default(cuid())
+  customerUserId    String
+  benefitGroupId    String?
+  fingerprintHash   String
+  stripeCustomerId  String?
+  paymentMethodType String?
+  countryCode       String?
+  status            String        @default("ACTIVE")
+  firstSeenAt       DateTime      @default(now())
+  lastSeenAt        DateTime      @default(now())
+  customerUser      CustomerUser  @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  benefitGroup      BenefitGroup? @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([customerUserId, fingerprintHash])
+  @@index([fingerprintHash, lastSeenAt])
+  @@index([benefitGroupId, lastSeenAt])
+  @@index([stripeCustomerId])
+}
+
+model MembershipRiskCase {
+  id                String         @id @default(cuid())
+  customerUserId    String?
+  benefitGroupId    String?
+  status            RiskCaseStatus @default(OPEN)
+  outcome           AbuseOutcome
+  action            String
+  reasonCodes       Json           @default("[]")
+  evidence          Json           @default("{}")
+  appealReason      String?
+  adminNote         String?
+  cooldownUntil     DateTime?
+  resolvedAt        DateTime?
+  resolvedByAdminId String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  customerUser      CustomerUser?  @relation(fields: [customerUserId], references: [id], onDelete: SetNull)
+  benefitGroup      BenefitGroup?  @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)
+  resolvedByAdmin   AdminUser?     @relation("RiskCaseResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([customerUserId, status, createdAt])
+  @@index([benefitGroupId, status, createdAt])
+  @@index([resolvedByAdminId])
 }
 
 model FunnelMetricDaily {
@@ -680,6 +1001,7 @@ model SellableUnit {
   workerAnalyses          WorkerAnalysisRequest[]
   competitorSetTargets    CompetitorSetVersion[]   @relation("CompetitorSetTarget")
   competitorMembers       CompetitorSetMember[]    @relation("CompetitorSetMemberUnit")
+  customerPricingUnits    CustomerPricingUnit[]
 
   @@index([propertyId, status])
 }
@@ -1238,6 +1560,9 @@ model RateObservation {
   platformFeesMinor          Int
   optionalFeesMinor          Int                @default(0)
   totalAmountMinor           Int
+  displayedAmountMinor       Int?
+  priceBasis                 String             @default("STAY_TOTAL")
+  sourcePriceStatus          String?
   exchangeRate               Decimal            @default(1) @db.Decimal(18, 8)
   nzdTotalMinor              Int
   effectiveNightlyTotalMinor Int
@@ -1586,6 +1911,7 @@ model EventOccurrenceSourceLink {
 
 model PriceCheck {
   id                         String                 @id @default(cuid())
+  analysisType               PriceCheckAnalysisType @default(LISTING_PRICING)
   rawInput                   String
   listingUrl                 String?
   listingValidationStatus    String                 @default("NOT_REQUIRED")
@@ -1637,30 +1963,35 @@ model PriceCheck {
 }
 
 model ResultVersion {
-  id                String                 @id @default(cuid())
-  priceCheckId      String
-  analysisRequestId String?
-  version           Int
-  status            ResultVersionStatus    @default(DRAFT)
-  outcome           PriceCheckStatus
-  generatedAt       DateTime               @default(now())
-  publishedAt       DateTime?
-  dataLastCheckedAt DateTime?
-  analysisVersion   String
-  confidence        ConfidenceLevel
-  payload           Json
-  supersedesId      String?
-  isDemo            Boolean                @default(false)
-  marketSnapshotId  String?
-  priceCheck        PriceCheck             @relation(fields: [priceCheckId], references: [id])
-  analysisRequest   WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
-  supersedes        ResultVersion?         @relation("ResultSupersession", fields: [supersedesId], references: [id])
-  supersededBy      ResultVersion[]        @relation("ResultSupersession")
-  insights          Insight[]
-  accessTokens      ResultAccessToken[]
-  feedback          Feedback[]
-  emails            EmailDelivery[]
-  marketSnapshot    MarketSnapshot?        @relation(fields: [marketSnapshotId], references: [id])
+  id                       String                 @id @default(cuid())
+  priceCheckId             String
+  analysisRequestId        String?
+  version                  Int
+  status                   ResultVersionStatus    @default(DRAFT)
+  outcome                  PriceCheckStatus
+  generatedAt              DateTime               @default(now())
+  publishedAt              DateTime?
+  dataLastCheckedAt        DateTime?
+  analysisVersion          String
+  confidence               ConfidenceLevel
+  priceResultStatus        PriceResultStatus      @default(NOT_AVAILABLE)
+  recommendationStatus     RecommendationStatus   @default(NOT_AVAILABLE)
+  observedSourceCount      Int                    @default(0)
+  priceEvidenceStatus      String?
+  recommendationReasonCode String?
+  payload                  Json
+  supersedesId             String?
+  isDemo                   Boolean                @default(false)
+  marketSnapshotId         String?
+  priceCheck               PriceCheck             @relation(fields: [priceCheckId], references: [id])
+  analysisRequest          WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
+  supersedes               ResultVersion?         @relation("ResultSupersession", fields: [supersedesId], references: [id])
+  supersededBy             ResultVersion[]        @relation("ResultSupersession")
+  insights                 Insight[]
+  accessTokens             ResultAccessToken[]
+  feedback                 Feedback[]
+  emails                   EmailDelivery[]
+  marketSnapshot           MarketSnapshot?        @relation(fields: [marketSnapshotId], references: [id])
 
   @@unique([priceCheckId, version])
   @@unique([analysisRequestId, version])

@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
 
-export function recreateRuntime(environment: NodeJS.ProcessEnv) {
+export function recreateRuntime(environment: NodeJS.ProcessEnv, options: { waitForHealthy?: boolean } = {}) {
+  const waitForHealthy = options.waitForHealthy ?? true;
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      execFileSync("docker", ["compose", "up", "-d", "--wait", "--no-deps", "--force-recreate", "web", "worker", "api"], {
+      removeRuntimeServices(environment);
+      execFileSync("docker", ["compose", "up", "-d", ...(waitForHealthy ? ["--wait"] : []), "--no-deps", "--force-recreate", "web", "worker", "api"], {
         cwd: process.cwd(),
         env: environment,
         stdio: "inherit",
@@ -20,8 +22,24 @@ export function recreateRuntime(environment: NodeJS.ProcessEnv) {
   throw lastError;
 }
 
+function removeRuntimeServices(environment: NodeJS.ProcessEnv) {
+  // Compose can return before a forced recreation has fully removed the old
+  // container. Stop and remove only the E2E-managed services first so a retry
+  // cannot race a lingering container name.
+  execFileSync("docker", ["compose", "stop", "--timeout", "10", "web", "worker", "api"], {
+    cwd: process.cwd(),
+    env: environment,
+    stdio: "inherit",
+  });
+  execFileSync("docker", ["compose", "rm", "--force", "web", "worker", "api"], {
+    cwd: process.cwd(),
+    env: environment,
+    stdio: "inherit",
+  });
+}
+
 function assertRuntimeEnvironment(environment: NodeJS.ProcessEnv) {
-  const expected = Object.fromEntries(["PROVIDER_MODE", "ABUSE_CHALLENGE_MODE"].flatMap((name) => environment[name] === undefined ? [] : [[name, environment[name]]]));
+  const expected = Object.fromEntries(["PROVIDER_MODE", "PUBLIC_COLLECTION_MODE", "ABUSE_CHALLENGE_MODE"].flatMap((name) => environment[name] === undefined ? [] : [[name, environment[name]]]));
   if (!Object.keys(expected).length) return;
   execFileSync("docker", ["compose", "exec", "-T", "web", "node", "-e", `const expected=${JSON.stringify(expected)};process.exit(Object.entries(expected).every(([key,value])=>process.env[key]===value)?0:1)`], {
     cwd: process.cwd(), env: environment, stdio: "ignore",

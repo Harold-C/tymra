@@ -17,6 +17,8 @@ import {
   Search,
   ShieldCheck,
   Settings,
+  Users,
+  WalletCards,
   Tags,
   X,
 } from "lucide-react";
@@ -90,6 +92,15 @@ export function AdminShell({
         { label: text.accommodations, href: "/admin/accommodations", icon: Building2 },
         { label: text.listings, href: "/admin/listings", icon: Tags },
         { label: text.competitors, href: "/admin/competitors", icon: ListChecks },
+      ],
+    },
+    {
+      label: text.membership,
+      items: [
+        { label: text.customers, href: "/admin/customers", icon: Users },
+        { label: text.memberships, href: "/admin/memberships", icon: ShieldCheck },
+        { label: text.membershipRisk, href: "/admin/membership-risk", icon: AlertTriangle },
+        { label: text.billingEvents, href: "/admin/billing-events", icon: WalletCards },
       ],
     },
     {
@@ -187,6 +198,11 @@ function copy(locale: AdminLocale) {
     accommodations: { en: "Properties & units", zh: "房源与房型" },
     listings: { en: "Platform listings", zh: "平台房源" },
     competitors: { en: "Competitor relationships", zh: "竞品关系" },
+    membership: { en: "Membership", zh: "会员运营" },
+    customers: { en: "Customers", zh: "会员客户" },
+    memberships: { en: "Memberships", zh: "会员状态" },
+    membershipRisk: { en: "Membership risk", zh: "会员风控" },
+    billingEvents: { en: "Billing events", zh: "计费事件" },
     system: { en: "System", zh: "系统" },
     feedback: { en: "User feedback", zh: "用户反馈" },
     audit: { en: "Audit log", zh: "审计记录" },

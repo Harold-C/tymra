@@ -77,7 +77,10 @@ export async function claimNextJob(workerId: string, leaseSeconds: number, now: 
       WHERE status = 'PENDING'::"JobStatus"
         AND "runAt" <= ${now}
         AND (${allowedQueues}::text[] IS NULL OR "queueName" = ANY(${allowedQueues}::text[]))
-      ORDER BY priority ASC, "runAt" ASC, "createdAt" ASC
+      ORDER BY
+        GREATEST(0, priority - FLOOR(EXTRACT(EPOCH FROM (${now} - "createdAt")) / 300)) ASC,
+        "runAt" ASC,
+        "createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
@@ -176,6 +179,7 @@ export function isTerminalJobStatus(status: JobStatus): boolean {
 
 export function queueNameForJobType(type: JobType): string {
   switch (type) {
+    case "MEMBERSHIP_SCHEDULE": return "membership-schedule";
     case "ARGUS_JOB_POLL": return "argus-job-poll";
     case "INPUT_RESOLUTION": return "input-resolution";
     case "LISTING_RESOLUTION":

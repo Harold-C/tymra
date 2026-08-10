@@ -51,6 +51,8 @@ export async function captureBrowserTaskWithDurableArgus(
   }
 
   if (!execution) {
+    const noVncCapacity = await memberNoVncCapacity(context.parentJobId);
+    if (!noVncCapacity.allowed) return { ok: false, httpStatus: 429, message: "The membership already has the maximum number of active manual browser sessions" };
     const submission = await submitArgusCapture(environment, input);
     if (!submission.ok) return submission;
     execution = await prisma.argusExecution.upsert({
@@ -110,6 +112,23 @@ export async function captureBrowserTaskWithDurableArgus(
     `Waiting for Argus job ${execution.argusJobId}`,
     execution.deadlineAt,
   );
+}
+
+async function memberNoVncCapacity(parentJobId: string) {
+  const parent = await prisma.job.findUnique({ where: { id: parentJobId }, select: { priceCheck: { select: { customerUserId: true, customerUser: { select: { membership: { select: { plan: true } } } } } } } });
+  const customerUserId = parent?.priceCheck?.customerUserId;
+  if (!customerUserId) return { allowed: true };
+  const plan = parent.priceCheck?.customerUser?.membership?.plan ?? "FREE";
+  const limit = plan === "FREE" || plan === "HOST" ? 1 : plan === "PRO" ? 2 : 4;
+  const jobs = await prisma.job.findMany({ where: { priceCheck: { customerUserId } }, select: { id: true } });
+  const executions = await prisma.argusExecution.findMany({ where: { parentJobId: { in: jobs.map((job) => job.id) }, status: "COMPLETED", completedAt: { gte: new Date(Date.now() - 2 * 3_600_000) }, result: { not: Prisma.DbNull } }, select: { result: true } });
+  const active = executions.filter((item) => {
+    const result = item.result as Record<string, unknown> | null;
+    const challenge = result && typeof result.challenge === "object" && result.challenge && !Array.isArray(result.challenge) ? result.challenge as Record<string, unknown> : null;
+    const session = challenge && typeof challenge.manual_session === "object" && challenge.manual_session && !Array.isArray(challenge.manual_session) ? challenge.manual_session as Record<string, unknown> : null;
+    return typeof session?.expires_at === "string" && Date.parse(session.expires_at) > Date.now();
+  }).length;
+  return { allowed: active < limit, active, limit };
 }
 
 export async function pollArgusExecution(environment: Environment, executionId: string): Promise<void> {

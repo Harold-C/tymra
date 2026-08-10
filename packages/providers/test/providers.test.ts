@@ -20,7 +20,10 @@ describe("Demo Provider", () => {
       currency: "NZD" as const,
     };
 
-    expect(await provider.fetchRates(request, context)).toEqual(await provider.fetchRates(request, context));
+    const rates = await provider.fetchRates(request, context);
+    expect(rates).toEqual(await provider.fetchRates(request, context));
+    expect(rates).toHaveLength(9);
+    expect(rates).toContainEqual(expect.objectContaining({ listingExternalId: "demo-target-listing", availabilityStatus: "AVAILABLE" }));
     expect(properties.every((record) => record.isDemo)).toBe(true);
     expect(units.every((record) => record.isDemo)).toBe(true);
   });
@@ -47,4 +50,3 @@ describe("Manual Import preview", () => {
     expect(preview.errors[0].row).toBe(3);
   });
 });
-

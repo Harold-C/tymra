@@ -26,6 +26,7 @@ type PropertyCandidate = {
 
 type PublicCheck = {
   id: string;
+  analysisType: "LISTING_PRICING" | "LOCATION_BENCHMARK";
   rawInput: string;
   status: string;
   nextAction: string;
@@ -57,9 +58,10 @@ type PublicCheck = {
 };
 
 type ApiEnvelope<T> = { data: T; meta?: Record<string, unknown> };
-type ApiFailure = { error?: { code?: string; message?: string; referenceId?: string; fieldErrors?: Record<string, string[]> } };
+type MemberChallenge = { mode: "deterministic" | "managed"; token?: string; siteKey?: string };
+type ApiFailure = { error?: { code?: string; message?: string; referenceId?: string; fieldErrors?: Record<string, string[]>; details?: { challenge?: MemberChallenge; reasonCodes?: string[] } } };
 
-export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; initialInput?: string }) {
+export function CheckStartForm({ locale, initialInput = "", memberEmail }: { locale: Locale; initialInput?: string; memberEmail?: string }) {
   const t = useTranslations("Check");
   const router = useRouter();
   const dates = useMemo(defaultStayDates, []);
@@ -77,6 +79,7 @@ export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; 
     setFieldErrors({});
     const form = new FormData(event.currentTarget);
     const input = String(form.get("input") ?? "").trim();
+    const analysisType = String(form.get("analysisType") ?? "LISTING_PRICING");
     const email = String(form.get("email") ?? "").trim();
     const nextFieldErrors: Record<string, string> = {};
 
@@ -121,6 +124,7 @@ export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; 
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          analysisType,
           input,
           locale,
           email,
@@ -158,13 +162,24 @@ export function CheckStartForm({ locale, initialInput = "" }: { locale: Locale; 
   return (
     <FlowPage title={t("startTitle")} intro={t("startIntro")} currentStep={0}>
       <form className="flow-form" onSubmit={submit} noValidate>
+        <fieldset className="flow-choice-group">
+          <legend>{t("analysisTypeLabel")}</legend>
+          <label className="check-control"><input name="analysisType" type="radio" value="LISTING_PRICING" defaultChecked /><span><strong>{t("analysisType.listing.title")}</strong><small>{t("analysisType.listing.body")}</small></span></label>
+          <label className="check-control"><input name="analysisType" type="radio" value="LOCATION_BENCHMARK" /><span><strong>{t("analysisType.location.title")}</strong><small>{t("analysisType.location.body")}</small></span></label>
+        </fieldset>
         <Field label={t("propertyLabel")} htmlFor="check-input" error={fieldErrors.input}>
           <div className="input-with-icon"><Search size={19} /><input id="check-input" name="input" defaultValue={initialInput} maxLength={500} required autoComplete="off" placeholder={t("propertyPlaceholder")} aria-invalid={Boolean(fieldErrors.input)} aria-describedby={fieldErrors.input ? "check-input-error" : undefined} /></div>
         </Field>
-        <Field label={t("emailLabel")} hint={t("emailHint")} htmlFor="check-email" error={fieldErrors.email}>
-          <input id="check-email" name="email" type="email" required autoComplete="email" placeholder={t("emailPlaceholder")} aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? "check-email-error" : undefined} />
-        </Field>
-        <div><label className="check-control"><input name="serviceConsent" type="checkbox" required aria-invalid={Boolean(fieldErrors.serviceConsent)} aria-describedby={fieldErrors.serviceConsent ? "service-consent-error" : undefined} /><span>{t("serviceConsent")}</span></label>{fieldErrors.serviceConsent ? <p className="field-error" id="service-consent-error">{fieldErrors.serviceConsent}</p> : null}</div>
+        {memberEmail ? <>
+          <input name="email" type="hidden" value={memberEmail} />
+          <input name="serviceConsent" type="hidden" value="on" />
+          <FlowNotice tone="success" title={locale === "zh" ? "已使用会员账户" : "Using your member account"} body={locale === "zh" ? "检查结果会直接保存到当前登录账户，并计入会员额度。" : "The result will be saved to the signed-in account and counted against its membership allowance."} />
+        </> : <>
+          <Field label={t("emailLabel")} hint={t("emailHint")} htmlFor="check-email" error={fieldErrors.email}>
+            <input id="check-email" name="email" type="email" required autoComplete="email" placeholder={t("emailPlaceholder")} aria-invalid={Boolean(fieldErrors.email)} aria-describedby={fieldErrors.email ? "check-email-error" : undefined} />
+          </Field>
+          <div><label className="check-control"><input name="serviceConsent" type="checkbox" required aria-invalid={Boolean(fieldErrors.serviceConsent)} aria-describedby={fieldErrors.serviceConsent ? "service-consent-error" : undefined} /><span>{t("serviceConsent")}</span></label>{fieldErrors.serviceConsent ? <p className="field-error" id="service-consent-error">{fieldErrors.serviceConsent}</p> : null}</div>
+        </>}
         <label className="check-control"><input name="marketingConsent" type="checkbox" /><span>{t("marketingConsent")}</span></label>
         {notice ? <FlowNotice tone="warning" title={t(`notice.${notice}.title`)} body={t(`notice.${notice}.body`)} /> : null}
         {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} /> : null}
@@ -319,10 +334,12 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
   const dates = useMemo(defaultStayDates, []);
   const { check, loading, error, setError } = usePublicCheck(checkId, t("genericError"));
   const [submitting, setSubmitting] = useState(false);
+  const [challenge, setChallenge] = useState<MemberChallenge | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
+    setError(null);
     const form = new FormData(event.currentTarget);
     try {
       await requestJson(`/api/v1/price-checks/${checkId}/confirm-query`, {
@@ -337,10 +354,12 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
           currency: "NZD",
           cancellationCategory: "STANDARD",
           timezone: "Pacific/Auckland",
+          ...(challenge?.token ? { challengeToken: challenge.token } : {}),
         }),
       });
       router.push(`/${locale}/check/${checkId}/status`);
     } catch (caught) {
+      if (caught instanceof RequestError && caught.code === "MEMBER_CHALLENGE_REQUIRED" && caught.challenge) setChallenge(caught.challenge);
       setError(caught instanceof Error ? caught.message : t("genericError"));
       setSubmitting(false);
     }
@@ -350,13 +369,14 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
   const initialCheckOut = check?.stayQuery?.checkOut?.slice(0, 10) ?? dates.checkOut;
 
   return (
-    <FlowPage title={t("queryTitle")} intro={check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={3}>
+    <FlowPage title={t("queryTitle")} intro={check?.analysisType === "LOCATION_BENCHMARK" ? t("queryIntroLocation") : check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={3}>
       {loading ? <LoadingState label={t("loading")} /> : (
         <form className="flow-form" onSubmit={submit}>
           {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
           <div className="field-grid"><Field label={t("checkIn")} htmlFor="check-in"><input id="check-in" name="checkIn" type="date" defaultValue={initialCheckIn} required /></Field><Field label={t("checkOut")} htmlFor="check-out"><input id="check-out" name="checkOut" type="date" defaultValue={initialCheckOut} required /></Field></div>
           <div className="field-grid"><Field label={t("adults")} htmlFor="adults"><input id="adults" name="adults" type="number" min="1" max="16" defaultValue={check?.stayQuery?.adults ?? 2} required /></Field><Field label={t("children")} htmlFor="children"><input id="children" name="children" type="number" min="0" max="16" defaultValue={check?.stayQuery?.children ?? 0} required /></Field></div>
-          <FlowNotice tone="info" title={t("queryNoticeTitle")} body={t("queryNoticeBody")} />
+          <FlowNotice tone="info" title={t("queryNoticeTitle")} body={check?.analysisType === "LOCATION_BENCHMARK" ? t("queryNoticeLocationBody") : t("queryNoticeBody")} />
+          {challenge ? <FlowNotice tone="warning" title={locale === "zh" ? "需要额外验证" : "Additional verification required"} body={challenge.mode === "deterministic" ? (locale === "zh" ? "再次提交即可完成开发环境验证。" : "Submit again to complete the development verification.") : (locale === "zh" ? "请完成已配置的托管验证后重试。" : "Complete the configured managed challenge before retrying.")} /> : null}
           {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} /> : null}
           <button className="button button-primary flow-primary" type="submit" disabled={submitting}>{submitting ? <LoaderCircle className="spin" size={18} /> : <CalendarDays size={18} />}{submitting ? t("submitting") : t("confirmQuery")}</button>
         </form>
@@ -365,7 +385,7 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
   );
 }
 
-export function CheckStatus({ locale, checkId }: { locale: Locale; checkId: string }) {
+export function CheckStatus({ locale, checkId, memberAccount = false }: { locale: Locale; checkId: string; memberAccount?: boolean }) {
   const t = useTranslations("Check");
   const [check, setCheck] = useState<PublicCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -397,11 +417,14 @@ export function CheckStatus({ locale, checkId }: { locale: Locale; checkId: stri
         <div className="status-icon">{presentation.icon}</div>
         <div><span>{t("currentStatus")}</span><h2>{t(`status.${check.status}`)}</h2><p>{t(`statusBody.${check.status}`)}</p></div>
       </div> : null}
-      {check?.status === "PUBLISHED" ? <FlowNotice tone="success" title={t("resultReadyTitle")} body={t("resultReadyBody")} action={localInboxAction} /> : null}
+      {check?.status === "PUBLISHED" ? memberAccount
+        ? <FlowNotice tone="success" title={locale === "zh" ? "报告已保存到会员账户" : "Report saved to your member account"} body={locale === "zh" ? "你可以立即打开完整分析报告，无需等待或使用邮件链接。" : "You can open the complete analysis now without waiting for an email link."} action={<Link className="button button-secondary" href={`/${locale}/account/checks/${checkId}`}>{locale === "zh" ? "打开分析报告" : "Open analysis report"}</Link>} />
+        : <FlowNotice tone="success" title={t("resultReadyTitle")} body={t("resultReadyBody")} action={localInboxAction} />
+        : null}
       {check?.status === "PARTIAL" || check?.status === "INSUFFICIENT_DATA" ? <FlowNotice tone="warning" title={t("limitedTitle")} body={t("limitedBody")} action={localInboxAction} /> : null}
       {confirmationPath ? <FlowNotice tone="info" title={t("confirmationReadyTitle")} body={check?.listingValidationMessage ?? t("confirmationReadyBody")} action={<Link className="button button-secondary" href={`/${locale}/check/${checkId}/${confirmationPath}`}>{t("continueConfirmation")}</Link>} /> : null}
       {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} action={<button className="button button-secondary" type="button" onClick={load}>{t("retry")}</button>} /> : null}
-      <div className="flow-actions"><Link className="text-link" href={`/${locale}`}><ArrowLeft size={16} />{t("backHome")}</Link>{terminal ? <Link className="button button-secondary" href={`/${locale}/check`}>{t("anotherCheck")}</Link> : null}</div>
+      <div className="flow-actions"><Link className="text-link" href={memberAccount ? `/${locale}/account` : `/${locale}`}><ArrowLeft size={16} />{memberAccount ? locale === "zh" ? "返回会员后台" : "Back to account" : t("backHome")}</Link>{terminal ? <Link className="button button-secondary" href={`/${locale}/${memberAccount ? "address-check" : "check"}`}>{t("anotherCheck")}</Link> : null}</div>
     </FlowPage>
   );
 }
@@ -459,11 +482,15 @@ function getStatusPresentation(status: string, terminal: boolean) {
 
 class RequestError extends Error {
   fieldErrors?: Record<string, string[]>;
+  code?: string;
+  challenge?: MemberChallenge;
 
-  constructor(message: string, fieldErrors?: Record<string, string[]>) {
+  constructor(message: string, fieldErrors?: Record<string, string[]>, code?: string, challenge?: MemberChallenge) {
     super(message);
     this.name = "RequestError";
     this.fieldErrors = fieldErrors;
+    this.code = code;
+    this.challenge = challenge;
   }
 }
 
@@ -472,7 +499,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json() as ApiEnvelope<T> & ApiFailure;
   if (!response.ok || payload.error) {
     const fieldMessage = payload.error?.fieldErrors ? Object.values(payload.error.fieldErrors).flat()[0] : undefined;
-    throw new RequestError(fieldMessage ?? payload.error?.message ?? `Request failed (${response.status})`, payload.error?.fieldErrors);
+    throw new RequestError(fieldMessage ?? payload.error?.message ?? `Request failed (${response.status})`, payload.error?.fieldErrors, payload.error?.code, payload.error?.details?.challenge);
   }
   return payload.data;
 }

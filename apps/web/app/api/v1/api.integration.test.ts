@@ -93,7 +93,7 @@ describe("Release 1 API contracts", () => {
     const suffix = randomUUID();
     const externalIds = [`linz-address:${suffix}:a`, `linz-address:${suffix}:b`];
     const candidatePropertyIds = externalIds.map((externalId) => `property_${stableAddressIdentityId(externalId)}`);
-    const localIds = { checkId: "", stayQueryId: "", propertyId: "" };
+    const localIds = { checkId: "", stayQueryId: "", propertyId: "", locationCheckId: "", locationStayQueryId: "" };
     try {
       const identityResult = (query: string): AddressIdentitySearchResult => ({
         query,
@@ -140,6 +140,20 @@ describe("Release 1 API contracts", () => {
       const pending = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.checkId } });
       expect(pending).toMatchObject({ listingUrl: "https://www.booking.com/hotel/nz/address-confirmation-stay.html", listingValidationStatus: "PENDING", status: "VALIDATING", unitId: null });
       expect(await prisma.job.count({ where: { priceCheckId: localIds.checkId, type: "PROPERTY_IDENTIFICATION" } })).toBe(1);
+
+      const locationResponse = await createCheck(jsonRequest("/api/v1/price-checks", {
+        analysisType: "LOCATION_BENCHMARK", email: `location-benchmark-${suffix}@tymra.test`, locale: "en", input: "100 Queen Street, Auckland 1010",
+        stayQuery: { checkIn: "2026-09-10T00:00:00.000Z", checkOut: "2026-09-11T00:00:00.000Z", adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" },
+        serviceConsent: true, marketingConsent: false, idempotencyKey: `location-benchmark:${suffix}`,
+      }));
+      localIds.locationCheckId = (await locationResponse.json()).data.checkId;
+      const locationCheck = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.locationCheckId } });
+      localIds.locationStayQueryId = locationCheck.stayQueryId!;
+      const locationCookie = locationResponse.headers.get("set-cookie")!.split(";")[0];
+      const locationConfirmation = await confirmProperty(jsonRequest(`/api/v1/price-checks/${localIds.locationCheckId}/confirm-property`, { addressExternalId: externalIds[1] }, { cookie: locationCookie }), { params: { checkId: localIds.locationCheckId } });
+      expect(locationConfirmation.status).toBe(200);
+      expect((await locationConfirmation.json()).data.requiresListingConfirmation).toBe(false);
+      expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.locationCheckId } })).toMatchObject({ analysisType: "LOCATION_BENCHMARK", listingValidationStatus: "NOT_REQUIRED" });
     } finally {
       linzAddressIdentityProvider.search = originalSearch;
       if (localIds.checkId) {
@@ -147,6 +161,12 @@ describe("Release 1 API contracts", () => {
         await prisma.job.deleteMany({ where: { priceCheckId: localIds.checkId } });
         await prisma.priceCheck.deleteMany({ where: { id: localIds.checkId } });
         if (localIds.stayQueryId) await prisma.stayQuery.deleteMany({ where: { id: localIds.stayQueryId } });
+      }
+      if (localIds.locationCheckId) {
+        await prisma.emailDelivery.deleteMany({ where: { priceCheckId: localIds.locationCheckId } });
+        await prisma.job.deleteMany({ where: { priceCheckId: localIds.locationCheckId } });
+        await prisma.priceCheck.deleteMany({ where: { id: localIds.locationCheckId } });
+        if (localIds.locationStayQueryId) await prisma.stayQuery.deleteMany({ where: { id: localIds.locationStayQueryId } });
       }
       const properties = await prisma.property.findMany({ where: { id: { in: candidatePropertyIds } }, select: { id: true } });
       await prisma.sellableUnit.deleteMany({ where: { propertyId: { in: properties.map((property) => property.id) } } });

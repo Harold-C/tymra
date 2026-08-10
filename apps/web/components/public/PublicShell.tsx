@@ -2,12 +2,17 @@ import { Menu, X } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import Image from "next/image";
 import Link from "next/link";
+import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { CustomerSignOut } from "./CustomerSessionActions";
 import { LocaleSwitchLink } from "./LocaleSwitchLink";
 
 export async function PublicShell({ locale, children }: { locale: "en" | "zh"; children: React.ReactNode }) {
-  const nav = await getTranslations("Nav");
-  const common = await getTranslations("Common");
-  const footer = await getTranslations("Footer");
+  const [nav, common, footer, customerSession] = await Promise.all([
+    getTranslations("Nav"),
+    getTranslations("Common"),
+    getTranslations("Footer"),
+    getCustomerSessionForPage(),
+  ]);
   const footerGroups = [
     { label: footer("product"), links: [{ label: common("runCheck"), href: `/${locale}/check` }, { label: nav("how"), href: `/${locale}#how-it-works` }, { label: nav("what"), href: `/${locale}#what-you-get` }] },
     { label: footer("resources"), links: [{ label: nav("methodology"), href: `/${locale}/methodology` }, { label: nav("faq"), href: `/${locale}/faq` }, { label: nav("contact"), href: `/${locale}/contact` }] },
@@ -31,6 +36,9 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
           </nav>
           <div className="header-actions">
             <LocaleSwitchLink className="language-link" locale={locale} label={common("language")} />
+            {customerSession
+              ? <><Link className="member-header-link" href={`/${locale}/account`}>{common("account")}</Link><CustomerSignOut locale={locale} label={common("signOut")} compact /></>
+              : <Link className="member-header-link" href={`/${locale}/sign-in`}>{common("signIn")}</Link>}
             <Link className="button button-primary header-cta" href={`/${locale}/check`}>{common("runCheck")}</Link>
             <details className="mobile-menu">
               <summary className="mobile-menu-button" aria-label={nav("menu")}><Menu className="menu-open-icon" size={22} /><X className="menu-close-icon" size={22} /></summary>
@@ -40,6 +48,9 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
                 <Link href={`/${locale}/methodology`}>{nav("methodology")}</Link>
                 <Link href={`/${locale}/faq`}>{nav("faq")}</Link>
                 <Link href={`/${locale}/contact`}>{nav("contact")}</Link>
+                {customerSession
+                  ? <><Link href={`/${locale}/account`}>{common("account")}</Link><CustomerSignOut locale={locale} label={common("signOut")} /></>
+                  : <Link href={`/${locale}/sign-in`}>{common("signIn")}</Link>}
                 <Link className="button button-primary mobile-menu-cta" href={`/${locale}/check`}>{common("runCheck")}</Link>
               </nav>
             </details>

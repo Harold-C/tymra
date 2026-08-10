@@ -372,6 +372,58 @@ Tabs 使用水平可滚动但无页面横向溢出。Observation 表格固定日
 
 DataSourceStatusBadge 显示 PILOT、SUSPENDED、DISABLED、DEPRECATED、UNKNOWN；SourceHealthBadge 显示 HEALTHY、DEGRADED、DOWN。每项同时显示 Last success、Error rate 和 Retention。来源未启用或运行状态为 BLOCKED/DOWN 时使用 Warning/Danger 并禁止自动发布。
 
+# [UI-MEMBER] Post-Release 会员视觉与交互系统
+
+本章覆盖已批准会员范围，并在会员页面内覆盖 Release 1 “不创建用户 Dashboard/Billing”的旧视觉边界。它不引入团队、PMS 写入或自动调价界面。
+
+## UI-MEMBER-1 客户 Shell 与导航
+
+会员页面沿用公开品牌资产，但使用清晰的客户导航而不是 Admin Sidebar。桌面提供概览、定价单位、价格检查、设置和实际可用的方案模块；移动端使用可关闭菜单并保持 Account、Sign out 和语言切换可达。无会话显示 Sign in；有会话显示 Account 和 Sign out，不同时显示互相矛盾的入口。
+
+客户状态不得使用 Admin 的危险操作视觉，也不得出现 Admin 路由、内部错误、Job 控制或原始证据入口。
+
+## UI-MEMBER-2 独立登录
+
+登录页是低干扰单列卡片，只含邮箱、无密码说明、必要披露和主按钮。成功后在原位置显示中性邮件提示；不得用不同图标、颜色或文案透露账户是否存在。链接过期页提供重新申请和返回首页动作。
+
+密码字段、OTA URL、付款信息、营销预勾选和“必须先检查房源”的内容不得出现。Sign out 是明确文本动作，不只使用无标签图标。
+
+## UI-MEMBER-3 账户概览
+
+页面首屏按“当前状态 → 可用额度 → 定价单位 → 下一动作”排序。方案名称与价格不能成为唯一主角；会员首页必须帮助客户决定下一步。
+
+关键指标最多使用可换行的紧凑网格：主动检查、有效单位、逐日价格范围、监测范围。日期范围显示实际起止日期，并说明 New Zealand time。付款逾期、取消待生效、方案待变更和 Launch Gate 使用不同的文字、图标和非颜色线索。
+
+## UI-MEMBER-4 定价单位、检查与价格
+
+定价单位列表优先展示稳定身份、OTA 映射、激活状态和最近观察时间。Activate/Deactivate 是次级动作；停用前说明调度影响，不能伪装成删除。
+
+检查详情先显示有效目标 OTA 价格，再显示推荐。来源、`asOf`、价格口径和费用完整性与金额处于同一可读区域。`priceResultStatus=COMPLETED` 且推荐不可用时，界面使用成功价格区加独立限制说明，不能把整个页面染成 Partial/Insufficient。
+
+## UI-MEMBER-5 Calendar 与监测
+
+Calendar 必须有固定图例，并同时用文本、图标和边框区分“精确逐日”“仅监测”“未采样”“来源不可用”和“处理中”。不以连续折线或填色暗示未采样日期存在精确价格。键盘可逐日导航，屏幕阅读器读出日期、价格/状态、`asOf` 和推荐状态。
+
+## UI-MEMBER-6 方案与账单
+
+方案卡显示 NZD GST-inclusive 价格、单位、逐日范围、监测范围、额度和已通过 Gate 的能力。当前方案、可购买方案和未开放方案有明确标签。未开放按钮不可调用 API，也不能用高对比主 CTA 诱导点击。
+
+升级、降级、取消和恢复续费分别显示生效时间与影响。取消和账户删除使用不同 Dialog；取消说明仍可服务至何时，删除说明数据与会话后果。Stripe 返回页显示“正在确认”直到服务器账单状态完成对账，不使用浏览器重定向直接显示付款成功。
+
+## UI-MEMBER-7 Alerts、Portfolio、Export 与 Integrations
+
+这些页面只在方案权益和 Launch Gate 同时有效时出现在可用导航。Portfolio 卡片和排序必须显式表示缺失数据，不能把缺失值显示为零。批量动作先显示预览和影响计数。Export 显示生成、就绪、过期和失败状态。API/Webhook 密钥只在创建时显示一次，并提供复制确认、撤销和最近调用/投递状态。
+
+## UI-MEMBER-8 响应式与状态
+
+会员页面至少验证 1440×900、768×1024、390×844 和 320×568。320px 下方案、模块、指标和单位卡片在信息会被截断时使用单列；不允许横向页面滚动。表格在小屏重组为带字段标签的记录卡，而不是缩小字体。
+
+每个页面具有有界 Skeleton 加载、空、错误、会话过期、无权益、Launch Gate、宽限、暂停、取消只读和离线状态。Skeleton 不能无限显示；状态恢复后焦点移动到可感知的标题或状态区域。
+
+## UI-MEMBER-9 会员运营后台
+
+Admin 客户与订阅页面复用 Admin Shell、DataTable、Filter、StatusBadge、Drawer/Dialog 和 Audit 视觉。付款失败、宽限截止、Webhook 失败和删除请求按可操作风险排序。秘密始终显示为不存在或已遮蔽，不提供“显示完整值”。高影响动作展示影响预览、原因字段、确认及成功后的 Audit ID。
+
 # \[UI-FORM\] 十二、表单与操作反馈
 
 • 主操作每页只保留一个 Primary；并列危险操作不得同级。  
@@ -430,7 +482,7 @@ prefers-reduced-motion 下取消位移、缩放、波纹、自动滚动和持续
 # \[UI-SEO\] 十六、SEO 与安全显示
 
 • Public 可索引页面具有中英文 metadata、canonical、hreflang 和 Open Graph。  
-• Check、Status、Result、Waitlist Success 和 Admin 页面 noindex。  
+• Check、Status、Result、Waitlist Success、Sign in、Account、Billing 和 Admin 页面 noindex。
 • Token、accessKey、邮箱、完整地址和完整 Listing URL 不进入页面标题、analytics、客户端日志或错误截图。  
 • 错误页只显示 Reference ID，不暴露堆栈、SQL、供应商响应或内部权重。
 
@@ -464,7 +516,11 @@ apps/web 页面只组合共享组件和业务容器；不得在每页创建新�
 
 ## 18.2 必测后台画面
 
-Sign in、Exception Inbox 有数据/空状态、每个 Exception Type 的工作区、Price Check Detail、Market Coverage、Collection Runs、Data Source 状态 PILOT/SUSPENDED/DISABLED/DEPRECATED/UNKNOWN、Health 状态 HEALTHY/DEGRADED/DOWN、Signals、Feedback、Audit、403 和 System Error。
+Sign in、Exception Inbox 有数据/空状态、每个 Exception Type 的工作区、Price Check Detail、Market Coverage、Collection Runs、Data Source 状态 PILOT/SUSPENDED/DISABLED/DEPRECATED/UNKNOWN、Health 状态 HEALTHY/DEGRADED/DOWN、Signals、Feedback、Audit、Customers、Customer Detail、Memberships、Billing Events、403 和 System Error。
+
+## 18.2A 必测会员画面
+
+英文和中文：独立登录 idle/validation/sent/expired；账户空状态及四档方案摘要；有效单位正常/满额/停用；检查历史和一个有效 OTA 价格但推荐不可用；逐日与仅监测 Calendar；提醒、Portfolio、Export、Integration 的可用及 Launch Gate 状态；Billing 正常/待付款/降级待选择/取消待生效/宽限/暂停；设置、退出、删除确认和会话过期。
 
 ## 18.3 尺寸
 
@@ -476,7 +532,7 @@ Button、Input、Checkbox、Select、CandidateCard、Tabs、Table、Drawer、Dia
 
 ## 18.5 自动化验收
 
-Playwright 截图覆盖 Home、Check flow、Status、Result、Exception Inbox 和 Exception Workspace 的英文/中文桌面及移动关键状态。axe 或同等工具不得有 critical 或 serious 违规。
+Playwright 截图覆盖 Home、Check flow、Status、Result、会员登录/账户/单位/检查/Calendar/Billing、Exception Inbox、Exception Workspace 和会员运营后台的英文/中文桌面及移动关键状态。axe 或同等工具不得有 critical 或 serious 违规。
 
 # \[UI-AT\] 十九、最终视觉验收
 
@@ -488,3 +544,7 @@ UI-AT-005 中英文、桌面、Tablet 和移动端保持同一设计系统。
 UI-AT-006 风险、置信度、差异和错误不只依赖颜色。  
 UI-AT-007 所有动效支持 Reduced Motion。  
 UI-AT-008 生产界面不含 Demo 数据、虚假指标、未上线功能入口或未批准承诺。  
+UI-AT-009 独立会员登录不要求房源且不通过视觉反馈泄露账户存在性。
+UI-AT-010 会员首页、Calendar 和结果始终区分目标观察价格、推荐状态、精确逐日范围与仅监测范围。
+UI-AT-011 方案、Billing 和高级模块严格反映服务器权益与 Launch Gate，不把浏览器跳转或隐藏按钮当作成功或权限控制。
+UI-AT-012 会员客户界面和会员运营后台不暴露认证、API、Webhook、付款或原始证据秘密。

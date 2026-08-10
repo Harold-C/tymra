@@ -30,6 +30,7 @@ export class RoughCheckChallengeError extends Error {
 export async function createAnonymousCheck(inputValue: unknown, identity: RequestIdentity) {
   const input = createAnonymousCheckSchema.parse(inputValue);
   const environment = getEnvironment();
+  const isFixture = ["demo", "fixture"].includes(environment.PROVIDER_MODE);
   const idempotent = await prisma.anonymousCheck.findUnique({
     where: { idempotencyKey: input.idempotencyKey },
     include: { roughResult: true },
@@ -97,7 +98,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
 
   const listing = await resolveListingRecord(resolved.platform, resolved.listingId);
   const expiresAt = new Date(Date.now() + environment.ANONYMOUS_CHECK_RETENTION_DAYS * 86_400_000);
-  const noQuote = resolved.listingId.includes("no-price") || (!listing && environment.PROVIDER_MODE !== "demo");
+  const noQuote = resolved.listingId.includes("no-price") || (!listing && !isFixture);
 
   const check = await prisma.$transaction(async (transaction) => {
     const created = await transaction.anonymousCheck.create({
@@ -112,7 +113,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
         failureReason: noQuote ? "NO_DEFAULT_QUOTE" : null,
         propertyId: listing?.propertyId ?? demoIdentity(resolved.listingId).propertyId,
         unitId: listing?.unitId ?? demoIdentity(resolved.listingId).unitId,
-        isDemo: environment.PROVIDER_MODE === "demo",
+        isDemo: isFixture,
         expiresAt,
       },
     });
@@ -127,7 +128,7 @@ export async function createAnonymousCheck(inputValue: unknown, identity: Reques
           "Preliminary result based on the listing's observed default display context.",
           "The formal report checks a broader evidence set after email verification.",
         ],
-        isDemo: environment.PROVIDER_MODE === "demo",
+        isDemo: isFixture,
       },
     });
     return transaction.anonymousCheck.update({ where: { id: created.id }, data: { status: "ROUGH_READY" } });

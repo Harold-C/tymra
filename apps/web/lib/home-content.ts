@@ -157,12 +157,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Does Tymra provide real pricing results?", answer: "Yes, when the property and market are supported and source data meets the required quality thresholds. Tymra returns a clear limited state rather than inventing a result when evidence is insufficient." },
-      { question: "Which properties does Tymra support?", answer: "Public accommodation links from Booking.com, Airbnb, Expedia, Wotif, Hotels.com, Bookabach, Vrbo, Agoda and Trip.com are supported. Tymra uses listing identity and observed display context rather than inferring a price from a street address." },
+      { question: "Which properties does Tymra support?", answer: "Public accommodation links from Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com are supported. Tymra uses listing identity and observed display context rather than inferring a price from a street address." },
       { question: "How long does a Price Check take?", answer: "The rough signal normally appears in-page first. After you verify one email, the formal check runs asynchronously and opens in your secure customer account." },
       { question: "Does Tymra automatically change my prices?", answer: "No. Tymra provides decision support only. You remain responsible for every final pricing decision." },
       { question: "Where does the information come from?", answer: "Only enabled, operationally healthy sources can support publication. Results show data timing, confidence and relevant limitations." },
       { question: "Why are only New Zealand properties supported?", answer: "Release 1 is intentionally focused on New Zealand so property matching, comparable evidence and market coverage can be validated properly." },
-      { question: "What happens when there is not enough data?", answer: "Tymra returns Partial, Insufficient data, Unsupported or Source unavailable with a clear next step. It does not create prices, competitors or advice without reliable evidence." },
+      { question: "What happens when market evidence is limited?", answer: "If at least one valid target OTA price is collected, Tymra returns that observed price. Recommendation availability and confidence are assessed separately, and Tymra never invents missing evidence." },
     ],
     finalCta: {
       title: "Find the dates you may be selling too cheaply.",
@@ -257,12 +257,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Tymra 会提供真实价格结果吗？", answer: "会。房源和市场受支持，并且数据满足质量门槛时，Tymra 会生成真实结果；证据不足时会明确返回受限状态，而不是编造结果。" },
-      { question: "Tymra 支持哪些房源？", answer: "支持 Booking.com、Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 的公开住宿房源链接。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
+      { question: "Tymra 支持哪些房源？", answer: "支持 Booking.com、Airbnb、Expedia、Bookabach、Agoda 和 Trip.com 的公开住宿房源链接。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
       { question: "完成一次价格检查需要多久？", answer: "粗略信号会先在页面内出现。验证一次邮箱后，正式检查异步运行，并在你的安全客户账户中打开。" },
       { question: "Tymra 会自动修改我的价格吗？", answer: "不会。Tymra 只提供决策支持，最终定价决定始终由你负责。" },
       { question: "这些信息来自哪里？", answer: "只有已启用且运行健康的来源可以支持结果发布。结果会显示数据时间、置信度和相关限制。" },
       { question: "为什么目前只支持新西兰房源？", answer: "首个版本有意聚焦新西兰，以便充分验证房源匹配、可比证据和市场覆盖质量。" },
-      { question: "数据不足时会发生什么？", answer: "Tymra 会返回部分结果、数据不足、不支持或数据源不可用，并说明下一步，不会在缺少可靠证据时生成房价、竞品或建议。" },
+      { question: "市场证据不足时会发生什么？", answer: "只要采集到至少一个有效的目标 OTA 价格，Tymra 就会返回该观察价格。推荐是否可用及其置信度会单独判断，系统不会编造缺失证据。" },
     ],
     finalCta: {
       title: "快速发现你的房源哪些日期可能卖便宜了。",

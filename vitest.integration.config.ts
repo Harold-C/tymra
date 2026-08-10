@@ -7,7 +7,7 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./test/setup-env.ts"],
     include: ["packages/**/test/**/*.integration.test.ts", "apps/**/test/**/*.integration.test.ts", "apps/web/app/**/*.integration.test.ts"],
-    exclude: ["**/node_modules/**", ".next/**"],
+    exclude: ["**/node_modules/**", "**/.next/**", "**/.next-build/**", "**/dist/**", "data/**"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
     pool: "forks",

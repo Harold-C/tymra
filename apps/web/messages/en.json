@@ -8,7 +8,10 @@
     "contact": "Contact us",
     "reference": "Reference",
     "demoLabel": "Development Demo Data",
-    "demoDisclaimer": "Not real market data"
+    "demoDisclaimer": "Not real market data",
+    "signIn": "Member sign in",
+    "account": "Account",
+    "signOut": "Sign out"
   },
   "Nav": {
     "how": "How It Works",
@@ -21,10 +24,46 @@
     "primaryNavigation": "Primary navigation",
     "skipToContent": "Skip to main content"
   },
+  "MembershipAuth": {
+    "eyebrow": "MEMBER ACCESS",
+    "title": "Sign in to your Tymra account",
+    "intro": "Use your membership email and password.",
+    "emailLabel": "Membership email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "submit": "Sign in",
+    "signingIn": "Signing in",
+    "error": "Email or password is incorrect.",
+    "noAccount": "New to Tymra?",
+    "createAccount": "Create an account",
+    "privacy": "Privacy",
+    "back": "Back to home"
+  },
+  "MembershipRegistration": {
+    "eyebrow": "CREATE ACCOUNT",
+    "title": "Create your Tymra membership",
+    "intro": "Create a Free account. You can choose a paid plan later.",
+    "emailLabel": "Membership email",
+    "passwordLabel": "Password",
+    "passwordHint": "Use at least 12 characters.",
+    "confirmPasswordLabel": "Confirm password",
+    "serviceConsent": "I agree to the Terms and Privacy Policy and to receive service messages required to operate my account.",
+    "submit": "Create account",
+    "creating": "Creating account",
+    "passwordMismatch": "The passwords do not match.",
+    "error": "The account could not be created.",
+    "hasAccount": "Already have an account?",
+    "signIn": "Sign in"
+  },
   "Check": {
     "steps": { "label": "Price Check progress", "property": "Property", "listing": "Listing", "unit": "Unit", "query": "Query", "processing": "Processing", "result": "Result" },
     "startTitle": "Start your Price Check",
     "startIntro": "Search one New Zealand property. We will ask you to confirm the property, unit and stay details before collection begins.",
+    "analysisTypeLabel": "What do you want to analyse?",
+    "analysisType": {
+      "listing": { "title": "Price a specific OTA listing", "body": "Validate a supported public listing and compare its observed price with nearby alternatives." },
+      "location": { "title": "Benchmark a real address", "body": "No OTA listing is required. Tymra searches nearby public accommodation prices for this address." }
+    },
     "propertyLabel": "Property name, address or listing URL",
     "propertyPlaceholder": "For example, Christchurch Central Stay",
     "emailLabel": "Email for service updates",
@@ -66,12 +105,14 @@
     "queryTitle": "Confirm the stay details",
     "queryIntro": "Set the dates and guests for {unit}.",
     "queryIntroFallback": "Set the dates and guests for this Price Check.",
+    "queryIntroLocation": "Set the dates and guests for the nearby-market benchmark around this address.",
     "checkIn": "Check-in",
     "checkOut": "Check-out",
     "adults": "Adults",
     "children": "Children",
     "queryNoticeTitle": "One focused query",
     "queryNoticeBody": "Release 1 compares one Sellable Unit and one confirmed stay query. Tymra provides decision support and never changes your rates.",
+    "queryNoticeLocationBody": "Tymra returns every valid nearby public price it observes. A market range or adjustment recommendation is shown only when at least three comparable observations use a consistent price basis.",
     "confirmQuery": "Confirm and start check",
     "submitting": "Starting Price Check",
     "statusTitle": "Your Price Check is running",
@@ -189,7 +230,7 @@
   },
   "Content": {
     "methodology": { "eyebrow": "Transparent by design", "title": "Methodology", "intro": "How Tymra turns reliable observations into explainable decision support.", "section1Title": "One observed listing context", "section1Body": "The anonymous check uses stay dates, guest count and room context present in the OTA URL, or the OTA's observed default display configuration when those values are absent. The user is not asked to configure them.", "section2Title": "Comparable evidence", "section2Body": "Only enabled, operationally healthy sources can support automatic publication. Rates are append-only and tied to a Collection Run.", "section3Title": "Confidence and limitations", "section3Body": "Confidence considers competitor count, freshness, fee completeness, listing context and comparability. Missing evidence lowers confidence or produces a clear limited result.", "section4Title": "Decision support, not automation", "section4Body": "Tymra may highlight up to five dates. Operators remain responsible for pricing decisions, and Tymra never changes prices automatically." },
-    "faq": { "eyebrow": "Product questions", "title": "Frequently asked questions", "intro": "Practical answers about the current Price Check flow.", "section1Title": "Does Tymra change my prices?", "section1Body": "No. Tymra provides decision support only and does not connect to a PMS or automatically change rates.", "section2Title": "Which listings are supported?", "section2Body": "Public accommodation links from Booking.com, Airbnb, Expedia, Wotif, Hotels.com, Bookabach, Vrbo, Agoda and Trip.com are supported.", "section3Title": "How are dates, guests and room type chosen?", "section3Body": "Tymra uses values carried by the OTA link when present; otherwise it uses the OTA's observed default display configuration. New users are not asked to select these fields.", "section4Title": "What if data is unavailable?", "section4Body": "Tymra returns Source unavailable, Partial or Insufficient data rather than inventing a result. Human review is reserved for repairable conflicts." },
+    "faq": { "eyebrow": "Product questions", "title": "Frequently asked questions", "intro": "Practical answers about the current Price Check flow.", "section1Title": "Does Tymra change my prices?", "section1Body": "No. Tymra provides decision support only and does not connect to a PMS or automatically change rates.", "section2Title": "Which listings are supported?", "section2Body": "Public accommodation links from Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com are supported.", "section3Title": "How are dates, guests and room type chosen?", "section3Body": "Tymra uses values carried by the OTA link when present; otherwise it uses the OTA's observed default display configuration. New users are not asked to select these fields.", "section4Title": "What if market evidence is limited?", "section4Body": "If at least one valid target OTA price is collected, Tymra returns that observed price. Recommendation availability and confidence are assessed separately, and Tymra never invents missing evidence." },
     "privacy": { "eyebrow": "Legal skeleton", "title": "Privacy", "intro": "Release 1 privacy information for local development and review. Final legal approval is pending.", "section1Title": "Information collected", "section1Body": "Tymra processes service contact details, Price Check inputs, consent choices and operational records needed to deliver and audit the service.", "section2Title": "How information is used", "section2Body": "Service data supports property identification, analysis, result delivery, security, support and compliance. Marketing use requires separate consent.", "section3Title": "Security and retention", "section3Body": "Sensitive values are encrypted or hashed where appropriate. Result tokens are stored only as hashes and access expires by policy.", "section4Title": "Your choices", "section4Body": "You may request access, correction or deletion through the contact form. Necessary non-personal audit history may be retained." },
     "terms": { "eyebrow": "Legal skeleton", "title": "Terms", "intro": "Draft Release 1 service terms for local review. Final legal text is pending.", "section1Title": "Service scope", "section1Body": "Tymra provides accommodation pricing intelligence and related service communications for supported New Zealand markets.", "section2Title": "Operator responsibility", "section2Body": "You remain responsible for verifying evidence, choosing prices and complying with platform, tax and consumer obligations.", "section3Title": "Acceptable use", "section3Body": "Do not misuse the service, attempt unauthorized access or submit content you do not have the right to process.", "section4Title": "Availability", "section4Body": "Sources and market coverage may change. Tymra may return limited or unavailable outcomes where reliable evidence is not available." },
     "cookies": { "eyebrow": "Legal skeleton", "title": "Cookies", "intro": "Cookies used by the local application.", "section1Title": "Essential cookies", "section1Body": "Tymra uses essential cookies for locale preference, anonymous abuse protection, customer access and administrator sessions.", "section2Title": "Customer access", "section2Body": "A secure HttpOnly cookie keeps the verified browser signed in to the customer account without exposing its session key to client scripts.", "section3Title": "Administrator sessions", "section3Body": "Protected operational pages use a bounded, revocable HttpOnly session cookie.", "section4Title": "Analytics", "section4Body": "No external analytics service is required for local development. Any future analytics must follow consent and data-minimization rules." },

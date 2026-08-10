@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   executionUpsert: vi.fn(),
   executionUpdate: vi.fn(),
   parentFind: vi.fn(),
+  parentFindMany: vi.fn(),
   parentUpdateMany: vi.fn(),
   collectionRunFindMany: vi.fn(),
   collectionRunUpdateMany: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("@tymra/db", () => ({
     },
     job: {
       findUnique: mocks.parentFind,
+      findMany: mocks.parentFindMany,
       updateMany: mocks.parentUpdateMany,
     },
     collectionRun: {
@@ -123,6 +125,31 @@ describe("durable Argus orchestration", () => {
       collectionRunId: "run-1",
       maxAttempts: 3,
     });
+  });
+
+  it("does not submit another member capture when the plan noVNC capacity is occupied", async () => {
+    mocks.executionFind.mockResolvedValue(null);
+    mocks.parentFind.mockResolvedValue({
+      status: "PENDING",
+      priceCheck: { customerUserId: "customer-1", customerUser: { membership: { plan: "FREE" } } },
+    });
+    mocks.parentFindMany.mockResolvedValue([{ id: "parent-1" }]);
+    mocks.executionFindMany.mockResolvedValue([{
+      result: {
+        challenge: {
+          manual_session: { expires_at: new Date(Date.now() + 60_000).toISOString() },
+        },
+      },
+    }]);
+
+    const response = await captureBrowserTaskWithDurableArgus(environment, input, context);
+
+    assert.deepEqual(response, {
+      ok: false,
+      httpStatus: 429,
+      message: "The membership already has the maximum number of active manual browser sessions",
+    });
+    assert.equal(mocks.submit.mock.calls.length, 0);
   });
 
   it("returns a persisted completed result without resubmitting", async () => {

@@ -21,6 +21,15 @@ const testIp = (offset: number) => `2001:db8:${ipSeed.slice(0, 4)}:${ipSeed.slic
 describe("Worker baseline pipeline", () => {
   afterAll(async () => prisma.$disconnect());
 
+  it("does not require Argus readiness in fixture collection mode", async () => {
+    await expect(new WorkerService({ ...environment, PUBLIC_COLLECTION_MODE: "fixture" }).argusHealth()).resolves.toEqual({
+      healthy: true,
+      ready: true,
+      mode: "fixture",
+      latencyMs: 0,
+    });
+  });
+
   it("runs an anonymous preview without creating an email", async () => {
     const request = await service.createPreview({ input: `https://www.booking.com/hotel/nz/integration-preview-${prefix.slice(-8)}.html`, idempotencyKey: `${prefix}:preview`, locale: "en", deviceId: `${prefix}:preview-device`, ipAddress: testIp(10) });
     expect(request?.status).toBe("QUEUED");
@@ -53,6 +62,32 @@ describe("Worker baseline pipeline", () => {
     expect(request?.targetListingId).toBeTruthy();
     await drainRequest(request!.id);
     expect((await service.getAnalysis(request!.id))?.status).toBe("COMPLETED");
+  });
+
+  it("validates an address-confirmed OTA listing with explicit fixture evidence in development", async () => {
+    const request = await service.createFormalAnalysis({
+      input: `52 ${prefix.slice(-8)} Fixture Street, Christchurch 8011`,
+      email: `fixture-listing-${prefix.slice(-8)}@tymra.test`,
+      serviceConsent: true,
+      idempotencyKey: `${prefix}:fixture-listing-validation`,
+      locale: "en",
+      deviceId: `${prefix}:fixture-listing-device`,
+      ipAddress: testIp(28),
+    });
+    const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! } });
+    const job = await prisma.job.findFirstOrThrow({ where: { analysisRequestId: request!.id }, orderBy: { createdAt: "asc" } });
+    const listingUrl = "https://www.airbnb.co.nz/rooms/713337408265816459";
+    await prisma.priceCheck.update({
+      where: { id: check.id },
+      data: { listingUrl, listingValidationStatus: "PENDING", listingValidationMessage: null, listingValidatedAt: null, unitId: null, status: "VALIDATING" },
+    });
+    await service.validatePriceCheckOtaListing(check.id, job.id);
+    const validated = await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } });
+    expect(validated).toMatchObject({ status: "NEEDS_CONFIRMATION", listingValidationStatus: "VERIFIED", isDemo: true });
+    expect(validated.unitId).toBeTruthy();
+    expect(await prisma.listing.findFirst({ where: { propertyId: check.propertyId!, unitId: validated.unitId!, dataSource: { key: "development-demo" } } })).toMatchObject({ platform: "airbnb", sourceListingId: "713337408265816459", isDemo: true });
+    expect(await prisma.collectionRun.findFirst({ where: { priceCheckId: check.id, jobId: job.id } })).toMatchObject({ status: "SUCCEEDED", isDemo: true });
+    await service.cancelAnalysis(request!.id);
   });
 
   it("returns NEEDS_CONFIRMATION when an address resolves to multiple hotel units", async () => {
@@ -100,7 +135,7 @@ describe("Worker baseline pipeline", () => {
       await prisma.argusExecution.create({ data: { orchestrationKey: `${job.id}:${traceId}`, parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id, argusJobId: result.job_id, traceId, connectorId, workflowId: "resolve_listing", requestedUrl: canonicalUrl, status: "COMPLETED", result: result as Prisma.InputJsonValue, deadlineAt: new Date(Date.now() + 60_000), completedAt: new Date() } });
       const unitCountBefore = await prisma.sellableUnit.count({ where: { propertyId: check.propertyId! } });
 
-      await service.validatePriceCheckOtaListing(check.id, job.id);
+      await new WorkerService({ ...environment, PROVIDER_MODE: "live" }).validatePriceCheckOtaListing(check.id, job.id);
 
       expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } })).toMatchObject({ status: "NEEDS_CONFIRMATION", listingValidationStatus: "CONFLICT", unitId: null });
       expect(await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } })).toMatchObject({ status: "FAILED", errorCode: "UNIT_IDENTITY_NOT_PUBLIC" });
@@ -246,20 +281,20 @@ describe("Worker baseline pipeline", () => {
     expect(refreshedState?.collectionRuns.length).toBeGreaterThan(0);
   });
 
-  it("returns INSUFFICIENT_DATA and publishes no result when fewer than three unique competitors exist", async () => {
+  it("publishes the target price but no recommendation when fewer than three unique competitors exist", async () => {
     const request = await service.createFormalAnalysis({ input: `https://www.booking.com/hotel/nz/fixture-insufficient-${prefix.slice(-8)}.html`, email: `insufficient-${prefix.slice(-8)}@tymra.test`, serviceConsent: true, idempotencyKey: `${prefix}:insufficient`, locale: "en", deviceId: `${prefix}:insufficient-device`, ipAddress: testIp(25) });
     await drainRequest(request!.id);
-    expect((await service.getAnalysis(request!.id))?.status).toBe("INSUFFICIENT_DATA");
-    expect(await prisma.resultVersion.count({ where: { analysisRequestId: request!.id } })).toBe(0);
-    expect(await prisma.emailDelivery.count({ where: { analysisRequestId: request!.id } })).toBe(0);
+    expect((await service.getAnalysis(request!.id))?.status).toBe("COMPLETED");
+    expect(await prisma.resultVersion.findFirst({ where: { analysisRequestId: request!.id }, select: { priceResultStatus: true, recommendationStatus: true, recommendationReasonCode: true } })).toEqual({ priceResultStatus: "COMPLETED", recommendationStatus: "NOT_AVAILABLE", recommendationReasonCode: "NOT_ENOUGH_COMPARABLE_EVIDENCE" });
+    expect(await prisma.emailDelivery.count({ where: { analysisRequestId: request!.id, type: "RESULT_READY" } })).toBe(1);
   });
 
-  it("blocks a formal result when target mandatory fee completeness is unknown", async () => {
+  it("returns a fee-incomplete target price while withholding the recommendation", async () => {
     const request = await service.createFormalAnalysis({ input: `https://www.booking.com/hotel/nz/fixture-fees-unknown-${prefix.slice(-8)}.html`, email: `fees-${prefix.slice(-8)}@tymra.test`, serviceConsent: true, idempotencyKey: `${prefix}:fees-unknown`, locale: "en", deviceId: `${prefix}:fees-device`, ipAddress: testIp(26) });
     await drainRequest(request!.id);
-    expect((await service.getAnalysis(request!.id))?.status).toBe("INSUFFICIENT_DATA");
+    expect((await service.getAnalysis(request!.id))?.status).toBe("COMPLETED");
     expect(await prisma.dateSnapshot.count({ where: { analysisRequestId: request!.id, qualityFlags: { array_contains: "FEES_UNKNOWN" } } })).toBeGreaterThan(0);
-    expect(await prisma.resultVersion.count({ where: { analysisRequestId: request!.id } })).toBe(0);
+    expect(await prisma.resultVersion.findFirst({ where: { analysisRequestId: request!.id }, select: { priceResultStatus: true, recommendationStatus: true } })).toEqual({ priceResultStatus: "COMPLETED", recommendationStatus: "NOT_AVAILABLE" });
   });
 
   it("returns SOURCE_UNAVAILABLE without publishing when the rate source is unavailable", async () => {

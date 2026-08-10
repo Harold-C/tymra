@@ -1,6 +1,5 @@
 import createMiddleware from "next-intl/middleware";
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const internationalizedMiddleware = createMiddleware({
   locales: ["en", "zh"],
@@ -45,6 +44,18 @@ export default function middleware(request: NextRequest) {
   }
 
   if (pathname === "/api" || pathname.startsWith("/api/")) return NextResponse.next();
+  const accountMatch = /^\/(en|zh)\/account(?:\/|$)/u.exec(pathname);
+  if (accountMatch) {
+    const returnTo = `${pathname}${request.nextUrl.search}`;
+    if (!request.cookies.get("tymra_customer_session")?.value) {
+      const destination = new URL(`/${accountMatch[1]}/sign-in`, publicOrigin);
+      destination.searchParams.set("returnTo", returnTo);
+      return NextResponse.redirect(destination);
+    }
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-tymra-return-to", returnTo);
+    return internationalizedMiddleware(new NextRequest(request.url, { method: request.method, headers: requestHeaders }));
+  }
   return internationalizedMiddleware(request);
 }
 

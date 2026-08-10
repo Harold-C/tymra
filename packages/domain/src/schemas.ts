@@ -46,6 +46,7 @@ export const unlockRoughResultSchema = z.object({
 });
 
 export const createPriceCheckSchema = z.object({
+  analysisType: z.enum(["LISTING_PRICING", "LOCATION_BENCHMARK"]).default("LISTING_PRICING"),
   email: z.string().trim().toLowerCase().email(),
   locale: localeSchema,
   input: z.string().trim().min(3).max(500),

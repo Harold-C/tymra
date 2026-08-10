@@ -9,7 +9,7 @@ import {
 
 export async function getDataProvider(): Promise<DataProvider> {
   const environment = getEnvironment();
-  if (environment.PROVIDER_MODE === "demo") return new DemoProvider(environment.NODE_ENV);
+  if (["demo", "fixture"].includes(environment.PROVIDER_MODE)) return new DemoProvider(environment.NODE_ENV);
 
   const source = await prisma.dataSource.findUnique({ where: { key: "manual-import" } });
   const observations = source
