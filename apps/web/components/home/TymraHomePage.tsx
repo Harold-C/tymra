@@ -12,9 +12,9 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
-  Info,
   LoaderCircle,
   Menu,
+  MoveHorizontal,
   Search,
   X,
 } from "lucide-react";
@@ -173,8 +173,10 @@ export function TymraHomePage() {
   return (
     <>
       <a href="#main-content" className="skip-link">{locale === "zh" ? "跳到主要内容" : "Skip to main content"}</a>
-      <main id="main-content" className="min-h-screen overflow-x-hidden bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FBFF_48%,#FFFFFF_100%)] text-[#0B1F3A]">
-      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_50%_12%,rgba(37,99,235,0.08),transparent_30%),radial-gradient(circle_at_82%_28%,rgba(124,58,237,0.06),transparent_24%)]" />
+      <main
+        id="main-content"
+        className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(37,99,235,0.055),transparent_36%),radial-gradient(circle_at_86%_28%,rgba(124,58,237,0.045),transparent_30%),linear-gradient(180deg,#FFFFFF_0%,#F8FBFF_58%,#FFFFFF_100%)] text-[#0B1F3A]"
+      >
 
       <Header
         copy={t}
@@ -296,8 +298,7 @@ function LanguageSelector({ copy: t, locale, compact = false }: { copy: HomeCopy
         compact ? "px-3" : "px-2",
       )}
     >
-      {compact ? (locale === "en" ? "ZH" : "EN") : t.nav.language}
-      <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      {t.nav.language}
     </a>
   );
 }
@@ -410,7 +411,7 @@ function HeroSection({
   onClear: () => void;
   onSubmit: (event?: FormEvent) => void;
 }) {
-  const isZh = t.nav.language === "中文";
+  const isZh = locale === "zh";
 
   return (
     <section className="relative z-10 mx-auto w-full max-w-[1440px] px-5 pb-4 pt-3 md:px-[30px] lg:pt-5 2xl:max-w-[1720px]">
@@ -433,12 +434,12 @@ function HeroSection({
           transition={{ duration: 0.46, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
           className={clsx(
             "mt-7 max-w-[920px] text-[clamp(3.8rem,4.78vw,4.85rem)] font-extrabold leading-[1.04] tracking-normal text-[#071A3D] max-md:mt-6 max-md:max-w-[650px] max-md:text-[clamp(2.35rem,10.5vw,2.75rem)] max-md:leading-[1.12]",
-            isZh && "max-w-[840px] text-[clamp(3.55rem,4.55vw,4.55rem)] max-md:text-[clamp(2.35rem,10vw,2.85rem)]",
+            isZh && "max-w-[840px] text-[clamp(3.55rem,4.55vw,4.55rem)] max-md:text-[2.25rem] max-md:leading-[1.1] max-md:tracking-[-0.018em]",
           )}
         >
           {isZh ? (
             <>
-              <span className="block">{t.hero.titlePrefix}</span>
+              <span className="block max-md:whitespace-nowrap">{t.hero.titlePrefix}</span>
               <span className="block bg-[linear-gradient(92deg,#2563EB_0%,#0969FF_42%,#06B6D4_100%)] bg-clip-text text-transparent">
                 {t.hero.titleAccent}
               </span>
@@ -484,12 +485,9 @@ function SignalLandscape() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-[calc(50%-50vw)] top-[150px] z-0 h-[610px] overflow-hidden opacity-95 max-md:top-[172px] max-md:h-[360px]"
+      className="pointer-events-none absolute inset-x-[calc(50%-50vw)] top-[150px] z-0 h-[610px] overflow-hidden opacity-95 max-md:top-[172px] max-md:h-[620px]"
     >
-      <div className="absolute inset-x-0 top-0 h-[76px] bg-[linear-gradient(180deg,#FFFFFF_0%,rgba(255,255,255,0.78)_46%,rgba(255,255,255,0)_100%)]" />
-      <div className="absolute inset-x-0 bottom-0 h-[160px] bg-[linear-gradient(0deg,#FFFFFF_0%,rgba(255,255,255,0.64)_42%,rgba(255,255,255,0)_100%)]" />
-      <div className="absolute left-1/2 top-[46%] h-[210px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.92)_0%,rgba(24,200,232,0.32)_22%,rgba(37,99,235,0.16)_44%,transparent_72%)] blur-[10px]" />
-      <QuantumWaveCanvas className="absolute inset-x-[-5%] bottom-[-38px] h-[540px] w-[110%] opacity-90 max-md:bottom-[-36px] max-md:h-[280px]" />
+      <QuantumWaveCanvas className="absolute inset-y-0 left-1/2 h-full w-[110vw] max-w-none -translate-x-1/2 opacity-100" />
     </div>
   );
 }
@@ -516,18 +514,13 @@ function SearchCard({
   const hasValidationError = state.status === "validationError";
   const requiresChallenge = state.status === "challenge";
   const submitting = state.status === "submitting";
-  const hasValue = Boolean(value.trim());
 
   return (
-    <motion.form
+    <form
       id="price-check-search-card"
       onSubmit={onSubmit}
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.48, delay: 0.22 }}
       className={clsx(
-        "relative z-10 mx-auto mt-[58px] w-full max-w-[1200px] rounded-[31px] bg-[linear-gradient(115deg,rgba(80,204,255,0.92)_0%,rgba(255,255,255,0.98)_47%,rgba(124,88,255,0.78)_100%)] p-[1.5px] shadow-[0_24px_72px_rgba(37,99,235,0.18),0_0_44px_rgba(56,189,248,0.16)] transition-[box-shadow,background] duration-300 focus-within:shadow-[0_30px_88px_rgba(37,99,235,0.24),0_0_0_4px_rgba(255,255,255,0.72),0_0_56px_rgba(56,189,248,0.22)] max-md:mt-8 max-md:rounded-[29px] 2xl:max-w-[1320px]",
-        hasValue && "shadow-[0_28px_84px_rgba(37,99,235,0.22),0_0_54px_rgba(96,165,250,0.2)]",
+        "relative z-10 mx-auto mt-[58px] w-full max-w-[1200px] rounded-[31px] bg-[linear-gradient(115deg,rgba(80,204,255,0.92)_0%,rgba(255,255,255,0.98)_47%,rgba(124,88,255,0.78)_100%)] p-[1.5px] shadow-[0_24px_72px_rgba(37,99,235,0.18),0_0_44px_rgba(56,189,248,0.16)] max-md:mt-8 max-md:rounded-[29px] 2xl:max-w-[1320px]",
         hasValidationError && "bg-[linear-gradient(90deg,rgba(220,38,38,0.55),rgba(255,255,255,0.78),rgba(37,99,235,0.72))]",
       )}
     >
@@ -535,23 +528,31 @@ function SearchCard({
         <div className="pointer-events-none absolute -left-20 -top-24 h-72 w-72 rounded-full bg-[#7DD3FC]/18 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 right-[-5%] h-72 w-72 rounded-full bg-[#A78BFA]/14 blur-3xl" />
         <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.98),transparent)]" />
-
-        <div className="relative flex items-center gap-6 max-[860px]:flex-col max-[860px]:items-stretch max-[860px]:gap-4">
+        <div className="relative z-10 flex items-center gap-6 max-[860px]:flex-col max-[860px]:items-stretch max-[860px]:gap-4">
           <label className="group relative flex min-h-[70px] flex-1 items-center gap-5 rounded-[18px] max-md:min-h-[76px] max-md:gap-3">
             <span className="sr-only">{t.search.label}</span>
             <span
               className={clsx(
-                "flex h-[60px] w-[60px] flex-none items-center justify-center text-[#071A3D] transition-colors duration-200 group-focus-within:text-[#0969FF] max-md:h-[54px] max-md:w-[54px]",
+                "relative flex h-[60px] w-[60px] flex-none items-center justify-center text-[#071A3D] group-focus-within:text-[#0969FF] max-md:h-[54px] max-md:w-[54px]",
                 state.status === "typing" && "text-[#0969FF]",
               )}
             >
-              <Search className="h-10 w-10 max-md:h-8 max-md:w-8" strokeWidth={1.8} aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                className={clsx(
+                  "absolute inset-0 rounded-full border border-white/70 bg-[radial-gradient(circle,rgba(255,255,255,0.98)_0%,rgba(219,245,255,0.7)_44%,rgba(56,189,248,0.12)_68%,transparent_74%)] opacity-55 shadow-[0_0_18px_rgba(56,189,248,0.2)]",
+                  hasValidationError && "border-red-200/80 shadow-[0_0_24px_rgba(220,38,38,0.2)]",
+                )}
+              />
+              <Search className="relative z-10 h-10 w-10 max-md:h-8 max-md:w-8" strokeWidth={1.8} aria-hidden="true" />
             </span>
             <input
               id="home-property-search"
               ref={inputRef}
               value={value}
-              onFocus={() => trackEvent({ name: "search_focused", properties: { locale, inputType: getInputType(value), deviceType: getDeviceType() } })}
+              onFocus={() => {
+                trackEvent({ name: "search_focused", properties: { locale, inputType: getInputType(value), deviceType: getDeviceType() } });
+              }}
               onChange={(event) => onValueChange(event.target.value)}
               disabled={submitting}
               aria-describedby={hasValidationError ? "home-search-error home-search-support" : "home-search-support"}
@@ -616,7 +617,7 @@ function SearchCard({
           ) : null}
         </div>
       </div>
-    </motion.form>
+    </form>
   );
 }
 
@@ -643,20 +644,45 @@ function SearchSupportingInfo({ copy: t }: { copy: HomeCopy }) {
   );
 }
 
+function SectionIntro({
+  eyebrow,
+  title,
+  body,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="max-w-[760px]">
+      <p className="text-[0.76rem] font-extrabold uppercase tracking-[0.08em] text-[#0969FF]">{eyebrow}</p>
+      <h2 className="mt-3 text-[clamp(1.8rem,2.7vw,2.5rem)] font-extrabold leading-[1.12] tracking-[-0.025em] text-[#071A3D]">{title}</h2>
+      <p className="mt-4 max-w-[680px] text-[1rem] font-medium leading-[1.65] text-[#41506B] max-md:text-[0.94rem]">{body}</p>
+    </div>
+  );
+}
+
 function PendingInsightSection({ copy: t }: { copy: HomeCopy }) {
   return (
-    <section id="what-you-get" className="relative z-10 mx-auto mt-6 w-full max-w-[1240px] px-5 xl:px-0 2xl:max-w-[1320px]">
-      <div className="hidden grid-cols-2 gap-6 lg:grid xl:grid-cols-4 xl:gap-9">
+    <section id="what-you-get" className="relative z-10 mx-auto mt-14 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+      <SectionIntro {...t.sections.insights} />
+
+      <div className="mt-8 hidden grid-cols-2 gap-6 lg:grid xl:grid-cols-4 xl:gap-9">
         {t.insights.map((insight, index) => (
           <PendingInsightCard key={insight.title} insight={insight} index={index} />
         ))}
       </div>
 
-      <div className="-mx-5 lg:hidden">
+      <div className="-mx-5 mt-7 lg:hidden">
+        <p id="insight-swipe-hint" className="mb-3 flex items-center gap-2 px-5 text-[0.8rem] font-bold text-[#50627F]">
+          <MoveHorizontal className="h-4 w-4 text-[#0969FF]" aria-hidden="true" />
+          {t.sections.insights.swipeHint}
+        </p>
         <div
-          className="flex snap-x gap-4 overflow-x-auto px-5 pb-4 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0969FF] [&::-webkit-scrollbar]:hidden"
+          className="flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto px-5 pb-4 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0969FF] [&::-webkit-scrollbar]:hidden"
           role="region"
           aria-label={t.nav.whatYouGet}
+          aria-describedby="insight-swipe-hint"
           tabIndex={0}
         >
           {t.insights.map((insight, index) => (
@@ -691,11 +717,9 @@ function PendingInsightCard({
       </div>
       <h2 className="mt-6 text-[1.08rem] font-extrabold leading-tight text-[#0B1F3A]">{insight.title}</h2>
       <p className="mt-3 min-h-[52px] text-[0.91rem] font-medium leading-[1.55] text-[#41506B]">{insight.body}</p>
-      <p className="mt-5 inline-flex items-center gap-2 text-[0.84rem] font-semibold text-[#41506B]">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[#0969FF] text-[#0969FF]">
-          <Info className="h-3 w-3" aria-hidden="true" />
-        </span>
-        {insight.example}
+      <p className="mt-5 inline-flex items-center gap-2 text-[0.84rem] font-semibold text-[#36506F]">
+        <CheckCircle2 className="h-5 w-5 flex-none text-[#0969FF]" strokeWidth={2.1} aria-hidden="true" />
+        {insight.detail}
       </p>
     </motion.article>
   );
@@ -703,8 +727,10 @@ function PendingInsightCard({
 
 function ProcessSection({ copy: t }: { copy: HomeCopy }) {
   return (
-    <section id="how-it-works" className="relative z-10 mx-auto mt-7 w-full max-w-[1240px] px-5 xl:px-0 2xl:max-w-[1320px]">
-      <div className="grid grid-cols-1 items-center gap-4 xl:grid-cols-[1fr_auto_1fr_auto_1fr] xl:gap-5">
+    <section id="how-it-works" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+      <SectionIntro {...t.sections.process} />
+
+      <div className="mt-8 grid grid-cols-1 items-center gap-4 xl:grid-cols-[1fr_auto_1fr_auto_1fr] xl:gap-5">
         {t.process.map((step, index) => (
           <ProcessFragment key={step.label} step={step} index={index} />
         ))}
@@ -743,9 +769,11 @@ function ProcessFragment({ step, index }: { step: HomeCopy["process"][number]; i
 
 function ReleaseContextSection({ copy: t, locale }: { copy: HomeCopy; locale: Locale }) {
   return (
-    <section className="relative z-10 mx-auto mt-7 w-full max-w-[1240px] px-5 xl:px-0 2xl:max-w-[1320px]">
-      <div className="grid gap-6 border-y border-[#DDE7F5] bg-white/48 py-9 lg:grid-cols-2 lg:gap-14">
-        <div>
+    <section className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] px-5 xl:px-0 2xl:max-w-[1320px]">
+      <div className="relative overflow-hidden rounded-[28px] border border-[#CFE1F7] bg-[radial-gradient(circle_at_9%_5%,rgba(34,211,238,0.13),transparent_34%),radial-gradient(circle_at_90%_95%,rgba(124,58,237,0.11),transparent_36%),linear-gradient(132deg,rgba(255,255,255,0.94),rgba(239,247,255,0.9))] px-10 py-12 shadow-[0_24px_70px_rgba(37,99,235,0.09)] max-md:px-6 max-md:py-9">
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px bg-[linear-gradient(180deg,transparent,#C8DDF6,transparent)] lg:block" aria-hidden="true" />
+        <div className="relative grid gap-10 lg:grid-cols-2 lg:gap-16">
+          <div>
           <p className="text-[0.76rem] font-extrabold uppercase text-[#0969FF]">{t.methodology.eyebrow}</p>
           <h2 className="mt-3 text-[1.7rem] font-extrabold leading-tight text-[#071A3D]">{t.methodology.title}</h2>
           <p className="mt-3 max-w-[580px] text-[0.96rem] font-medium leading-[1.65] text-[#41506B]">{t.methodology.body}</p>
@@ -761,18 +789,20 @@ function ReleaseContextSection({ copy: t, locale }: { copy: HomeCopy; locale: Lo
             {t.methodology.link}
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
-        </div>
+          </div>
 
-        <div>
-          <p className="text-[0.76rem] font-extrabold uppercase text-[#7C3AED]">{t.coverage.eyebrow}</p>
-          <h2 className="mt-3 text-[1.7rem] font-extrabold leading-tight text-[#071A3D]">{t.coverage.title}</h2>
-          <p className="mt-3 max-w-[580px] text-[0.96rem] font-medium leading-[1.65] text-[#41506B]">{t.coverage.body}</p>
-          <div className="mt-6 flex flex-wrap gap-2.5">
-            {t.coverage.statuses.map((status) => (
-              <span key={status} className="inline-flex min-h-9 items-center rounded-full border border-[#C9DAF2] bg-white/82 px-4 text-[0.82rem] font-bold text-[#26385E]">
-                {status}
-              </span>
-            ))}
+          <div>
+            <p className="text-[0.76rem] font-extrabold uppercase text-[#7C3AED]">{t.coverage.eyebrow}</p>
+            <h2 className="mt-3 text-[1.7rem] font-extrabold leading-tight text-[#071A3D]">{t.coverage.title}</h2>
+            <p className="mt-3 max-w-[580px] text-[0.96rem] font-medium leading-[1.65] text-[#41506B]">{t.coverage.body}</p>
+            <ul className="mt-6 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              {t.coverage.statuses.map((status, index) => (
+                <li key={status} className="flex items-center gap-3 text-[0.86rem] font-bold text-[#26385E]">
+                  <span className={clsx("h-2.5 w-2.5 flex-none rounded-full", index === 0 ? "bg-[#0969FF]" : index === 1 ? "bg-[#06B6D4]" : index === 2 ? "bg-[#7C3AED]" : "bg-[#8EA2BF]")} aria-hidden="true" />
+                  {status}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </div>
@@ -782,8 +812,10 @@ function ReleaseContextSection({ copy: t, locale }: { copy: HomeCopy; locale: Lo
 
 function FAQSection({ copy: t, openFaq, onToggle }: { copy: HomeCopy; openFaq: number | null; onToggle: (index: number) => void }) {
   return (
-    <section id="faq" className="relative z-10 mx-auto mt-7 w-full max-w-[1240px] px-5 xl:px-0 2xl:max-w-[1320px]">
-      <div className="overflow-hidden rounded-[15px] border border-[#DDE7F5] bg-white/70 shadow-[0_12px_34px_rgba(15,23,42,0.045)] backdrop-blur-xl">
+    <section id="faq" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+      <SectionIntro {...t.sections.faq} />
+
+      <div className="mt-8 overflow-hidden rounded-[18px] border border-[#D5E3F4] bg-white/78 shadow-[0_16px_48px_rgba(15,23,42,0.055)] backdrop-blur-xl">
         {t.faq.map((item, index) => {
           const open = openFaq === index;
           return (
@@ -813,7 +845,7 @@ function FAQSection({ copy: t, openFaq, onToggle }: { copy: HomeCopy; openFaq: n
 
 function FinalCTA({ copy: t, locale }: { copy: HomeCopy; locale: Locale }) {
   return (
-    <section id="contact" className="relative z-10 mx-auto mt-7 w-full max-w-[1240px] px-5 pb-4 xl:px-0 2xl:max-w-[1320px]">
+    <section id="contact" className="relative z-10 mx-auto mt-12 w-full max-w-[1240px] px-5 pb-4 xl:px-0 2xl:max-w-[1320px]">
       <div className="flex items-center gap-7 rounded-[16px] border border-[#DDE7F5] bg-white/72 px-8 py-6 shadow-[0_16px_42px_rgba(15,23,42,0.055)] backdrop-blur-xl max-lg:flex-col max-lg:items-start max-md:px-5">
         <div className="flex h-[86px] w-[86px] flex-none items-center justify-center rounded-full bg-[radial-gradient(circle,#FFFFFF_0%,#EBF5FF_56%,#DDEBFF_100%)] shadow-[inset_0_0_0_1px_rgba(37,99,235,0.22),0_8px_28px_rgba(37,99,235,0.14)]">
           <FooterIcon className="h-11 w-11 text-[#0969FF]" strokeWidth={1.9} aria-hidden="true" />
@@ -875,7 +907,7 @@ function Footer({
               className="inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-[0.95rem] font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
             >
               {t.footer.language}
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </a>
           </div>
         </div>
@@ -895,7 +927,7 @@ function Footer({
             className="flex min-h-12 items-center justify-between rounded-[14px] border border-white/12 px-4 text-[0.98rem] font-semibold text-white"
           >
             {t.footer.language}
-            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </a>
         </div>
       </div>

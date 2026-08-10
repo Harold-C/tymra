@@ -32,6 +32,11 @@ export type HomeCopy = {
     menuClose: string;
   };
   hero: { badge: string; titlePrefix: string; titleAccent: string; subtitle: string };
+  sections: {
+    insights: { eyebrow: string; title: string; body: string; swipeHint: string };
+    process: { eyebrow: string; title: string; body: string };
+    faq: { eyebrow: string; title: string; body: string };
+  };
   search: {
     label: string;
     placeholder: string;
@@ -45,7 +50,7 @@ export type HomeCopy = {
   insights: Array<{
     title: string;
     body: string;
-    example: string;
+    detail: string;
     icon: typeof ShieldCheck;
     tone: InsightTone;
   }>;
@@ -76,7 +81,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       methodology: "Methodology",
       faq: "FAQ",
       contact: "Contact",
-      language: "English",
+      language: "中文",
       languageHref: "/zh",
       languageAria: "Switch to Chinese",
       menuOpen: "Open navigation",
@@ -87,6 +92,24 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       titlePrefix: "How much revenue are you",
       titleAccent: "leaving?",
       subtitle: "Find the dates you may be selling too cheaply.",
+    },
+    sections: {
+      insights: {
+        eyebrow: "What you’ll get",
+        title: "A useful first signal, not a black box",
+        body: "See which dates deserve attention, what the market context suggests and where to look next.",
+        swipeHint: "Swipe to explore all four signals",
+      },
+      process: {
+        eyebrow: "Three simple steps",
+        title: "From listing link to formal report",
+        body: "Start with the public listing you already use. Tymra keeps the first check focused and explains every next step.",
+      },
+      faq: {
+        eyebrow: "Common questions",
+        title: "Know what happens before you start",
+        body: "Clear answers about supported listings, timing, evidence and what Tymra will never change automatically.",
+      },
     },
     search: {
       label: "Paste a supported New Zealand OTA listing URL",
@@ -109,10 +132,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       ],
     },
     insights: [
-      { title: "Low-price Risks", body: "Identify dates that may deserve a closer pricing review.", example: "Example structure", icon: ShieldCheck, tone: "blue" },
-      { title: "Comparable Range", body: "Understand your position against relevant comparable accommodation.", example: "Example structure", icon: BarChart3, tone: "violet" },
-      { title: "Market Signals", body: "Review supporting changes in prices, availability and important dates.", example: "Example structure", icon: Signal, tone: "cyan" },
-      { title: "Suggested Actions", body: "See a cautious next step with confidence and clear limitations.", example: "Example structure", icon: ListChecks, tone: "violet" },
+      { title: "Low-price Risks", body: "Identify dates that may deserve a closer pricing review.", detail: "Flagged dates and risk level", icon: ShieldCheck, tone: "blue" },
+      { title: "Comparable Range", body: "Understand your position against relevant comparable accommodation.", detail: "Market position and range", icon: BarChart3, tone: "violet" },
+      { title: "Market Signals", body: "Review supporting changes in prices, availability and important dates.", detail: "Demand context and evidence", icon: Signal, tone: "cyan" },
+      { title: "Suggested Actions", body: "See a cautious next step with confidence and clear limitations.", detail: "Prioritised review actions", icon: ListChecks, tone: "violet" },
     ],
     process: [
       { label: "Paste the OTA link", body: "Use a supported public OTA link for the listing you want to check.", icon: Search },
@@ -145,10 +168,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       title: "Find the dates you may be selling too cheaply.",
       body: "Start with one supported New Zealand OTA listing link.",
       note: "See a rough result before email. No date, guest or room setup required.",
-      primary: "Check a Listing",
+      primary: "Start a Price Check",
     },
     footer: {
-      copyright: "© 2026 Synix. All rights reserved.", product: "Product", resources: "Resources", legal: "Legal", language: "English",
+      copyright: "© 2026 Synix. All rights reserved.", product: "Product", resources: "Resources", legal: "Legal", language: "中文",
       links: {
         product: [{ label: "Free Price Check", href: "/en/check" }, { label: "How It Works", href: "/en#how-it-works" }, { label: "What You’ll Get", href: "/en#what-you-get" }],
         resources: [{ label: "Methodology", href: "/en/methodology" }, { label: "FAQ", href: "/en/faq" }, { label: "Contact", href: "/en/contact" }],
@@ -162,13 +185,31 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       description: "帮助新西兰住宿经营者发现可能卖便宜的重点日期，并获得可解释的价格情报。",
     },
     nav: {
-      howItWorks: "工作原理", whatYouGet: "可获得内容", methodology: "方法说明", faq: "常见问题", contact: "联系我们", language: "中文", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航",
+      howItWorks: "工作原理", whatYouGet: "可获得内容", methodology: "方法说明", faq: "常见问题", contact: "联系我们", language: "English", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航",
     },
     hero: {
       badge: "住宿定价智能",
-      titlePrefix: "你的哪些高价值日期可能",
-      titleAccent: "卖便宜了？",
+      titlePrefix: "你的哪些高价值日期",
+      titleAccent: "可能卖便宜了？",
       subtitle: "快速发现低价风险、竞品差距和市场上涨信号。",
+    },
+    sections: {
+      insights: {
+        eyebrow: "你将获得",
+        title: "先看清值得检查的重点",
+        body: "快速了解哪些日期值得关注、市场环境释放了什么信号，以及下一步应优先检查什么。",
+        swipeHint: "左右滑动，查看全部四项信号",
+      },
+      process: {
+        eyebrow: "三个简单步骤",
+        title: "从房源链接到正式报告",
+        body: "从你正在使用的公开房源链接开始。Tymra 会保持首次检查简单，并清楚说明每一步。",
+      },
+      faq: {
+        eyebrow: "常见问题",
+        title: "开始前，先把关键问题说清楚",
+        body: "了解支持范围、检查时间、证据来源，以及 Tymra 绝不会自动执行的操作。",
+      },
     },
     search: {
       label: "粘贴受支持的新西兰 OTA 房源链接",
@@ -191,10 +232,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       ],
     },
     insights: [
-      { title: "低价风险", body: "识别可能值得优先检查价格的日期。", example: "示例结构", icon: ShieldCheck, tone: "blue" },
-      { title: "竞品价格区间", body: "了解房价在相关可比住宿中的位置。", example: "示例结构", icon: BarChart3, tone: "violet" },
-      { title: "市场信号", body: "查看价格、可售状态和重要日期的辅助变化。", example: "示例结构", icon: Signal, tone: "cyan" },
-      { title: "建议动作", body: "结合置信度和明确限制查看谨慎的下一步。", example: "示例结构", icon: ListChecks, tone: "violet" },
+      { title: "低价风险", body: "识别可能值得优先检查价格的日期。", detail: "重点日期与风险等级", icon: ShieldCheck, tone: "blue" },
+      { title: "竞品价格区间", body: "了解房价在相关可比住宿中的位置。", detail: "市场位置与价格区间", icon: BarChart3, tone: "violet" },
+      { title: "市场信号", body: "查看价格、可售状态和重要日期的辅助变化。", detail: "需求环境与证据依据", icon: Signal, tone: "cyan" },
+      { title: "建议动作", body: "结合置信度和明确限制查看谨慎的下一步。", detail: "按优先级排列的检查建议", icon: ListChecks, tone: "violet" },
     ],
     process: [
       { label: "粘贴 OTA 链接", body: "使用需要检查的受支持公开 OTA 房源链接。", icon: Search },
@@ -205,36 +246,36 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       eyebrow: "方法透明",
       title: "清楚解释可比证据",
       body: "Tymra 先使用房源链接的默认展示配置，再通过可靠证据生成正式报告。",
-      points: ["Effective Nightly Total 包含已知强制费用", "置信度反映数据新鲜度、完整性和可比性", "最终定价决定始终由经营者作出"],
+      points: ["有效每晚总价包含已知强制费用", "置信度反映数据新鲜度、完整性和可比性", "最终定价决定始终由经营者作出"],
       link: "查看方法说明",
     },
     coverage: {
       eyebrow: "首个市场覆盖范围",
-      title: "从 Christchurch 开始",
-      body: "Christchurch 及已批准周边是首个正式支持市场。其他新西兰地区会根据真实覆盖能力显示明确状态。",
+      title: "从基督城开始",
+      body: "基督城及已批准周边是首个正式支持市场。其他新西兰地区会根据真实覆盖能力显示明确状态。",
       statuses: ["已支持", "可申请试点", "即将开放", "市场数据不足"],
     },
     faq: [
       { question: "Tymra 会提供真实价格结果吗？", answer: "会。房源和市场受支持，并且数据满足质量门槛时，Tymra 会生成真实结果；证据不足时会明确返回受限状态，而不是编造结果。" },
       { question: "Tymra 支持哪些房源？", answer: "支持 Booking.com、Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 的公开住宿房源链接。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
-      { question: "完成一次 Price Check 需要多久？", answer: "粗略信号会先在页面内出现。验证一次邮箱后，正式检查异步运行，并在你的安全客户账户中打开。" },
+      { question: "完成一次价格检查需要多久？", answer: "粗略信号会先在页面内出现。验证一次邮箱后，正式检查异步运行，并在你的安全客户账户中打开。" },
       { question: "Tymra 会自动修改我的价格吗？", answer: "不会。Tymra 只提供决策支持，最终定价决定始终由你负责。" },
       { question: "这些信息来自哪里？", answer: "只有已启用且运行健康的来源可以支持结果发布。结果会显示数据时间、置信度和相关限制。" },
-      { question: "为什么目前只支持新西兰房源？", answer: "Release 1 有意聚焦新西兰，以便充分验证房源匹配、可比证据和市场覆盖质量。" },
-      { question: "数据不足时会发生什么？", answer: "Tymra 会返回 Partial、数据不足、不支持或数据源不可用，并说明下一步，不会在缺少可靠证据时生成房价、竞品或建议。" },
+      { question: "为什么目前只支持新西兰房源？", answer: "首个版本有意聚焦新西兰，以便充分验证房源匹配、可比证据和市场覆盖质量。" },
+      { question: "数据不足时会发生什么？", answer: "Tymra 会返回部分结果、数据不足、不支持或数据源不可用，并说明下一步，不会在缺少可靠证据时生成房价、竞品或建议。" },
     ],
     finalCta: {
       title: "快速发现你的房源哪些日期可能卖便宜了。",
       body: "从一个受支持的新西兰 OTA 房源链接开始。",
       note: "提交邮箱前先看粗略结果，无需设置日期、人数或房型。",
-      primary: "检查一个房源",
+      primary: "开始价格检查",
     },
     footer: {
-      copyright: "© 2026 Synix. 保留所有权利。", product: "产品", resources: "资源", legal: "法律", language: "中文",
+      copyright: "© 2026 Synix. 保留所有权利。", product: "产品", resources: "资源", legal: "法律", language: "English",
       links: {
         product: [{ label: "免费检查房价", href: "/zh/check" }, { label: "工作原理", href: "/zh#how-it-works" }, { label: "可获得内容", href: "/zh#what-you-get" }],
         resources: [{ label: "方法说明", href: "/zh/methodology" }, { label: "常见问题", href: "/zh/faq" }, { label: "联系我们", href: "/zh/contact" }],
-        legal: [{ label: "隐私政策", href: "/zh/privacy" }, { label: "使用条款", href: "/zh/terms" }, { label: "Cookie 说明", href: "/zh/cookies" }, { label: "免责声明", href: "/zh/disclaimer" }, { label: "数据删除", href: "/zh/delete-data" }],
+        legal: [{ label: "隐私政策", href: "/zh/privacy" }, { label: "使用条款", href: "/zh/terms" }, { label: "Cookie 使用说明", href: "/zh/cookies" }, { label: "免责声明", href: "/zh/disclaimer" }, { label: "数据删除", href: "/zh/delete-data" }],
       },
     },
   },
