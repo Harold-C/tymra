@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/customer-auth";
-import { BillingError, createMembershipPortal } from "@/lib/server/stripe-billing";
+import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
+import { BillingError, createMembershipPortal } from "@/lib/server/membership/stripe-billing";
 
 export async function POST(request: NextRequest) {
   try {

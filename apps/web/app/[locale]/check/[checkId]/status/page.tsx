@@ -1,6 +1,6 @@
 import { prisma } from "@tymra/db";
 import { CheckStatus } from "@/components/public/PriceCheckFlow";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 
 export default async function StatusPage({ params }: { params: { locale: "en" | "zh"; checkId: string } }) {
   const [session, check] = await Promise.all([

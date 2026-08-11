@@ -19,9 +19,11 @@
 - [视觉与交互](./product/visual-interaction.md)
 - [核心策略](./product/core-strategy.md)
 - [Release 1.5 客户漏斗](./product/customer-funnel.md)
+- [会员方案与完整功能合同](./product/membership-plans.md)
 
 ## 架构
 
+- [代码库目录与模块边界](./architecture/codebase.md)
 - [Worker 架构](./architecture/worker.md)
 - [Argus 浏览器执行边界](./collection/argus.md)
 
@@ -43,6 +45,7 @@
 - [2026-08-06 生产就绪工具验收](./evidence/production-readiness-tooling-2026-08-06.md)
 - [2026-08-02 Argus-only 切换验收](./evidence/argus-only-cutover-2026-08-02.md)
 - [2026-08-05 非 OTA 采集任务归档与交接](./evidence/non-ota-collection-task-archive-2026-08-05.md)
+- [2026-08-11 Free 会员端到端开发验收](./evidence/free-member-end-to-end-acceptance-2026-08-11.md)
 
 ## 治理与执行
 

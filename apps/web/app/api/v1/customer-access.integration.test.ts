@@ -4,7 +4,7 @@ import { encryptPersonalData, hashPersonalIdentifier, issueOpaqueToken, prisma }
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { customerSessionCookie } from "@/lib/server/customer-auth";
+import { customerSessionCookie } from "@/lib/server/membership/customer-auth";
 
 import { GET as getCustomerCheck } from "./customer/checks/[checkId]/route";
 import { POST as acknowledgeCustomerCheck } from "./customer/checks/[checkId]/acknowledge/route";

@@ -14,7 +14,7 @@ import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvi
 
 import { issueCustomerSessionToken } from "./customer-auth";
 import { ensureFreeMembership, MembershipAccessError, membershipQueuePriority, reserveSpotCheck } from "./membership";
-import { padNeutralResponse } from "./security-controls";
+import { padNeutralResponse } from "../security-controls";
 import { bindMemberRiskContext, ensureBenefitGroup, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./member-risk";
 
 export class InvalidMagicLinkError extends Error {

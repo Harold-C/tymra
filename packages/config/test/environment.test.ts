@@ -33,6 +33,26 @@ describe("production provider guard", () => {
   it("rejects the deterministic abuse challenge provider in production", () => {
     expect(() => environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", ABUSE_CHALLENGE_MODE: "deterministic" })).toThrow("forbidden in production");
   });
+
+  it("requires a complete HTTPS managed challenge provider in production", () => {
+    expect(() => environmentSchema.parse({
+      ...required,
+      NODE_ENV: "production",
+      PROVIDER_MODE: "live",
+      ABUSE_CHALLENGE_MODE: "managed",
+      ABUSE_CHALLENGE_VERIFY_URL: "http://challenge.example/verify",
+      ABUSE_CHALLENGE_SITE_KEY: "site-key",
+    })).toThrow("HTTPS verification endpoint");
+    expect(environmentSchema.parse({
+      ...required,
+      NODE_ENV: "production",
+      PROVIDER_MODE: "live",
+      ABUSE_CHALLENGE_MODE: "managed",
+      ABUSE_CHALLENGE_VERIFY_URL: "https://challenge.example/verify",
+      ABUSE_CHALLENGE_SITE_KEY: "site-key",
+      ABUSE_CHALLENGE_SECRET: "provider-secret-with-at-least-32-characters",
+    }).ABUSE_CHALLENGE_MODE).toBe("managed");
+  });
 });
 
 describe("service origins", () => {
@@ -117,5 +137,21 @@ describe("membership billing launch gates", () => {
   it("keeps Pro and Portfolio unavailable without their mapped Stripe Prices", () => {
     expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PRO_LAUNCH_ENABLED: "true" })).toThrow("Pro launch gate");
     expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true" })).toThrow("Portfolio launch gate");
+  });
+
+  it("keeps export and API gates subordinate to launched paid plans", () => {
+    expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" })).toThrow("Export launch");
+    expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_API_LAUNCH_ENABLED: "true" })).toThrow("API launch");
+    const launched = environmentSchema.parse({
+      ...billing,
+      MEMBERSHIP_PRO_LAUNCH_ENABLED: "true",
+      MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true",
+      MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true",
+      MEMBERSHIP_API_LAUNCH_ENABLED: "true",
+      STRIPE_PRO_PRICE_ID: "price_pro_monthly_nzd",
+      STRIPE_PORTFOLIO_PRICE_ID: "price_portfolio_monthly_nzd",
+    });
+    expect(launched.MEMBERSHIP_EXPORT_LAUNCH_ENABLED).toBe(true);
+    expect(launched.MEMBERSHIP_API_LAUNCH_ENABLED).toBe(true);
   });
 });

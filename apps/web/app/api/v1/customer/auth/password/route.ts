@@ -5,9 +5,9 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { createCustomerSession, CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession, setCustomerSessionCookie } from "@/lib/server/customer-auth";
+import { createCustomerSession, CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession, setCustomerSessionCookie } from "@/lib/server/membership/customer-auth";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
-import { memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/member-risk";
+import { memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/membership/member-risk";
 
 const schema = z.object({
   email: z.string().trim().toLowerCase().email(),

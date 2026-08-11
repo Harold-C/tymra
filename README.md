@@ -48,6 +48,10 @@ the stored database hash at runtime. Do not put the plaintext password in `.env`
 `PROVIDER_MODE=demo` and `PROVIDER_MODE=fixture` are restricted to development and test.
 Production rejects both and never falls back to generated data after a live collection failure.
 
+Paid plans and advanced member operations are independently fail-closed. Keep
+`MEMBERSHIP_*_LAUNCH_ENABLED=false` until the applicable acceptance passes; export additionally
+requires the Pro launch gate and the member read API additionally requires the Portfolio launch gate.
+
 ## Docker Compose
 
 Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker and Mailpit.
@@ -206,6 +210,7 @@ pnpm typecheck
 pnpm test
 pnpm test:integration
 pnpm test:e2e
+pnpm test:e2e:member-live
 pnpm build
 pnpm verify
 ```
@@ -213,8 +218,13 @@ pnpm verify
 `pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
 builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
 behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
-[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-01), not inferred
+[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-11), not inferred
 from an older successful run.
+
+`pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
+`MEMBER_LIVE_EMAIL`, `MEMBER_LIVE_PASSWORD` and `MEMBER_LIVE_INPUT`; use
+`MEMBER_LIVE_LISTING_URL` only when an address flow asks for listing confirmation. The test fails
+unless the member report contains at least one non-demo public OTA price.
 
 An isolated full-stack smoke environment can run alongside the normal local stack. The command
 always removes its containers and test volumes on success, failure or interruption:
@@ -235,8 +245,10 @@ Every generated fixture is marked `Development Demo Data` and `Not real market d
 covers published high/medium confidence, partial low confidence, insufficient data, unavailable
 source, unsupported market, property and unit confirmation, exception types, expired links,
 withdrawn links and superseded result versions. No live OTA scraping or credentials are
-used. Booking, Airbnb, Expedia, Hotels.com, Agoda, Trip.com and Google Hotels adapters are research
-and deterministic record/replay implementations only. All configured non-OTA public source IDs now
+used. The active public OTA scope is Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com.
+Wotif, Hotels.com and Vrbo remain disabled compatibility contracts; Google Hotels is excluded from
+execution. Development fixture/record-replay paths are labelled and must not be presented as live
+market evidence. All configured non-OTA public source IDs now
 have concrete transports and parsers. Most remain pending operational validation and production
 activation; category IDs such as venues,
 councils, universities, RTOs, airports and ports currently implement one named first provider

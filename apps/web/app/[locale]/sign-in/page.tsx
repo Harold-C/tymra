@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { MemberSignInForm } from "@/components/public/MemberSignInForm";
+import { MemberSignInForm } from "@/components/member/MemberSignInForm";
 import { PublicShell } from "@/components/public/PublicShell";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 

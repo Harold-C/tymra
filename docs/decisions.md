@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Product And Technical Decisions
 
-Last updated: 2026-08-01
+Last updated: 2026-08-11
 
 This file records completed Release 1 implementation decisions and the recommended Release 1.5
 product decisions. D-015 onward are proposed and not implemented until their acceptance evidence is
@@ -801,3 +801,47 @@ formal 30-day horizon, OTA request dates and event overlap by one day.
 **Verification:** Domain tests cover the UTC/New Zealand midnight boundary, year rollover, the
 23-hour September transition and the 25-hour April transition. Web, worker and public-event tests
 cover default stay dates, OTA grouping, early-morning event overlap and date-only Argus events.
+
+## D-046 Organise Membership Code By Feature Boundary
+
+**Status:** Implemented.
+
+**Decision:** Authenticated customer components live in `apps/web/components/member`; operator-only
+membership components live in `apps/web/components/admin/membership`; membership authentication,
+entitlement, quota, risk and billing services live in `apps/web/lib/server/membership`; and member
+scheduling lives in `apps/worker/src/membership`. Anonymous funnel components remain in
+`components/public`. This is an ownership and dependency change only; routes, persisted contracts
+and product behaviour are unchanged.
+
+Numbered source copies are not accepted as variants. The first behaviour-preserving large-file split
+is recorded in `architecture/codebase.md`; deeper source-family or Worker decomposition still requires
+an independently reviewed change after boundary tests exist. Generated output and dated evidence are
+not source modules.
+
+**Reason:** Membership capability had grown across public UI, generic server helpers and Worker root,
+making ownership unclear and documentation drift easier. Feature boundaries make customer/Admin
+isolation, review scope and future decomposition explicit without coupling a structural cleanup to
+business refactoring.
+
+**Verification:** Repository searches reject the former import paths and numbered source copies;
+lint, TypeScript, unit/integration tests and production build verify the moved module graph.
+
+## D-047 Fail Closed At Independent Membership Launch Gates
+
+**Status:** Implemented locally; production provider acceptance remains external.
+
+**Decision:** Paid plan visibility does not implicitly launch every advanced capability. CSV export
+and the Portfolio read API require verified email, a serviceable membership, plan entitlement,
+independent quota/idempotency and their own server-side launch flags. Export cannot launch before
+Pro; the read API cannot launch before Portfolio. Production managed challenges require an HTTPS
+verification endpoint plus a server-side secret and treat missing, rejected or unavailable provider
+responses as denial. A dedicated live-member Playwright gate accepts only non-demo observed OTA
+prices and is never replaced by the fixture suite.
+
+**Reason:** UI-only gates and successful fixture runs can otherwise expose unfinished paid features
+or misstate cross-service readiness. Independent fail-closed controls allow code to ship safely while
+credentials, provider capacity, production monitoring and commercial approval remain pending.
+
+**Verification:** Configuration tests enforce gate dependencies and managed-challenge production
+requirements; server/integration tests cover authenticated provider verification, Stripe lifecycle,
+quota and retention; `test:e2e:member-live` is the explicit external acceptance command.

@@ -1,4 +1,5 @@
 import type { MembershipPlan, MembershipSubscriptionStatus, Prisma } from "@tymra/db";
+import { getEnvironment } from "@tymra/config";
 import { prisma } from "@tymra/db";
 import {
   membershipEntitlements,
@@ -50,8 +51,14 @@ export class MembershipAccessError extends Error {
 }
 
 export class MembershipOperationError extends Error {
-  constructor(readonly code: "EXPORT_NOT_INCLUDED" | "EXPORT_QUOTA_REACHED" | "API_NOT_INCLUDED" | "API_QUOTA_REACHED" | "IDEMPOTENCY_KEY_REQUIRED") {
-    super(code === "IDEMPOTENCY_KEY_REQUIRED" ? "An idempotency key is required." : code.includes("NOT_INCLUDED") ? "This operation is not included in the membership plan." : "The independent operation allowance has been used.");
+  constructor(readonly code: "EXPORT_NOT_INCLUDED" | "EXPORT_NOT_LAUNCHED" | "EXPORT_QUOTA_REACHED" | "API_NOT_INCLUDED" | "API_NOT_LAUNCHED" | "API_QUOTA_REACHED" | "IDEMPOTENCY_KEY_REQUIRED") {
+    super(code === "IDEMPOTENCY_KEY_REQUIRED"
+      ? "An idempotency key is required."
+      : code.includes("NOT_INCLUDED")
+        ? "This operation is not included in the membership plan."
+        : code.includes("NOT_LAUNCHED")
+          ? "This operation has not passed its production launch gate."
+          : "The independent operation allowance has been used.");
     this.name = "MembershipOperationError";
   }
 }
@@ -66,9 +73,13 @@ export async function reserveMembershipOperation(input: { customerUserId: string
     const membership = await ensureFreeMembership(transaction, input.customerUserId, now);
     const customer = await ensureBenefitGroup(transaction, input.customerUserId, now);
     if (!customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
+    if (!membershipIsServiceable(membership.status, membership.graceEndsAt, now)) throw new MembershipAccessError("MEMBERSHIP_INACTIVE");
     await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`membership-operation:${input.action}:${input.customerUserId}`}))`;
     const entitlement = membershipEntitlements[membership.plan];
     const isExport = input.action === "MEMBER_EXPORT";
+    const environment = getEnvironment();
+    if (isExport && !environment.MEMBERSHIP_EXPORT_LAUNCH_ENABLED) throw new MembershipOperationError("EXPORT_NOT_LAUNCHED");
+    if (!isExport && !environment.MEMBERSHIP_API_LAUNCH_ENABLED) throw new MembershipOperationError("API_NOT_LAUNCHED");
     const limit = isExport ? entitlement.monthlyExportLimit : entitlement.dailyApiRequestLimit;
     if (limit === 0) throw new MembershipOperationError(isExport ? "EXPORT_NOT_INCLUDED" : "API_NOT_INCLUDED");
     const dateKey = nzDateKey(now);

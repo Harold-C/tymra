@@ -29,9 +29,18 @@ describe("customer funnel security controls", () => {
   it("supports a provider-neutral managed verification boundary", async () => {
     const provider = createChallengeProvider({ mode: "managed", secret: "s".repeat(32), verifyUrl: "https://challenge.test/verify", siteKey: "site-a", providerSecret: "provider-secret" }, async (_url, init) => {
       expect(init?.headers).toMatchObject({ authorization: "Bearer provider-secret" });
+      expect(JSON.parse(String(init?.body))).toEqual({ token: "response-token", subjectHash: "subject-a" });
       return Response.json({ success: true });
     });
     await expect(provider.issue("subject-a")).resolves.toEqual({ mode: "managed", siteKey: "site-a" });
     await expect(provider.verify("response-token", "subject-a")).resolves.toBe(true);
+  });
+
+  it("fails closed for missing, rejected and unavailable managed challenge responses", async () => {
+    const rejected = createChallengeProvider({ mode: "managed", secret: "s".repeat(32), verifyUrl: "https://challenge.test/verify", siteKey: "site-a" }, async () => Response.json({ success: false }));
+    await expect(rejected.verify(undefined, "subject-a")).resolves.toBe(false);
+    await expect(rejected.verify("bad-token", "subject-a")).resolves.toBe(false);
+    const unavailable = createChallengeProvider({ mode: "managed", secret: "s".repeat(32), verifyUrl: "https://challenge.test/verify", siteKey: "site-a" }, async () => { throw new Error("provider unavailable"); });
+    await expect(unavailable.verify("token", "subject-a")).resolves.toBe(false);
   });
 });

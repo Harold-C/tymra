@@ -2,8 +2,8 @@ import { getEnvironment } from "@tymra/config";
 import { decryptPersonalData, prisma } from "@tymra/db";
 import { notFound } from "next/navigation";
 
-import { CustomerAdminActions } from "@/components/admin/CustomerAdminActions";
-import { DataRequestActions } from "@/components/admin/DataRequestActions";
+import { CustomerAdminActions } from "@/components/admin/membership/CustomerAdminActions";
+import { DataRequestActions } from "@/components/admin/membership/DataRequestActions";
 import { StatusPill } from "@/components/admin/AdminTable";
 import { getAdminLocale } from "@/lib/server/admin-locale";
 

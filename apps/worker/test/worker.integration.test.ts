@@ -11,6 +11,7 @@ import { handleJob } from "../src/jobs/job-handlers";
 import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
 import { durableArgusTraceId } from "../src/services/argus-orchestrator";
 import { WorkerService } from "../src/services/worker-service";
+import { membershipOperationalMetrics } from "../src/membership/operations";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -681,6 +682,43 @@ describe("Worker baseline pipeline", () => {
       await prisma.abuseDecision.deleteMany({ where: { subjectHash: `${prefix}:old-hash` } });
       await prisma.customerUser.delete({ where: { id: customer.id } });
     }
+  });
+
+  it("enforces every membership history window and the cancelled-account grace boundary", async () => {
+    const now = new Date("2026-08-11T12:00:00.000Z");
+    const customers: string[] = [];
+    const checks: Array<{ id: string; expected: "ARCHIVED" | "PUBLISHED" }> = [];
+    try {
+      for (const [plan, days] of [["FREE", 30], ["HOST", 183], ["PRO", 365], ["PORTFOLIO", 730]] as const) {
+        const customer = await prisma.customerUser.create({ data: { emailHash: `${prefix}:retention:${plan}`, encryptedEmail: "encrypted", emailVerifiedAt: now, locale: "en" } });
+        customers.push(customer.id);
+        await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan, status: "ACTIVE" } });
+        for (const [suffix, ageDays, expected] of [["old", days + 1, "ARCHIVED"], ["recent", Math.max(1, days - 1), "PUBLISHED"]] as const) {
+          const check = await prisma.priceCheck.create({ data: { rawInput: `${plan}-${suffix}`, locale: "en", emailHash: customer.emailHash, encryptedEmail: "encrypted", serviceConsent: true, marketKey: "christchurch", status: "PUBLISHED", accessKeyHash: `${prefix}:retention:${plan}:${suffix}:access`, idempotencyKey: `${prefix}:retention:${plan}:${suffix}`, customerUserId: customer.id, createdAt: new Date(now.getTime() - ageDays * 86_400_000) } });
+          checks.push({ id: check.id, expected });
+        }
+      }
+      const cancelled = await prisma.customerUser.create({ data: { emailHash: `${prefix}:retention:cancelled`, encryptedEmail: "encrypted", emailVerifiedAt: now, locale: "en" } });
+      customers.push(cancelled.id);
+      await prisma.membershipSubscription.create({ data: { customerUserId: cancelled.id, plan: "PRO", status: "CANCELLED", currentPeriodEnd: new Date(now.getTime() - 31 * 86_400_000) } });
+      const cancelledCheck = await prisma.priceCheck.create({ data: { rawInput: "cancelled", locale: "en", emailHash: cancelled.emailHash, encryptedEmail: "encrypted", serviceConsent: true, marketKey: "christchurch", status: "PUBLISHED", accessKeyHash: `${prefix}:retention:cancelled:access`, idempotencyKey: `${prefix}:retention:cancelled`, customerUserId: cancelled.id, createdAt: new Date(now.getTime() - 1 * 86_400_000) } });
+      checks.push({ id: cancelledCheck.id, expected: "ARCHIVED" });
+
+      const cleanup = await service.retentionCleanup(now);
+      expect(cleanup.membershipHistoryArchived).toBeGreaterThanOrEqual(5);
+      for (const check of checks) expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } })).toMatchObject({ status: check.expected });
+    } finally {
+      await prisma.priceCheck.deleteMany({ where: { id: { in: checks.map((item) => item.id) } } });
+      await prisma.customerUser.deleteMany({ where: { id: { in: customers } } });
+    }
+  });
+
+  it("exposes privacy-safe membership queue, risk, CAPTCHA and plan-economics metrics", async () => {
+    const metrics = await membershipOperationalMetrics(new Date());
+    expect(metrics).toHaveProperty("scheduler.pending");
+    expect(metrics).toHaveProperty("captcha.manualRequiredLast24Hours");
+    expect(metrics.planEconomics.map((item) => item.plan)).toEqual(["FREE", "HOST", "PRO", "PORTFOLIO"]);
+    expect(JSON.stringify(metrics)).not.toMatch(/email|password|token|address/i);
   });
 
   it("idempotently persists direct Ticketmaster listings and Argus details without changing configuration", async () => {

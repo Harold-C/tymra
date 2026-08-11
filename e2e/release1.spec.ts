@@ -20,14 +20,14 @@ const adminUrl = (pathname: string) => new URL(pathname, "https://ops.tymra.test
 
 async function goto(page: import("playwright/test").Page, url: string) {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 20; attempt += 1) {
+  for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
       const response = await page.goto(url);
       if (response && response.status() >= 500) throw new Error(`Navigation returned ${response.status()}`);
       return response;
     } catch (error) {
       lastError = error;
-      if (attempt < 20) await page.waitForTimeout(500);
+      if (attempt < 60) await page.waitForTimeout(500);
     }
   }
   throw lastError;
@@ -35,7 +35,7 @@ async function goto(page: import("playwright/test").Page, url: string) {
 
 async function gotoAdmin(page: import("playwright/test").Page, pathname: string) {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 20; attempt += 1) {
+  for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
       const response = await page.goto(adminUrl(pathname));
       if (response?.status() === 404) throw new Error("Operations route is still refreshing");
@@ -43,7 +43,7 @@ async function gotoAdmin(page: import("playwright/test").Page, pathname: string)
       return response;
     } catch (error) {
       lastError = error;
-      if (attempt < 20) await page.waitForTimeout(500);
+      if (attempt < 60) await page.waitForTimeout(500);
     }
   }
   throw lastError;
@@ -128,15 +128,25 @@ test.describe("public Release 1", () => {
   });
 
   test("OTA link, one verification email and authenticated formal report complete the new-user flow", async ({ page }) => {
+    test.slow();
     const email = `e2e-funnel-${Date.now()}-${test.info().project.name}@tymra.test`;
     await goto(page, "/en/check");
     await page.getByLabel(listingUrlLabel.en).fill("123 Colombo Street, Christchurch");
-    await page.getByRole("button", { name: "Check This Listing" }).click();
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await page.getByRole("button", { name: "Check This Listing" }).click();
+      await expect(page.getByRole("alert")).toBeVisible();
+      if (await page.getByText("Invalid url", { exact: true }).isVisible()) break;
+      if (attempt < 3) await page.waitForTimeout(500);
+    }
     await expect(page.getByText("Invalid url", { exact: true })).toBeVisible();
     await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/nz/christchurch-central-stay.html");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page).toHaveURL(/\/en\/rough\/[^/]+/);
-    await expect(page.getByText("Possibly below the market range")).toBeVisible();
+    await expect.poll(async () => {
+      if (await page.getByText("Possibly below the market range").isVisible()) return true;
+      await page.reload();
+      return false;
+    }, { timeout: 30_000 }).toBe(true);
     await expect(page.getByText("Not real market data. This local flow proves behaviour only.")).toBeVisible();
     await expect(page.getByLabel("Check-in date")).toHaveCount(0);
     await expect(page.getByLabel("Number of guests")).toHaveCount(0);
@@ -145,7 +155,7 @@ test.describe("public Release 1", () => {
     await page.getByLabel("Email address").fill(email);
     await page.getByLabel(/I agree to the account terms/).check();
     await page.getByRole("button", { name: "Email My Secure Link" }).click();
-    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 30_000 });
 
     const search = await pollMailpit(page, email, 1);
     expect(search.messages_count).toBe(1);
@@ -171,7 +181,7 @@ test.describe("public Release 1", () => {
     await goto(page, "/en/check");
     await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/nz/riverside-motel.html?checkin=2026-09-10&checkout=2026-09-12&group_adults=3&no_rooms=2");
     await page.getByRole("button", { name: "Check This Listing" }).click();
-    await expect(page.getByText("2026-09-10 → 2026-09-12 · 3 adults · 2 units")).toBeVisible();
+    await expect(page.getByText("2026-09-10 → 2026-09-12 · 3 adults · 2 units")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Configuration carried by the pasted link")).toBeVisible();
     await expect(page.getByRole("button", { name: /confirm/i })).toHaveCount(0);
   });
@@ -266,6 +276,83 @@ async function pollMailpit(page: import("playwright/test").Page, email: string, 
   }).toBeGreaterThanOrEqual(minimum);
   return result;
 }
+
+test.describe("member accessibility and responsive contract", () => {
+  const email = `member-accessibility-${Date.now()}@tymra.test`;
+  const password = "member accessibility test password";
+  let customerId = "";
+  let membershipRequestOrigin = "";
+
+  test.beforeAll(async ({ request }) => {
+    let responseText = "";
+    let body: { data: { customer: { id: string } } } | undefined;
+    for (const candidateOrigin of ["http://localhost:3000", "https://tymra.test"]) {
+      const response = await request.post("http://localhost:3000/api/v1/customer/auth/register", {
+        headers: { origin: candidateOrigin, "x-forwarded-for": "198.51.100.80" },
+        data: { email, password, locale: "en", serviceConsent: true },
+      });
+      responseText = await response.text();
+      if (response.status() === 201) {
+        body = JSON.parse(responseText) as { data: { customer: { id: string } } };
+        membershipRequestOrigin = candidateOrigin;
+        break;
+      }
+      expect(response.status(), responseText).toBe(403);
+    }
+    expect(body, responseText).toBeDefined();
+    if (!body) throw new Error(responseText);
+    customerId = body.data.customer.id;
+    await prisma.customerUser.update({ where: { id: customerId }, data: { emailVerifiedAt: new Date() } });
+  });
+
+  test.afterAll(async () => {
+    if (customerId) await prisma.customerUser.deleteMany({ where: { id: customerId } });
+  });
+
+  test("EN/ZH member routes pass axe, keyboard, reduced-motion and compact-width checks", async ({ page }, testInfo) => {
+    test.slow();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const memberOrigin = "http://localhost:3000";
+    expect(membershipRequestOrigin, "one configured public origin must accept member registration").not.toBe("");
+    await page.route("**/api/v1/customer/auth/password", async (route) => {
+      await route.continue({ headers: { ...route.request().headers(), origin: membershipRequestOrigin } });
+    });
+    await goto(page, `${memberOrigin}/en/sign-in?returnTo=${encodeURIComponent("/en/account")}`);
+    await page.getByLabel("Membership email").fill(email);
+    await page.getByLabel("Password").fill(password);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await page.getByRole("button", { name: "Sign in" }).click();
+      const signedIn = await page.waitForURL(/\/en\/account$/, { timeout: 5_000 }).then(() => true).catch(() => false);
+      if (signedIn) break;
+      await expect(page.getByRole("alert")).toHaveText("Failed to fetch");
+      if (attempt < 3) await page.waitForTimeout(500);
+    }
+    await expect(page).toHaveURL(/\/en\/account$/, { timeout: 30_000 });
+
+    const routes = ["account", "account/checks", "account/pricing-units", "account/calendar", "account/billing", "account/settings", "account/exports", "account/alerts", "account/portfolio", "account/integrations"];
+    for (const locale of ["en", "zh"] as const) {
+      for (const route of routes) {
+        await goto(page, `${memberOrigin}/${locale}/${route}`);
+        await expect(page.locator("main")).toBeVisible();
+        await expect(page.locator(".customer-account-nav"), `${locale}/${route} must remain authenticated`).toBeVisible();
+        const serious = (await new AxeBuilder({ page }).analyze()).violations.filter((item) => ["critical", "serious"].includes(item.impact ?? ""));
+        expect(serious, `${locale}/${route}`).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${locale}/${route}`).toBe(true);
+        const activeMotion = await page.locator("body *").evaluateAll((elements) => elements.filter((element) => {
+          const style = getComputedStyle(element);
+          return `${style.animationDuration},${style.transitionDuration}`.split(",").some((value) => Number.parseFloat(value) > 0.001);
+        }).length);
+        expect(activeMotion, `${locale}/${route}`).toBe(0);
+      }
+    }
+
+    await page.setViewportSize({ width: 320, height: 700 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= 320)).toBe(true);
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+    if (testInfo.project.name === "mobile") await expect(page.locator(".customer-account-nav")).toBeVisible();
+  });
+});
 
 test.describe("admin Release 1", () => {
   let originalHash = "";

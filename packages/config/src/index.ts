@@ -57,6 +57,8 @@ export const environmentSchema = z
     MEMBERSHIP_HOST_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_PRO_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_EXPORT_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_API_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
     EMAIL_FROM: z.string().min(3),
     SMTP_URL: optionalUrl,
@@ -126,6 +128,15 @@ export const environmentSchema = z
       });
     }
 
+    if (value.NODE_ENV === "production" && value.ABUSE_CHALLENGE_MODE === "managed"
+      && (!value.ABUSE_CHALLENGE_SECRET || value.ABUSE_CHALLENGE_SECRET.length < 32 || !value.ABUSE_CHALLENGE_VERIFY_URL || new URL(value.ABUSE_CHALLENGE_VERIFY_URL).protocol !== "https:")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ABUSE_CHALLENGE_MODE"],
+        message: "Production managed challenges require an HTTPS verification endpoint and a provider secret of at least 32 characters",
+      });
+    }
+
     const publicOrigin = value.PUBLIC_ORIGIN ?? value.APP_BASE_URL;
     const adminOrigin = value.ADMIN_ORIGIN ?? value.APP_BASE_URL;
 
@@ -186,6 +197,14 @@ export const environmentSchema = z
 
     if (value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED && !value.STRIPE_PORTFOLIO_PRICE_ID) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_PORTFOLIO_PRICE_ID"], message: "The Portfolio launch gate requires a Stripe Price ID" });
+    }
+
+    if (value.MEMBERSHIP_EXPORT_LAUNCH_ENABLED && !value.MEMBERSHIP_PRO_LAUNCH_ENABLED) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["MEMBERSHIP_EXPORT_LAUNCH_ENABLED"], message: "Export launch requires the Pro plan launch gate" });
+    }
+
+    if (value.MEMBERSHIP_API_LAUNCH_ENABLED && !value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["MEMBERSHIP_API_LAUNCH_ENABLED"], message: "API launch requires the Portfolio plan launch gate" });
     }
 
     if (value.ARGUS_JOB_POLL_TIMEOUT_MS <= value.ARGUS_TIMEOUT_MS) {

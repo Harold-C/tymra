@@ -217,7 +217,7 @@ Event Graph 是全国核心基础设施。系统不仅记录活动目录，还�
 
 ## 9.1 推荐组合
 
-* 开发环境必须实现统一 Data Source Adapter 层，并支持 Booking.com、Airbnb、Expedia、Hotels.com、Agoda、Trip.com、Google Hotels 及后续配置的主流 OTA 或元搜索来源。Crawlee \+ Playwright 可作为首选执行基础，但具体工具选型由技术 ADR 管理。
+* 开发环境必须实现统一 Data Source Adapter 层。当前 active OTA 固定为 Booking.com、Airbnb、Expedia、Bookabach、Agoda 和 Trip.com；Wotif、Hotels.com、Vrbo 仅保留禁用的合同兼容，Google Hotels 不进入执行范围。浏览器执行由独立 Argus 服务负责，具体边界由技术 ADR 管理。
 * 每个 OTA 适配器至少实现 identifyProperty、resolveListing、listUnits、fetchRates、fetchAvailability、fetchPolicies 和 healthCheck，并统一使用幂等、证据、并发限制、来源熔断和配置化任务协议。
 * 开发环境同时必须支持 LINZ、MBIE、Stats NZ、公众假期、学校假期、Eventfinda、Ticketmaster、场馆与 Council 日历、MetService、NZTA、GeoNet、机场、港口、邮轮、汇率和其他已配置公共来源的适配器。Stagehand 仅可辅助页面探索和结构变化检测，不直接决定正式数值。
 * Ulixee Hero：保留为现有 Synix 浏览器执行参考；考虑其版本成熟度，不建议作为 Tymra 新系统的唯一基础。  
@@ -423,7 +423,7 @@ Event Graph 是全国核心基础设施。系统不仅记录活动目录，还�
 
 ## 阶段 1：全国数据基础设施与受控 POC
 
-* 建立并运行 Booking、Airbnb、Expedia／Hotels.com、Agoda、Trip.com、Google Hotels 及全国公共数据来源的开发适配器、任务队列、重试、来源健康和追加历史存储。  
+* 建立并运行 Booking、Airbnb、Expedia、Bookabach、Agoda、Trip.com 及全国公共数据来源的开发适配器、任务队列、重试、来源健康和追加历史存储。
 * 建立全国 Property／Sellable Unit／Listing 身份图谱、1,000–1,500 个唯一 Unit 的代表性面板、固定日期篮子和全国市场覆盖状态。  
 * 使用多来源研究方案对照身份、含税总价、房型、取消政策、可售状态、Collection Profile、采集时间和证据，验证适配器的一致性与来源差异。  
 * 公开产品上线前，全国采集机制建议至少连续运行 30 天，并验证调度、重试、熔断、来源健康、追加历史、覆盖率、成本和异常告警稳定。  
@@ -484,7 +484,7 @@ Event Graph 是全国核心基础设施。系统不仅记录活动目录，还�
 
 # 22\. 已确认默认值与剩余待验证事项
 
-* 已确认：开发环境支持 Booking.com、Airbnb、Expedia、Hotels.com、Agoda、Trip.com、Google Hotels 及全国推荐公共来源；测试和生产来源根据启用状态、技术稳定性和运行健康逐项启用。开发环境硬性禁止自动调度。
+* 已确认：开发环境 active OTA 为 Booking.com、Airbnb、Expedia、Bookabach、Agoda、Trip.com，并支持全国推荐公共来源；测试和生产来源根据启用状态、技术稳定性和运行健康逐项启用。Wotif、Hotels.com、Vrbo 不进入发现和健康门槛，Google Hotels 不执行。开发环境硬性禁止自动调度。
 * 已确认：用户正式检查默认 2 名成人、0 名儿童、1 个住宿单位、1 晚、NZD、房源当地时区和未来 30 天；全国内部面板使用 D+7、D+14、D+30、D+60、D+90，并补充工作日、周末、假期和批准活动日期。  
 * 已确认：初始全国代表性面板为 1,000–1,500 个唯一 Sellable Unit，约 80% Anchor、20% Rotating；正式竞品目标 8–20 个，5 个为自动发布最低可靠基准，3–4 个只允许 Low Confidence，少于 3 个返回 Insufficient Data。  
 * 已确认：核心目标价和主要竞品默认不得超过 24 小时；D+0 至 D+7 或重大活动日期的目标与 CORE 竞品最大采集偏差为 2 小时，D+8 至 D+30 为 6 小时；具体新鲜度策略保持服务端可配置并版本化。  

@@ -1,6 +1,6 @@
 import { decryptPersonalData } from "@tymra/db";
 import { CheckStartForm } from "@/components/public/PriceCheckFlow";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 
 export default async function AddressCheckPage({ params, searchParams }: { params: { locale: "en" | "zh" }; searchParams: { input?: string } }) {
   const session = await getCustomerSessionForPage();

@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/customer-auth";
+import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
 
 const appealSchema = z.object({ caseId: z.string().cuid(), reason: z.string().trim().min(20).max(2_000) });
 

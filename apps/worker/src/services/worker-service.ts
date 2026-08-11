@@ -70,6 +70,7 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { enrichEventVenue } from "../collection/venue-reference";
+import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
 import {
   eventfindaEvidenceTtlHours,
@@ -2762,86 +2763,7 @@ export class WorkerService {
   }
 
   async retentionCleanup(now = new Date()) {
-    const tokenMetadataCutoff = new Date(now.getTime() - 30 * 86_400_000);
-    const securityHashCutoff = new Date(now.getTime() - 90 * 86_400_000);
-    const riskIdentityCutoff = new Date(now.getTime() - 180 * 86_400_000);
-    const paymentRiskCutoff = new Date(now.getTime() - 730 * 86_400_000);
-    return prisma.$transaction(async (transaction) => {
-      let membershipHistoryArchived = 0;
-      for (const [plan, days] of [["FREE", 30], ["HOST", 183], ["PRO", 365], ["PORTFOLIO", 730]] as const) {
-        const archived = await transaction.priceCheck.updateMany({
-          where: {
-            customerUser: { membership: { is: { plan, status: { not: "CANCELLED" } } } },
-            createdAt: { lte: new Date(now.getTime() - days * 86_400_000) },
-            status: { not: "ARCHIVED" },
-          },
-          data: { status: "ARCHIVED" },
-        });
-        membershipHistoryArchived += archived.count;
-      }
-      const cancelledMemberships = await transaction.membershipSubscription.findMany({
-        where: { status: "CANCELLED" },
-        select: { customerUserId: true, currentPeriodEnd: true, updatedAt: true },
-      });
-      for (const membership of cancelledMemberships) {
-        const archiveAfter = new Date((membership.currentPeriodEnd ?? membership.updatedAt).getTime() + 30 * 86_400_000);
-        if (archiveAfter > now) continue;
-        const archived = await transaction.priceCheck.updateMany({
-          where: { customerUserId: membership.customerUserId, status: { not: "ARCHIVED" } },
-          data: { status: "ARCHIVED" },
-        });
-        membershipHistoryArchived += archived.count;
-      }
-      const artifacts = await transaction.rawArtifact.updateMany({
-        where: { expiresAt: { lte: now }, deletedAt: null },
-        data: { deletedAt: now, storageRef: "DELETED", payload: Prisma.JsonNull },
-      });
-      const magicLinks = await transaction.magicLink.updateMany({
-        where: { expiresAt: { lte: now }, status: "PENDING" },
-        data: { status: "EXPIRED" },
-      });
-      const terminalMagicLinks = await transaction.magicLink.deleteMany({
-        where: { status: { in: ["CONSUMED", "EXPIRED", "REVOKED", "BLOCKED"] }, createdAt: { lte: tokenMetadataCutoff } },
-      });
-      const verificationEmails = await transaction.emailDelivery.deleteMany({
-        where: { type: "VERIFY_AND_SIGN_IN", createdAt: { lte: tokenMetadataCutoff } },
-      });
-      const anonymousChecks = await transaction.anonymousCheck.deleteMany({
-        where: {
-          expiresAt: { lte: now },
-          magicLinks: { none: {} },
-          priceChecks: { none: {} },
-        },
-      });
-      const sessions = await transaction.customerSession.deleteMany({
-        where: {
-          createdAt: { lte: tokenMetadataCutoff },
-          OR: [
-            { expiresAt: { lte: tokenMetadataCutoff } },
-            { revokedAt: { lte: tokenMetadataCutoff } },
-          ],
-        },
-      });
-      const usageLedger = await transaction.usageLedger.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
-      const abuseDecisions = await transaction.abuseDecision.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
-      const riskIdentities = await transaction.riskIdentity.deleteMany({ where: { subjectType: { in: ["DEVICE", "IP_PREFIX", "QUERY_SIGNATURE", "GEO_TILE", "OTA_LISTING"] }, lastSeenAt: { lte: riskIdentityCutoff } } });
-      const paymentInstruments = await transaction.paymentInstrumentIdentity.deleteMany({ where: { lastSeenAt: { lte: paymentRiskCutoff } } });
-      const riskCases = await transaction.membershipRiskCase.deleteMany({ where: { status: { in: ["APPROVED", "DENIED", "RESOLVED"] }, resolvedAt: { lte: paymentRiskCutoff }, appealReason: null } });
-      return {
-        rawArtifactsDeleted: artifacts.count,
-        anonymousChecksDeleted: anonymousChecks.count,
-        magicLinksExpired: magicLinks.count,
-        terminalMagicLinksDeleted: terminalMagicLinks.count,
-        verificationEmailsDeleted: verificationEmails.count,
-        customerSessionsDeleted: sessions.count,
-        usageLedgerDeleted: usageLedger.count,
-        abuseDecisionsDeleted: abuseDecisions.count,
-        riskIdentitiesDeleted: riskIdentities.count,
-        paymentInstrumentsDeleted: paymentInstruments.count,
-        riskCasesDeleted: riskCases.count,
-        membershipHistoryArchived,
-      };
-    });
+    return cleanupMembershipRetention(now);
   }
 
   async activateSource(sourceId: string) {
@@ -3002,7 +2924,7 @@ export class WorkerService {
   }
 
   async health() {
-    const [database, redis, queueDepth, failedJobs, sources, jobMetrics, cacheMetrics, emailMetrics, coverage, argus, membershipsByPlan, membershipsByStatus, membershipUsage, activePricingUnits, billingFailures] = await Promise.all([
+    const [database, redis, queueDepth, failedJobs, sources, jobMetrics, cacheMetrics, emailMetrics, coverage, argus, membershipMetrics] = await Promise.all([
       prisma.$queryRaw<Array<{ ok: number }>>`SELECT 1 AS ok`.then(() => ({ healthy: true, message: "connected" })).catch((error: unknown) => ({ healthy: false, message: error instanceof Error ? error.message : "database failed" })),
       redisHealth(this.environment.REDIS_URL),
       prisma.job.count({ where: { status: "PENDING" } }),
@@ -3013,11 +2935,7 @@ export class WorkerService {
       prisma.emailDelivery.groupBy({ by: ["status"], _count: { _all: true } }),
       prisma.marketCoverage.findMany({ select: { key: true, coverage24h: true, coverage72h: true, competitorCoverage: true, collectionSuccessRate: true, sourceFailureRate: true } }),
       this.argusHealth(),
-      prisma.membershipSubscription.groupBy({ by: ["plan"], _count: { _all: true } }),
-      prisma.membershipSubscription.groupBy({ by: ["status"], _count: { _all: true } }),
-      prisma.membershipUsage.groupBy({ by: ["type"], where: { countedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } }, _count: { _all: true } }),
-      prisma.customerPricingUnit.count({ where: { active: true } }),
-      prisma.stripeBillingEvent.count({ where: { processingError: { not: null } } }),
+      membershipOperationalMetrics(),
     ]);
     return {
       process: { healthy: true, pid: process.pid, uptimeSeconds: process.uptime() },
@@ -3033,7 +2951,7 @@ export class WorkerService {
         cache: cacheMetrics,
         email: emailMetrics,
         coverage,
-        membership: { byPlan: membershipsByPlan, byStatus: membershipsByStatus, usageLast30Days: membershipUsage, activePricingUnits, billingFailures },
+        membership: membershipMetrics,
       },
     };
   }

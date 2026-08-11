@@ -1,5 +1,5 @@
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { BillingError, constructStripeEvent, processStripeEvent } from "@/lib/server/stripe-billing";
+import { BillingError, constructStripeEvent, processStripeEvent } from "@/lib/server/membership/stripe-billing";
 
 export const runtime = "nodejs";
 

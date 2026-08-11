@@ -1,6 +1,6 @@
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
 import { setCheckAccessCookie } from "@/lib/server/check-access";
-import { getCustomerSession } from "@/lib/server/customer-auth";
+import { getCustomerSession } from "@/lib/server/membership/customer-auth";
 import { createPriceCheck } from "@/lib/server/price-checks";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
 import { NextRequest } from "next/server";

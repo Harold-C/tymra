@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/customer-auth";
-import { BillingError, createMembershipCheckout } from "@/lib/server/stripe-billing";
+import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
+import { BillingError, createMembershipCheckout } from "@/lib/server/membership/stripe-billing";
 
 const inputSchema = z.object({ plan: z.enum(["HOST", "PRO", "PORTFOLIO"]) });
 

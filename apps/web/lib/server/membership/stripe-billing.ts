@@ -1,6 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 
-import { getEnvironment } from "@tymra/config";
+import { getEnvironment, type Environment } from "@tymra/config";
 import { decryptPersonalData, prisma } from "@tymra/db";
 import { isMembershipPlan, membershipEntitlements, membershipPlanRank, type MembershipPlanId } from "@tymra/domain";
 import Stripe from "stripe";
@@ -9,6 +9,17 @@ import { ensureFreeMembership, stripeSubscriptionStatus } from "./membership";
 import { openRiskCase } from "./member-risk";
 
 let stripeClient: Stripe | undefined;
+let stripeTestEnvironment: Environment | undefined;
+
+export function setStripeTestRuntime(client?: Stripe, environment?: Environment) {
+  if (process.env.NODE_ENV !== "test") throw new Error("Stripe runtime injection is test-only.");
+  stripeClient = client;
+  stripeTestEnvironment = environment;
+}
+
+function billingEnvironment() {
+  return stripeTestEnvironment ?? getEnvironment();
+}
 
 export class BillingError extends Error {
   constructor(
@@ -21,14 +32,14 @@ export class BillingError extends Error {
 }
 
 function stripe(): Stripe {
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   if (!environment.BILLING_ENABLED || !environment.STRIPE_SECRET_KEY) throw new BillingError("BILLING_DISABLED", "Billing is not available yet.");
   stripeClient ??= new Stripe(environment.STRIPE_SECRET_KEY);
   return stripeClient;
 }
 
 export function planLaunchAvailability(): Record<MembershipPlanId, boolean> {
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   return {
     FREE: true,
     HOST: environment.BILLING_ENABLED && environment.MEMBERSHIP_HOST_LAUNCH_ENABLED,
@@ -38,14 +49,14 @@ export function planLaunchAvailability(): Record<MembershipPlanId, boolean> {
 }
 
 function priceIdForPlan(plan: Exclude<MembershipPlanId, "FREE">): string {
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   const priceId = plan === "HOST" ? environment.STRIPE_HOST_PRICE_ID : plan === "PRO" ? environment.STRIPE_PRO_PRICE_ID : environment.STRIPE_PORTFOLIO_PRICE_ID;
   if (!priceId || !planLaunchAvailability()[plan]) throw new BillingError("PLAN_NOT_AVAILABLE", `${plan} has not passed its launch gate.`);
   return priceId;
 }
 
 function planForPriceId(priceId: string | null | undefined): MembershipPlanId | null {
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   if (priceId && priceId === environment.STRIPE_HOST_PRICE_ID) return "HOST";
   if (priceId && priceId === environment.STRIPE_PRO_PRICE_ID) return "PRO";
   if (priceId && priceId === environment.STRIPE_PORTFOLIO_PRICE_ID) return "PORTFOLIO";
@@ -66,7 +77,7 @@ export async function createMembershipCheckout(customerUserId: string, planValue
   const client = stripe();
   const priceId = priceIdForPlan(plan);
   await validateStripePrice(client, plan, priceId);
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
   const membership = await prisma.$transaction((transaction) => ensureFreeMembership(transaction, customerUserId));
   if (membership.stripeSubscriptionId && membership.status !== "CANCELLED") return changeMembershipPlan(customerUserId, plan);
@@ -103,8 +114,8 @@ export async function createMembershipPortal(customerUserId: string) {
   const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId }, select: { locale: true } });
   const session = await stripe().billingPortal.sessions.create({
     customer: membership.stripeCustomerId,
-    configuration: getEnvironment().STRIPE_PORTAL_CONFIGURATION_ID,
-    return_url: `${getEnvironment().PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account`,
+    configuration: billingEnvironment().STRIPE_PORTAL_CONFIGURATION_ID,
+    return_url: `${billingEnvironment().PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account`,
   });
   return { url: session.url };
 }
@@ -180,7 +191,7 @@ export async function resumeMembershipRenewal(customerUserId: string) {
 }
 
 export function constructStripeEvent(rawBody: string, signature: string): Stripe.Event {
-  const environment = getEnvironment();
+  const environment = billingEnvironment();
   if (!environment.BILLING_ENABLED || !environment.STRIPE_WEBHOOK_SECRET) throw new BillingError("BILLING_DISABLED", "Billing is not enabled.");
   return stripe().webhooks.constructEvent(rawBody, signature, environment.STRIPE_WEBHOOK_SECRET);
 }
@@ -284,7 +295,7 @@ async function resolveRadarReview(charge: Stripe.Charge) {
 }
 
 function hashPaymentFingerprint(fingerprint: string) {
-  return createHmac("sha256", getEnvironment().ACCESS_KEY_SECRET).update(fingerprint).digest("hex");
+  return createHmac("sha256", billingEnvironment().ACCESS_KEY_SECRET).update(fingerprint).digest("hex");
 }
 
 export async function claimPromotion(customerUserId: string, promotionKey: string, fingerprintHash: string) {

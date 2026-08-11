@@ -1,6 +1,6 @@
 import { PublicShell } from "@/components/public/PublicShell";
-import { CustomerAccountNav } from "@/components/public/CustomerAccountNav";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { CustomerAccountNav } from "@/components/member/CustomerAccountNav";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 

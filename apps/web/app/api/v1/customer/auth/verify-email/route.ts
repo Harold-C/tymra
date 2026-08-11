@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/customer-auth";
-import { issueCustomerEmailVerification } from "@/lib/server/magic-links";
+import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
+import { issueCustomerEmailVerification } from "@/lib/server/membership/magic-links";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
 
 export async function POST(request: NextRequest) {

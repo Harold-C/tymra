@@ -27,8 +27,8 @@ import { withRedisLockWait } from "@tymra/queue";
 
 import { checkAccessHash, deriveCheckAccessKey } from "./check-access";
 import { queuePriceCheckEmail } from "./email-deliveries";
-import { ensureFreeMembership, membershipQueuePriority, reserveSpotCheck, runMembershipTransaction } from "./membership";
-import { bindMemberRiskContext, enforceMemberRisk, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./member-risk";
+import { ensureFreeMembership, membershipQueuePriority, reserveSpotCheck, runMembershipTransaction } from "./membership/membership";
+import { bindMemberRiskContext, enforceMemberRisk, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./membership/member-risk";
 import { getDataProvider } from "./providers";
 
 const nonNewZealandPattern = /\b(australia|sydney|melbourne|brisbane|london|singapore|usa|united states)\b|澳大利亚|悉尼|墨尔本|伦敦|新加坡|美国/i;

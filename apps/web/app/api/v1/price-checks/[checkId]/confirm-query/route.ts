@@ -3,8 +3,8 @@ import type { NextRequest } from "next/server";
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
 import { hasCheckAccess } from "@/lib/server/check-access";
 import { confirmQuery } from "@/lib/server/price-checks";
-import { MembershipAccessError } from "@/lib/server/membership";
-import { memberRequestIdentity, MemberRiskError, setMemberDeviceCookie, verifyMemberChallenge } from "@/lib/server/member-risk";
+import { MembershipAccessError } from "@/lib/server/membership/membership";
+import { memberRequestIdentity, MemberRiskError, setMemberDeviceCookie, verifyMemberChallenge } from "@/lib/server/membership/member-risk";
 
 export async function POST(request: NextRequest, { params }: { params: { checkId: string } }) {
   try {

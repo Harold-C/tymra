@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 import bcrypt from "bcryptjs";
 import { prisma } from "@tymra/db";
 
 import { recreateRuntime } from "./compose-runtime";
 
+const webRequire = createRequire(`${process.cwd()}/apps/web/package.json`);
+const { loadEnvConfig } = webRequire("@next/env") as { loadEnvConfig(directory: string): unknown };
+
 export default async function globalSetup() {
+  loadEnvConfig(process.cwd());
   const environment = e2eEnvironment();
   Object.assign(process.env, environment);
   execFileSync("pnpm", ["--filter", "@tymra/db", "db:deploy"], { cwd: process.cwd(), env: environment, stdio: "inherit" });

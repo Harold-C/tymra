@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAdminSession } from "@/lib/server/admin-auth";
 import { PATCH as updateCustomer } from "./admin/customers/[customerId]/route";
 import { PATCH as updateDataRequest } from "./admin/data-requests/[requestId]/route";
-import { ensureBenefitGroup } from "@/lib/server/member-risk";
+import { ensureBenefitGroup } from "@/lib/server/membership/member-risk";
 
 const suffix = randomUUID();
 let customerId = "";

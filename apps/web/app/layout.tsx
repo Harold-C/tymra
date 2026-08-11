@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import { normalizeAdminLocale } from "@/lib/admin-i18n";
 
 import "./globals.css";
+import "../styles/admin.css";
+import "../styles/member.css";
 
 export const metadata: Metadata = {
   title: "Tymra by Synix | Accommodation Pricing Intelligence",

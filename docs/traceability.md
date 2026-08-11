@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, `verified_gated_off`, and `verified`. No
@@ -25,44 +25,33 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production activation and schedule activation remain separate |
 | Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production activation remains separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
-| Nine public OTA brands | Tymra URL/canonical parsing, strict public Argus contracts, provider-family persistence, bounded comparable discovery/rate workflow and cross-brand deduplication are implemented; dormant Booking Demand and Expedia Rapid modules were removed | Partner APIs are deferred until credentials exist and must return as a new reviewed implementation; Google Hotels is intentionally excluded from OTA execution |
+| Six active public OTA channels | Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com have strict Argus contracts, stable provider-family identity, bounded comparable discovery/rate workflows, evidence lifecycle and cross-brand deduplication | Wotif, Hotels.com and Vrbo are disabled compatibility only; Google Hotels is excluded; production capacity and long-term page stability remain unverified |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
 
-## Current Worktree Verification (2026-08-06)
+## Current Worktree Verification (2026-08-11)
 
-The current revision contains the Argus orchestration, public-source acceptance, collection
-efficiency, Compose and documentation changes described below. Git commit state is not used as
-verification evidence.
+The current revision includes the complete development membership surface, P0/P1/P2 anti-abuse
+controls, New Zealand business-date policy and the feature-oriented membership directory boundary.
+Git state is not used as verification evidence.
 
 | Gate | Fresh evidence from current worktree | Status |
 | --- | --- | --- |
-| Source/config assembly | Docker Node 24 base image built and Prisma Client generated from the current schema | verified |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
-| TypeScript | Web, Worker, config, db, domain, providers and queue each passed `tsc --noEmit` | verified |
-| Root unit/component suite | 19 files, 146 tests passed and 5 external provider fixtures intentionally skipped | verified |
-| Worker unit suite | 17 files, 86 tests passed, including named Argus downloads, retry-safe evidence retention, strict aviation contracts, nationwide signal routing, source/schedule gating and failure classification | verified |
-| Argus boundary suites | Async Job client, durable orchestration, schema validation, cancellation and evidence-before-ACK tests | verified by current Worker unit and database integration suites plus 2026-08-02 real bounded acceptance |
-| Worker production build | `index`, `api`, `scheduler` and `cli` entrypoints built successfully | verified |
-| Web production build | Next.js generated 65/65 static pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
-| Isolated Compose smoke | Fresh image, migration, seed, Web, Worker API, Worker, Redis, PostgreSQL and Mailpit passed on isolated ports/volumes; cleanup completed | verified |
-| Database/API/Worker integration | 16 files and 74 tests passed against a migrated and seeded isolated PostgreSQL database; nationwide address API/Worker identity, persistent cache, confirmation-only Property promotion, idempotency and cross-region isolation are included, and the database was removed afterwards | verified |
-| Playwright/accessibility | Not rerun after the source-control UI simplification | not_verified |
-| Aggregate `pnpm verify` | All constituent gates—lint, typecheck, unit, integration and build—passed; they were invoked separately in this update | verified by constituents |
-| Current runtime image | Web, Worker and Worker API were rebuilt/recreated from the current worktree; database, Redis and Argus health are green | verified; Worker health returned HTTP 200 and Web returned HTTP 200 |
+| TypeScript | Web, Worker, config, db, domain, providers and queue passed `tsc --noEmit` | verified |
+| Web/domain/provider/database unit suite | 202 tests passed; 5 external provider fixtures intentionally skipped | verified |
+| Worker unit suite | 124 tests passed, including member scheduling, Argus boundary and New Zealand date policy | verified |
+| Database/API/Worker integration | 104 tests passed against a clean, migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified |
+| Membership/risk focused regression | Membership integration file passed all 19 scenarios; configuration/security suites passed the managed-provider and feature-gate contracts | verified |
+| Production build | Worker entrypoints built and Next.js generated 109 pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
+| Member browser QA | Free fixture customer/Admin flows plus all authenticated member routes are covered in the current Playwright suite | verified for named fixture paths; live provider remains separate |
+| Playwright/accessibility matrix | EN/ZH member routes passed axe serious/critical, keyboard focus, reduced-motion and compact-width checks on desktop and mobile after correcting the current-plan contrast to WCAG AA | verified |
+| Production payment/challenge/monitoring | Local contracts exist, but production Stripe, challenge provider, dashboards, capacity and SLA are not established | not_verified |
 
-Runtime inspection found the source-control removal migration applied, zero enabled schedules and
-no Scheduler container in development. Worker health returned database, Redis and Argus healthy;
-Web and Worker health both returned HTTP 200. Historical failed/dead-letter jobs remain available
-for operational review and were not replayed by this change.
-
-The nationwide source-schedule plan resolves all 50 direct sources to 52 schedules without a missing
-mapping. Source scheduling now checks only enablement, registered adapters and operational health;
-development hard-disables scheduler execution. The plan is read-only and left all schedules disabled.
-
-The obsolete synchronous `argus-client 2.ts` and its duplicate test were removed before delivery;
-the asynchronous Job client and its test are the only retained implementation.
+The active OTA scope is exactly the six channels listed above. Development Scheduler remains off.
+Dated real-page and fixture evidence proves only the named run; it does not establish ongoing source
+availability or production readiness.
 
 ## Product Requirements
 
@@ -203,32 +192,38 @@ The statuses below describe the current implementation, not the target specifica
 | `MEM-AUTH-004`, `R15-AUTH-004` | Protected-route redirect through password sign-in with allowlisted same-origin `returnTo` | Middleware exact-route/query, open-redirect and EN/ZH locale-continuity tests/browser evidence | `verified` |
 | `MEM-RISK-001` | Email verification before collection plus Benefit Group identity across account/device/property/payment subjects | Isolated PostgreSQL verifies unverified denial, same-device/same-Property shared Free usage, and shared-IP/different-device separation | `verified` |
 | `MEM-RISK-002` | Unique Free/promotion claims, serializable retries, concurrent collection/noVNC limits and independent export/API quotas | Three-way concurrent Free claim, idempotent NZ-month export and payment-promotion uniqueness integration | `verified` |
-| `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence test plus customer risk API and Admin review boundary | `implemented_not_verified` |
-| `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API/retention lifecycle tests and browser operations acceptance | `implemented_not_verified` |
+| `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence, payment reuse/refund, customer appeal and Admin review tests pass; production Radar delivery remains external | `implemented_not_verified` |
+| `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API plus privacy-safe aggregate metrics and controlled retention lifecycle pass; production operating exercise remains external | `implemented_not_verified` |
 | `MEM-NAV-001` | Session-aware public/customer navigation with Sign in, Account and Sign out | Real EN/ZH authenticated/anonymous browser QA at desktop, 390px and 320px | `verified` |
 | `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
 | `MEM-UNIT-001` | Pricing-unit list/detail, add/confirm, activation, deactivation, reactivation and downgrade selection | Ownership, stable-identity, unit-limit and transactional job-cancellation tests plus browser flows | `implemented_not_verified` |
 | `MEM-CHECK-001` | Owner-only filterable history and result detail with observed-price/recommendation separation | Cross-account, pagination/filter, retention and one-valid-price acceptance | `implemented_not_verified` |
 | `MEM-CAL-001` | Plan-aware exact daily calendar and separately labelled monitoring extension in `Pacific/Auckland` | NZ-time/domain boundaries, owner-only API, no-fabrication data states and responsive browser QA | `verified` |
 | `MEM-ALERT-001` | Host core alerts and Pro/Portfolio settings/controls behind entitlement and launch gates | Entitlement-aware unavailable state is implemented and browser-verified; delivery remains closed pending the documented alert gate | `verified_gated_off` |
-| `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Portfolio/export/integration routes expose an honest entitlement/launch-gate state; no API or webhook secret is exposed while gates are closed | `verified_gated_off` |
-| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Signed/idempotent test-mode webhooks, out-of-order events, browser flows and production configuration gate | `implemented_not_verified` |
-| `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Time-controlled isolated PostgreSQL lifecycle matrix | `implemented_not_verified` |
+| `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Export/API now require serviceable membership, entitlement, independent quota/idempotency and subordinate server launch flags; credential/webhook delivery stays gated | `verified_gated_off` |
+| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe lifecycle and signed/idempotent/out-of-order webhook database tests pass; real Stripe test-account browser evidence and production configuration remain external | `verified_gated_off` |
+| `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `verified` |
 | `MEM-OPS-001` | Admin customer/membership/billing-event operations, safe reconciliation, session revoke, suspension and deletion support | Isolated PostgreSQL verifies unauthorised denial, audited plan/status corrections, session revoke, export completion evidence and minimised deletion; Stripe-backed manual drift fails closed | `verified` |
-| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health exposes aggregate plan/status/usage/unit/failure metrics without PII; production dashboard and injected-alert acceptance remain outstanding | `implemented_not_verified` |
-| `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Manual semantic/overflow/responsive browser QA passed; a fresh axe/keyboard/reduced-motion membership run remains outstanding | `implemented_not_verified` |
-| `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Returning Free real Mailpit/browser flow and all server/database gates pass; Stripe test-mode paid lifecycle and advanced-feature launch acceptance remain outstanding | `implemented_not_verified` |
+| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health aggregate is test-verified without PII; production dashboard, alert routing and injected-alert acceptance remain deployment gates | `implemented_not_verified` |
+| `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; current result recorded below | `verified` |
+| `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Fixture Free/browser and server gates pass; dedicated live Argus acceptance command now fails unless a non-demo public OTA price is delivered, but external live execution remains outstanding | `implemented_not_verified` |
 
-The generally available Free customer module is implemented. Paid billing, production telemetry and complete accessibility/end-to-end launch evidence remain release gates, not claims of production readiness. Plan-specific features may remain unavailable only when the customer UI, API and marketing all enforce the corresponding documented Launch Gate; `verified_gated_off` means that closed state itself has been verified and the feature must not be marketed as available.
+The Free customer module is implemented and development-verified. Production payment credentials,
+provider telemetry and live Argus membership evidence remain release gates, not claims of production
+readiness. `verified_gated_off` means the closed state is verified and must not be marketed as
+available. CSV export and the Portfolio read API now also enforce independent server-side feature
+flags in addition to entitlement, verified email, serviceability, idempotency and quota.
 
-### Membership development verification (2026-08-10)
+### Membership development verification (2026-08-11)
 
 - Prisma Client generation and TypeScript checks passed for every workspace package.
-- Web/domain/config/provider/database unit suites passed 199 tests; five external provider fixtures remained intentionally skipped. Worker unit suites passed 123 tests.
-- A disposable PostgreSQL 18.3 database applied all 25 migrations from zero. The focused authentication, membership, Admin and session-security run passed all 16 tests; the preceding complete database run passed all 88 tests before the password-auth migration. The disposable container and database were removed afterwards.
-- Web lint passed. The Web production build generated 101 pages and the Worker production build completed; only the existing optional LinkeDOM `canvas` warning appeared.
-- Fresh real-browser acceptance covered account registration, automatic Free-account session, sign-out, password login with exact protected-route return, password change, old-password rejection and new-password login. Chinese copy and locale routing are implemented; the broader full membership accessibility matrix remains a separate gate.
-- The development database applied migration `20260810210000_customer_data_request_resolution`. No Stripe production configuration, paid-plan launch, advanced-feature launch or production SLA is asserted by this evidence.
+- Web/domain/config/provider/database unit suites passed 202 tests; five external provider fixtures remained intentionally skipped. Worker unit suites passed 124 tests.
+- A disposable PostgreSQL database applied all 27 migrations from zero, was seeded through the split source registry and passed 104 database/API/Worker integration tests. The disposable database was removed afterwards.
+- Web lint passed. The Web production build generated 109 pages and the Worker production build completed; only the existing optional LinkeDOM `canvas` warning appeared.
+- Browser acceptance covers the Free fixture flow and the full EN/ZH member route accessibility,
+  compact-width, keyboard and reduced-motion matrix. The live Argus gate is implemented but was not
+  run without external live-member credentials and input.
+- The schema includes `20260811120000_location_benchmark_property_slots` and `20260811160000_membership_abuse_controls`. No Stripe production configuration, paid-plan launch, advanced-feature launch or production SLA is asserted by this evidence.
 
 ## Required Commands
 
@@ -238,20 +233,21 @@ The generally available Free customer module is implemented. Paid billing, produ
 | `pnpm worker` | Persistent Worker | current worktree image running; health/readiness return 200 |
 | `pnpm db:generate` | Prisma client generation | current worktree verified on host and in Docker |
 | `pnpm db:migrate` | Development migration | Release 1.5 retention/analytics and event-impact migrations applied in development |
-| `pnpm db:seed` | Deterministic demo seed | historical verified; not rerun in this update |
+| `pnpm db:seed` | Deterministic demo seed | current worktree verified in the isolated migrated PostgreSQL database |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
 | `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
-| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 138 root tests (5 skipped external fixtures) plus 86 Worker tests |
-| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 69 tests in an isolated database |
-| `pnpm test:e2e` | Playwright and accessibility | full desktop and mobile suites passed: 9 tests per project, including axe and responsive checks |
-| `pnpm build` | Production Web and Worker build | 65-page Web build and four Worker entrypoint builds verified; known optional LinkeDOM canvas warning only |
-| `pnpm verify` | Lint, typecheck, unit, integration, build | current worktree verified on 2026-08-05 |
+| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 202 passed plus 5 external fixtures skipped; 124 Worker tests passed |
+| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 104 tests in an isolated seeded database |
+| `pnpm test:e2e` | Playwright and accessibility | Desktop public/Admin scenarios passed and the member matrix passed in the paired desktop/mobile run; final mobile aggregate passed 10 scenarios with live Argus and desktop-only Admin skipped. Password sign-in uses the real form while page QA stays on the direct local Web port to avoid Traefik refresh races |
+| `pnpm test:e2e:member-live` | Real member-to-Argus price delivery | gate implemented and list-validated; not run because no live-member credentials/input were supplied |
+| `pnpm build` | Production Web and Worker build | 109-page Web build and Worker entrypoints verified; known optional LinkeDOM canvas warning only |
+| `pnpm verify` | Lint, typecheck, unit, integration, build | constituent gates verified on 2026-08-11; integration used an isolated database |
 
 ## Final Acceptance Evidence
 
 | Gate | Evidence | Status |
 | --- | --- | --- |
-| Product baseline/control files | Five full Google Docs migrated to the canonical local `docs/product` directory with source IDs, timestamps, byte hashes and fresh-export content comparison | verified |
+| Product baseline/control files | Five Google Docs migrated to canonical local product files; source IDs and migration-time hashes are retained as historical provenance while current changes are tracked by Git | verified |
 | Routes and bilingual UI | Next build inventory plus EN/ZH desktop/mobile Playwright | verified |
 | Database and seed | Clean Compose volume migrated; seed repeated without duplicate growth | verified |
 | Web, Worker and Admin | HTTP 200, running Worker, protected Admin sign-in and workspace E2E | verified |

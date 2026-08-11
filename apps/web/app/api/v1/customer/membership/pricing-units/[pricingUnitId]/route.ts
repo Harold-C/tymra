@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/customer-auth";
-import { MembershipAccessError, setPricingUnitActive } from "@/lib/server/membership";
+import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
+import { MembershipAccessError, setPricingUnitActive } from "@/lib/server/membership/membership";
 
 const inputSchema = z.object({ active: z.boolean() });
 

@@ -2,8 +2,8 @@ import { Menu, X } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import Image from "next/image";
 import Link from "next/link";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
-import { CustomerSignOut } from "./CustomerSessionActions";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
+import { CustomerSignOut } from "@/components/member/CustomerSessionActions";
 import { LocaleSwitchLink } from "./LocaleSwitchLink";
 
 export async function PublicShell({ locale, children }: { locale: "en" | "zh"; children: React.ReactNode }) {

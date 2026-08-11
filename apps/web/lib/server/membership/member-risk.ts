@@ -5,7 +5,7 @@ import { hashPersonalIdentifier, issueOpaqueToken, type MembershipPlan, type Pri
 import { membershipEntitlements } from "@tymra/domain";
 import { NextRequest, NextResponse } from "next/server";
 
-import { createChallengeProvider, type ChallengeDescriptor } from "./security-controls";
+import { createChallengeProvider, type ChallengeDescriptor } from "../security-controls";
 
 export const memberDeviceCookie = "tymra_device";
 export const MEMBER_RISK_POLICY_VERSION = "member-abuse-v1";

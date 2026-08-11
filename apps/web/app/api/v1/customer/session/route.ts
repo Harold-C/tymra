@@ -7,7 +7,7 @@ import {
   isCustomerSameOrigin,
   requireCustomerSession,
   revokeCustomerSession,
-} from "@/lib/server/customer-auth";
+} from "@/lib/server/membership/customer-auth";
 
 export async function GET(request: NextRequest) {
   try {

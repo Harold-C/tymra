@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { InvalidMagicLinkError, requestMagicLink } from "@/lib/server/magic-links";
+import { InvalidMagicLinkError, requestMagicLink } from "@/lib/server/membership/magic-links";
 
 export async function POST(request: NextRequest, { params }: { params: { checkId: string } }) {
   const ipAddress = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()

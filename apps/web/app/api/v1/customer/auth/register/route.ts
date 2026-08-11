@@ -5,10 +5,10 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
-import { createCustomerSession, isCustomerSameOrigin, setCustomerSessionCookie } from "@/lib/server/customer-auth";
-import { ensureFreeMembership } from "@/lib/server/membership";
-import { issueCustomerEmailVerification } from "@/lib/server/magic-links";
-import { ensureBenefitGroup, memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/member-risk";
+import { createCustomerSession, isCustomerSameOrigin, setCustomerSessionCookie } from "@/lib/server/membership/customer-auth";
+import { ensureFreeMembership } from "@/lib/server/membership/membership";
+import { issueCustomerEmailVerification } from "@/lib/server/membership/magic-links";
+import { ensureBenefitGroup, memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/membership/member-risk";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
 
 const schema = z.object({

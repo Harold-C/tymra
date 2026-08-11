@@ -2,7 +2,7 @@ import { prisma } from "@tymra/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 
 export default async function Page({ params }: { params: { locale: "en" | "zh"; pricingUnitId: string } }) {
   const session = await getCustomerSessionForPage();

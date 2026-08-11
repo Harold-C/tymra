@@ -1,90 +1,59 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
-## 基线与状态源
+## 状态源与代码边界
 
-产品范围由 [`product/`](./product/README.md) 下的本地文档控制；五份 Google Docs 已迁移并删除。
-当前实现和验证状态只在 [`traceability.md`](./traceability.md) 维护，稳定取舍写入
-[`decisions.md`](./decisions.md)，带运行 ID 的历史结果保存在 `evidence/`。本页只维护下一步顺序。
+产品合同由 [`product/`](./product/README.md) 控制，当前实现和验证状态只在
+[`traceability.md`](./traceability.md) 维护，稳定取舍写入 [`decisions.md`](./decisions.md)，
+带日期的历史运行保存在 `evidence/`。本页只维护当前差距和交付顺序。
 
-当前代码仍采用清晰的单仓库边界：
+代码按功能边界组织：Web、Worker 和共享 packages 的总体结构见
+[`architecture/codebase.md`](./architecture/codebase.md)；会员 UI、Admin 会员操作、服务端会员
+策略和会员调度分别拥有独立目录。公共匿名流程不得承载会员认证逻辑。
 
-```text
-apps/
-  web/                    Next.js 公共站点、客户流程、Admin 与 HTTP API
-  worker/                 队列、Scheduler、Worker API、采集和 Argus 编排
-packages/
-  config/ db/ domain/ providers/ queue/
-scripts/                  本地运维、验收与 Compose smoke
-docs/                     产品、架构、采集、证据、决策和状态
-```
+## 当前实现快照
 
-## 2026-08-06 实际快照
-
-- 当前交付包含 Argus 持久编排、公开来源验收、采集优化、Compose profile、安全与发布运维控制。
-  Git 提交状态不作为功能或验收事实源。
-- 本地 Compose 只保留 Web、Worker API、Worker、PostgreSQL、Redis 和 Mailpit；浏览器执行
-  由独立 Argus 服务提供。Scheduler 容器未运行，数据库中启用的计划数为 0。
-- Worker health/readiness 把 Argus 作为必需依赖。当前失败队列已分类：7 个 `FAILED` 中
-  4 个为历史/外部来源不可用、1 个历史来源 ID、1 个 RBNZ 权限门禁、1 个历史邮件；72 个
-  `DEAD_LETTER` 中 68 个是旧加密密钥下的邮件夹具、2 个是本轮修复前的 Argus 证据范围
-  回归、2 个是本轮修复前的 Ticketek 详情失败。它们均不是当前调度任务，未擅自重放或删除。
-- Argus health/readiness 通过；数据库迁移
-  `20260729093000_argus_execution_orchestration` 已应用，存在 33 个 `COMPLETED` 和 1 个
-  `CANCELLED` 的 `ArgusExecution`，没有活动执行。
-- Tymra Web/API/Worker 已用当前工作树重建，Web、Worker 和 Argus HTTPS health/readiness
-  返回 HTTP 200。School Sport 两轮跨服务实采通过；Argus 修复 Ticketek umbrella detail 后，
-  Ticketek listing/detail 两轮均成功且第二轮零增长。
+- 会员体系已实现独立邮箱/密码注册登录、Free 自动开户、邮箱验证、定价单位、额度、报告、
+  日历、风险归组、Admin 会员操作、Stripe 合同和开发环境 gated UI。付费与高级功能仍受
+  Launch Gate 约束，不得描述为生产可用。
+- 地址和 OTA URL 都归一到真实 Property；一个 Property 只占一个会员房源额度。30 天占位、
+  Benefit Group、设备/Property/付款主体和数据库唯一约束共同限制换地址及多账号套利。
+- 所有住宿业务日期使用 `Pacific/Auckland`；时间戳、证据和安全过期继续使用绝对 UTC。
+- OTA 执行范围固定为六个 active 渠道：Booking.com、Airbnb、Expedia、Bookabach、Agoda、
+  Trip.com。Wotif、Hotels.com、Vrbo 只保留禁用的合同兼容；Google Hotels 不在执行范围。
+- Argus 负责浏览器采集和证据生命周期；Tymra 负责身份、额度、竞品选择、市场信号、价格
+  建议和会员交付。开发 fixture 与真实公开页面结果必须明确隔离。
+- 2026-08-11 当前 P0/P1/P2 工作树通过 lint、全仓 TypeScript、202 个 Web/domain/provider/db
+  单元测试（5 个外部 fixture 跳过）、124 个 Worker 测试、104 个隔离 PostgreSQL 集成测试
+  以及 109 页生产构建。精确证据与未验证边界见追踪表。
 
 ## 当前优先级
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
-| P0 | 收口当前实现 | 删除两个带 ` 2` 的 Argus 旧副本；审查最终 diff；只保留唯一异步 Job client/test | 已完成 |
-| P0 | 完成当前工作树质量门槛 | 专用测试库上的 `pnpm verify` 和完整 `pnpm test:e2e` 通过 | 当前代码已通过 lint、类型、149 个根测试（5 个外部 provider fixture 跳过）、86 个 Worker 测试、74 个隔离数据库/API/Worker 集成测试和生产构建；桌面/移动各 9 个 E2E 为此前已通过证据，本轮地址确认交互由 API 集成回归覆盖，完整 E2E 未重跑 |
-| P0 | 核对本地运行栈与失败队列 | 当前工作树容器 health/readiness、迁移、队列与 Argus 恢复一致；历史失败已分类 | 已完成只读分类；未重放或删除历史/验收任务 |
-| P0 | 保持首页现有视觉与交互 | EN/ZH 桌面与移动端真实渲染、关键交互、可访问性和无横向溢出 | 已完成完整桌面/移动 E2E、axe 与真实 Browser 检查；无 console error |
-| P1 | 公开来源回归 | 在 Scheduler 关闭和专用开发数据边界下重跑全部来源两轮验收 | 34 个来源、68 pass 全部通过；第二轮均零增长，Argus execution 全部收口 |
-| P1 | Eventfinda 长期稳定性 | 目标环境全国持久抓取、多日无人值守、恢复、容量和告警证据 | 已实现可恢复 checkpoint、容量统计和失败率告警；本轮 2 cycle/4 pass 实采通过，长期验收待部署环境 |
-| P1 | Ticketmaster 实页稳定性 | 挑战冷却后重复有界实页验收，列表优先且无绕过 | 列表优先实现和自动化已通过；详情实页仍受外部挑战条件限制 |
-| P1 | 手工导入真实文件验收 | 真实运营导出文件完成两次持久化验收 | `not_verified`：缺少真实文件 |
-| P1 | Release 1.5 剩余项 | Retention、匿名漏斗分析、挑战/配额/会话边界测试完成 | 本地 deterministic challenge 与前端状态已验证；托管 provider 的服务端接口已完成，生产 vendor 配置、客户端组件与最终隐私批准仍是外部门槛 |
-| P1 | Event impact v2 | 结构化证据、可信场馆 enrichment、跨来源证据聚合、唯一信号和真实样本 pending/promotion | Tymra 侧已完成；人数证据与独立“官方规模 + 住宿需求”组合均有门槛，容量/重复刊登不提升；隔离数据库验证唯一 canonical signal 与完整 lineage |
-| P1 | 全国主要市场公开信号 | 15 个主要住宿市场具备全国发现、当地官方活动、住宿需求和扰动层 | Tymra 可直连的 14 个市场及 Dunedin Argus 路径已实现；ADP、TVF、MRTE、IVS、Stats NZ、DOC 关闭、Interislander 提醒、三大滑雪季窗口及主要航空流量已接入并通过有界实采/隔离落库 |
-| P1 | 全国地址身份解析 | 任意 NZ 街道地址先解析为标准地域身份，再进入 `FULL / REGIONAL / NATIONAL_ONLY` 信号路由；歧义不得自动选择 | LINZ 查询、进程 L1 + PostgreSQL L2、按结果 TTL、版本失效和 Redis 防击穿已实现；查询仅保存 HMAC，规范地址与候选关系独立于 Property，用户确认后才晋升 Property；重启后真实数据库命中及 17 Region 语料已验证 |
-| P2 | 生产采集启用 | 完成来源、容量、监控、回滚、安全和生产运维验收 | 开发环境已改为显式技术验证：不要求生命周期或既有 OTA 正记录并会尝试全部两轮；生产 release gate 保留，Scheduler 保持关闭 |
+| P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 本地 fake-Stripe 生命周期与 webhook 回归通过；真实 Stripe test account/browser 和生产凭证仍是外部门槛 |
+| P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 服务端合同、认证请求和失败路径已验证；生产 provider、容量和误判演练未执行 |
+| P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
+| P1 | 会员完整可访问性 | EN/ZH、桌面、390/320px 通过 axe serious/critical=0、全键盘、焦点、reduced motion 和错误状态 | 自动化会员路由矩阵已纳入 Playwright；当前运行结果见追踪表 |
+| P1 | Retention 生命周期 | 隔离数据库覆盖 Free/Host/Pro/Portfolio 及取消账户的独立保留期和 30 天房源占位 | 四档时间推进矩阵已通过 |
+| P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 聚合已实现并验证；生产 dashboard/alert 与注入演练仍是部署工作 |
+| P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 已提供显式 fail-closed 的 `test:e2e:member-live` 门禁；真实账号/输入/环境运行仍未执行 |
+| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 第一阶段拆分完成并通过类型、单元、集成及构建回归 |
+| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 安全保持关闭；不能用本地代码验证替代生产 canary 授权 |
 
 ## 交付顺序
 
-1. 先收口重复文件并审查未提交 diff，避免旧同步 Argus client 被误提交或以后被测试发现规则漏掉。
-2. 使用专用测试数据库运行当前工作树的 `pnpm verify`；UI 有变化时额外运行 `pnpm test:e2e`。
-3. 用当前工作树重建本地 Compose 应用，再核对 `/worker/health`、`/worker/readiness`、
-   Argus health/readiness、迁移状态和队列失败分类。
-4. 在 Scheduler 关闭、边界固定且不会覆盖用户数据库的条件下，重跑公开来源两轮真实验收。
-5. 在本地演练 Release 1.5 新入口暂停/恢复，确认旧结果链接的期限和权限边界不变。
-6. 本地门槛通过后，再在目标环境分别完成 Eventfinda 多日无人值守、生产来源 canary 和回滚验收。
-7. 只有实际证据完成后才更新 `traceability.md`；历史 evidence 文件不回写成实时状态。
+1. 在真实 Stripe test account 执行付费浏览器验收，并保存 webhook/数据库一致性证据。
+2. 配置生产托管 challenge provider，完成容量、失败注入和误判申诉演练。
+3. 使用 `pnpm test:e2e:member-live` 分别执行 OTA URL 与地址两条真实会员链路。
+4. 建立生产 dashboard/alert 后进行单来源 Scheduler canary；任何失败都不扩大采集范围。
 
 ## 已知边界
 
-- Tymra 已将 Booking.com、Airbnb、Expedia、Bookabach、Agoda 和 Trip.com 固定为六个 active OTA；Wotif、Hotels.com、Vrbo 仅保留合同兼容并默认禁用，不进入发现、健康门槛或生产声明。六个 active OTA 已实现 Argus listing 身份、地址驱动的有界竞品发现、目标与竞品费率采集、平台族标识、跨品牌去重、证据复制后 ACK、安全降级和证据驱动健康门槛。
-- Partner API 集成作为暂缓能力记录：未来取得正式凭证后，按届时最新官方合同重新实现、隔离凭证、补齐真实双轮验收与生产门槛，不从当前代码中恢复陈旧死代码。
-- Booking 开发公开浏览器路径已通过真实 Wellington UI 验收：正常首页点击产生真实 listing，并取得明确含税费的 NZD 246 all-in rate；discover/rates 均通过 Tymra v1 合同，HTML/截图哈希、ACK 后 410 与证据清理已验证。Expedia 当前公开路径保持为独立工作流，未启动浏览器，也不作为已覆盖来源。
-- Eventfinda 本地环境可验证实现、持久化、幂等、锁、租约和恢复逻辑，不能替代多日无人值守验收。
-- Ticketmaster 公开页面可能进入验证挑战；实现必须停止、冷却并保留证据，不得绕过。
-- 手工导入仍需要真实运营文件才能完成真实文件验收。
-- 当前宿主机默认 `PATH` 没有 Node.js；本轮通过 Codex workspace Node runtime 和项目 Docker
-  Node 24 镜像完成验证。
-- 当前 revision 的隔离 Compose smoke 已完成镜像构建、迁移、seed、Web、Worker API、Worker、
-  PostgreSQL、Redis 和 Mailpit 健康检查，并自动清理临时容器与卷。
-- 2026-08-06 统一 34 来源真实验收完成 68 pass，失败为 0，第二轮全部零增长；Eventfinda
-  额外 5 轮 soak 全部通过。该结果仍不替代目标环境多日无人值守验收。
-- `evidence/` 中的 2026-07-21 与 2026-07-30 结果都是历史快照，不代表今天的外部来源持续可用。
-- 全国主要市场当前实现口径与 2026-08-06 有界实采见
-  [`collection/nz-market-public-signal-coverage.md`](./collection/nz-market-public-signal-coverage.md)。14 个直连市场加 Dunedin Argus 路径均已实现，但不等于已证明多日稳定。已解析的新西兰地址现按 `FULL / REGIONAL / NATIONAL_ONLY` 降级，不再写死 Christchurch 或拒绝非 15 市场地址。
-- 全国地址身份第二阶段使用 LINZ 官方公开 ArcGIS Feature Service。标准结果包含规范地址、城市、
-  Region、Territorial Authority、RTO、邮编（仅输入或来源明确提供时）、WGS84 坐标和可信度；
-  多候选进入确认，低可信度不自动选择，显式 Region 冲突的候选会被排除。L2 缓存只保存 HMAC
-  查询指纹、公开规范地址、有序候选、解析器版本和有效期，不保存原始查询、邮箱、会话或价格数据；
-  UNIQUE / MULTIPLE / NONE 分别缓存 7 天 / 24 小时 / 1 小时。候选在确认前不会创建 Property 或 Unit。
+- 一条有效公开 OTA 目标价格必须交付给用户；证据不足只限制市场结论和推荐置信度，不得抹掉
+  已观察价格。不能访问、条件漂移或仅有受限价格时仍必须 fail closed。
+- 精确逐日价格范围与方案权益按会员合同执行；未采集日期显示“无公开 OTA 观测”，不得补值。
+- CAPTCHA 只能由 Argus 暂停同一 Page/BrowserContext 并提供短期 noVNC 人工接管，不自动绕过。
+- 历史 `evidence/` 证明当时的开发验收，不保证外部页面长期稳定、生产容量或 SLA。
+- 手工导入仍缺少真实运营导出文件的两轮持久化验收。

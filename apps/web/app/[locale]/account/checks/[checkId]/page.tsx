@@ -1,5 +1,5 @@
-import { CustomerCheckExperience } from "@/components/public/CustomerAccountViews";
-import { getCustomerSessionForPage } from "@/lib/server/customer-auth";
+import { CustomerCheckExperience } from "@/components/member/CustomerAccountViews";
+import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 import { redirect } from "next/navigation";
 
 export default async function CustomerCheckPage({ params }: { params: { locale: "en" | "zh"; checkId: string } }) {

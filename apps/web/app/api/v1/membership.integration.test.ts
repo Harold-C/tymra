@@ -1,19 +1,20 @@
 import { randomUUID } from "node:crypto";
 
+import { environmentSchema } from "@tymra/config";
 import { encryptPersonalData, hashPersonalIdentifier, issueOpaqueToken, prisma } from "@tymra/db";
 import { NextRequest } from "next/server";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { ensureFreeMembership, MembershipAccessError, MembershipOperationError, reserveMembershipOperation, reserveSpotCheck, runMembershipTransaction, setPricingUnitActive } from "@/lib/server/membership";
-import { bindMemberRiskContext, ensureBenefitGroup, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "@/lib/server/member-risk";
-import { claimPromotion } from "@/lib/server/stripe-billing";
-import { consumeMagicLink, InvalidMagicLinkError } from "@/lib/server/magic-links";
+import { ensureFreeMembership, MembershipAccessError, MembershipOperationError, reserveMembershipOperation, reserveSpotCheck, runMembershipTransaction, setPricingUnitActive } from "@/lib/server/membership/membership";
+import { bindMemberRiskContext, ensureBenefitGroup, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "@/lib/server/membership/member-risk";
+import { claimPromotion } from "@/lib/server/membership/stripe-billing";
+import { consumeMagicLink, InvalidMagicLinkError } from "@/lib/server/membership/magic-links";
 import { POST as passwordSignIn, PUT as changePassword } from "./customer/auth/password/route";
 import { POST as registerCustomer } from "./customer/auth/register/route";
 import { POST as appealRiskCase } from "./customer/risk/route";
 import { POST as confirmQuery } from "./price-checks/[checkId]/confirm-query/route";
 import { POST as createPriceCheck } from "./price-checks/route";
-import { enqueueDueMembershipAnalyses } from "../../../../worker/src/membership-scheduler";
+import { enqueueDueMembershipAnalyses } from "../../../../worker/src/membership/scheduler";
 
 const prefix = `membership:${randomUUID()}`;
 const customerIds: string[] = [];
@@ -237,15 +238,75 @@ describe("membership persistence and enforcement", () => {
   });
 
   it("processes a signed-event payload identity only once after construction", async () => {
-    const { processStripeEvent } = await import("@/lib/server/stripe-billing");
+    const { processStripeEvent } = await import("@/lib/server/membership/stripe-billing");
     const event = { id: `${prefix}:stripe`, type: "invoice.paid", data: { object: { customer: "cus_missing" } } };
     await expect(processStripeEvent(event as never, JSON.stringify(event))).resolves.toEqual({ duplicate: false });
     await expect(processStripeEvent(event as never, JSON.stringify(event))).resolves.toEqual({ duplicate: true });
     expect(await prisma.stripeBillingEvent.count({ where: { stripeEventId: event.id, processedAt: { not: null } } })).toBe(1);
   });
 
+  it("completes the Stripe test lifecycle for checkout, portal, plan changes, cancellation and resume", async () => {
+    const { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, createMembershipPortal, resumeMembershipRenewal, setStripeTestRuntime } = await import("@/lib/server/membership/stripe-billing");
+    const customer = await createCustomer("stripe-lifecycle");
+    const calls: string[] = [];
+    const subscription = {
+      id: `sub_${prefix}`,
+      status: "active",
+      customer: `cus_${prefix}_lifecycle`,
+      cancel_at_period_end: false,
+      metadata: { customerUserId: customer.id, membershipPlan: "HOST" },
+      schedule: null,
+      items: { data: [{ id: `si_${prefix}`, current_period_start: 1_786_252_800, current_period_end: 1_788_931_200, quantity: 1, price: { id: "price_host" } }] },
+    };
+    const fakeStripe = {
+      prices: { retrieve: async (id: string) => ({ id, active: true, currency: "nzd", type: "recurring", recurring: { interval: "month" }, unit_amount: id === "price_host" ? 2_900 : id === "price_pro" ? 8_900 : 24_900, tax_behavior: "inclusive" }) },
+      customers: { create: async () => { calls.push("customer"); return { id: `cus_${prefix}_lifecycle` }; } },
+      checkout: { sessions: { create: async () => { calls.push("checkout"); return { url: "https://checkout.stripe.test/session" }; } } },
+      billingPortal: { sessions: { create: async () => { calls.push("portal"); return { url: "https://billing.stripe.test/session" }; } } },
+      subscriptions: {
+        retrieve: async () => subscription,
+        update: async (_id: string, input: { cancel_at_period_end?: boolean }) => { calls.push(input.cancel_at_period_end === true ? "cancel" : input.cancel_at_period_end === false ? "resume" : "upgrade"); subscription.cancel_at_period_end = input.cancel_at_period_end ?? subscription.cancel_at_period_end; return subscription; },
+      },
+      subscriptionSchedules: {
+        create: async () => ({ id: `sched_${prefix}`, phases: [{ start_date: subscription.items.data[0].current_period_start }] }),
+        retrieve: async () => ({ id: `sched_${prefix}`, phases: [{ start_date: subscription.items.data[0].current_period_start }] }),
+        update: async () => { calls.push("downgrade"); return { id: `sched_${prefix}` }; },
+      },
+    };
+    const environment = environmentSchema.parse({
+      ...process.env,
+      BILLING_ENABLED: "true",
+      STRIPE_SECRET_KEY: "sk_test_lifecycle",
+      STRIPE_WEBHOOK_SECRET: "whsec_lifecycle",
+      STRIPE_PORTAL_CONFIGURATION_ID: "bpc_lifecycle",
+      STRIPE_HOST_PRICE_ID: "price_host",
+      STRIPE_PRO_PRICE_ID: "price_pro",
+      STRIPE_PORTFOLIO_PRICE_ID: "price_portfolio",
+      MEMBERSHIP_HOST_LAUNCH_ENABLED: "true",
+      MEMBERSHIP_PRO_LAUNCH_ENABLED: "true",
+      MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true",
+    });
+    setStripeTestRuntime(fakeStripe as never, environment);
+    try {
+      await expect(createMembershipCheckout(customer.id, "HOST")).resolves.toEqual({ url: "https://checkout.stripe.test/session" });
+      const membership = await prisma.membershipSubscription.findUniqueOrThrow({ where: { customerUserId: customer.id } });
+      expect(membership.stripeCustomerId).toBe(`cus_${prefix}_lifecycle`);
+      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "HOST", stripeSubscriptionId: subscription.id, stripePriceId: "price_host" } });
+      await expect(createMembershipPortal(customer.id)).resolves.toEqual({ url: "https://billing.stripe.test/session" });
+      await expect(changeMembershipPlan(customer.id, "PRO")).resolves.toMatchObject({ mode: "UPGRADE_PENDING_PAYMENT", pendingPlan: "PRO" });
+      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "PRO", pendingPlan: null, stripePriceId: "price_pro" } });
+      subscription.items.data[0].price.id = "price_pro";
+      await expect(changeMembershipPlan(customer.id, "HOST")).resolves.toMatchObject({ mode: "DOWNGRADE_SCHEDULED", pendingPlan: "HOST" });
+      await expect(cancelMembershipAtPeriodEnd(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: true });
+      await expect(resumeMembershipRenewal(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: false });
+      expect(calls).toEqual(["customer", "checkout", "portal", "upgrade", "downgrade", "cancel", "resume"]);
+    } finally {
+      setStripeTestRuntime();
+    }
+  });
+
   it("links only HMAC payment fingerprints and opens review cases for reuse and refunds", async () => {
-    const { processStripeEvent } = await import("@/lib/server/stripe-billing");
+    const { processStripeEvent } = await import("@/lib/server/membership/stripe-billing");
     const customers = await Promise.all([createCustomer("payment-1"), createCustomer("payment-2"), createCustomer("payment-3")]);
     for (const [index, customer] of customers.entries()) {
       await prisma.$transaction(async (transaction) => {
@@ -286,7 +347,7 @@ describe("membership persistence and enforcement", () => {
   });
 
   it("does not let an older Stripe event overwrite newer membership state", async () => {
-    const { processStripeEvent } = await import("@/lib/server/stripe-billing");
+    const { processStripeEvent } = await import("@/lib/server/membership/stripe-billing");
     const customer = await createCustomer("stripe-ordering");
     const stripeCustomerId = `cus_${prefix}`;
     await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "HOST", status: "ACTIVE", stripeCustomerId } });

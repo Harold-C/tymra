@@ -1,9 +1,9 @@
 import { getEnvironment } from "@tymra/config";
 import { NextRequest, NextResponse } from "next/server";
 
-import { setCustomerSessionCookie } from "@/lib/server/customer-auth";
-import { consumeMagicLink } from "@/lib/server/magic-links";
-import { memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/member-risk";
+import { setCustomerSessionCookie } from "@/lib/server/membership/customer-auth";
+import { consumeMagicLink } from "@/lib/server/membership/magic-links";
+import { memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/membership/member-risk";
 
 export async function GET(request: NextRequest, { params }: { params: { locale: string } }) {
   const locale = params.locale === "zh" ? "zh" : "en";

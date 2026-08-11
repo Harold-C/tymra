@@ -8,7 +8,7 @@ import {
 } from "@tymra/db";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { InvalidMagicLinkError, consumeMagicLink } from "@/lib/server/magic-links";
+import { InvalidMagicLinkError, consumeMagicLink } from "@/lib/server/membership/magic-links";
 
 const prefix = `customer-security:${randomUUID()}`;
 const created = {

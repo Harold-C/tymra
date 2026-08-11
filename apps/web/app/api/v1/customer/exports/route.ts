@@ -2,8 +2,8 @@ import { prisma } from "@tymra/db";
 import { NextRequest, NextResponse } from "next/server";
 
 import { apiError, apiException } from "@/lib/server/api";
-import { CustomerAuthenticationError, requireCustomerSession } from "@/lib/server/customer-auth";
-import { MembershipAccessError, MembershipOperationError, reserveMembershipOperation } from "@/lib/server/membership";
+import { CustomerAuthenticationError, requireCustomerSession } from "@/lib/server/membership/customer-auth";
+import { MembershipAccessError, MembershipOperationError, reserveMembershipOperation } from "@/lib/server/membership/membership";
 
 export async function GET(request: NextRequest) {
   try {

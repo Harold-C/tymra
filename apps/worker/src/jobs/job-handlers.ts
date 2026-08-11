@@ -23,7 +23,7 @@ import {
   type EmailProvider,
 } from "@tymra/providers";
 import { WorkerService } from "../services/worker-service";
-import { enqueueDueMembershipAnalyses } from "../membership-scheduler";
+import { enqueueDueMembershipAnalyses } from "../membership/scheduler";
 import {
   acknowledgePersistedArgusResults,
   pollArgusExecution,
