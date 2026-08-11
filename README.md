@@ -92,7 +92,6 @@ Local endpoints:
 | Service | URL or port |
 | --- | --- |
 | Public Web | `https://tymra.test/en` and `https://tymra.test/zh` |
-| Direct Web fallback | `http://localhost:3000/en` |
 | Operations | `https://ops.tymra.test/admin/sign-in` |
 | Worker diagnostics | `https://worker.tymra.test/worker/health` and `/worker/readiness` |
 | Direct Worker API fallback | `http://localhost:3100` (loopback only) |

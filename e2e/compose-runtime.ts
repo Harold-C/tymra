@@ -50,7 +50,7 @@ function waitForPublicRoute(environment: NodeJS.ProcessEnv) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
-      execFileSync("curl", ["--silent", "--show-error", "--fail", "--max-time", "5", "http://localhost:3000/en"], {
+      execFileSync("curl", ["--silent", "--show-error", "--fail", "--max-time", "5", "https://tymra.test/en"], {
         env: environment,
         stdio: "ignore",
       });

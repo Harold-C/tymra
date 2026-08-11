@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export function generateMetadata({ params }: { params: { locale: Locale } }): Metadata {
   const chinese = params.locale === "zh";
   return {
-    title: chinese ? "会员与价格 | Tymra by Synix" : "Membership & pricing | Tymra by Synix",
+    title: chinese ? "会员方案与价格 | Tymra by Synix" : "Membership Plans & Pricing | Tymra by Synix",
     description: chinese
       ? "比较 Tymra Free、Host、Pro 和 Portfolio 会员方案、房源额度与未来价格覆盖范围。"
       : "Compare Tymra Free, Host, Pro and Portfolio memberships, property allowances and future-price coverage.",

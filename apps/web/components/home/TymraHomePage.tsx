@@ -621,6 +621,14 @@ function SearchCard({
 
         <div className="relative">
           <SearchSupportingInfo copy={t} />
+          <p className="mt-3 text-center text-[0.84rem] font-semibold text-[#41506B]">
+            <Link
+              className="text-[#0969FF] underline decoration-[#93C5FD] underline-offset-4 transition hover:text-[#0758D2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB]"
+              href={`/${locale}/address-check`}
+            >
+              {t.search.addressCta}
+            </Link>
+          </p>
         </div>
 
         <div id="home-search-support" className="sr-only">
@@ -885,7 +893,13 @@ function FinalCTA({ copy: t, locale }: { copy: HomeCopy; locale: Locale }) {
             {t.finalCta.note}
           </p>
         </div>
-        <div className="flex flex-none items-center max-lg:w-full max-lg:items-stretch">
+        <div className="flex flex-none flex-wrap items-center justify-end gap-3 max-lg:w-full max-lg:items-stretch max-lg:justify-start">
+          <Link
+            href={`/${locale}/address-check`}
+            className="inline-flex h-[56px] min-w-[210px] items-center justify-center rounded-[12px] border border-[#A9C5EA] bg-white/80 px-5 text-[0.9rem] font-bold text-[#0758D2] transition hover:-translate-y-0.5 hover:border-[#7EACE8] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] max-lg:min-w-0"
+          >
+            {t.finalCta.secondary}
+          </Link>
           <Link
             href={`/${locale}/check`}
             className="inline-flex h-[56px] min-w-[250px] items-center justify-center gap-3 rounded-[12px] bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_45%,#7C3AED_100%)] px-6 text-[0.94rem] font-bold text-white shadow-[0_14px_30px_rgba(37,99,235,0.24)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] max-lg:min-w-0"

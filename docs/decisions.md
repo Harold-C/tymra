@@ -578,7 +578,7 @@ dated record.
 
 ## D-037 Require A Verified OTA Listing After Address Discovery
 
-**Status:** Tymra implementation complete; cross-service acceptance pending.
+**Status:** Superseded for address benchmarks by D-048; retained for target-listing price claims.
 
 **Decision:** A confirmed LINZ address supplies geographic identity and public-signal routing, but
 does not prove an accommodation listing, sellable unit or price. Address-first Price Checks must
@@ -845,3 +845,28 @@ credentials, provider capacity, production monitoring and commercial approval re
 **Verification:** Configuration tests enforce gate dependencies and managed-challenge production
 requirements; server/integration tests cover authenticated provider verification, Stripe lifecycle,
 quota and retention; `test:e2e:member-live` is the explicit external acceptance command.
+
+## D-048 Support Listing Pricing And Address Benchmarks As Separate Analysis Modes
+
+**Status:** Implemented locally; live address-benchmark provider acceptance remains external.
+
+**Decision:** Tymra accepts two explicit member Price Check modes. `LISTING_PRICING` verifies a
+supported target OTA Listing and returns target-property prices. `LOCATION_BENCHMARK` verifies a
+real New Zealand address, searches supported OTA sources around that spatial anchor and returns
+every valid nearby public price as a neighbourhood benchmark without requiring or inventing a
+target Listing. One valid price applicable to either mode makes the price result successful;
+comparable or market-signal weakness affects only the recommendation. An address and any supported
+OTA links resolved to the same physical Property share one property slot.
+
+This decision supersedes D-037's requirement that every address-first check acquire a target OTA
+Listing. D-037 remains the historical Listing-first safety rationale and continues to apply whenever
+Tymra claims a price belongs to the member's own accommodation.
+
+**Reason:** Some members want a target-listing price comparison, while others only need evidence of
+what nearby accommodation is publicly charging. Treating the second case as a first-class benchmark
+preserves useful evidence without falsely attributing a nearby rate to the submitted address.
+
+**Verification:** Domain, API and membership integration tests distinguish the two analysis modes,
+enforce stable physical-Property quota identity, return a single valid applicable observation and
+keep recommendation status independent. Public EN/ZH browser checks verify separate OTA-link and
+address entry points. Production launch still requires a bounded real-provider address-benchmark run.

@@ -12,10 +12,9 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   use: {
-    // Hit the published web port directly for public routes. The shared local Traefik
-    // instance is still covered by admin navigations without making every assertion
-    // vulnerable to its asynchronous container refresh.
-    baseURL: "http://localhost:3000",
+    // All browser-visible local development flows use the canonical Traefik origin.
+    // The loopback container port is reserved for internal health probes only.
+    baseURL: "https://tymra.test",
     ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

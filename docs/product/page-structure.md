@@ -26,6 +26,7 @@
 
 • /{locale}：首页。  
 • /{locale}/check：创建 Price Check 和识别房源。  
+• /{locale}/address-check：从具体 OTA Listing 或真实新西兰地址创建正式 Price Check；两种分析模式明确分开，地址模式不要求目标 OTA Listing。
 • /{locale}/check/{checkId}/property：Property 候选确认。  
 • /{locale}/check/{checkId}/unit：Sellable Unit 确认。  
 • /{locale}/check/{checkId}/query：Stay Query 确认。  
@@ -64,7 +65,7 @@
 
 ### 2.5.1 公共认证
 
-• `/{locale}/pricing`：公开双语会员与价格页，比较 Free、Host、Pro、Portfolio 的含 GST 新西兰元月费、实体房源额度、精确逐日价格范围、监测范围、检查/调度频率和已通过的功能门槛；未通过生产 Launch Gate 的方案必须标记为尚未开放且不可购买。
+• `/{locale}/pricing`：公开双语会员方案与价格页，比较 Free、Host、Pro、Portfolio 的含 GST 新西兰元月费、实体房源额度、精确逐日价格检查范围、监测范围、检查/调度频率和已通过的功能门槛；未通过生产 Launch Gate 的方案必须标记为尚未开放且不可购买。
 • `/{locale}/sign-in`：独立会员登录，使用会员邮箱和密码；不得要求先创建 Price Check，也不提供通用 Magic Link 登录。
 • `/{locale}/sign-up`：创建 Free 会员账户，要求邮箱、至少 12 位密码、确认密码及服务条款同意；注册不得创建价格任务或消耗额度。
 • `/{locale}/auth/verify`：消费 unlock 或 sign-in 专用 token，建立干净客户会话后移除 URL 中的 token。
@@ -77,7 +78,7 @@
 • `/{locale}/account/checks/{checkId}`：目标 OTA 价格、推荐、竞品、市场信号和限制原因详情，仅所属客户可读。
 • `/{locale}/account/pricing-units`：有效/无效定价单位、使用量、添加和启停入口。
 • `/{locale}/account/pricing-units/{pricingUnitId}`：单一定价单位的 OTA 身份、入住配置、采集状态、最近价格和可用控制。
-• `/{locale}/account/calendar`：按照方案展示精确逐日价格范围和单独标记的监测扩展范围。
+• `/{locale}/account/calendar`：按照方案展示精确逐日价格检查范围和单独标记的监测扩展范围。
 • `/{locale}/account/alerts`：提醒历史及方案允许的通知设置；Host+ 且对应门槛通过后开放。
 • `/{locale}/account/portfolio`：跨定价单位优先级、分组和批量控制；Pro/Portfolio 门槛通过后开放。
 • `/{locale}/account/exports`：导出任务和下载历史；Pro/Portfolio 门槛通过后开放。
@@ -87,7 +88,7 @@
 
 ### 2.5.3 会员导航
 
-公开 Header 固定显示“会员与价格 / Membership & Pricing”。无有效客户会话时同时显示“会员登录 / Member sign in”；存在有效客户会话时显示“会员账户 / Account”和“退出 / Sign out”。这些入口必须在桌面、平板和移动菜单中连续可达。客户导航至少包含概览、定价单位、价格检查和设置。账单入口对所有会员可见；计划功能入口只有在方案权益和生产 Launch Gate 同时有效时才可交互。
+公开 Header 固定显示“会员方案 / Plans & Pricing”。无有效客户会话时同时显示“会员登录 / Member Sign In”；存在有效客户会话时显示“会员账户 / Account”和“退出 / Sign out”。这些入口必须在桌面、平板和移动菜单中连续可达。客户导航至少包含概览、定价单位、价格检查和设置。账单入口对所有会员可见；计划功能入口只有在方案权益和生产 Launch Gate 同时有效时才可交互。
 
 不得把未开放功能显示为可购买或可执行。可以在方案比较中说明目标权益及“尚未开放”，但账户导航不能指向空白页、静态假页面或绕过门槛的 API。
 
@@ -201,11 +202,11 @@ Memberships 页按待处理风险排序，Billing Events 页按未处理/失败�
 
 ## 3.1 Header
 
-桌面从左到右：Logo、How It Works、What You’ll Get、Membership & Pricing、Methodology、FAQ、Contact、中文／English、会员登录（登录后为账户和退出）、Run Free Price Check。首页的主 CTA 平滑定位并聚焦首页核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端保留 Logo、语言切换和 Hamburger，会员与价格、会员登录/账户及主 CTA 均在菜单中可达，主 CTA 固定在菜单底部。
+桌面从左到右：Logo、How It Works、What You’ll Get、Plans & Pricing、Methodology、FAQ、Contact、中文／English、Member Sign In（登录后为 Account 和 Sign out）、Run Free Price Check。首页的主 CTA 平滑定位并聚焦首页核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端保留 Logo、语言切换和 Hamburger，会员方案、会员登录/账户及主 CTA 均在菜单中可达，主 CTA 固定在菜单底部。
 
 ## 3.2 Footer
 
-品牌说明；Product：Free Price Check、Membership & Pricing、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。只显示真实存在的链接。
+品牌说明；Product：Free Price Check、Plans & Pricing、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。只显示真实存在的链接。
 
 ## 3.3 公共系统条
 
@@ -220,9 +221,10 @@ Memberships 页按待处理风险排序，Billing Events 页按未处理/失败�
 英文核心价值：Find the dates you may be selling too cheaply.  
 中文主标题：你的哪些高价值日期可能卖便宜了？  
 中文核心价值：快速发现低价风险、竞品差距和市场上涨信号。  
-Search Placeholder：Search a New Zealand property, address, or listing URL／输入新西兰房源名称、地址或房源链接。  
-主 CTA：Run Free Price Check／免费检查房价。  
-辅助说明：New Zealand properties only · No credit card required／目前仅支持新西兰房源 · 无需信用卡。
+首页 Search Card 的主输入只接受受支持的新西兰 OTA Listing URL；不得让地址看起来可以提交到仅支持 URL 的粗略检查接口。
+主 CTA：Check This Listing／检查这个房源。
+Search Card 下方必须提供独立且可聚焦的地址入口：No listing link? Benchmark a New Zealand address／没有房源链接？查询新西兰地址周边行情，并进入 `/{locale}/address-check`。
+辅助说明必须同时表达：支持新西兰真实地址、无需信用卡、无需先设置日期或房型、不会自动改价。
 
 ## 4.2 Capability Preview
 
@@ -230,11 +232,11 @@ Search Placeholder：Search a New Zealand property, address, or listing URL／�
 
 ## 4.3 How It Works
 
-三步：Search your property；Tymra checks comparable market data；Review the dates that may need attention。说明结果可能异步完成，用户会获得 Check ID 和邮件通知。
+三步：选择受支持 OTA 链接或真实新西兰地址；查看与入口匹配的目标房源信号或周边行情基准；验证并查看正式报告。说明结果可能异步完成，地址基准不得伪装成目标房源价格。
 
 ## 4.4 What You’ll Get
 
-说明一个 Sellable Unit、未来 30 天、最多 5 个重点日期、聚合竞品区间、风险、置信度、市场信号、建议和限制。不展示 Release 2 的持续监控为当前能力。
+公开能力预览说明一个目标 Listing 或一个地址周边基准、适用价格观察、重点日期、聚合竞品区间、风险、置信度、市场信号、建议和限制。会员登录后的精确逐日价格检查范围与长期监测范围按方案权益展示，不得固定写成所有用户未来 30 天。
 
 ## 4.5 Methodology Summary
 
@@ -250,7 +252,7 @@ Search Placeholder：Search a New Zealand property, address, or listing URL／�
 
 ## 4.8 Final CTA
 
-重复核心价值并链接 /{locale}/check。不得引导注册或选择套餐。
+重复核心价值；主操作链接 `/{locale}/check`，并提供进入 `/{locale}/address-check` 的次操作。首页不得把地址基准描述成目标房源定价，也不得强制先选择套餐。
 
 # \[PG-CHECK\] 五、创建 Price Check /{locale}/check
 

@@ -110,6 +110,11 @@ test.describe("public Release 1", () => {
     expect(serious).toEqual([]);
     await expect(page.getByLabel(locale === "en" ? "Paste a supported New Zealand OTA listing URL" : "粘贴受支持的新西兰 OTA 房源链接")).toBeVisible();
     await expect(page.locator("#price-check-search-card").getByRole("button", { name: locale === "en" ? "Check This Listing" : "检查这个房源" })).toBeVisible();
+    const addressEntry = page.getByRole("link", { name: locale === "en" ? "No listing link? Benchmark a New Zealand address" : "没有房源链接？查询新西兰地址周边行情", exact: true }).first();
+    await expect(addressEntry).toBeVisible();
+    await addressEntry.click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/address-check$`));
+    await expect(page.getByRole("radio", { name: locale === "en" ? /Benchmark a real address/ : /查询真实地址周边行情/ })).toBeVisible();
   });
 
   test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {
@@ -343,26 +348,15 @@ test.describe("member accessibility and responsive contract", () => {
   const email = `member-accessibility-${Date.now()}@tymra.test`;
   const password = "member accessibility test password";
   let customerId = "";
-  let membershipRequestOrigin = "";
 
   test.beforeAll(async ({ request }) => {
-    let responseText = "";
-    let body: { data: { customer: { id: string } } } | undefined;
-    for (const candidateOrigin of ["http://localhost:3000", "https://tymra.test"]) {
-      const response = await request.post("http://localhost:3000/api/v1/customer/auth/register", {
-        headers: { origin: candidateOrigin, "x-forwarded-for": "198.51.100.80" },
-        data: { email, password, locale: "en", serviceConsent: true },
-      });
-      responseText = await response.text();
-      if (response.status() === 201) {
-        body = JSON.parse(responseText) as { data: { customer: { id: string } } };
-        membershipRequestOrigin = candidateOrigin;
-        break;
-      }
-      expect(response.status(), responseText).toBe(403);
-    }
-    expect(body, responseText).toBeDefined();
-    if (!body) throw new Error(responseText);
+    const response = await request.post("https://tymra.test/api/v1/customer/auth/register", {
+      headers: { origin: "https://tymra.test", "x-forwarded-for": "198.51.100.80" },
+      data: { email, password, locale: "en", serviceConsent: true },
+    });
+    const responseText = await response.text();
+    expect(response.status(), responseText).toBe(201);
+    const body = JSON.parse(responseText) as { data: { customer: { id: string } } };
     customerId = body.data.customer.id;
     await prisma.customerUser.update({ where: { id: customerId }, data: { emailVerifiedAt: new Date() } });
   });
@@ -374,11 +368,7 @@ test.describe("member accessibility and responsive contract", () => {
   test("EN/ZH member routes pass axe, keyboard, reduced-motion and compact-width checks", async ({ page }, testInfo) => {
     test.slow();
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const memberOrigin = "http://localhost:3000";
-    expect(membershipRequestOrigin, "one configured public origin must accept member registration").not.toBe("");
-    await page.route("**/api/v1/customer/auth/password", async (route) => {
-      await route.continue({ headers: { ...route.request().headers(), origin: membershipRequestOrigin } });
-    });
+    const memberOrigin = "https://tymra.test";
     await goto(page, `${memberOrigin}/en/sign-in?returnTo=${encodeURIComponent("/en/account")}`);
     await page.getByLabel("Membership email").fill(email);
     await page.getByLabel("Password").fill(password);

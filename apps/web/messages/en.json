@@ -49,7 +49,7 @@
     "coverageIntro": "Your plan controls how many physical properties you can monitor and how far ahead Tymra can produce exact daily decisions. Broader monitoring is contextual — it is never presented as continuously observed daily pricing.",
     "propertyTitle": "One physical property, one slot",
     "propertyBody": "An address and supported OTA links matched to the same accommodation share one property slot. Changing the URL or address spelling does not create a new allowance.",
-    "dailyTitle": "Exact daily-price window",
+    "dailyTitle": "Exact daily price-check window",
     "dailyBody": "Within this window, Tymra attempts an evidence-backed target-price decision for each New Zealand stay date covered by your plan.",
     "monitoringTitle": "Monitoring horizon",
     "monitoringBody": "Tymra watches relevant market signals and selected OTA dates farther ahead, but clearly labels dates that have not received exact daily collection.",

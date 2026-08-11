@@ -1,12 +1,22 @@
 # Tymra by Synix 业务规则
 
-## 状态：Active — Release 1 Business Rules Baseline v1.2｜基线集合：Tymra Release 1 Codex Build Baseline v1.2｜基线日期：2026-07-16
+## 状态：Active — Release 1 Business Rules Baseline v1.3｜基线集合：Tymra Release 1 Codex Build Baseline v1.2 + Post-Release Membership｜最后更新：2026-08-11
 
 文档定位：本文件是 Tymra Release 1 的可执行业务契约，定义领域对象、状态机、自动发布、异常触发、数据采集、市场数据库、竞品、质量、风险、结果、安全链接、接口、通知、审计和验收规则。Codex 必须按本文件实现，不得自行创造业务状态、默认值或生产降级行为。页面路由见《页面结构》，视觉组件见《视觉交互》，产品范围及技术默认值见《需求说明》。
 
 ## 基线控制
 
 当前生效范围为 Tymra Release 1 Codex Build Baseline v1.2。Phase 0 仅作为历史；Release 2 及以后规则不进入当前实现。《需求说明》高于《业务规则》，《业务规则》高于《页面结构》和《视觉交互》。本文件只定义可执行的领域对象、状态、阈值、默认值与接口契约，不定义页面构图、视觉尺寸或动效；下游文档必须引用 BR-\* 标识，不得复制或改写业务状态。章节标识 BR-\* 必须进入 docs/traceability.md。任何未明确的算法权重、相似度阈值和风险分数必须做成服务端配置，不得写死在前端，也不得在公开接口返回。
+
+### Post-Release 分析模式覆盖规则（2026-08-11）
+
+会员体系批准了两个并列的正式分析模式，本节覆盖下文仅适用于 Release 1 Listing-first 流程的旧限制：
+
+- `LISTING_PRICING` 必须验证受支持目标 OTA Listing，返回目标房源的所有有效公开价格。
+- `LOCATION_BENCHMARK` 必须确认真实新西兰地址，但不要求目标 OTA Listing；系统返回符合查询条件的附近公开住宿价格，并始终标记为周边行情基准。
+- 任一模式只要获得至少一个可验证、可归属且条件匹配的公开价格，价格结果即成功；证据不足只能限制推荐，不得隐藏或降级该价格。
+- 地址基准不得把附近价格称为该地址的自有价格，也不得生成无目标价格证据的房源级调价结论。
+- 同一物理 Property 的地址与 OTA 链接共用一个会员房源额度；更换地址写法、渠道或 URL 不产生新额度。
 
 # \[BR-GEN\] 一、系统原则
 
@@ -128,14 +138,17 @@ Authority、RTO、经纬度和国家字段，不得写死 Christchurch。地址�
 有效结果。搜索和展示候选不得创建 Property 或 SellableUnit，只有用户明确确认或 Worker 已取得
 唯一可信身份并实际开始分析时才能晋升为业务实体。
 
-地址晋升为 Property 后，如尚无已验证 OTA Listing，必须要求用户补充受支持的公开 OTA 房源
-链接。Tymra 通过只读 Argus Job 比较国家、城市/Region、地址文本和坐标；冲突或位置
-精度不足不得自动绑定。只有验证通过的 Listing 和来源明确返回的 Sellable Unit 才能进入真实
-费率采集。来源挑战、无匹配费率或价格组成不完整时必须返回 `SOURCE_UNAVAILABLE` 或
-`INSUFFICIENT_DATA`，不得使用 fixture 或推断价格补齐。
+地址晋升为 Property 后，`LISTING_PRICING` 必须要求并验证受支持的公开 OTA 房源链接。
+`LOCATION_BENCHMARK` 则以已确认地址作为空间锚点，通过只读 Argus Job 搜索附近公开 Listing，
+无需把其中任何一个绑定成目标房源。Tymra 必须比较国家、城市/Region、地址文本、坐标和距离；
+冲突或位置精度不足不得自动绑定。Listing 模式只有验证通过的目标 Listing 和来源明确返回的
+Sellable Unit 才能进入目标费率采集；地址模式只返回可验证的附近公开价格。来源挑战或无匹配
+价格时返回明确受限状态；价格组成不完整但来源明确公开了有效金额时保留原始价格口径，不得
+使用 fixture、推算费用或把附近价格伪装成目标房源价格。
 
 目标价成功后可以执行一次用户触发的有界竞品发现，最多保留 8 个竞品 Listing。Booking.com、
-Airbnb、Expedia、Wotif、Hotels.com、Bookabach、Vrbo、Agoda 和 Trip.com 使用同一费率语义。
+Airbnb、Expedia、Bookabach、Agoda 和 Trip.com 使用同一费率语义；Wotif、Hotels.com 和 Vrbo
+仅保留禁用兼容合同，不进入发现、健康门槛或完成声明。
 同一真实 Property/Sellable Unit 的跨品牌报价可以保留为证据，但分析时只能计为一个竞品；
 会员价、App 专享价或费用不完整的结果必须显式标记，不能混入公开匿名完整总价。
 

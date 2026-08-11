@@ -33,7 +33,8 @@ never changes source configuration and cannot enable schedules.
 ## Current Worktree Verification (2026-08-11)
 
 The current revision includes the complete development membership surface, P0/P1/P2 anti-abuse
-controls, New Zealand business-date policy and the feature-oriented membership directory boundary.
+controls, New Zealand business-date policy, the feature-oriented membership directory boundary and
+the corrected public distinction between target-listing pricing and address neighbourhood benchmarks.
 Git state is not used as verification evidence.
 
 | Gate | Fresh evidence from current worktree | Status |
@@ -44,9 +45,9 @@ Git state is not used as verification evidence.
 | Worker unit suite | 124 tests passed, including member scheduling, Argus boundary and New Zealand date policy | verified |
 | Database/API/Worker integration | 104 tests passed against a clean, migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified |
 | Membership/risk focused regression | Membership integration file passed all 19 scenarios; configuration/security suites passed the managed-provider and feature-gate contracts | verified |
-| Production build | Worker entrypoints built and Next.js generated 109 pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
+| Production build | Worker entrypoints built and Next.js generated 111 pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
 | Member browser QA | Free fixture customer/Admin flows plus all authenticated member routes are covered in the current Playwright suite | verified for named fixture paths; live provider remains separate |
-| Playwright/accessibility matrix | EN/ZH member routes passed axe serious/critical, keyboard focus, reduced-motion and compact-width checks on desktop and mobile after correcting the current-plan contrast to WCAG AA | verified |
+| Playwright/accessibility matrix | The corrected EN desktop and ZH mobile homepage/address-entry paths passed 2/2 targeted Playwright checks through canonical `https://tymra.test`, including axe serious/critical; the broader unchanged member-route matrix was not rerun in this correction | verified for corrected paths; broader matrix retains prior dated evidence |
 | Production payment/challenge/monitoring | Local contracts exist, but production Stripe, challenge provider, dashboards, capacity and SLA are not established | not_verified |
 
 The active OTA scope is exactly the six channels listed above. Development Scheduler remains off.
@@ -195,10 +196,10 @@ The statuses below describe the current implementation, not the target specifica
 | `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence, payment reuse/refund, customer appeal and Admin review tests pass; production Radar delivery remains external | `implemented_not_verified` |
 | `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API plus privacy-safe aggregate metrics and controlled retention lifecycle pass; production operating exercise remains external | `implemented_not_verified` |
 | `MEM-NAV-001` | Session-aware public/customer navigation with Sign in, Account and Sign out | Real EN/ZH authenticated/anonymous browser QA at desktop, 390px and 320px | `verified` |
-| `MEM-PUBLIC-001` | Public bilingual membership/pricing comparison with property-slot, daily-price, monitoring and launch-gate semantics | EN/ZH desktop/mobile accessibility test plus source-of-truth entitlement rendering | `verified` |
+| `MEM-PUBLIC-001` | Public bilingual membership/pricing comparison plus explicit OTA-link and address-benchmark entry points with property-slot, daily-price-check, monitoring and launch-gate semantics | EN/ZH desktop/mobile accessibility and address-navigation tests plus source-of-truth entitlement rendering | `verified` |
 | `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
 | `MEM-UNIT-001` | Pricing-unit list/detail, add/confirm, activation, deactivation, reactivation and downgrade selection | Ownership, stable-identity, unit-limit and transactional job-cancellation tests plus browser flows | `implemented_not_verified` |
-| `MEM-CHECK-001` | Owner-only filterable history and result detail with observed-price/recommendation separation | Cross-account, pagination/filter, retention and one-valid-price acceptance | `implemented_not_verified` |
+| `MEM-CHECK-001` | Owner-only filterable history and result detail with mode-aware target or neighbourhood observations and observed-price/recommendation separation | Cross-account, pagination/filter, retention, one-valid-price acceptance and `LISTING_PRICING`/`LOCATION_BENCHMARK` separation | `implemented_not_verified` |
 | `MEM-CAL-001` | Plan-aware exact daily calendar and separately labelled monitoring extension in `Pacific/Auckland` | NZ-time/domain boundaries, owner-only API, no-fabrication data states and responsive browser QA | `verified` |
 | `MEM-ALERT-001` | Host core alerts and Pro/Portfolio settings/controls behind entitlement and launch gates | Entitlement-aware unavailable state is implemented and browser-verified; delivery remains closed pending the documented alert gate | `verified_gated_off` |
 | `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Export/API now require serviceable membership, entitlement, independent quota/idempotency and subordinate server launch flags; credential/webhook delivery stays gated | `verified_gated_off` |

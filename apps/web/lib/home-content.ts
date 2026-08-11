@@ -52,6 +52,7 @@ export type HomeCopy = {
     clear: string;
     validations: Record<"empty" | "short" | "long" | "unsupportedUrl", string>;
     facts: Array<{ icon: typeof Info; text: string }>;
+    addressCta: string;
   };
   insights: Array<{
     title: string;
@@ -64,7 +65,7 @@ export type HomeCopy = {
   methodology: { eyebrow: string; title: string; body: string; points: string[]; link: string };
   coverage: { eyebrow: string; title: string; body: string; statuses: string[] };
   faq: Array<{ question: string; answer: string }>;
-  finalCta: { title: string; body: string; note: string; primary: string };
+  finalCta: { title: string; body: string; note: string; primary: string; secondary: string };
   footer: {
     copyright: string;
     product: string;
@@ -114,8 +115,8 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       process: {
         eyebrow: "Three simple steps",
-        title: "From listing link to formal report",
-        body: "Start with the public listing you already use. Tymra keeps the first check focused and explains every next step.",
+        title: "From a listing or address to a formal report",
+        body: "Start with a supported public listing or a real New Zealand address. Tymra keeps each path explicit and explains every next step.",
       },
       faq: {
         eyebrow: "Common questions",
@@ -137,11 +138,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         unsupportedUrl: "Use a valid public listing URL from a supported OTA.",
       },
       facts: [
-        { icon: MapPin, text: "Supported OTA links only" },
+        { icon: MapPin, text: "New Zealand addresses supported" },
         { icon: CreditCard, text: "No credit card required" },
         { icon: Clock3, text: "No dates or room setup" },
         { icon: ShieldCheck, text: "No automatic price changes" },
       ],
+      addressCta: "No listing link? Benchmark a New Zealand address",
     },
     insights: [
       { title: "Low-price Risks", body: "Identify dates that may deserve a closer pricing review.", detail: "Flagged dates and risk level", icon: ShieldCheck, tone: "blue" },
@@ -150,8 +152,8 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       { title: "Suggested Actions", body: "See a cautious next step with confidence and clear limitations.", detail: "Prioritised review actions", icon: ListChecks, tone: "violet" },
     ],
     process: [
-      { label: "Paste the OTA link", body: "Use a supported public OTA link for the listing you want to check.", icon: Search },
-      { label: "See a rough signal", body: "Tymra uses the link context or OTA default display without asking for dates, guests or room type.", icon: BarChart3 },
+      { label: "Choose your starting point", body: "Use a supported public OTA link, or start from a real New Zealand address.", icon: Search },
+      { label: "See the right market view", body: "OTA links can show a rough listing signal; addresses produce a clearly labelled neighbourhood benchmark.", icon: BarChart3 },
       { label: "Unlock the formal report", body: "Verify one email to create your secure customer access and start the formal check.", icon: CheckCircle2 },
     ],
     methodology: {
@@ -169,7 +171,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Does Tymra provide real pricing results?", answer: "Yes, when the property and market are supported and source data meets the required quality thresholds. Tymra returns a clear limited state rather than inventing a result when evidence is insufficient." },
-      { question: "Which properties does Tymra support?", answer: "Public accommodation links from Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com are supported. Tymra uses listing identity and observed display context rather than inferring a price from a street address." },
+      { question: "Which properties does Tymra support?", answer: "You can start with a public accommodation link from Booking.com, Airbnb, Expedia, Bookabach, Agoda or Trip.com, or with a real New Zealand address. An address result shows observed nearby public prices as a neighbourhood benchmark; it never presents them as the property's own rate." },
       { question: "How long does a Price Check take?", answer: "The rough signal normally appears in-page first. After you verify one email, the formal check runs asynchronously and opens in your secure customer account." },
       { question: "Does Tymra automatically change my prices?", answer: "No. Tymra provides decision support only. You remain responsible for every final pricing decision." },
       { question: "Where does the information come from?", answer: "Only enabled, operationally healthy sources can support publication. Results show data timing, confidence and relevant limitations." },
@@ -178,9 +180,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ],
     finalCta: {
       title: "Find the dates you may be selling too cheaply.",
-      body: "Start with one supported New Zealand OTA listing link.",
-      note: "See a rough result before email. No date, guest or room setup required.",
+      body: "Start with a supported OTA link, or use a New Zealand address for a neighbourhood benchmark.",
+      note: "OTA links can show a rough result before email. Address benchmarks keep nearby prices separate from the property's own rate.",
       primary: "Start a Price Check",
+      secondary: "Benchmark an Address",
     },
     footer: {
       copyright: "© 2026 Synix. All rights reserved.", product: "Product", resources: "Resources", legal: "Legal", language: "中文",
@@ -214,8 +217,8 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       },
       process: {
         eyebrow: "三个简单步骤",
-        title: "从房源链接到正式报告",
-        body: "从你正在使用的公开房源链接开始。Tymra 会保持首次检查简单，并清楚说明每一步。",
+        title: "从房源链接或地址到正式报告",
+        body: "从受支持的公开房源链接或真实的新西兰地址开始。Tymra 会明确区分两条路径，并清楚说明每一步。",
       },
       faq: {
         eyebrow: "常见问题",
@@ -237,11 +240,12 @@ export const homeCopy: Record<Locale, HomeCopy> = {
         unsupportedUrl: "请使用受支持 OTA 的有效公开房源链接。",
       },
       facts: [
-        { icon: MapPin, text: "仅支持指定 OTA 链接" },
+        { icon: MapPin, text: "支持新西兰真实地址" },
         { icon: CreditCard, text: "无需信用卡" },
         { icon: Clock3, text: "无需设置日期或房型" },
         { icon: ShieldCheck, text: "不会自动修改价格" },
       ],
+      addressCta: "没有房源链接？查询新西兰地址周边行情",
     },
     insights: [
       { title: "低价风险", body: "识别可能值得优先检查价格的日期。", detail: "重点日期与风险等级", icon: ShieldCheck, tone: "blue" },
@@ -250,8 +254,8 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       { title: "建议动作", body: "结合置信度和明确限制查看谨慎的下一步。", detail: "按优先级排列的检查建议", icon: ListChecks, tone: "violet" },
     ],
     process: [
-      { label: "粘贴 OTA 链接", body: "使用需要检查的受支持公开 OTA 房源链接。", icon: Search },
-      { label: "先看粗略信号", body: "Tymra 自动使用链接参数或 OTA 默认展示，无需选择日期、人数或房型。", icon: BarChart3 },
+      { label: "选择开始方式", body: "使用受支持的公开 OTA 房源链接，或从真实的新西兰地址开始。", icon: Search },
+      { label: "查看对应市场视图", body: "OTA 链接可先显示粗略房源信号；地址结果会明确标记为周边行情基准。", icon: BarChart3 },
       { label: "解锁正式报告", body: "验证一次邮箱即可建立安全客户访问并开始正式检查。", icon: CheckCircle2 },
     ],
     methodology: {
@@ -269,7 +273,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     },
     faq: [
       { question: "Tymra 会提供真实价格结果吗？", answer: "会。房源和市场受支持，并且数据满足质量门槛时，Tymra 会生成真实结果；证据不足时会明确返回受限状态，而不是编造结果。" },
-      { question: "Tymra 支持哪些房源？", answer: "支持 Booking.com、Airbnb、Expedia、Bookabach、Agoda 和 Trip.com 的公开住宿房源链接。Tymra 使用 OTA 房源身份及其展示配置，不会仅凭自然地址猜测当前价格。" },
+      { question: "Tymra 支持哪些房源？", answer: "你可以从 Booking.com、Airbnb、Expedia、Bookabach、Agoda 或 Trip.com 的公开住宿链接开始，也可以输入真实的新西兰地址。地址模式会把附近公开价格作为周边行情基准展示，绝不会把它们说成该地址自己的房价。" },
       { question: "完成一次价格检查需要多久？", answer: "粗略信号会先在页面内出现。验证一次邮箱后，正式检查异步运行，并在你的安全客户账户中打开。" },
       { question: "Tymra 会自动修改我的价格吗？", answer: "不会。Tymra 只提供决策支持，最终定价决定始终由你负责。" },
       { question: "这些信息来自哪里？", answer: "只有已启用且运行健康的来源可以支持结果发布。结果会显示数据时间、置信度和相关限制。" },
@@ -278,9 +282,10 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     ],
     finalCta: {
       title: "快速发现你的房源哪些日期可能卖便宜了。",
-      body: "从一个受支持的新西兰 OTA 房源链接开始。",
-      note: "提交邮箱前先看粗略结果，无需设置日期、人数或房型。",
+      body: "从受支持的 OTA 房源链接开始，或用新西兰地址查询周边行情基准。",
+      note: "OTA 链接可在提交邮箱前先看粗略结果；地址基准会把周边价格与房源自身价格明确区分。",
       primary: "开始价格检查",
+      secondary: "查询地址周边行情",
     },
     footer: {
       copyright: "© 2026 Synix. 保留所有权利。", product: "产品", resources: "资源", legal: "法律", language: "English",

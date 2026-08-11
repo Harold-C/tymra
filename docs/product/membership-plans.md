@@ -159,7 +159,7 @@ The checks module must support pagination, status/date/unit/source filtering and
 
 The detail page separately presents:
 
-- every valid target-property OTA price, source, amount, currency, stay basis, fee completeness, public signed-out context and `asOf` time;
+- for listing analysis, every valid target-property OTA price; for address analysis, every valid nearby benchmark price; in both modes include source, amount, currency, stay basis, fee completeness, public signed-out context and `asOf` time;
 - `priceResultStatus` and `priceEvidenceStatus`;
 - `recommendationStatus`, confidence and machine-readable limitation reasons;
 - compatible comparable evidence and applicable public market signals;
@@ -167,14 +167,14 @@ The detail page separately presents:
 - processing, retry, challenge, cancellation and terminal states without fabricated progress;
 - acknowledgement state and plan-governed history availability.
 
-At least one valid target-property OTA price always produces a successful price result as defined below. Weak comparable or market-signal evidence affects only the recommendation.
+At least one valid price applicable to the selected mode always produces a successful price result as defined below: a target-property price for listing analysis or a nearby benchmark price for address analysis. Weak comparable or market-signal evidence affects only the recommendation.
 
 ### Calendar and monitoring
 
 The calendar uses `Pacific/Auckland` for today, stay dates, rolling windows and entitlement boundaries.
 
 - Exact daily dates and monitoring-only dates use visibly different labels and legend entries.
-- Each exact date shows the most recent target price or explicit no-price/source state, its `asOf` time and recommendation state.
+- Each exact date shows the most recent target price for listing analysis or nearby benchmark observations for address analysis; otherwise it shows an explicit no-price/source state. Every observation includes its `asOf` time and separate recommendation state.
 - Monitoring-only dates show public signal or sampled-price context only; they cannot appear as continuously observed daily prices.
 - Unobserved dates remain unobserved. The interface cannot interpolate or copy a nearby price without an explicit forecast product contract.
 - User-triggered refreshes consume quota only under the spot-check accounting rules.
@@ -365,10 +365,10 @@ Portfolio properties above the included 20 are provisionally NZ$12 per property 
 Every plan uses the same observed-price evidence standard inside its daily price-check window:
 
 - one New Zealand calendar date per stay-date decision;
-- target and comparable rates collected under compatible dates, occupancy, room count, currency, public signed-out context, and fee semantics;
+- applicable observed and comparable rates collected under compatible dates, occupancy, room count, currency, public signed-out context, and fee semantics;
 - Booking.com, Airbnb, Expedia, Bookabach, Agoda, and Trip.com are eligible under the same source health and quality rules;
 - public market signals are joined to the applicable stay date;
-- a valid target-property price is always returned once at least one OTA publishes it under the confirmed query conditions;
+- a valid applicable price is always returned once at least one OTA publishes it under the confirmed query conditions: a target-property price in listing mode or a nearby benchmark price in address mode;
 - source availability, fee completeness, unit identity, freshness, and snapshot coherence determine how the observed price is labelled, but do not erase it;
 - comparable count and market-signal coverage determine whether Tymra may additionally publish a price-adjustment recommendation;
 - if adjustment evidence is insufficient, Tymra returns the observed price successfully and marks only the recommendation as unavailable or limited.
@@ -377,9 +377,9 @@ Every plan uses the same observed-price evidence standard inside its daily price
 
 ### Success threshold
 
-A stay date has a successful price result when at least one supported OTA provides an explicit price for the confirmed target property under all of these conditions:
+A stay date has a successful price result when at least one supported OTA provides an explicit price applicable to the selected analysis mode under all of these conditions:
 
-- target listing identity is confirmed;
+- listing analysis confirms the target listing identity; address analysis instead confirms the real New Zealand address and the nearby listing's identity, distance context and benchmark eligibility;
 - check-in, check-out, occupancy, room count, and currency match the request;
 - the price is publicly available without login, membership, coupon, wallet, cashback, package, or application-only access;
 - the displayed amount is explicitly present in the source and has evidence lineage;
@@ -387,7 +387,7 @@ A stay date has a successful price result when at least one supported OTA provid
 
 When this threshold is met, Tymra must:
 
-- return every valid observed target price and its OTA source;
+- return every valid applicable observed price and its OTA source;
 - return a primary display price or range using the deterministic selection rule below;
 - set `priceResultStatus=COMPLETED` or the equivalent successful product state for the price result;
 - set `recommendationStatus` independently to `COMPLETED`, `LIMITED_EVIDENCE`, or `NOT_AVAILABLE`;
@@ -401,20 +401,20 @@ When this threshold is met, Tymra must:
 Returning a price does not automatically authorise a price-adjustment conclusion.
 
 - With sufficient comparable and market evidence, Tymra may return a recommended range and adjustment percentage.
-- Without sufficient comparable evidence, Tymra still returns the observed target price, sets `recommendationStatus=NOT_AVAILABLE`, and sets `recommendationReasonCode=NOT_ENOUGH_COMPARABLE_EVIDENCE`.
-- Without sufficient market-signal coverage, Tymra still returns the observed target price, sets the appropriate `LIMITED_EVIDENCE` or `NOT_AVAILABLE` recommendation status, and identifies the missing signal coverage with machine-readable reason codes.
-- A single observed target price must not be presented as a market median or as proof that the target is above or below market.
+- Without sufficient comparable evidence, Tymra still returns the observed target or benchmark price, sets `recommendationStatus=NOT_AVAILABLE`, and sets `recommendationReasonCode=NOT_ENOUGH_COMPARABLE_EVIDENCE`.
+- Without sufficient market-signal coverage, Tymra still returns the observed target or benchmark price, sets the appropriate `LIMITED_EVIDENCE` or `NOT_AVAILABLE` recommendation status, and identifies the missing signal coverage with machine-readable reason codes.
+- A single observed target or benchmark price must not be presented as a market median or as proof that the member's property is above or below market.
 
-`PARTIAL` and `INSUFFICIENT_DATA` are therefore not valid overall outcomes solely because only one OTA returned a valid target price. They remain valid only when no valid target price exists for the requested stay date, or when another blocking condition prevents Tymra from knowing what property, stay, currency, or price basis the observation belongs to.
+`PARTIAL` and `INSUFFICIENT_DATA` are therefore not valid overall outcomes solely because only one OTA returned a valid applicable price. They remain valid only when no valid target price exists in listing mode, no valid nearby benchmark price exists in address mode, or another blocking condition prevents Tymra from knowing what property, stay, currency, or price basis the observation belongs to.
 
-One comparable-property price without a valid target-property price does not satisfy this rule and must not be presented as the target property's price.
+In listing mode, one comparable-property price without a valid target-property price does not satisfy this rule and must not be presented as the target property's price. In address mode, a valid nearby observation does satisfy the price-return rule, but remains labelled as a neighbourhood benchmark and never as the member property's own price.
 
 ### Multiple-OTA display rule
 
 Tymra must not collapse materially different OTA price bases into one unexplained number.
 
 1. When the customer submitted a confirmed OTA listing URL, that channel's valid target price is the primary displayed price. Other valid target-channel prices are shown as cross-channel observations.
-2. When the customer submitted a natural address, Tymra shows all valid target-channel prices and a public observed range. It does not designate one channel as the property's true price.
+2. When the customer submitted a natural address, Tymra shows all valid nearby public prices and a public observed range. It does not designate one channel or nearby listing as the property's true price.
 3. A “lowest observed public total” may be shown only across stay totals with compatible occupancy, stay dates, unit identity, cancellation category, and mandatory-fee completeness.
 4. Nightly-only, fee-incomplete, bundled, or otherwise different price bases remain visible but are grouped separately and are not silently mixed into the complete-total range.
 5. Deterministic tie-breaking uses, in order: confirmed target unit identity, compatible price basis, higher fee completeness, newer collection time, and stable source key. OTA market weight must not determine which price is treated as the customer's own price.
