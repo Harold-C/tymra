@@ -142,7 +142,7 @@ Sticky、Drawer 和底部操作条必须适配 env(safe-area-inset-\*），不�
 
 ## 6.1 技术映射
 
-使用 Tailwind CSS 设计令牌和 shadcn/ui primitives。基础组件由 packages/ui 输出；页面不得复制同类组件样式。使用 class-variance-authority 管理 variants，lucide-react 提供图标，Motion 仅用于必要过渡。
+使用现有 Web 设计令牌和可复用组件。基础组件按公开、会员和 Admin surface 放在 `apps/web/components`；页面不得复制同类组件样式。lucide-react 提供图标，Motion 仅用于必要过渡。当前仓库不保留无消费者的 `packages/ui` marker package。
 
 ## 6.2 Button
 
@@ -490,7 +490,7 @@ prefers-reduced-motion 下取消位移、缩放、波纹、自动滚动和持续
 
 ## 17.1 组件目录
 
-packages/ui 至少包含 BrandLogo、Button、FormField、SearchCard、CandidateCard、Stepper、StatusPanel、RiskBadge、ConfidenceBadge、StatusBadge、DataSourceStatusBadge、SourceHealthBadge、MarketStatusBadge、InsightCard、PriceComparison、SignalChip、FeedbackControl、DataTable、DiffField、EmptyState、ErrorState、SystemBanner、Drawer、Dialog 和 Toast。
+可复用 Web 组件至少覆盖 BrandLogo、Button、FormField、SearchCard、CandidateCard、Stepper、StatusPanel、RiskBadge、ConfidenceBadge、StatusBadge、DataSourceStatusBadge、SourceHealthBadge、MarketStatusBadge、InsightCard、PriceComparison、SignalChip、FeedbackControl、DataTable、DiffField、EmptyState、ErrorState、SystemBanner、Drawer、Dialog 和 Toast。组件按实际消费者归入 `apps/web/components/public`、`member`、`admin` 或共享 Web 模块，不为目录对称创建空 package。
 
 ## 17.2 页面组合
 

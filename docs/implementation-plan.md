@@ -1,6 +1,6 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## 状态源与代码边界
 
@@ -24,9 +24,11 @@ Last updated: 2026-08-11
   Trip.com。Wotif、Hotels.com、Vrbo 只保留禁用的合同兼容；Google Hotels 不在执行范围。
 - Argus 负责浏览器采集和证据生命周期；Tymra 负责身份、额度、竞品选择、市场信号、价格
   建议和会员交付。开发 fixture 与真实公开页面结果必须明确隔离。
-- 2026-08-11 当前 P0/P1/P2 工作树通过 lint、全仓 TypeScript、202 个 Web/domain/provider/db
+- 开发环境提供 `demo1` 至 `demo4` 四个固定会员账号，对应 Free、Host、Pro、Portfolio；密码仅由开发配置派生或覆盖，不进入仓库明文。
+- Pricing Unit 稳定 API 已补齐集合 GET/POST 与单项 GET/PATCH；POST 只接受当前会员已确认并计费过的 Price Check，不接受任意内部房源 ID。
+- 2026-08-12 当前 P0/P1/P2 工作树通过 lint、全仓 TypeScript、210 个 Web/domain/provider/db
   单元测试（5 个外部 fixture 跳过）、124 个 Worker 测试、104 个隔离 PostgreSQL 集成测试
-  以及 109 页生产构建。精确证据与未验证边界见追踪表。
+  以及 112 页生产构建。精确证据与未验证边界见追踪表。
 
 ## 当前优先级
 
@@ -39,7 +41,7 @@ Last updated: 2026-08-11
 | P1 | Retention 生命周期 | 隔离数据库覆盖 Free/Host/Pro/Portfolio 及取消账户的独立保留期和 30 天房源占位 | 四档时间推进矩阵已通过 |
 | P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 聚合已实现并验证；生产 dashboard/alert 与注入演练仍是部署工作 |
 | P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 已提供显式 fail-closed 的 `test:e2e:member-live` 门禁；真实账号/输入/环境运行仍未执行 |
-| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 第一阶段拆分完成并通过类型、单元、集成及构建回归 |
+| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 第一阶段拆分完成；后续大文件拆分保持独立评审，不与当前业务修复混合 |
 | P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 安全保持关闭；不能用本地代码验证替代生产 canary 授权 |
 
 ## 交付顺序

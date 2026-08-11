@@ -12,6 +12,8 @@ import { consumeMagicLink, InvalidMagicLinkError } from "@/lib/server/membership
 import { POST as passwordSignIn, PUT as changePassword } from "./customer/auth/password/route";
 import { POST as registerCustomer } from "./customer/auth/register/route";
 import { POST as appealRiskCase } from "./customer/risk/route";
+import { GET as getPricingUnits, POST as addPricingUnit } from "./customer/membership/pricing-units/route";
+import { GET as getPricingUnit } from "./customer/membership/pricing-units/[pricingUnitId]/route";
 import { POST as confirmQuery } from "./price-checks/[checkId]/confirm-query/route";
 import { POST as createPriceCheck } from "./price-checks/route";
 import { enqueueDueMembershipAnalyses } from "../../../../worker/src/membership/scheduler";
@@ -181,8 +183,32 @@ describe("membership persistence and enforcement", () => {
     expect(confirmed.status).toBe(200);
     expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } })).toMatchObject({ customerUserId: customer.id, status: "QUEUED" });
     expect(await prisma.membershipUsage.findFirstOrThrow({ where: { priceCheckId: checkId } })).toMatchObject({ customerUserId: customer.id, type: "INITIAL_REPORT" });
-    expect(await prisma.customerPricingUnit.findUnique({ where: { customerUserId_sellableUnitId: { customerUserId: customer.id, sellableUnitId: unit.id } } })).toMatchObject({ active: true });
+    const pricingUnit = await prisma.customerPricingUnit.findUniqueOrThrow({ where: { customerUserId_sellableUnitId: { customerUserId: customer.id, sellableUnitId: unit.id } } });
+    expect(pricingUnit).toMatchObject({ active: true });
     expect(await prisma.job.findFirstOrThrow({ where: { priceCheckId: checkId, type: "RATE_COLLECTION" } })).toMatchObject({ priority: 300 });
+
+    const memberCookie = `tymra_customer_session=${session.token}`;
+    const listed = await getPricingUnits(new NextRequest("https://tymra.test/api/v1/customer/membership/pricing-units", { headers: { cookie: memberCookie } }));
+    expect(listed.status).toBe(200);
+    expect((await listed.json()).data).toMatchObject({ activePricingUnitLimit: 1, occupiedPricingUnits: 1, items: [{ id: pricingUnit.id, active: true }] });
+
+    const added = await addPricingUnit(new NextRequest("https://tymra.test/api/v1/customer/membership/pricing-units", {
+      method: "POST",
+      headers: { origin: "https://tymra.test", cookie: memberCookie, "content-type": "application/json" },
+      body: JSON.stringify({ priceCheckId: checkId }),
+    }));
+    expect(added.status).toBe(201);
+    expect((await added.json()).data).toMatchObject({ id: pricingUnit.id, active: true, sellableUnitId: unit.id });
+
+    const detailed = await getPricingUnit(new NextRequest(`https://tymra.test/api/v1/customer/membership/pricing-units/${pricingUnit.id}`, { headers: { cookie: memberCookie } }), { params: { pricingUnitId: pricingUnit.id } });
+    expect(detailed.status).toBe(200);
+    expect((await detailed.json()).data).toMatchObject({ id: pricingUnit.id, latestStayQuery: { timezone: "Pacific/Auckland" } });
+
+    const otherCustomer = await createCustomer("pricing-unit-owner-boundary");
+    const otherSession = issueOpaqueToken(process.env.SESSION_SECRET!);
+    await prisma.customerSession.create({ data: { customerUserId: otherCustomer.id, tokenHash: otherSession.tokenHash, expiresAt: new Date(Date.now() + 60_000) } });
+    const hidden = await getPricingUnit(new NextRequest(`https://tymra.test/api/v1/customer/membership/pricing-units/${pricingUnit.id}`, { headers: { cookie: `tymra_customer_session=${otherSession.token}` } }), { params: { pricingUnitId: pricingUnit.id } });
+    expect(hidden.status).toBe(404);
   });
 
   it("rejects an unlock-purpose token that is not bound to an anonymous check", async () => {

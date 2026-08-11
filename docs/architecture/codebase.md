@@ -26,6 +26,10 @@ docs/
   evidence/                    dated, immutable acceptance snapshots
 ```
 
+The repository intentionally has no private Browser Worker, browser-runtime package or marker-only
+UI package. Argus owns browser execution; reusable Web UI stays with its actual application
+consumer.
+
 Dependencies flow from applications to shared packages. `domain` must not import application or
 database code. Provider adapters emit domain contracts; persistence remains in `db`; browser work is
 performed by Argus and reached through the Worker boundary.

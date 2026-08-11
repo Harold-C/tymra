@@ -1,6 +1,6 @@
 # Tymra Worker Baseline v1
 
-Last updated: 2026-08-01
+Last updated: 2026-08-12
 
 ## Runtime
 
@@ -18,10 +18,13 @@ input -> Property + SellableUnit + Listing -> QueryPlan + QuerySignature
       -> immutable ResultVersion -> one RESULT_READY email
 ```
 
-Anonymous preview uses two dates and exposes only aggregate preliminary output. Formal analysis uses
-the next 30 dates and at most five key dates. Multi-room inputs stop at `NEEDS_CONFIRMATION`. Blocking
-quality gates prevent publication for missing target price, unknown fees, source
-failure, stale/incoherent evidence or fewer than three unique comparable units.
+Anonymous preview uses two dates and exposes only aggregate preliminary output. Authenticated exact
+daily-price coverage is plan-specific: Free 14 days, Host 30, Pro 90 and Portfolio 180. The separate
+monitoring horizon is 30, 90, 180 and 365 days respectively. Multi-room inputs stop at
+`NEEDS_CONFIRMATION`. One valid public OTA target price is always preserved and returned as an
+observed price. Missing or weak comparable evidence limits the recommendation and confidence; it
+does not erase that observed price or relabel the entire result as insufficient. Missing target
+price, unknown binding conditions, source failure or stale/incoherent evidence still fail closed.
 
 ## Source Matrix
 

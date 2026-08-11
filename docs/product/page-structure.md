@@ -312,11 +312,11 @@ Select Unit；None of these；Back to Property。选择后进入 /query。
 
 ## 8.1 默认值
 
-2 Adults、0 Children、1 Unit、未来 30 天、默认 1 Night、Property 当地时区、NZD。
+2 Adults、0 Children、1 Unit、默认 1 Night、`Pacific/Auckland`、NZD。Release 1 匿名/一次性正式流程默认未来 30 天；登录会员的精确逐日价格范围按 Free 14、Host 30、Pro 90、Portfolio 180 天执行，并与更长的监测范围分开显示。
 
 ## 8.2 可编辑字段
 
-成人、儿童、单位数和住宿晚数。检查日期窗口固定为未来 30 天；超出范围不在 Release 1 提供。
+成人、儿童、单位数和住宿晚数。匿名 Release 1 流程的检查日期窗口固定为未来 30 天；会员页面不得沿用该固定值，必须从服务端方案权益读取范围。
 
 ## 8.3 提示
 

@@ -424,7 +424,7 @@ Phase 0 已形成 Search-first 首页、Preview、Pilot 和需求验证基线，
 
 ## 17.3 默认技术基线
 
-若目标仓库已有兼容技术栈，Codex 应保留并适配；若为空仓库，默认使用 pnpm workspace：apps/web 为 Next.js App Router、React、TypeScript；apps/worker 为 Node.js TypeScript 后台任务；packages/domain、db、ui、providers、config 分别保存领域逻辑、数据库、组件、数据提供者和共享配置。界面使用 Tailwind CSS、shadcn/ui、lucide-react 和 Motion。数据使用 PostgreSQL 与 Prisma，校验使用 Zod，后台任务使用 PostgreSQL 支持的持久任务队列。公开用户不建立账户；运营后台使用服务端安全会话和由环境变量初始化的单一运营者。邮件、分析和错误监控均通过适配器接入，缺少可选服务时不得阻止核心流程运行。
+若目标仓库已有兼容技术栈，Codex 应保留并适配；若为空仓库，默认使用 pnpm workspace：apps/web 为 Next.js App Router、React、TypeScript；apps/worker 为 Node.js TypeScript 后台任务；packages/domain、db、providers、config 分别保存领域逻辑、数据库、数据提供者和共享配置，Web 组件按消费者保存在 `apps/web/components`。界面使用现有 Tailwind CSS、lucide-react 和 Motion 能力。数据使用 PostgreSQL 与 Prisma，校验使用 Zod，后台任务使用 PostgreSQL 支持的持久任务队列。匿名用户可以使用受限公开流程；会员使用独立客户账户；运营后台继续使用与客户会话隔离的服务端安全会话和由环境变量初始化的单一运营者。邮件、分析和错误监控均通过适配器接入，缺少可选服务时不得阻止不依赖该服务的核心流程运行。
 
 ## 17.4 数据提供者与真实数据约束
 

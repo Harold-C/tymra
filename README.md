@@ -55,8 +55,9 @@ requires the Pro launch gate and the member read API additionally requires the P
 ## Docker Compose
 
 Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker and Mailpit.
-The browser-collection runtime, disabled development Scheduler and browser test fixture are opt-in
-profiles, so they do not consume resources during normal local development:
+Browser collection is performed only by the separately deployed Argus service. The disabled
+development Scheduler is an opt-in profile, so it does not consume resources during normal local
+development:
 
 ```sh
 pnpm compose:up
@@ -64,13 +65,7 @@ docker compose ps
 ```
 
 All Node application services reuse `tymra-app-dev:local`; Compose logs rotate at 10 MB with three
-files per container. Start the headed browser runtime only while manually collecting or testing
-browser sources:
-
-```sh
-pnpm compose:browser:up
-pnpm compose:browser:down
-```
+files per container.
 
 Start or stop the Scheduler explicitly only when testing schedules:
 
@@ -92,6 +87,7 @@ Local endpoints:
 | Service | URL or port |
 | --- | --- |
 | Public Web | `https://tymra.test/en` and `https://tymra.test/zh` |
+| Member sign-in | `https://tymra.test/en/sign-in` and `https://tymra.test/zh/sign-in` |
 | Operations | `https://ops.tymra.test/admin/sign-in` |
 | Worker diagnostics | `https://worker.tymra.test/worker/health` and `/worker/readiness` |
 | Direct Worker API fallback | `http://localhost:3100` (loopback only) |
@@ -116,8 +112,26 @@ Delete and recreate all local database data:
 ```sh
 docker compose down --volumes
 docker compose up --build -d
-docker compose run --rm web pnpm db:seed
+docker compose run --rm seed
 ```
+
+### Development member accounts
+
+Development seed creates one verified account for each plan. The sign-in page pre-fills the Free
+account; use another email below to inspect its plan state.
+
+| Email | Plan |
+| --- | --- |
+| `demo1@tymra.test` | Free |
+| `demo2@tymra.test` | Host |
+| `demo3@tymra.test` | Pro |
+| `demo4@tymra.test` | Portfolio |
+
+All four accounts share one development-only password. Set `MEMBER_DEV_PASSWORD` to an explicit
+local value of at least 12 characters, or leave it blank to derive the password from
+`SESSION_SECRET`. No plaintext development password is stored in the repository. The legacy
+`development-demo@tymra.test` member login is removed; that string remains only as a fixture data
+label and is not an account.
 
 ## Host Development
 
@@ -151,10 +165,10 @@ pnpm --filter @tymra/worker cli retention:cleanup
 
 ### Browser event collection status
 
-Eventfinda, Ticketmaster and RBNZ use durable Argus read-only browser Jobs when Argus is configured.
+Eventfinda, Ticketmaster and RBNZ use durable Argus read-only browser Jobs.
 Queued collections persist each Argus execution, release the Worker while it runs, poll through a
-separate delayed database Job and resume the same collection after completion or restart. The
-existing private Browser Worker is retained as a development fallback. Eventfinda supports
+separate delayed database Job and resume the same collection after completion or restart. There is
+no in-process or private-browser fallback. Eventfinda supports
 nationwide paginated discovery, one detail target per event series, multi-date expansion and
 development-only bootstrap runs. Ticketmaster collects complete structured events directly from five
 verified city listing routes and schedules a detail page only when required identity, date, status or
@@ -166,9 +180,9 @@ Current real-page acceptance is partial because two later captures remained chal
 bounded passive wait; no Ticketmaster API key or API endpoint is used.
 
 On the configured Mac, Docker `restart: unless-stopped` policies keep the required long-running
-services alive. `com.harold.nbc-tymra.healthcheck` checks the core Compose stack and all four HTTPS
+services alive. `com.harold.nbc-tymra.healthcheck` checks the core Compose stack and configured HTTPS
 hosts every 60 seconds, restores missing containers, and starts the shared Traefik container when
-needed. It does not start the browser runtime, disabled Scheduler or browser test fixture.
+needed. It does not start the disabled Scheduler.
 The older host-based Web and Worker LaunchAgents are retained only as an emergency fallback and must
 not run at the same time as the Compose application processes.
 
@@ -232,8 +246,8 @@ always removes its containers and test volumes on success, failure or interrupti
 pnpm compose:smoke
 ```
 
-Smoke excludes the browser runtime and Scheduler by default. Use the `smoke-browser` profile only
-for an isolated browser-specific acceptance run.
+Smoke excludes the Scheduler. Argus browser acceptance is run in the Argus repository and is not a
+Tymra Compose profile.
 
 Integration tests require PostgreSQL and Redis. Use a dedicated database URL when preserving local
 development data. E2E expects `https://tymra.test` to be running.

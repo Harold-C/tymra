@@ -27,6 +27,7 @@ import {
   evaluateEventImpactEvidence,
   mergeEventImpactEvidence,
   membershipEntitlements,
+  NEW_ZEALAND_TIME_ZONE,
   addNzCalendarDays,
   addNzCalendarMonths,
   nzCalendarDayDifference,
@@ -3055,8 +3056,8 @@ export class WorkerService {
     const propertyId = stableId("property", resolved.property.externalId);
     const property = await prisma.property.upsert({
       where: { id: propertyId },
-      create: { id: propertyId, canonicalName: resolved.property.canonicalName, legalOrBrandName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: resolved.property.timezone, accommodationType: resolved.property.propertyType, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE", isDemo: fixture },
-      update: { canonicalName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: resolved.property.timezone, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE" },
+      create: { id: propertyId, canonicalName: resolved.property.canonicalName, legalOrBrandName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: NEW_ZEALAND_TIME_ZONE, accommodationType: resolved.property.propertyType, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE", isDemo: fixture },
+      update: { canonicalName: resolved.property.canonicalName, address: resolved.property.address, city: resolved.property.city, countryCode: resolved.property.countryCode, latitude: resolved.property.latitude, longitude: resolved.property.longitude, region: resolved.property.region, territorialAuthority: resolved.property.territorialAuthority, rto: resolved.property.rto, postcode: resolved.property.postcode, microMarket: resolved.property.microMarket, timezone: NEW_ZEALAND_TIME_ZONE, supportStatus: propertySupportStatus(addressCoverage.level), identityConfidence: resolved.matchConfidence, status: "ACTIVE" },
     });
     const units = [];
     const listings = [];

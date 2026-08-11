@@ -51,7 +51,7 @@ export function MemberSignInForm({
     <span className="rough-eyebrow"><LogIn aria-hidden="true" />{copy("eyebrow")}</span>
     <h1 id="member-signin-heading">{copy("title")}</h1>
     <p>{copy("intro")}</p>
-    <form onSubmit={submit}>
+    <form method="post" onSubmit={submit}>
       <label htmlFor="member-email">{copy("emailLabel")}</label>
       <input id="member-email" name="email" type="email" autoComplete="username" defaultValue={defaultEmail} placeholder={copy("emailPlaceholder")} required />
       <label htmlFor="member-password">{copy("passwordLabel")}</label>

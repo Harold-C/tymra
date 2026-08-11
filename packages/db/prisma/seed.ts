@@ -18,6 +18,7 @@ import {
   SourceLifecycle,
   SourceType,
 } from "@prisma/client";
+import { DEVELOPMENT_MEMBER_ACCOUNTS, getDevelopmentMemberCredentials } from "@tymra/config";
 import { hash } from "bcryptjs";
 
 import { encryptPersonalData, hashOpaqueToken, hashPersonalIdentifier } from "../src/security";
@@ -31,8 +32,8 @@ const encryptionSecret = required("DATA_ENCRYPTION_KEY");
 const adminEmail = required("ADMIN_EMAIL").toLowerCase();
 const adminPasswordHash = required("ADMIN_PASSWORD_HASH");
 const demoEmail = "development-demo@tymra.test";
-const developmentMemberEmail = process.env.MEMBER_DEV_EMAIL?.trim().toLowerCase();
-const developmentMemberPassword = process.env.MEMBER_DEV_PASSWORD;
+const legacyDevelopmentMemberEmail = "development-demo@tymra.test";
+const developmentMemberCredentials = getDevelopmentMemberCredentials();
 const seedDate = newZealandDateStorageDay(new Date());
 const checkIn = addDays(seedDate, 5);
 const checkOut = addDays(seedDate, 6);
@@ -60,42 +61,69 @@ async function main() {
 }
 
 async function seedDevelopmentMember() {
-  if (process.env.NODE_ENV !== "development" || !developmentMemberEmail || !developmentMemberPassword) return;
-  if (developmentMemberPassword.length < 12) throw new Error("MEMBER_DEV_PASSWORD must contain at least 12 characters");
+  if (!developmentMemberCredentials) return;
 
   const now = new Date();
-  const emailHash = hashPersonalIdentifier(developmentMemberEmail, accessSecret);
-  const passwordHash = await hash(developmentMemberPassword, 12);
-  const customer = await prisma.customerUser.upsert({
-    where: { emailHash },
-    create: {
-      emailHash,
-      encryptedEmail: encryptPersonalData(developmentMemberEmail, encryptionSecret),
-      passwordHash,
-      passwordChangedAt: now,
-      emailVerifiedAt: now,
-      locale: "en",
-      status: CustomerStatus.ACTIVE,
-    },
-    update: {
-      encryptedEmail: encryptPersonalData(developmentMemberEmail, encryptionSecret),
-      passwordHash,
-      passwordChangedAt: now,
-      emailVerifiedAt: now,
-      status: CustomerStatus.ACTIVE,
-    },
+  const passwordHash = await hash(developmentMemberCredentials.password, 12);
+  const legacyEmailHash = hashPersonalIdentifier(legacyDevelopmentMemberEmail, accessSecret);
+  const legacyCustomer = await prisma.customerUser.findUnique({
+    where: { emailHash: legacyEmailHash },
+    select: { id: true },
   });
-  await prisma.membershipSubscription.upsert({
-    where: { customerUserId: customer.id },
-    create: {
-      customerUserId: customer.id,
-      plan: MembershipPlan.FREE,
-      status: MembershipSubscriptionStatus.ACTIVE,
-    },
-    update: {
-      status: MembershipSubscriptionStatus.ACTIVE,
-    },
-  });
+  if (legacyCustomer) {
+    await prisma.$transaction(async (transaction) => {
+      // Preserve development fixture and acceptance records while removing the obsolete login.
+      // These nullable relations intentionally do not cascade when a customer is deleted.
+      await transaction.anonymousCheck.updateMany({
+        where: { customerUserId: legacyCustomer.id },
+        data: { customerUserId: null },
+      });
+      await transaction.magicLink.updateMany({
+        where: { customerUserId: legacyCustomer.id },
+        data: { customerUserId: null },
+      });
+      await transaction.priceCheck.updateMany({
+        where: { customerUserId: legacyCustomer.id },
+        data: { customerUserId: null },
+      });
+      await transaction.customerUser.delete({ where: { id: legacyCustomer.id } });
+    });
+  }
+
+  for (const account of DEVELOPMENT_MEMBER_ACCOUNTS) {
+    const emailHash = hashPersonalIdentifier(account.email, accessSecret);
+    const customer = await prisma.customerUser.upsert({
+      where: { emailHash },
+      create: {
+        emailHash,
+        encryptedEmail: encryptPersonalData(account.email, encryptionSecret),
+        passwordHash,
+        passwordChangedAt: now,
+        emailVerifiedAt: now,
+        locale: "en",
+        status: CustomerStatus.ACTIVE,
+      },
+      update: {
+        encryptedEmail: encryptPersonalData(account.email, encryptionSecret),
+        passwordHash,
+        passwordChangedAt: now,
+        emailVerifiedAt: now,
+        status: CustomerStatus.ACTIVE,
+      },
+    });
+    await prisma.membershipSubscription.upsert({
+      where: { customerUserId: customer.id },
+      create: {
+        customerUserId: customer.id,
+        plan: MembershipPlan[account.plan],
+        status: MembershipSubscriptionStatus.ACTIVE,
+      },
+      update: {
+        plan: MembershipPlan[account.plan],
+        status: MembershipSubscriptionStatus.ACTIVE,
+      },
+    });
+  }
 }
 
 async function seedAdmin() {

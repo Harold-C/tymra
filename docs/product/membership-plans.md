@@ -96,6 +96,11 @@ Every response uses stable error codes for `UNAUTHENTICATED`, `NOT_FOUND`, `PLAN
 
 Every retryable mutation that could consume quota, enqueue work, change billing, create an export, rotate a credential or deliver a webhook requires an idempotency key or an equivalent persisted deduplication key. UI success is rendered only from persisted server state, never optimistic entitlement or payment assumptions.
 
+`POST /api/v1/customer/membership/pricing-units` accepts an owned `priceCheckId` only after that
+Price Check has confirmed a Sellable Unit and transactionally reserved membership usage. It does not
+accept an arbitrary internal Property or Sellable Unit identifier, does not consume quota a second
+time, and is idempotent through the Property-level pricing-unit identity.
+
 ### Cross-account benefit and abuse controls
 
 Tymra permits a person to create another account when there is a legitimate reason; it prevents repeated introductory benefits rather than treating account creation itself as proof of abuse.

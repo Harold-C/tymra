@@ -50,6 +50,24 @@ async function gotoAdmin(page: import("playwright/test").Page, pathname: string)
 }
 
 test.describe("public Release 1", () => {
+  test("member sign-in fails closed without JavaScript and never places credentials in the URL", async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await goto(page, "https://tymra.test/en/sign-in");
+      await page.getByLabel("Membership email").fill("no-js-member@tymra.test");
+      await page.getByLabel("Password").fill("no javascript password fixture");
+      const submitted = page.waitForRequest((request) => request.url().includes("/en/sign-in") && request.method() === "POST");
+      await page.getByRole("button", { name: "Sign in" }).click();
+      const request = await submitted;
+      expect(request.method()).toBe("POST");
+      expect(request.url()).not.toContain("email=");
+      expect(request.url()).not.toContain("password=");
+    } finally {
+      await context.close();
+    }
+  });
+
   test("renders and resubmits the provider-neutral challenge state", async ({ page }) => {
     const requests: Array<Record<string, unknown>> = [];
     await page.route("**/api/v1/rough-checks", async (route) => {

@@ -26,6 +26,7 @@
 - [代码库目录与模块边界](./architecture/codebase.md)
 - [Worker 架构](./architecture/worker.md)
 - [Argus 浏览器执行边界](./collection/argus.md)
+- [历史验收证据完整索引](./evidence/README.md)
 
 ## 数据采集
 
@@ -46,6 +47,8 @@
 - [2026-08-02 Argus-only 切换验收](./evidence/argus-only-cutover-2026-08-02.md)
 - [2026-08-05 非 OTA 采集任务归档与交接](./evidence/non-ota-collection-task-archive-2026-08-05.md)
 - [2026-08-11 Free 会员端到端开发验收](./evidence/free-member-end-to-end-acceptance-2026-08-11.md)
+- [2026-08-08 Tymra → Argus 六 OTA 端到端验收](./evidence/tymra-argus-six-ota-e2e-acceptance-2026-08-08.md)
+- [2026-08-09 公共事件与市场信号 P0–P2 验收](./evidence/tymra-public-market-signals-p0-p2-2026-08-09.md)
 
 ## 治理与执行
 

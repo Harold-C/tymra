@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getDevelopmentMemberCredentials } from "@tymra/config";
 
 import { MemberSignInForm } from "@/components/member/MemberSignInForm";
 import { PublicShell } from "@/components/public/PublicShell";
@@ -18,8 +19,6 @@ export default async function MemberSignInPage({
     ? searchParams.returnTo
     : undefined;
   if (await getCustomerSessionForPage()) redirect(safeReturnTo ?? `/${params.locale}/account`);
-  const developmentCredentials = process.env.NODE_ENV === "development"
-    ? { email: process.env.MEMBER_DEV_EMAIL, password: process.env.MEMBER_DEV_PASSWORD }
-    : {};
-  return <PublicShell locale={params.locale}><div className="member-signin-page"><MemberSignInForm locale={params.locale} returnTo={safeReturnTo} defaultEmail={developmentCredentials.email} defaultPassword={developmentCredentials.password} /></div></PublicShell>;
+  const developmentCredentials = getDevelopmentMemberCredentials();
+  return <PublicShell locale={params.locale}><div className="member-signin-page"><MemberSignInForm locale={params.locale} returnTo={safeReturnTo} defaultEmail={developmentCredentials?.email} defaultPassword={developmentCredentials?.password} /></div></PublicShell>;
 }

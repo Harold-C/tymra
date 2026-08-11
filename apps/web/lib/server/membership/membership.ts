@@ -239,6 +239,133 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
   };
 }
 
+export async function getPricingUnitDetail(customerUserId: string, pricingUnitId: string) {
+  const pricingUnit = await prisma.customerPricingUnit.findFirst({
+    where: { id: pricingUnitId, customerUserId },
+    select: {
+      id: true,
+      active: true,
+      activatedAt: true,
+      deactivatedAt: true,
+      slotRetainedUntil: true,
+      sellableUnitId: true,
+      sellableUnit: {
+        select: {
+          id: true,
+          canonicalName: true,
+          officialName: true,
+          capacity: true,
+          bedrooms: true,
+          bathrooms: true,
+          unitType: true,
+          property: {
+            select: { id: true, canonicalName: true, address: true, city: true, region: true, countryCode: true, timezone: true },
+          },
+          listings: {
+            where: { listingStatus: "ACTIVE" },
+            select: {
+              id: true,
+              platform: true,
+              providerBrand: true,
+              providerFamily: true,
+              sourceListingId: true,
+              canonicalUrl: true,
+              platformUnitName: true,
+              onlineStatus: true,
+              dataSource: { select: { key: true, name: true } },
+            },
+            orderBy: { sourceListingId: "asc" },
+          },
+        },
+      },
+    },
+  });
+  if (!pricingUnit) return null;
+
+  const [recentObservations, latestCheck] = await Promise.all([
+    prisma.rateObservation.findMany({
+      where: { sellableUnitId: pricingUnit.sellableUnitId },
+      orderBy: { collectedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        checkIn: true,
+        checkOut: true,
+        currency: true,
+        nzdTotalMinor: true,
+        effectiveNightlyTotalMinor: true,
+        priceBasis: true,
+        availabilityStatus: true,
+        feeCompleteness: true,
+        collectedAt: true,
+        dataSource: { select: { key: true, name: true } },
+      },
+    }),
+    prisma.priceCheck.findFirst({
+      where: { customerUserId, unitId: pricingUnit.sellableUnitId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        stayQuery: {
+          select: { checkIn: true, checkOut: true, nights: true, adults: true, children: true, units: true, currency: true, cancellationCategory: true, timezone: true },
+        },
+      },
+    }),
+  ]);
+
+  return { ...pricingUnit, recentObservations, latestStayQuery: latestCheck?.stayQuery ?? null };
+}
+
+export async function addPricingUnitFromCheck(customerUserId: string, priceCheckId: string, now = new Date()) {
+  const pricingUnitId = await runMembershipTransaction(async (transaction) => {
+    const membership = await ensureFreeMembership(transaction, customerUserId, now);
+    const customer = await ensureBenefitGroup(transaction, customerUserId, now);
+    if (!customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
+    if (!membershipIsServiceable(membership.status, membership.graceEndsAt, now)) throw new MembershipAccessError("MEMBERSHIP_INACTIVE");
+
+    const check = await transaction.priceCheck.findFirst({
+      where: {
+        id: priceCheckId,
+        customerUserId,
+        unitId: { not: null },
+      },
+      select: { unitId: true },
+    });
+    const usage = check
+      ? await transaction.membershipUsage.findFirst({ where: { customerUserId, priceCheckId }, select: { id: true } })
+      : null;
+    if (!check?.unitId || !usage) return null;
+
+    const sellableUnit = await transaction.sellableUnit.findUniqueOrThrow({
+      where: { id: check.unitId },
+      select: { propertyId: true },
+    });
+    const quotaIdentityKey = `property:${sellableUnit.propertyId}`;
+    const existing = await transaction.customerPricingUnit.findUnique({
+      where: { customerUserId_quotaIdentityKey: { customerUserId, quotaIdentityKey } },
+    });
+    if (existing?.active) return existing.id;
+
+    const alreadyOccupiesSlot = Boolean(existing?.slotRetainedUntil && existing.slotRetainedUntil > now);
+    if (!alreadyOccupiesSlot) {
+      const occupiedCount = await transaction.customerPricingUnit.count({
+        where: occupiedPricingUnitWhere(customerUserId, now, existing?.id),
+      });
+      if (occupiedCount >= membershipEntitlements[membership.plan].activePricingUnitLimit) {
+        throw new MembershipAccessError("PRICING_UNIT_LIMIT_REACHED");
+      }
+    }
+
+    const pricingUnit = await transaction.customerPricingUnit.upsert({
+      where: { customerUserId_quotaIdentityKey: { customerUserId, quotaIdentityKey } },
+      update: { sellableUnitId: check.unitId, active: true, activatedAt: now, deactivatedAt: null, slotRetainedUntil: null },
+      create: { customerUserId, sellableUnitId: check.unitId, quotaIdentityKey, activatedAt: now },
+    });
+    return pricingUnit.id;
+  });
+
+  return pricingUnitId ? getPricingUnitDetail(customerUserId, pricingUnitId) : null;
+}
+
 export async function setPricingUnitActive(customerUserId: string, pricingUnitId: string, active: boolean, now = new Date()) {
   return prisma.$transaction(async (transaction) => {
     const membership = await ensureFreeMembership(transaction, customerUserId);
