@@ -26,6 +26,7 @@ export type HomeCopy = {
     methodology: string;
     faq: string;
     contact: string;
+    cta: string;
     language: string;
     languageHref: string;
     languageAria: string;
@@ -89,6 +90,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       methodology: "Methodology",
       faq: "FAQ",
       contact: "Contact",
+      cta: "Check a Listing",
       language: "中文",
       languageHref: "/zh",
       languageAria: "Switch to Chinese",
@@ -96,8 +98,8 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       menuClose: "Close navigation",
       primaryNavigation: "Primary navigation",
       mobileNavigation: "Mobile navigation",
-      signIn: "Member Sign In",
-      account: "Account",
+      signIn: "Sign In",
+      account: "My Account",
       signOut: "Sign out",
     },
     hero: {
@@ -200,7 +202,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       description: "帮助新西兰住宿经营者发现可能卖便宜的重点日期，并获得可解释的价格情报。",
     },
     nav: {
-      howItWorks: "工作原理", whatYouGet: "可获得内容", pricing: "会员方案", methodology: "方法说明", faq: "常见问题", contact: "联系我们", language: "English", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航", primaryNavigation: "主导航", mobileNavigation: "移动端导航", signIn: "会员登录", account: "会员账户", signOut: "退出",
+      howItWorks: "工作原理", whatYouGet: "可获得内容", pricing: "会员方案", methodology: "方法说明", faq: "常见问题", contact: "联系我们", cta: "检查房源", language: "English", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航", primaryNavigation: "主导航", mobileNavigation: "移动端导航", signIn: "登录", account: "我的账户", signOut: "退出",
     },
     hero: {
       badge: "住宿定价智能",

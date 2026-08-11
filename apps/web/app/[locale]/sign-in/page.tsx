@@ -18,5 +18,8 @@ export default async function MemberSignInPage({
     ? searchParams.returnTo
     : undefined;
   if (await getCustomerSessionForPage()) redirect(safeReturnTo ?? `/${params.locale}/account`);
-  return <PublicShell locale={params.locale}><div className="member-signin-page"><MemberSignInForm locale={params.locale} returnTo={safeReturnTo} /></div></PublicShell>;
+  const developmentCredentials = process.env.NODE_ENV === "development"
+    ? { email: process.env.MEMBER_DEV_EMAIL, password: process.env.MEMBER_DEV_PASSWORD }
+    : {};
+  return <PublicShell locale={params.locale}><div className="member-signin-page"><MemberSignInForm locale={params.locale} returnTo={safeReturnTo} defaultEmail={developmentCredentials.email} defaultPassword={developmentCredentials.password} /></div></PublicShell>;
 }

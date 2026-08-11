@@ -16,7 +16,8 @@
   "dependencies": {
     "@prisma/client": "6.19.0",
     "@tymra/config": "workspace:*",
-    "@tymra/domain": "workspace:*"
+    "@tymra/domain": "workspace:*",
+    "bcryptjs": "^3.0.2"
   },
   "devDependencies": {
     "prisma": "6.19.0",

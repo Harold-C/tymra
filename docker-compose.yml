@@ -28,6 +28,8 @@ x-app-environment: &app-environment
   ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
   ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Set ADMIN_PASSWORD_HASH in .env}
   ADMIN_DEV_PASSWORD: ${ADMIN_DEV_PASSWORD:-}
+  MEMBER_DEV_EMAIL: ${MEMBER_DEV_EMAIL:-}
+  MEMBER_DEV_PASSWORD: ${MEMBER_DEV_PASSWORD:-}
   RESULT_TOKEN_SECRET: ${RESULT_TOKEN_SECRET:?Set RESULT_TOKEN_SECRET in .env}
   ACCESS_KEY_SECRET: ${ACCESS_KEY_SECRET:?Set ACCESS_KEY_SECRET in .env}
   DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in .env}
@@ -157,12 +159,14 @@ services:
 
   web:
     <<: *app-dev-image
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      NODE_OPTIONS: ${TYMRA_WEB_NODE_OPTIONS:---max-old-space-size=1280}
     working_dir: /app/apps/web
     command: ["./node_modules/.bin/next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
     init: true
     logging: *default-logging
-    mem_limit: ${TYMRA_WEB_MEMORY_LIMIT:-1536m}
+    mem_limit: ${TYMRA_WEB_MEMORY_LIMIT:-2g}
     pids_limit: 256
     ports:
       - "127.0.0.1:3000:3000"

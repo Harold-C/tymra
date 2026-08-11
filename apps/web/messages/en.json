@@ -75,6 +75,7 @@
     "submit": "Sign in",
     "signingIn": "Signing in",
     "error": "Email or password is incorrect.",
+    "serviceError": "The sign-in service is temporarily unavailable. Please try again.",
     "noAccount": "New to Tymra?",
     "createAccount": "Create an account",
     "privacy": "Privacy",

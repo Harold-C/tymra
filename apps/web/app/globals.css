@@ -30,7 +30,7 @@
 
 .public-page {
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: var(--surface);
 }
 
@@ -53,6 +53,27 @@
 
 .skip-link:focus {
   transform: translateY(0);
+}
+
+@keyframes site-mobile-navigation-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.site-mobile-navigation {
+  animation: site-mobile-navigation-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-mobile-navigation {
+    animation: none;
+  }
 }
 
 .public-header {

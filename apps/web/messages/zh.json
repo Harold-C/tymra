@@ -75,6 +75,7 @@
     "submit": "登录",
     "signingIn": "正在登录",
     "error": "邮箱或密码不正确。",
+    "serviceError": "登录服务暂时不可用，请稍后重试。",
     "noAccount": "还没有 Tymra 账户？",
     "createAccount": "创建账户",
     "privacy": "隐私政策",

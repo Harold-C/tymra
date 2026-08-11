@@ -3,6 +3,7 @@
 import { Bell, Building2, CalendarDays, CreditCard, Download, FileClock, LayoutDashboard, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import type { MembershipPlan } from "@tymra/db";
 
@@ -20,20 +21,73 @@ const planOrder: Record<MembershipPlan, number> = { FREE: 0, HOST: 1, PRO: 2, PO
 
 export function CustomerAccountNav({ locale, plan }: { locale: "en" | "zh"; plan: MembershipPlan }) {
   const pathname = usePathname();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const activeLinkRef = useRef<HTMLAnchorElement>(null);
+  const [scrollEdges, setScrollEdges] = useState(0);
   const root = `/${locale}/account`;
   const visibleEntries = planOrder[plan] >= planOrder.PRO
     ? [...entries.slice(0, 5), { path: "/exports", icon: Download, en: "Exports", zh: "数据导出" } as const, ...entries.slice(5)]
     : entries;
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const activeLink = activeLinkRef.current;
+    if (!scroller) return;
+
+    if (activeLink) {
+      const centeredLeft = activeLink.offsetLeft - (scroller.clientWidth - activeLink.offsetWidth) / 2;
+      scroller.scrollTo({ left: Math.max(0, centeredLeft), behavior: "auto" });
+    }
+
+    function updateScrollEdges() {
+      if (!scroller) return;
+      const maximumLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const nextEdges = (scroller.scrollLeft > 1 ? 1 : 0) | (scroller.scrollLeft < maximumLeft - 1 ? 2 : 0);
+      setScrollEdges((current) => current === nextEdges ? current : nextEdges);
+    }
+
+    const updateFrame = window.requestAnimationFrame(updateScrollEdges);
+    const resizeObserver = new ResizeObserver(updateScrollEdges);
+    resizeObserver.observe(scroller);
+    if (scroller.firstElementChild) resizeObserver.observe(scroller.firstElementChild);
+    scroller.addEventListener("scroll", updateScrollEdges, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(updateFrame);
+      resizeObserver.disconnect();
+      scroller.removeEventListener("scroll", updateScrollEdges);
+    };
+  }, [pathname, visibleEntries.length]);
+
   return (
-    <nav className="customer-account-nav" aria-label={locale === "zh" ? "会员后台导航" : "Member account navigation"}>
-      <div className="rough-shell">
-        {visibleEntries.map((entry) => {
-          const href = `${root}${entry.path}`;
-          const active = entry.path === "" ? pathname === root : pathname.startsWith(href);
-          const Icon = entry.icon;
-          return <Link key={entry.path} href={href} className={active ? "is-active" : ""} aria-current={active ? "page" : undefined}><Icon aria-hidden="true" /><span>{entry[locale]}</span></Link>;
-        })}
+    <nav
+      className="customer-account-nav"
+      aria-label={locale === "zh" ? "会员后台导航" : "Member account navigation"}
+      data-can-scroll-back={Boolean(scrollEdges & 1)}
+      data-can-scroll-forward={Boolean(scrollEdges & 2)}
+    >
+      <div ref={scrollRef} className="customer-account-nav-scroll">
+        <div className="rough-shell">
+          {visibleEntries.map((entry) => {
+            const href = `${root}${entry.path}`;
+            const active = entry.path === "" ? pathname === root : pathname.startsWith(href);
+            const Icon = entry.icon;
+            return (
+              <Link
+                ref={active ? activeLinkRef : undefined}
+                key={entry.path}
+                href={href}
+                className={active ? "is-active" : ""}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon aria-hidden="true" />
+                <span>{entry[locale]}</span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
+      <span className="customer-account-nav-edge customer-account-nav-edge-start" aria-hidden="true" />
+      <span className="customer-account-nav-edge customer-account-nav-edge-end" aria-hidden="true" />
     </nav>
   );
 }

@@ -2,7 +2,10 @@ import { prisma } from "@tymra/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { getAccountMetadata } from "@/lib/account-metadata";
 import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
+
+export function generateMetadata({ params }: { params: { locale: "en" | "zh" } }) { return getAccountMetadata(params.locale, "pricingUnitDetail"); }
 
 export default async function Page({ params }: { params: { locale: "en" | "zh"; pricingUnitId: string } }) {
   const session = await getCustomerSessionForPage();

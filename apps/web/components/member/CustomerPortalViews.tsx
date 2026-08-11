@@ -2,7 +2,8 @@
 
 import { AlertTriangle, Building2, CalendarDays, CheckCircle2, Download, LoaderCircle, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { MembershipPanel, type CheckListItem, type MembershipPlan, type MembershipSummary } from "./CustomerAccountViews";
 
@@ -64,7 +65,7 @@ export function PriceCalendar({ locale, initialPricingUnitId }: { locale: Locale
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { void api<CalendarData>(`/api/v1/customer/calendar${unitId ? `?pricingUnitId=${encodeURIComponent(unitId)}` : ""}`).then((value) => { setData(value); if (!unitId && value.pricingUnit) setUnitId(value.pricingUnit.id); }).catch((caught) => setError(String(caught.message ?? caught))); }, [unitId]);
   return <Page locale={locale} eyebrow={locale === "zh" ? "新西兰日期" : "NEW ZEALAND DATES"} title={locale === "zh" ? "未来价格日历" : "Future price calendar"} body={locale === "zh" ? "全部日期按 Pacific/Auckland 计算。精确逐日价格检查范围与长期市场监测范围明确区分。" : "All dates use Pacific/Auckland. The exact daily price-check window and longer market monitoring are labelled separately."}>
-    {error ? <ErrorState message={error} /> : !data ? <Loading locale={locale} /> : !data.pricingUnit ? <div className="account-empty"><h2>{locale === "zh" ? "请先添加定价单位" : "Add a pricing unit first"}</h2></div> : <><div className="member-toolbar"><label><span>{locale === "zh" ? "定价单位" : "Pricing unit"}</span><select value={unitId} onChange={(event) => setUnitId(event.target.value)}>{data.pricingUnits.map((unit) => <option value={unit.id} key={unit.id}>{unit.propertyName} — {unit.unitName}</option>)}</select></label><div className="calendar-legend"><span><i className="exact" />{locale === "zh" ? `逐日价格检查 ${data.exactHorizonDays} 天` : `${data.exactHorizonDays}-day price-check window`}</span><span><i />{locale === "zh" ? `市场监测 ${data.monitoringHorizonDays} 天` : `${data.monitoringHorizonDays}-day monitoring`}</span></div></div><div className="price-calendar-grid">{data.dates.map((day) => <article key={day.date} className={day.coverage === "EXACT_DAILY" ? "is-exact" : ""}><div><time>{new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { month: "short", day: "numeric", weekday: "short", timeZone: "Pacific/Auckland" }).format(new Date(`${day.date}T12:00:00+12:00`))}</time><span>{day.coverage === "EXACT_DAILY" ? locale === "zh" ? "逐日检查" : "Daily check" : locale === "zh" ? "仅监测" : "Monitoring"}</span></div>{day.observations.length ? <ul>{day.observations.map((item) => <li key={item.source}><strong>{new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-NZ", { style: "currency", currency: "NZD", maximumFractionDigits: 0 }).format(item.amountMinor / 100)}</strong><small>{item.source} · {item.feeCompleteness}</small></li>)}</ul> : <p>{locale === "zh" ? "尚无公开 OTA 观测" : "No public OTA observation yet"}</p>}</article>)}</div></>}
+    {error ? <ErrorState message={error} /> : !data ? <Loading locale={locale} /> : !data.pricingUnit ? <div className="account-empty"><h2>{locale === "zh" ? "请先添加定价单位" : "Add a pricing unit first"}</h2><p>{locale === "zh" ? "完成首次价格检查后，确认的房源会自动加入价格日历。" : "Complete your first Price Check to add the confirmed property to this calendar."}</p><Link className="button button-primary" href={`/${locale}/address-check`}>{locale === "zh" ? "开始价格检查" : "Start a Price Check"}</Link></div> : <><div className="member-toolbar"><label><span>{locale === "zh" ? "定价单位" : "Pricing unit"}</span><select value={unitId} onChange={(event) => setUnitId(event.target.value)}>{data.pricingUnits.map((unit) => <option value={unit.id} key={unit.id}>{unit.propertyName} — {unit.unitName}</option>)}</select></label><div className="calendar-legend"><span><i className="exact" />{locale === "zh" ? `逐日价格检查 ${data.exactHorizonDays} 天` : `${data.exactHorizonDays}-day price-check window`}</span><span><i />{locale === "zh" ? `市场监测 ${data.monitoringHorizonDays} 天` : `${data.monitoringHorizonDays}-day monitoring`}</span></div></div><div className="price-calendar-grid">{data.dates.map((day) => <article key={day.date} className={day.coverage === "EXACT_DAILY" ? "is-exact" : ""}><div><time>{new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { month: "short", day: "numeric", weekday: "short", timeZone: "Pacific/Auckland" }).format(new Date(`${day.date}T12:00:00+12:00`))}</time><span>{day.coverage === "EXACT_DAILY" ? locale === "zh" ? "逐日检查" : "Daily check" : locale === "zh" ? "仅监测" : "Monitoring"}</span></div>{day.observations.length ? <ul>{day.observations.map((item) => <li key={item.source}><strong>{new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-NZ", { style: "currency", currency: "NZD", maximumFractionDigits: 0 }).format(item.amountMinor / 100)}</strong><small>{item.source} · {item.feeCompleteness}</small></li>)}</ul> : <p>{locale === "zh" ? "尚无公开 OTA 观测" : "No public OTA observation yet"}</p>}</article>)}</div></>}
   </Page>;
 }
 
@@ -76,31 +77,154 @@ export function BillingView({ locale }: { locale: Locale }) {
 }
 
 type SettingsData = { email: string; locale: Locale; marketingConsent: boolean; hasPassword: boolean; emailVerified: boolean; benefitGroupId: string | null; dataRequests: Array<{ id: string; type: string; status: string; requestedAt: string }> };
+type SettingsFeedback = { target: "profile" | "security" | "data"; kind: "success" | "error"; message: string };
+type SettingsConfirmation = "sign-out-all" | "delete-account";
+
+function SettingsNotice({ feedback }: { feedback: SettingsFeedback | null }) {
+  if (!feedback) return null;
+  return <div className={`flow-notice settings-feedback ${feedback.kind === "success" ? "notice-success" : "notice-danger"}`} role={feedback.kind === "success" ? "status" : "alert"}>{feedback.kind === "success" ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}<div><p>{feedback.message}</p></div></div>;
+}
+
+function SettingsConfirmationDialog({ action, locale, onCancel, onConfirm }: { action: SettingsConfirmation; locale: Locale; onCancel: () => void; onConfirm: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const isDelete = action === "delete-account";
+  const title = isDelete
+    ? locale === "zh" ? "申请删除账户？" : "Request account deletion?"
+    : locale === "zh" ? "退出所有设备？" : "Sign out all devices?";
+  const body = isDelete
+    ? locale === "zh" ? "提交后，账户删除流程将进入人工处理。此操作不会立即删除账户，但会创建一条正式请求。" : "This creates a formal account-deletion request for review. Your account is not deleted immediately."
+    : locale === "zh" ? "确认后，当前设备和其他所有设备上的登录会话都会失效。" : "Your current session and every other signed-in device will be signed out."
+  const confirmLabel = isDelete
+    ? locale === "zh" ? "确认申请删除" : "Confirm deletion request"
+    : locale === "zh" ? "退出所有设备" : "Sign out all devices";
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => cancelRef.current?.focus({ preventScroll: true }));
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      if (event.shiftKey && document.activeElement === cancelRef.current) {
+        event.preventDefault();
+        confirmRef.current?.focus({ preventScroll: true });
+      } else if (!event.shiftKey && document.activeElement === confirmRef.current) {
+        event.preventDefault();
+        cancelRef.current?.focus({ preventScroll: true });
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onCancel]);
+
+  return createPortal(
+    <div className="settings-confirm-backdrop" role="presentation" onClick={onCancel}>
+      <section className="settings-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-confirm-title" aria-describedby="settings-confirm-body" onClick={(event) => event.stopPropagation()}>
+        <span className={`settings-confirm-icon ${isDelete ? "is-danger" : ""}`} aria-hidden="true">{isDelete ? "!" : "✓"}</span>
+        <h2 id="settings-confirm-title">{title}</h2>
+        <p id="settings-confirm-body">{body}</p>
+        <div className="settings-confirm-actions">
+          <button ref={cancelRef} className="button button-secondary" type="button" onClick={onCancel}>{locale === "zh" ? "取消" : "Cancel"}</button>
+          <button ref={confirmRef} className={`button ${isDelete ? "button-danger" : "button-primary"}`} type="button" onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
 
 export function SettingsView({ locale }: { locale: Locale }) {
   const [data, setData] = useState<SettingsData | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [savedPreferences, setSavedPreferences] = useState<Pick<SettingsData, "locale" | "marketingConsent"> | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<SettingsFeedback | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<SettingsConfirmation | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const load = () => api<SettingsData>("/api/v1/customer/settings").then(setData).catch((caught) => setError(String(caught.message ?? caught)));
-  useEffect(() => { void load(); }, []);
-  const save = async () => { if (!data) return; try { await api("/api/v1/customer/settings", { method: "PATCH", body: JSON.stringify({ locale: data.locale, marketingConsent: data.marketingConsent }) }); setMessage(locale === "zh" ? "设置已保存。" : "Settings saved."); } catch (caught) { setError(String((caught as Error).message)); } };
-  const requestData = async (type: "EXPORT" | "DELETE") => { try { await api("/api/v1/customer/settings", { method: "POST", body: JSON.stringify({ type }) }); setMessage(locale === "zh" ? "请求已提交。" : "Request submitted."); await load(); } catch (caught) { setError(String((caught as Error).message)); } };
-  const resendVerification = async () => { try { await api("/api/v1/customer/auth/verify-email", { method: "POST", body: "{}" }); setMessage(locale === "zh" ? "验证邮件已发送。" : "Verification email sent."); } catch (caught) { setError(String((caught as Error).message)); } };
+  const load = useCallback(async () => {
+    try {
+      const nextData = await api<SettingsData>("/api/v1/customer/settings");
+      setData(nextData);
+      setSavedPreferences({ locale: nextData.locale, marketingConsent: nextData.marketingConsent });
+      setLoadError(null);
+    } catch (caught) {
+      setLoadError(String((caught as Error).message));
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const preferencesChanged = Boolean(data && savedPreferences && (data.locale !== savedPreferences.locale || data.marketingConsent !== savedPreferences.marketingConsent));
+
+  const save = async () => {
+    if (!data || !preferencesChanged || busyAction) return;
+    setBusyAction("save"); setFeedback(null);
+    try {
+      await api("/api/v1/customer/settings", { method: "PATCH", body: JSON.stringify({ locale: data.locale, marketingConsent: data.marketingConsent }) });
+      setSavedPreferences({ locale: data.locale, marketingConsent: data.marketingConsent });
+      setFeedback({ target: "profile", kind: "success", message: locale === "zh" ? "设置已保存。" : "Settings saved." });
+    } catch (caught) {
+      setFeedback({ target: "profile", kind: "error", message: String((caught as Error).message) });
+    } finally { setBusyAction(null); }
+  };
+  const requestData = async (type: "EXPORT" | "DELETE") => {
+    setConfirmation(null); setBusyAction(type); setFeedback(null);
+    try {
+      await api("/api/v1/customer/settings", { method: "POST", body: JSON.stringify({ type }) });
+      setFeedback({ target: "data", kind: "success", message: type === "DELETE" ? locale === "zh" ? "账户删除申请已提交。" : "Account deletion request submitted." : locale === "zh" ? "数据导出申请已提交。" : "Data export request submitted." });
+      await load();
+    } catch (caught) {
+      setFeedback({ target: "data", kind: "error", message: String((caught as Error).message) });
+    } finally { setBusyAction(null); }
+  };
+  const resendVerification = async () => {
+    setBusyAction("verify"); setFeedback(null);
+    try {
+      await api("/api/v1/customer/auth/verify-email", { method: "POST", body: "{}" });
+      setFeedback({ target: "profile", kind: "success", message: locale === "zh" ? "验证邮件已发送。" : "Verification email sent." });
+    } catch (caught) {
+      setFeedback({ target: "profile", kind: "error", message: String((caught as Error).message) });
+    } finally { setBusyAction(null); }
+  };
   const changePassword = async () => {
-    if (newPassword !== confirmPassword) return setError(locale === "zh" ? "两次输入的新密码不一致。" : "The new passwords do not match.");
+    if (newPassword !== confirmPassword) return setFeedback({ target: "security", kind: "error", message: locale === "zh" ? "两次输入的新密码不一致。" : "The new passwords do not match." });
+    setBusyAction("password"); setFeedback(null);
     try {
       await api("/api/v1/customer/auth/password", { method: "PUT", body: JSON.stringify({ currentPassword: currentPassword || undefined, newPassword }) });
-      setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setMessage(locale === "zh" ? "密码已更新，其他设备已退出。" : "Password updated. Other devices have been signed out."); await load();
-    } catch (caught) { setError(String((caught as Error).message)); }
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+      setFeedback({ target: "security", kind: "success", message: locale === "zh" ? "密码已更新，其他设备已退出。" : "Password updated. Other devices have been signed out." });
+      await load();
+    } catch (caught) {
+      setFeedback({ target: "security", kind: "error", message: String((caught as Error).message) });
+    } finally { setBusyAction(null); }
   };
-  const signOutAll = async () => { await api("/api/v1/customer/session", { method: "DELETE", body: JSON.stringify({ allSessions: true }) }); window.location.assign(`/${locale}`); };
+  const signOutAll = async () => {
+    setConfirmation(null); setBusyAction("sign-out"); setFeedback(null);
+    try {
+      await api("/api/v1/customer/session", { method: "DELETE", body: JSON.stringify({ allSessions: true }) });
+      window.location.assign(`/${locale}`);
+    } catch (caught) {
+      setFeedback({ target: "security", kind: "error", message: String((caught as Error).message) });
+      setBusyAction(null);
+    }
+  };
   return <Page locale={locale} eyebrow={locale === "zh" ? "账户" : "ACCOUNT"} title={locale === "zh" ? "账户设置" : "Account settings"} body={locale === "zh" ? "管理语言、独立营销同意、会话及个人数据请求。" : "Manage language, separate marketing consent, sessions and personal-data requests."}>
-    {error ? <ErrorState message={error} /> : !data ? <Loading locale={locale} /> : <div className="settings-grid"><section><h2>{locale === "zh" ? "资料与偏好" : "Profile and preferences"}</h2><label><span>Email · {data.emailVerified ? "VERIFIED" : "UNVERIFIED"}</span><input value={data.email} disabled /></label>{!data.emailVerified ? <button className="button button-secondary" onClick={() => void resendVerification()}>{locale === "zh" ? "重新发送验证邮件" : "Resend verification email"}</button> : null}<label><span>{locale === "zh" ? "语言" : "Language"}</span><select value={data.locale} onChange={(event) => setData({ ...data, locale: event.target.value as Locale })}><option value="en">English</option><option value="zh">中文</option></select></label><label className="checkbox-row"><input type="checkbox" checked={data.marketingConsent} onChange={(event) => setData({ ...data, marketingConsent: event.target.checked })} /><span>{locale === "zh" ? "接收营销信息（不影响服务邮件）" : "Receive marketing messages (service emails remain separate)"}</span></label><button className="button button-primary" onClick={() => void save()}>{locale === "zh" ? "保存" : "Save"}</button></section><section><h2>{locale === "zh" ? "密码与安全" : "Password and security"}</h2>{data.hasPassword ? <label><span>{locale === "zh" ? "当前密码" : "Current password"}</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label> : null}<label><span>{locale === "zh" ? "新密码（至少 12 个字符）" : "New password (12+ characters)"}</span><input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label><span>{locale === "zh" ? "确认新密码" : "Confirm new password"}</span><input type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label><button className="button button-primary" disabled={newPassword.length < 12 || (data.hasPassword && !currentPassword)} onClick={() => void changePassword()}>{data.hasPassword ? locale === "zh" ? "修改密码" : "Change password" : locale === "zh" ? "创建密码" : "Create password"}</button><button className="button button-secondary" onClick={() => void signOutAll()}>{locale === "zh" ? "退出所有设备" : "Sign out all devices"}</button></section><section><h2>{locale === "zh" ? "个人数据" : "Personal data"}</h2><button className="button button-secondary" onClick={() => void requestData("EXPORT")}><Download aria-hidden="true" />{locale === "zh" ? "申请数据导出" : "Request data export"}</button><button className="button button-secondary danger" onClick={() => void requestData("DELETE")}>{locale === "zh" ? "申请删除账户" : "Request account deletion"}</button>{data.dataRequests.length ? <ul className="data-request-list">{data.dataRequests.map((item) => <li key={item.id}><span>{item.type}</span><strong>{item.status}</strong></li>)}</ul> : null}</section></div>}
-    {message ? <div className="flow-notice notice-success"><CheckCircle2 aria-hidden="true" /><div><p>{message}</p></div></div> : null}
+    {loadError ? <ErrorState message={loadError} /> : !data ? <Loading locale={locale} /> : <div className="settings-grid">
+      <section><h2>{locale === "zh" ? "资料与偏好" : "Profile and preferences"}</h2><label><span>Email · {data.emailVerified ? locale === "zh" ? "已验证" : "VERIFIED" : locale === "zh" ? "未验证" : "UNVERIFIED"}</span><input value={data.email} disabled /></label>{!data.emailVerified ? <button className="button button-secondary" disabled={busyAction !== null} onClick={() => void resendVerification()}>{locale === "zh" ? "重新发送验证邮件" : "Resend verification email"}</button> : null}<label><span>{locale === "zh" ? "语言" : "Language"}</span><select value={data.locale} onChange={(event) => setData({ ...data, locale: event.target.value as Locale })}><option value="en">English</option><option value="zh">中文</option></select></label><label className="checkbox-row"><input type="checkbox" checked={data.marketingConsent} onChange={(event) => setData({ ...data, marketingConsent: event.target.checked })} /><span>{locale === "zh" ? "接收营销信息（不影响服务邮件）" : "Receive marketing messages (service emails remain separate)"}</span></label><button className="button button-primary" disabled={!preferencesChanged || busyAction !== null} onClick={() => void save()}>{busyAction === "save" ? <LoaderCircle className="spin" aria-hidden="true" /> : null}{locale === "zh" ? "保存" : "Save"}</button><SettingsNotice feedback={feedback?.target === "profile" ? feedback : null} /></section>
+      <section><h2>{locale === "zh" ? "密码与安全" : "Password and security"}</h2>{data.hasPassword ? <label><span>{locale === "zh" ? "当前密码" : "Current password"}</span><input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label> : null}<label><span>{locale === "zh" ? "新密码（至少 12 个字符）" : "New password (12+ characters)"}</span><input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label><span>{locale === "zh" ? "确认新密码" : "Confirm new password"}</span><input type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label><button className="button button-primary" disabled={busyAction !== null || newPassword.length < 12 || (data.hasPassword && !currentPassword)} onClick={() => void changePassword()}>{busyAction === "password" ? <LoaderCircle className="spin" aria-hidden="true" /> : null}{data.hasPassword ? locale === "zh" ? "修改密码" : "Change password" : locale === "zh" ? "创建密码" : "Create password"}</button><button className="button button-secondary" disabled={busyAction !== null} onClick={() => setConfirmation("sign-out-all")}>{locale === "zh" ? "退出所有设备" : "Sign out all devices"}</button><SettingsNotice feedback={feedback?.target === "security" ? feedback : null} /></section>
+      <section><h2>{locale === "zh" ? "个人数据" : "Personal data"}</h2><button className="button button-secondary" disabled={busyAction !== null} onClick={() => void requestData("EXPORT")}><Download aria-hidden="true" />{busyAction === "EXPORT" ? locale === "zh" ? "正在提交…" : "Submitting…" : locale === "zh" ? "申请数据导出" : "Request data export"}</button><button className="button button-secondary danger" disabled={busyAction !== null} onClick={() => setConfirmation("delete-account")}>{locale === "zh" ? "申请删除账户" : "Request account deletion"}</button><SettingsNotice feedback={feedback?.target === "data" ? feedback : null} />{data.dataRequests.length ? <ul className="data-request-list">{data.dataRequests.map((item) => <li key={item.id}><span>{item.type === "EXPORT" ? locale === "zh" ? "数据导出" : "Data export" : item.type === "DELETE" ? locale === "zh" ? "账户删除" : "Account deletion" : item.type}</span><strong>{item.status}</strong></li>)}</ul> : null}</section>
+    </div>}
     <RiskAppeals locale={locale} />
+    {confirmation ? <SettingsConfirmationDialog action={confirmation} locale={locale} onCancel={() => setConfirmation(null)} onConfirm={() => { if (confirmation === "delete-account") void requestData("DELETE"); else void signOutAll(); }} /> : null}
   </Page>;
 }
 
@@ -140,7 +264,7 @@ export function ExportsView({ locale }: { locale: Locale }) {
       const link = document.createElement("a"); link.href = url; link.download = `tymra-price-checks-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
     } catch (caught) { setError(String((caught as Error).message)); } finally { setBusy(false); }
   };
-  return <Page locale={locale} eyebrow={locale === "zh" ? "独立额度" : "INDEPENDENT QUOTA"} title={locale === "zh" ? "数据导出" : "Data exports"} body={locale === "zh" ? "导出额度与价格检查额度分开计算；重复提交同一幂等键不会重复扣减。" : "Export allowance is independent from Price Checks; replaying the same idempotency key does not count twice."}>
+  return <Page locale={locale} eyebrow={locale === "zh" ? "独立额度" : "INDEPENDENT ALLOWANCE"} title={locale === "zh" ? "数据导出" : "Data exports"} body={locale === "zh" ? "每月数据导出额度与价格检查额度分开计算。" : "Your monthly data-export allowance is separate from your Price Check allowance."}>
     {error ? <ErrorState message={error} /> : !summary ? <Loading locale={locale} /> : summary.entitlements.monthlyExportLimit === 0 ? <div className="feature-gate"><ShieldCheck aria-hidden="true" /><h2>{locale === "zh" ? "需要 Pro 或 Portfolio" : "Pro or Portfolio required"}</h2><Link className="button button-primary" href={`/${locale}/account/billing`}>{locale === "zh" ? "查看方案" : "Compare plans"}</Link></div> : <div className="feature-gate"><Download aria-hidden="true" /><h2>{locale === "zh" ? `每个新西兰自然月 ${summary.entitlements.monthlyExportLimit} 次` : `${summary.entitlements.monthlyExportLimit} exports per New Zealand calendar month`}</h2><button className="button button-primary" disabled={busy} onClick={() => void download()}>{busy ? <LoaderCircle className="spin" aria-hidden="true" /> : <Download aria-hidden="true" />}{locale === "zh" ? "下载 CSV" : "Download CSV"}</button></div>}
   </Page>;
 }
@@ -151,5 +275,5 @@ export function GatedFeatureView({ locale, feature, minimumPlan, launched = fals
   useEffect(() => { void api<MembershipSummary>("/api/v1/customer/membership").then(setSummary); }, []);
   const names = { alerts: locale === "zh" ? "价格提醒" : "Price alerts", portfolio: locale === "zh" ? "组合管理" : "Portfolio", exports: locale === "zh" ? "数据导出" : "Data exports", integrations: locale === "zh" ? "系统集成" : "Integrations" };
   const entitled = summary ? planOrder[summary.plan] >= planOrder[minimumPlan] : false;
-  return <Page locale={locale} eyebrow="MEMBERSHIP FEATURE" title={names[feature]} body={locale === "zh" ? "此功能同时受会员权益和独立上线开关控制。" : "This feature is controlled by both plan entitlement and an independent launch gate."}>{!summary ? <Loading locale={locale} /> : <div className="feature-gate"><ShieldCheck aria-hidden="true" /><h2>{!entitled ? locale === "zh" ? `需要 ${minimumPlan} 或更高方案` : `${minimumPlan} or higher required` : !launched ? locale === "zh" ? "功能尚未完成生产验收" : "Feature has not passed production launch acceptance" : locale === "zh" ? "功能可用" : "Feature available"}</h2><p>{locale === "zh" ? "系统不会把未开放能力伪装为可用。已有价格检查和报告不受影响。" : "Tymra does not present unavailable capabilities as active. Existing Price Checks and reports are unaffected."}</p>{!entitled ? <Link className="button button-primary" href={`/${locale}/account/billing`}>{locale === "zh" ? "查看方案" : "Compare plans"}</Link> : null}</div>}</Page>;
+  return <Page locale={locale} eyebrow={locale === "zh" ? "方案功能" : "PLAN FEATURE"} title={names[feature]} body={locale === "zh" ? "功能可用性取决于你的会员方案和当前开放范围。" : "Availability depends on your membership plan and the current product rollout."}>{!summary ? <Loading locale={locale} /> : <div className="feature-gate"><ShieldCheck aria-hidden="true" /><h2>{!entitled ? locale === "zh" ? `需要 ${minimumPlan} 或更高方案` : `${minimumPlan} or higher required` : !launched ? locale === "zh" ? "即将开放" : "Coming soon" : locale === "zh" ? "功能可用" : "Feature available"}</h2><p>{locale === "zh" ? "已有价格检查和报告不受影响；功能开放后会在此处显示。" : "Existing Price Checks and reports are unaffected. This page will update when the feature becomes available."}</p>{!entitled ? <Link className="button button-primary" href={`/${locale}/account/billing`}>{locale === "zh" ? "查看方案" : "Compare plans"}</Link> : null}</div>}</Page>;
 }

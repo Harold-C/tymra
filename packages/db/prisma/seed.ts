@@ -1,11 +1,14 @@
 import {
   ConfidenceLevel,
+  CustomerStatus,
   DataSourceStatus,
   JobType,
   OperationalStatus,
   ExceptionPriority,
   ExceptionType,
   MarketStatus,
+  MembershipPlan,
+  MembershipSubscriptionStatus,
   PriceCheckStatus,
   PrismaClient,
   ProviderType,
@@ -15,6 +18,7 @@ import {
   SourceLifecycle,
   SourceType,
 } from "@prisma/client";
+import { hash } from "bcryptjs";
 
 import { encryptPersonalData, hashOpaqueToken, hashPersonalIdentifier } from "../src/security";
 import { ARGUS_PUBLIC_MARKET_SEED_SOURCES, registrySourceSeedRecords } from "./seed-sources";
@@ -27,6 +31,8 @@ const encryptionSecret = required("DATA_ENCRYPTION_KEY");
 const adminEmail = required("ADMIN_EMAIL").toLowerCase();
 const adminPasswordHash = required("ADMIN_PASSWORD_HASH");
 const demoEmail = "development-demo@tymra.test";
+const developmentMemberEmail = process.env.MEMBER_DEV_EMAIL?.trim().toLowerCase();
+const developmentMemberPassword = process.env.MEMBER_DEV_PASSWORD;
 const seedDate = newZealandDateStorageDay(new Date());
 const checkIn = addDays(seedDate, 5);
 const checkOut = addDays(seedDate, 6);
@@ -39,6 +45,7 @@ const resultStatuses = new Set<PriceCheckStatus>([
 
 async function main() {
   await seedAdmin();
+  await seedDevelopmentMember();
   const sources = await seedDataSources();
   await seedMarketCoverage();
   await seedSchedules();
@@ -50,6 +57,45 @@ async function main() {
   await seedCoreScenarios(inventory, stayQuery.id);
   await seedExceptionScenarios(inventory, stayQuery.id);
   await seedOperationalExamples(inventory.targetUnit.id);
+}
+
+async function seedDevelopmentMember() {
+  if (process.env.NODE_ENV !== "development" || !developmentMemberEmail || !developmentMemberPassword) return;
+  if (developmentMemberPassword.length < 12) throw new Error("MEMBER_DEV_PASSWORD must contain at least 12 characters");
+
+  const now = new Date();
+  const emailHash = hashPersonalIdentifier(developmentMemberEmail, accessSecret);
+  const passwordHash = await hash(developmentMemberPassword, 12);
+  const customer = await prisma.customerUser.upsert({
+    where: { emailHash },
+    create: {
+      emailHash,
+      encryptedEmail: encryptPersonalData(developmentMemberEmail, encryptionSecret),
+      passwordHash,
+      passwordChangedAt: now,
+      emailVerifiedAt: now,
+      locale: "en",
+      status: CustomerStatus.ACTIVE,
+    },
+    update: {
+      encryptedEmail: encryptPersonalData(developmentMemberEmail, encryptionSecret),
+      passwordHash,
+      passwordChangedAt: now,
+      emailVerifiedAt: now,
+      status: CustomerStatus.ACTIVE,
+    },
+  });
+  await prisma.membershipSubscription.upsert({
+    where: { customerUserId: customer.id },
+    create: {
+      customerUserId: customer.id,
+      plan: MembershipPlan.FREE,
+      status: MembershipSubscriptionStatus.ACTIVE,
+    },
+    update: {
+      status: MembershipSubscriptionStatus.ACTIVE,
+    },
+  });
 }
 
 async function seedAdmin() {

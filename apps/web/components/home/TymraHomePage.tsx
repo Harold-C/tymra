@@ -13,13 +13,12 @@ import {
   ChevronDown,
   CircleAlert,
   LoaderCircle,
-  Menu,
   MoveHorizontal,
   Search,
   X,
 } from "lucide-react";
 import clsx from "clsx";
-import { CustomerSignOut } from "@/components/member/CustomerSessionActions";
+import { SiteHeader } from "@/components/public/SiteHeader";
 import { QuantumWaveCanvas } from "./QuantumWaveCanvas";
 import { badgeIcon as BadgeIcon, footerIcon as FooterIcon, homeCopy, iconToneClass } from "../../lib/home-content";
 import type { HomeCopy, Locale } from "../../lib/home-content";
@@ -55,7 +54,6 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
   const inputStarted = useRef(false);
   const roughRequestKey = useRef<string | null>(null);
   const [searchState, setSearchState] = useState<SearchState>({ status: "idle", value: "" });
-  const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [openFooterGroup, setOpenFooterGroup] = useState<string | null>(null);
 
@@ -65,15 +63,6 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
     trackEvent({ name: "homepage_viewed", properties: { locale, deviceType: getDeviceType() } });
   }, [locale]);
-
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
-    }
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, []);
 
   function updateValue(nextValue: string) {
     roughRequestKey.current = null;
@@ -162,10 +151,6 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
     inputRef.current?.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
   }
 
-  function changeMenu(open: boolean) {
-    setMenuOpen(open);
-  }
-
   function toggleFaq(index: number) {
     const nextOpen = openFaq === index ? null : index;
     setOpenFaq(nextOpen);
@@ -174,13 +159,11 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
   return (
     <>
       <a href="#main-content" className="skip-link">{locale === "zh" ? "跳到主要内容" : "Skip to main content"}</a>
-      <Header
-        copy={t}
+      <SiteHeader
+        copy={t.nav}
         locale={locale}
         signedIn={signedIn}
-        menuOpen={menuOpen}
-        onMenuChange={changeMenu}
-        onSearchClick={focusSearchFromHeader}
+        onPrimaryAction={focusSearchFromHeader}
       />
 
       <main
@@ -206,186 +189,6 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
       </main>
       <Footer copy={t} locale={locale} openGroup={openFooterGroup} onGroupChange={setOpenFooterGroup} />
     </>
-  );
-}
-
-function Header({
-  copy: t,
-  locale,
-  signedIn,
-  menuOpen,
-  onMenuChange,
-  onSearchClick,
-}: {
-  copy: HomeCopy;
-  locale: Locale;
-  signedIn: boolean;
-  menuOpen: boolean;
-  onMenuChange: (open: boolean) => void;
-  onSearchClick: () => void;
-}) {
-  const navItems = [
-    { label: t.nav.howItWorks, href: "#how-it-works" },
-    { label: t.nav.whatYouGet, href: "#what-you-get" },
-    { label: t.nav.pricing, href: `/${locale}/pricing` },
-    { label: t.nav.methodology, href: `/${locale}/methodology` },
-    { label: t.nav.faq, href: "#faq" },
-    { label: t.nav.contact, href: `/${locale}/contact` },
-  ];
-  const drawerItems = navItems;
-
-  return (
-    <header className="relative z-30">
-      <div className="mx-auto flex h-[86px] w-full max-w-[1440px] items-center px-6 md:h-[88px] md:px-[30px] 2xl:max-w-[1560px]">
-        <TymraLogo locale={locale} />
-
-        <div className="ml-auto hidden items-center gap-4 xl:flex">
-          <nav aria-label={t.nav.primaryNavigation} className="flex items-center gap-5 text-[0.9rem] font-semibold text-[#071A3D]">
-            {navItems.map((item) => (
-              <a key={item.label} className="transition hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB]" href={item.href}>
-                {item.label}
-              </a>
-            ))}
-          </nav>
-
-          <LanguageSelector copy={t} locale={locale} />
-
-          {signedIn ? (
-            <div className="flex items-center gap-3">
-              <Link className="inline-flex min-h-11 items-center rounded-xl border border-[#CBD5E1] px-3 font-bold text-[#071A3D] transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] hover:text-[#2563EB]" href={`/${locale}/account`}>{t.nav.account}</Link>
-              <CustomerSignOut locale={locale} label={t.nav.signOut} compact />
-            </div>
-          ) : (
-            <Link className="inline-flex min-h-11 items-center rounded-xl border border-[#CBD5E1] px-3 font-bold text-[#071A3D] transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] hover:text-[#2563EB]" href={`/${locale}/sign-in`}>{t.nav.signIn}</Link>
-          )}
-
-          <button
-            type="button"
-            onClick={onSearchClick}
-            className="inline-flex h-12 min-w-[178px] items-center justify-center rounded-[13px] bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_46%,#7C3AED_100%)] px-5 text-[0.94rem] font-bold text-white shadow-[0_13px_28px_rgba(37,99,235,0.23)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(37,99,235,0.28)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB]"
-          >
-            {t.search.cta}
-          </button>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2 xl:hidden">
-          <LanguageSelector copy={t} locale={locale} compact />
-          <button
-            type="button"
-            aria-expanded={menuOpen}
-            aria-controls="mobile-navigation"
-            aria-label={menuOpen ? t.nav.menuClose : t.nav.menuOpen}
-            onClick={() => onMenuChange(!menuOpen)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-[#071A3D] transition hover:bg-[#EDF5FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
-          >
-            {menuOpen ? <X className="h-6 w-6" aria-hidden="true" /> : <Menu className="h-7 w-7" aria-hidden="true" />}
-          </button>
-        </div>
-      </div>
-
-      {menuOpen ? (
-        <MobileNavigation
-          copy={t}
-          locale={locale}
-          items={drawerItems}
-          signedIn={signedIn}
-          onClose={() => onMenuChange(false)}
-          onSearchClick={() => {
-            onMenuChange(false);
-            window.setTimeout(onSearchClick, 0);
-          }}
-        />
-      ) : null}
-    </header>
-  );
-}
-
-function LanguageSelector({ copy: t, locale, compact = false }: { copy: HomeCopy; locale: Locale; compact?: boolean }) {
-  return (
-    <a
-      aria-label={t.nav.languageAria}
-      href={t.nav.languageHref}
-      onClick={() => {
-        trackEvent({ name: "language_changed", properties: { locale, target: locale === "en" ? "zh" : "en", deviceType: getDeviceType() } });
-      }}
-      className={clsx(
-        "inline-flex min-h-11 items-center gap-2 rounded-xl text-[0.93rem] font-semibold text-[#071A3D] transition hover:bg-[#EDF5FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-[#2563EB]",
-        compact ? "px-3" : "px-2",
-      )}
-    >
-      {t.nav.language}
-    </a>
-  );
-}
-
-function MobileNavigation({
-  copy: t,
-  locale,
-  items,
-  signedIn,
-  onClose,
-  onSearchClick,
-}: {
-  copy: HomeCopy;
-  locale: Locale;
-  items: Array<{ label: string; href: string }>;
-  signedIn: boolean;
-  onClose: () => void;
-  onSearchClick: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[80] bg-[#071A3D]/18 px-4 pt-[74px] backdrop-blur-sm xl:hidden" role="presentation" onClick={onClose}>
-      <motion.nav
-        id="mobile-navigation"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.nav.mobileNavigation}
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-        className="mx-auto max-w-[420px] rounded-[24px] border border-[#DCE8F8] bg-white/96 p-3 shadow-[0_24px_70px_rgba(15,23,42,0.16)] backdrop-blur-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {items.map((item) => (
-          <a
-            key={item.label}
-            href={item.href}
-            onClick={onClose}
-            className="block min-h-12 rounded-[16px] px-4 py-3 text-[1rem] font-semibold text-[#071A3D] transition hover:bg-[#F2F7FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
-          >
-            {item.label}
-          </a>
-        ))}
-        {signedIn ? (
-          <>
-            <Link href={`/${locale}/account`} onClick={onClose} className="block min-h-12 rounded-[16px] px-4 py-3 text-[1rem] font-semibold text-[#071A3D] transition hover:bg-[#F2F7FF]">{t.nav.account}</Link>
-            <div className="px-4 py-3"><CustomerSignOut locale={locale} label={t.nav.signOut} /></div>
-          </>
-        ) : (
-          <Link href={`/${locale}/sign-in`} onClick={onClose} className="block min-h-12 rounded-[16px] border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3 text-[1rem] font-bold text-[#075ED8] transition hover:bg-[#DBEAFE]">{t.nav.signIn}</Link>
-        )}
-        <button
-          type="button"
-          onClick={onSearchClick}
-          className="mt-2 inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[16px] bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_46%,#7C3AED_100%)] px-4 text-[1rem] font-bold text-white shadow-[0_12px_28px_rgba(37,99,235,0.24)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
-        >
-          {t.search.cta}
-          <ArrowRight className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <div className="mt-2 grid grid-cols-2 gap-1 border-t border-[#E2E8F0] pt-2 text-[0.92rem] font-semibold text-[#41506B]">
-          {t.footer.links.legal.slice(0, 4).map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              onClick={onClose}
-              className="rounded-[14px] px-4 py-3 transition hover:bg-[#F2F7FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
-            >
-              {link.label}
-            </a>
-          ))}
-        </div>
-      </motion.nav>
-    </div>
   );
 }
 
@@ -699,7 +502,7 @@ function SectionIntro({
 
 function PendingInsightSection({ copy: t }: { copy: HomeCopy }) {
   return (
-    <section id="what-you-get" className="relative z-10 mx-auto mt-14 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+    <section id="what-you-get" className="relative z-10 mx-auto mt-14 w-full max-w-[1240px] scroll-mt-28 px-5 xl:px-0 2xl:max-w-[1320px]">
       <SectionIntro {...t.sections.insights} />
 
       <div className="mt-8 hidden grid-cols-2 gap-6 lg:grid xl:grid-cols-4 xl:gap-9">
@@ -762,7 +565,7 @@ function PendingInsightCard({
 
 function ProcessSection({ copy: t }: { copy: HomeCopy }) {
   return (
-    <section id="how-it-works" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+    <section id="how-it-works" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-28 px-5 xl:px-0 2xl:max-w-[1320px]">
       <SectionIntro {...t.sections.process} />
 
       <div className="mt-8 grid grid-cols-1 items-center gap-4 xl:grid-cols-[1fr_auto_1fr_auto_1fr] xl:gap-5">
@@ -847,7 +650,7 @@ function ReleaseContextSection({ copy: t, locale }: { copy: HomeCopy; locale: Lo
 
 function FAQSection({ copy: t, openFaq, onToggle }: { copy: HomeCopy; openFaq: number | null; onToggle: (index: number) => void }) {
   return (
-    <section id="faq" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-8 px-5 xl:px-0 2xl:max-w-[1320px]">
+    <section id="faq" className="relative z-10 mx-auto mt-16 w-full max-w-[1240px] scroll-mt-28 px-5 xl:px-0 2xl:max-w-[1320px]">
       <SectionIntro {...t.sections.faq} />
 
       <div className="mt-8 overflow-hidden rounded-[18px] border border-[#D5E3F4] bg-white/78 shadow-[0_16px_48px_rgba(15,23,42,0.055)] backdrop-blur-xl">

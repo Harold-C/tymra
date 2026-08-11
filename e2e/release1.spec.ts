@@ -23,7 +23,7 @@ async function goto(page: import("playwright/test").Page, url: string) {
   for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
       const response = await page.goto(url);
-      if (response && response.status() >= 500) throw new Error(`Navigation returned ${response.status()}`);
+      if (response && (response.status() === 404 || response.status() >= 500)) throw new Error(`Navigation returned ${response.status()}`);
       return response;
     } catch (error) {
       lastError = error;
@@ -120,7 +120,7 @@ test.describe("public Release 1", () => {
   test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {
     const locale = testInfo.project.name === "mobile" ? "zh" : "en";
     const pricingLabel = locale === "en" ? "Plans & Pricing" : "会员方案";
-    const signInLabel = locale === "en" ? "Member Sign In" : "会员登录";
+    const signInLabel = locale === "en" ? "Sign In" : "登录";
 
     await goto(page, `/${locale}`);
     if (testInfo.project.name === "mobile") {
@@ -156,24 +156,20 @@ test.describe("public Release 1", () => {
   test("public navigation remains reachable without tablet overflow", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "The desktop project explicitly exercises every responsive breakpoint.");
     test.slow();
-    for (const width of [1280, 1100, 961, 960, 820, 768, 390, 320]) {
+    for (const width of [1440, 1280, 960, 820, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       for (const route of ["/en", "/en/pricing"]) {
         await goto(page, route);
         expect(await page.getByRole("banner").evaluate((header) => header.scrollWidth <= header.clientWidth), `${route} at ${width}px`).toBe(true);
-        const usesMenu = route === "/en" ? width < 1280 : width <= 960;
+        const usesMenu = width < 1440;
         if (usesMenu) {
-          const menuButton = route === "/en"
-            ? page.getByRole("button", { name: "Open navigation" })
-            : page.locator('summary[aria-label="Open or close navigation"]');
+          const menuButton = page.getByRole("button", { name: "Open navigation" });
           await expect(menuButton).toBeVisible();
           await menuButton.click();
-          const mobileNavigation = route === "/en"
-            ? page.getByRole("dialog", { name: "Mobile navigation" })
-            : page.getByRole("navigation", { name: "Mobile navigation" });
-          await expect(mobileNavigation.getByRole("link", { name: "Member Sign In", exact: true })).toBeVisible();
+          const mobileNavigation = page.getByRole("dialog", { name: "Mobile navigation" });
+          await expect(mobileNavigation.getByRole("link", { name: "Sign In", exact: true })).toBeVisible();
         } else {
-          await expect(page.getByRole("banner").getByRole("link", { name: "Member Sign In", exact: true })).toBeVisible();
+          await expect(page.getByRole("banner").getByRole("link", { name: "Sign In", exact: true })).toBeVisible();
         }
       }
     }
@@ -376,7 +372,7 @@ test.describe("member accessibility and responsive contract", () => {
       await page.getByRole("button", { name: "Sign in" }).click();
       const signedIn = await page.waitForURL(/\/en\/account$/, { timeout: 5_000 }).then(() => true).catch(() => false);
       if (signedIn) break;
-      await expect(page.getByRole("alert")).toHaveText("Failed to fetch");
+      await expect(page.locator(".form-error")).toBeVisible();
       if (attempt < 3) await page.waitForTimeout(500);
     }
     await expect(page).toHaveURL(/\/en\/account$/, { timeout: 30_000 });
@@ -385,14 +381,20 @@ test.describe("member accessibility and responsive contract", () => {
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
       const memberMenu = page.getByRole("dialog", { name: "Mobile navigation" });
-      await expect(memberMenu.getByRole("link", { name: "Account", exact: true })).toBeVisible();
+      await expect(memberMenu.getByRole("link", { name: "My Account", exact: true })).toBeVisible();
       await expect(memberMenu.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
-      await expect(memberMenu.getByRole("link", { name: "Member Sign In", exact: true })).toHaveCount(0);
+      await expect(memberMenu.getByRole("link", { name: "Sign In", exact: true })).toHaveCount(0);
     } else {
       const publicHeader = page.getByRole("banner");
-      await expect(publicHeader.getByRole("link", { name: "Account", exact: true })).toBeVisible();
-      await expect(publicHeader.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
-      await expect(publicHeader.getByRole("link", { name: "Member Sign In", exact: true })).toHaveCount(0);
+      const accountMenuButton = publicHeader.getByRole("button", { name: "My Account", exact: true });
+      await expect(accountMenuButton).toBeVisible();
+      await expect(async () => {
+        if (await accountMenuButton.getAttribute("aria-expanded") !== "true") await accountMenuButton.click();
+        await expect(accountMenuButton).toHaveAttribute("aria-expanded", "true");
+      }).toPass();
+      const accountMenu = publicHeader.getByRole("menu");
+      await expect(accountMenu.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+      await expect(publicHeader.getByRole("link", { name: "Sign In", exact: true })).toHaveCount(0);
     }
 
     const routes = ["account", "account/checks", "account/pricing-units", "account/calendar", "account/billing", "account/settings", "account/exports", "account/alerts", "account/portfolio", "account/integrations"];

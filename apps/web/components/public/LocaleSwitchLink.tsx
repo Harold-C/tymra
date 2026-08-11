@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
-export function LocaleSwitchLink({ locale, label, className }: { locale: "en" | "zh"; label: string; className?: string }) {
+export function LocaleSwitchLink({
+  locale,
+  label,
+  className,
+  ariaLabel,
+  onClick,
+}: {
+  locale: "en" | "zh";
+  label: string;
+  className?: string;
+  ariaLabel?: string;
+  onClick?: () => void;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const targetLocale = locale === "en" ? "zh" : "en";
@@ -15,5 +27,5 @@ export function LocaleSwitchLink({ locale, label, className }: { locale: "en" | 
   }
   const query = localizedQuery.toString();
 
-  return <Link className={className} href={`${localizedPath}${query ? `?${query}` : ""}`}>{label}</Link>;
+  return <Link aria-label={ariaLabel} className={className} href={`${localizedPath}${query ? `?${query}` : ""}`} onClick={onClick}>{label}</Link>;
 }

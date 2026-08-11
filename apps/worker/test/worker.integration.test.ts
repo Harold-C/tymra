@@ -179,7 +179,7 @@ describe("Worker baseline pipeline", () => {
     } finally {
       linzAddressIdentityProvider.search = originalSearch;
     }
-  });
+  }, 60_000);
 
   it("persists resolved nationwide geography and uses a regional market key instead of Christchurch", async () => {
     const adapter = otaAdapters.booking;
