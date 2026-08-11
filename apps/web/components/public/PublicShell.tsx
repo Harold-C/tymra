@@ -14,7 +14,7 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
     getCustomerSessionForPage(),
   ]);
   const footerGroups = [
-    { label: footer("product"), links: [{ label: common("runCheck"), href: `/${locale}/check` }, { label: nav("how"), href: `/${locale}#how-it-works` }, { label: nav("what"), href: `/${locale}#what-you-get` }] },
+    { label: footer("product"), links: [{ label: common("runCheck"), href: `/${locale}/check` }, { label: nav("pricing"), href: `/${locale}/pricing` }, { label: nav("how"), href: `/${locale}#how-it-works` }, { label: nav("what"), href: `/${locale}#what-you-get` }] },
     { label: footer("resources"), links: [{ label: nav("methodology"), href: `/${locale}/methodology` }, { label: nav("faq"), href: `/${locale}/faq` }, { label: nav("contact"), href: `/${locale}/contact` }] },
     { label: footer("legal"), links: [{ label: footer("privacy"), href: `/${locale}/privacy` }, { label: footer("terms"), href: `/${locale}/terms` }, { label: footer("cookies"), href: `/${locale}/cookies` }, { label: footer("disclaimer"), href: `/${locale}/disclaimer` }, { label: footer("deletion"), href: `/${locale}/delete-data` }] },
   ];
@@ -30,6 +30,7 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
           <nav className="desktop-nav" aria-label={nav("primaryNavigation")}>
             <Link href={`/${locale}#how-it-works`}>{nav("how")}</Link>
             <Link href={`/${locale}#what-you-get`}>{nav("what")}</Link>
+            <Link href={`/${locale}/pricing`}>{nav("pricing")}</Link>
             <Link href={`/${locale}/methodology`}>{nav("methodology")}</Link>
             <Link href={`/${locale}/faq`}>{nav("faq")}</Link>
             <Link href={`/${locale}/contact`}>{nav("contact")}</Link>
@@ -45,6 +46,7 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
               <nav aria-label={nav("mobileNavigation")}>
                 <Link href={`/${locale}#how-it-works`}>{nav("how")}</Link>
                 <Link href={`/${locale}#what-you-get`}>{nav("what")}</Link>
+                <Link href={`/${locale}/pricing`}>{nav("pricing")}</Link>
                 <Link href={`/${locale}/methodology`}>{nav("methodology")}</Link>
                 <Link href={`/${locale}/faq`}>{nav("faq")}</Link>
                 <Link href={`/${locale}/contact`}>{nav("contact")}</Link>

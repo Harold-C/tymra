@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
+import { CustomerSignOut } from "@/components/member/CustomerSessionActions";
 import { QuantumWaveCanvas } from "./QuantumWaveCanvas";
 import { badgeIcon as BadgeIcon, footerIcon as FooterIcon, homeCopy, iconToneClass } from "../../lib/home-content";
 import type { HomeCopy, Locale } from "../../lib/home-content";
@@ -44,7 +45,7 @@ function getDeviceType(): DeviceType {
   return window.matchMedia("(max-width: 1023px)").matches ? "mobile" : "desktop";
 }
 
-export function TymraHomePage() {
+export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const locale = getLocaleFromPath(pathname);
@@ -173,37 +174,37 @@ export function TymraHomePage() {
   return (
     <>
       <a href="#main-content" className="skip-link">{locale === "zh" ? "跳到主要内容" : "Skip to main content"}</a>
-      <main
-        id="main-content"
-        className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(37,99,235,0.055),transparent_36%),radial-gradient(circle_at_86%_28%,rgba(124,58,237,0.045),transparent_30%),linear-gradient(180deg,#FFFFFF_0%,#F8FBFF_58%,#FFFFFF_100%)] text-[#0B1F3A]"
-      >
-
       <Header
         copy={t}
         locale={locale}
+        signedIn={signedIn}
         menuOpen={menuOpen}
         onMenuChange={changeMenu}
         onSearchClick={focusSearchFromHeader}
       />
 
-      <HeroSection
-        copy={t}
-        locale={locale}
-        searchState={searchState}
-        value={value}
-        inputRef={inputRef}
-        onValueChange={updateValue}
-        onClear={clearSearch}
-        onSubmit={submitSearch}
-      />
+      <main
+        id="main-content"
+        className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(37,99,235,0.055),transparent_36%),radial-gradient(circle_at_86%_28%,rgba(124,58,237,0.045),transparent_30%),linear-gradient(180deg,#FFFFFF_0%,#F8FBFF_58%,#FFFFFF_100%)] text-[#0B1F3A]"
+      >
+        <HeroSection
+          copy={t}
+          locale={locale}
+          searchState={searchState}
+          value={value}
+          inputRef={inputRef}
+          onValueChange={updateValue}
+          onClear={clearSearch}
+          onSubmit={submitSearch}
+        />
 
-      <PendingInsightSection copy={t} />
-      <ProcessSection copy={t} />
-      <ReleaseContextSection copy={t} locale={locale} />
-      <FAQSection copy={t} openFaq={openFaq} onToggle={toggleFaq} />
-      <FinalCTA copy={t} locale={locale} />
-      <Footer copy={t} locale={locale} openGroup={openFooterGroup} onGroupChange={setOpenFooterGroup} />
+        <PendingInsightSection copy={t} />
+        <ProcessSection copy={t} />
+        <ReleaseContextSection copy={t} locale={locale} />
+        <FAQSection copy={t} openFaq={openFaq} onToggle={toggleFaq} />
+        <FinalCTA copy={t} locale={locale} />
       </main>
+      <Footer copy={t} locale={locale} openGroup={openFooterGroup} onGroupChange={setOpenFooterGroup} />
     </>
   );
 }
@@ -211,12 +212,14 @@ export function TymraHomePage() {
 function Header({
   copy: t,
   locale,
+  signedIn,
   menuOpen,
   onMenuChange,
   onSearchClick,
 }: {
   copy: HomeCopy;
   locale: Locale;
+  signedIn: boolean;
   menuOpen: boolean;
   onMenuChange: (open: boolean) => void;
   onSearchClick: () => void;
@@ -224,6 +227,7 @@ function Header({
   const navItems = [
     { label: t.nav.howItWorks, href: "#how-it-works" },
     { label: t.nav.whatYouGet, href: "#what-you-get" },
+    { label: t.nav.pricing, href: `/${locale}/pricing` },
     { label: t.nav.methodology, href: `/${locale}/methodology` },
     { label: t.nav.faq, href: "#faq" },
     { label: t.nav.contact, href: `/${locale}/contact` },
@@ -235,8 +239,8 @@ function Header({
       <div className="mx-auto flex h-[86px] w-full max-w-[1440px] items-center px-6 md:h-[88px] md:px-[30px] 2xl:max-w-[1560px]">
         <TymraLogo locale={locale} />
 
-        <div className="ml-auto hidden items-center gap-7 xl:flex">
-          <nav aria-label="Primary navigation" className="flex items-center gap-8 text-[0.92rem] font-semibold text-[#071A3D]">
+        <div className="ml-auto hidden items-center gap-4 xl:flex">
+          <nav aria-label={t.nav.primaryNavigation} className="flex items-center gap-5 text-[0.9rem] font-semibold text-[#071A3D]">
             {navItems.map((item) => (
               <a key={item.label} className="transition hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB]" href={item.href}>
                 {item.label}
@@ -245,6 +249,15 @@ function Header({
           </nav>
 
           <LanguageSelector copy={t} locale={locale} />
+
+          {signedIn ? (
+            <div className="flex items-center gap-3">
+              <Link className="inline-flex min-h-11 items-center rounded-xl border border-[#CBD5E1] px-3 font-bold text-[#071A3D] transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] hover:text-[#2563EB]" href={`/${locale}/account`}>{t.nav.account}</Link>
+              <CustomerSignOut locale={locale} label={t.nav.signOut} compact />
+            </div>
+          ) : (
+            <Link className="inline-flex min-h-11 items-center rounded-xl border border-[#CBD5E1] px-3 font-bold text-[#071A3D] transition hover:border-[#93C5FD] hover:bg-[#EFF6FF] hover:text-[#2563EB]" href={`/${locale}/sign-in`}>{t.nav.signIn}</Link>
+          )}
 
           <button
             type="button"
@@ -273,7 +286,9 @@ function Header({
       {menuOpen ? (
         <MobileNavigation
           copy={t}
+          locale={locale}
           items={drawerItems}
+          signedIn={signedIn}
           onClose={() => onMenuChange(false)}
           onSearchClick={() => {
             onMenuChange(false);
@@ -305,12 +320,16 @@ function LanguageSelector({ copy: t, locale, compact = false }: { copy: HomeCopy
 
 function MobileNavigation({
   copy: t,
+  locale,
   items,
+  signedIn,
   onClose,
   onSearchClick,
 }: {
   copy: HomeCopy;
+  locale: Locale;
   items: Array<{ label: string; href: string }>;
+  signedIn: boolean;
   onClose: () => void;
   onSearchClick: () => void;
 }) {
@@ -320,7 +339,7 @@ function MobileNavigation({
         id="mobile-navigation"
         role="dialog"
         aria-modal="true"
-        aria-label="Mobile navigation"
+        aria-label={t.nav.mobileNavigation}
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
@@ -337,6 +356,14 @@ function MobileNavigation({
             {item.label}
           </a>
         ))}
+        {signedIn ? (
+          <>
+            <Link href={`/${locale}/account`} onClick={onClose} className="block min-h-12 rounded-[16px] px-4 py-3 text-[1rem] font-semibold text-[#071A3D] transition hover:bg-[#F2F7FF]">{t.nav.account}</Link>
+            <div className="px-4 py-3"><CustomerSignOut locale={locale} label={t.nav.signOut} /></div>
+          </>
+        ) : (
+          <Link href={`/${locale}/sign-in`} onClick={onClose} className="block min-h-12 rounded-[16px] border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3 text-[1rem] font-bold text-[#075ED8] transition hover:bg-[#DBEAFE]">{t.nav.signIn}</Link>
+        )}
         <button
           type="button"
           onClick={onSearchClick}

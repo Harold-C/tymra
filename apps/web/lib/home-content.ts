@@ -22,6 +22,7 @@ export type HomeCopy = {
   nav: {
     howItWorks: string;
     whatYouGet: string;
+    pricing: string;
     methodology: string;
     faq: string;
     contact: string;
@@ -30,6 +31,11 @@ export type HomeCopy = {
     languageAria: string;
     menuOpen: string;
     menuClose: string;
+    primaryNavigation: string;
+    mobileNavigation: string;
+    signIn: string;
+    account: string;
+    signOut: string;
   };
   hero: { badge: string; titlePrefix: string; titleAccent: string; subtitle: string };
   sections: {
@@ -78,6 +84,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     nav: {
       howItWorks: "How It Works",
       whatYouGet: "What You’ll Get",
+      pricing: "Plans & Pricing",
       methodology: "Methodology",
       faq: "FAQ",
       contact: "Contact",
@@ -86,6 +93,11 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       languageAria: "Switch to Chinese",
       menuOpen: "Open navigation",
       menuClose: "Close navigation",
+      primaryNavigation: "Primary navigation",
+      mobileNavigation: "Mobile navigation",
+      signIn: "Member Sign In",
+      account: "Account",
+      signOut: "Sign out",
     },
     hero: {
       badge: "ACCOMMODATION PRICING INTELLIGENCE",
@@ -173,7 +185,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     footer: {
       copyright: "© 2026 Synix. All rights reserved.", product: "Product", resources: "Resources", legal: "Legal", language: "中文",
       links: {
-        product: [{ label: "Free Price Check", href: "/en/check" }, { label: "How It Works", href: "/en#how-it-works" }, { label: "What You’ll Get", href: "/en#what-you-get" }],
+        product: [{ label: "Free Price Check", href: "/en/check" }, { label: "Plans & Pricing", href: "/en/pricing" }, { label: "How It Works", href: "/en#how-it-works" }, { label: "What You’ll Get", href: "/en#what-you-get" }],
         resources: [{ label: "Methodology", href: "/en/methodology" }, { label: "FAQ", href: "/en/faq" }, { label: "Contact", href: "/en/contact" }],
         legal: [{ label: "Privacy Policy", href: "/en/privacy" }, { label: "Terms of Use", href: "/en/terms" }, { label: "Cookie Notice", href: "/en/cookies" }, { label: "Disclaimer", href: "/en/disclaimer" }, { label: "Data Deletion", href: "/en/delete-data" }],
       },
@@ -185,7 +197,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
       description: "帮助新西兰住宿经营者发现可能卖便宜的重点日期，并获得可解释的价格情报。",
     },
     nav: {
-      howItWorks: "工作原理", whatYouGet: "可获得内容", methodology: "方法说明", faq: "常见问题", contact: "联系我们", language: "English", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航",
+      howItWorks: "工作原理", whatYouGet: "可获得内容", pricing: "会员方案", methodology: "方法说明", faq: "常见问题", contact: "联系我们", language: "English", languageHref: "/en", languageAria: "切换到英文", menuOpen: "打开导航", menuClose: "关闭导航", primaryNavigation: "主导航", mobileNavigation: "移动端导航", signIn: "会员登录", account: "会员账户", signOut: "退出",
     },
     hero: {
       badge: "住宿定价智能",
@@ -273,7 +285,7 @@ export const homeCopy: Record<Locale, HomeCopy> = {
     footer: {
       copyright: "© 2026 Synix. 保留所有权利。", product: "产品", resources: "资源", legal: "法律", language: "English",
       links: {
-        product: [{ label: "免费检查房价", href: "/zh/check" }, { label: "工作原理", href: "/zh#how-it-works" }, { label: "可获得内容", href: "/zh#what-you-get" }],
+        product: [{ label: "免费检查房价", href: "/zh/check" }, { label: "会员方案", href: "/zh/pricing" }, { label: "工作原理", href: "/zh#how-it-works" }, { label: "可获得内容", href: "/zh#what-you-get" }],
         resources: [{ label: "方法说明", href: "/zh/methodology" }, { label: "常见问题", href: "/zh/faq" }, { label: "联系我们", href: "/zh/contact" }],
         legal: [{ label: "隐私政策", href: "/zh/privacy" }, { label: "使用条款", href: "/zh/terms" }, { label: "Cookie 使用说明", href: "/zh/cookies" }, { label: "免责声明", href: "/zh/disclaimer" }, { label: "数据删除", href: "/zh/delete-data" }],
       },

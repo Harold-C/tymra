@@ -112,6 +112,68 @@ test.describe("public Release 1", () => {
     await expect(page.locator("#price-check-search-card").getByRole("button", { name: locale === "en" ? "Check This Listing" : "检查这个房源" })).toBeVisible();
   });
 
+  test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {
+    const locale = testInfo.project.name === "mobile" ? "zh" : "en";
+    const pricingLabel = locale === "en" ? "Plans & Pricing" : "会员方案";
+    const signInLabel = locale === "en" ? "Member Sign In" : "会员登录";
+
+    await goto(page, `/${locale}`);
+    if (testInfo.project.name === "mobile") {
+      await page.getByRole("button", { name: locale === "en" ? "Open navigation" : "打开导航" }).click();
+      await expect(page.getByRole("dialog", { name: locale === "en" ? "Mobile navigation" : "移动端导航" }).getByRole("link", { name: signInLabel })).toBeVisible();
+    } else {
+      await expect(page.getByRole("link", { name: signInLabel, exact: true })).toBeVisible();
+    }
+
+    await page.getByRole("link", { name: pricingLabel, exact: true }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/${locale}/pricing$`));
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(locale === "en" ? "whole portfolio" : "整个住宿组合");
+    await expect(page.getByText("NZ$29", { exact: true })).toBeVisible();
+    await expect(page.getByText(locale === "en" ? "Exact daily price-check window: next 90 days" : "精确逐日价格检查范围：未来 90 天", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: locale === "en" ? "Create Free account" : "创建 Free 账户" }).first()).toBeVisible();
+    if (locale === "en") {
+      const planRules = [
+        ["Free", "NZ$0", "1 property slot", "next 14 days", "up to 30 days", "No scheduled analysis", "1 spot check", "30 days of recommendation history", "best-effort queue"],
+        ["Host", "NZ$29", "1 property slot", "next 30 days", "up to 90 days", "Weekly incremental analysis per property", "10 spot checks", "6 months of recommendation history", "standard queue"],
+        ["Pro", "NZ$89", "5 property slots", "next 90 days", "up to 180 days", "3 incremental analyses per property each week", "60 spot checks", "12 months of recommendation history", "priority queue"],
+        ["Portfolio", "NZ$249", "20 property slots", "next 180 days", "up to 365 days", "Daily incremental analysis per property", "300 spot checks", "24 months of recommendation history", "highest shared queue priority"],
+      ];
+      for (const [plan, ...rules] of planRules) {
+        const card = page.locator(".public-plan-card").filter({ has: page.getByText(plan, { exact: true }) });
+        await expect(card).toHaveCount(1);
+        for (const rule of rules) await expect(card).toContainText(rule);
+      }
+    }
+    const serious = (await new AxeBuilder({ page }).analyze()).violations.filter((item) => ["critical", "serious"].includes(item.impact ?? ""));
+    expect(serious).toEqual([]);
+  });
+
+  test("public navigation remains reachable without tablet overflow", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === "mobile", "The desktop project explicitly exercises every responsive breakpoint.");
+    test.slow();
+    for (const width of [1280, 1100, 961, 960, 820, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const route of ["/en", "/en/pricing"]) {
+        await goto(page, route);
+        expect(await page.getByRole("banner").evaluate((header) => header.scrollWidth <= header.clientWidth), `${route} at ${width}px`).toBe(true);
+        const usesMenu = route === "/en" ? width < 1280 : width <= 960;
+        if (usesMenu) {
+          const menuButton = route === "/en"
+            ? page.getByRole("button", { name: "Open navigation" })
+            : page.locator('summary[aria-label="Open or close navigation"]');
+          await expect(menuButton).toBeVisible();
+          await menuButton.click();
+          const mobileNavigation = route === "/en"
+            ? page.getByRole("dialog", { name: "Mobile navigation" })
+            : page.getByRole("navigation", { name: "Mobile navigation" });
+          await expect(mobileNavigation.getByRole("link", { name: "Member Sign In", exact: true })).toBeVisible();
+        } else {
+          await expect(page.getByRole("banner").getByRole("link", { name: "Member Sign In", exact: true })).toBeVisible();
+        }
+      }
+    }
+  });
+
   test("Public shell preserves the current route and query when changing language", async ({ page }, testInfo) => {
     const listingUrl = "https://www.booking.com/hotel/nz/christchurch-central-stay.html";
     await goto(page, `/en/check?input=${encodeURIComponent(listingUrl)}`);
@@ -328,6 +390,20 @@ test.describe("member accessibility and responsive contract", () => {
       if (attempt < 3) await page.waitForTimeout(500);
     }
     await expect(page).toHaveURL(/\/en\/account$/, { timeout: 30_000 });
+
+    await goto(page, `${memberOrigin}/en`);
+    if (testInfo.project.name === "mobile") {
+      await page.getByRole("button", { name: "Open navigation" }).click();
+      const memberMenu = page.getByRole("dialog", { name: "Mobile navigation" });
+      await expect(memberMenu.getByRole("link", { name: "Account", exact: true })).toBeVisible();
+      await expect(memberMenu.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+      await expect(memberMenu.getByRole("link", { name: "Member Sign In", exact: true })).toHaveCount(0);
+    } else {
+      const publicHeader = page.getByRole("banner");
+      await expect(publicHeader.getByRole("link", { name: "Account", exact: true })).toBeVisible();
+      await expect(publicHeader.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+      await expect(publicHeader.getByRole("link", { name: "Member Sign In", exact: true })).toHaveCount(0);
+    }
 
     const routes = ["account", "account/checks", "account/pricing-units", "account/calendar", "account/billing", "account/settings", "account/exports", "account/alerts", "account/portfolio", "account/integrations"];
     for (const locale of ["en", "zh"] as const) {

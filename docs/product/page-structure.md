@@ -64,6 +64,7 @@
 
 ### 2.5.1 公共认证
 
+• `/{locale}/pricing`：公开双语会员与价格页，比较 Free、Host、Pro、Portfolio 的含 GST 新西兰元月费、实体房源额度、精确逐日价格范围、监测范围、检查/调度频率和已通过的功能门槛；未通过生产 Launch Gate 的方案必须标记为尚未开放且不可购买。
 • `/{locale}/sign-in`：独立会员登录，使用会员邮箱和密码；不得要求先创建 Price Check，也不提供通用 Magic Link 登录。
 • `/{locale}/sign-up`：创建 Free 会员账户，要求邮箱、至少 12 位密码、确认密码及服务条款同意；注册不得创建价格任务或消耗额度。
 • `/{locale}/auth/verify`：消费 unlock 或 sign-in 专用 token，建立干净客户会话后移除 URL 中的 token。
@@ -86,7 +87,7 @@
 
 ### 2.5.3 会员导航
 
-公开 Header 在无有效客户会话时显示“会员登录 / Sign in”；存在有效客户会话时显示“会员账户 / Account”和“退出 / Sign out”。客户导航至少包含概览、定价单位、价格检查和设置。账单入口对所有会员可见；计划功能入口只有在方案权益和生产 Launch Gate 同时有效时才可交互。
+公开 Header 固定显示“会员与价格 / Membership & Pricing”。无有效客户会话时同时显示“会员登录 / Member sign in”；存在有效客户会话时显示“会员账户 / Account”和“退出 / Sign out”。这些入口必须在桌面、平板和移动菜单中连续可达。客户导航至少包含概览、定价单位、价格检查和设置。账单入口对所有会员可见；计划功能入口只有在方案权益和生产 Launch Gate 同时有效时才可交互。
 
 不得把未开放功能显示为可购买或可执行。可以在方案比较中说明目标权益及“尚未开放”，但账户导航不能指向空白页、静态假页面或绕过门槛的 API。
 
@@ -107,15 +108,15 @@
 
 ### 登录页 `/{locale}/sign-in`
 
-页面内容顺序固定：品牌与语言切换；标题和无密码说明；邮箱字段；账户/服务邮件披露；发送按钮；中性成功状态；帮助与隐私链接。
+页面内容顺序固定：品牌与语言切换；会员登录标题和说明；邮箱字段；密码字段；登录按钮；中性凭证错误状态；创建账户、帮助与隐私链接。
 
 要求：
 
-- 不显示密码字段，不要求 OTA URL、地址、日期、人数、房型或付款信息。
+- 必须显示密码字段，但不要求 OTA URL、地址、日期、人数、房型或付款信息。
 - 已登录客户访问时安全跳转账户或允许的 `returnTo`。
-- 提交后无论账户是否存在都显示相同确认文案和同一响应类别。
+- 未知邮箱、错误密码、密码缺失、暂停账户均显示同一中性凭证错误，不泄露账户存在性。
 - 登录请求不创建检查、任务、定价单位或额度记录。
-- 错误状态仅区分输入无效、请求暂不可用和链接无效/过期，不泄露账户存在性。
+- 错误状态仅区分输入无效、凭证无效和请求暂不可用，不泄露账户存在性。
 - 支持 320px 起的移动端、键盘、屏幕阅读器、可见焦点和中英文等价流程。
 
 ### 验证页 `/{locale}/auth/verify`
@@ -200,11 +201,11 @@ Memberships 页按待处理风险排序，Billing Events 页按未处理/失败�
 
 ## 3.1 Header
 
-桌面从左到右：Logo、How It Works、What You’ll Get、Methodology、FAQ、Contact、中文／English、Run Free Price Check。首页的主 CTA 平滑定位并聚焦首页核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端保留 Logo、语言切换和 Hamburger，主 CTA 固定在菜单底部。
+桌面从左到右：Logo、How It Works、What You’ll Get、Membership & Pricing、Methodology、FAQ、Contact、中文／English、会员登录（登录后为账户和退出）、Run Free Price Check。首页的主 CTA 平滑定位并聚焦首页核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端保留 Logo、语言切换和 Hamburger，会员与价格、会员登录/账户及主 CTA 均在菜单中可达，主 CTA 固定在菜单底部。
 
 ## 3.2 Footer
 
-品牌说明；Product：Free Price Check、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。只显示真实存在的链接。
+品牌说明；Product：Free Price Check、Membership & Pricing、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。只显示真实存在的链接。
 
 ## 3.3 公共系统条
 
