@@ -40,10 +40,10 @@ Last updated: 2026-08-12
 | P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
 | P1 | 会员完整可访问性 | EN/ZH、桌面、390/320px 通过 axe serious/critical=0、全键盘、焦点、reduced motion 和错误状态 | 自动化会员路由矩阵已纳入 Playwright；当前运行结果见追踪表 |
 | P1 | Retention 生命周期 | 隔离数据库覆盖 Free/Host/Pro/Portfolio 及取消账户的独立保留期和 30 天房源占位 | 四档时间推进矩阵已通过 |
-| P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 与 `/worker/alerts` 输出机器错误码、等级、聚合值和阈值；生产路由、dashboard 与注入演练仍是部署工作 |
+| P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 与 `/worker/alerts` 输出机器错误码、等级、聚合值和阈值；开发历史失败已审计式重试/归档并恢复为零告警，生产通知路由、dashboard 与注入演练仍是部署工作 |
 | P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 2026-08-12 OTA URL 与 LINZ 地址两条真实链路均通过；分别发布 NZD 591 与 NZD 250 的两晚公开价，`priceResultStatus=COMPLETED`、推荐因仅一条证据为 `NOT_AVAILABLE` |
 | P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family、seed source registry 和 OTA 定价编排 | 地址型 OTA 搜索、身份解析、可比关系及价格写入已迁移到独立 orchestrator；`WorkerService` 保留稳定调用入口 |
-| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 生产 canary 强制单来源、两轮且每轮最多 2 条；Scheduler 默认关闭，真实生产 canary 尚未获配置和执行授权 |
+| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 生产 canary 强制单来源、两轮且每轮最多 2 条；`public_holidays_nz` 开发技术金丝雀 2/2 通过且无重复增长、parser failure 或远端证据残留；Scheduler 默认关闭，真实生产 canary 尚未获配置和执行授权 |
 
 ## 交付顺序
 
@@ -51,6 +51,14 @@ Last updated: 2026-08-12
 2. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
 3. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
 4. canary 连续稳定后，另行评审 Scheduler 的分阶段启用；本次交付不自动开启生产调度。
+
+## 2026-08-12 发布护栏本地验收
+
+- 开发数据库中 30 个历史失败任务已通过带审计记录的精确重试或归档处理；24 个开发邮件任务在夹具密文轮换后成功，三个可恢复采集任务中两个成功，一个因历史 Argus 证据已按合同清理而归档，`/worker/alerts` 最终为空。
+- 开发 seed 会重新生成固定 demo Price Check 与关联 Email Delivery 的加密字段，但只触及 `demo-check-*` 夹具，不轮换真实会员记录。
+- OTA 地址 comparable 的相同版本重试不再更新 append-only 关系；相同 identity 复用既有版本，语义变化必须创建新版本。
+- `public_holidays_nz` 完成两轮、每轮最多两条的 `DEVELOPMENT_TECHNICAL_VALIDATION`：配置和 schedule 未变化、parser failure 为 0、第二轮 lineage 增长为 0、远端证据残留为 0。
+- Eventfinda 同规格技术金丝雀按日预算和 cooldown fail closed，未被计为通过；真实生产金丝雀仍需独立生产环境、监控通知目标和明确发布授权。
 
 ## 已知边界
 

@@ -156,11 +156,11 @@ SCHEDULER_ENABLED=true pnpm --filter @tymra/worker scheduler
 Useful Worker CLI examples:
 
 ```sh
-pnpm --filter @tymra/worker cli collect:listing 'https://www.booking.com/hotel/nz/example.html'
-pnpm --filter @tymra/worker cli analyse:listing 'https://www.booking.com/hotel/nz/example.html' --email operator@example.test
-pnpm --filter @tymra/worker cli source:health
-pnpm --filter @tymra/worker cli collect:disruptions
-pnpm --filter @tymra/worker cli retention:cleanup
+pnpm cli collect:listing 'https://www.booking.com/hotel/nz/example.html'
+pnpm cli analyse:listing 'https://www.booking.com/hotel/nz/example.html' --email operator@example.test
+pnpm cli source:health
+pnpm cli collect:disruptions
+pnpm cli retention:cleanup
 ```
 
 ### Browser event collection status
@@ -263,8 +263,8 @@ HTTPS verification endpoint, site key and provider secret. After configuring the
 intentionally invalid token and passes only when the provider rejects it. The command never prints the
 secret or subject hash.
 
-The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `release:preflight` and
-`release:canary-plan` before any canary. `release:canary-run` requires exactly one source,
+The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `pnpm cli release:preflight --sources <key>` and
+`pnpm cli release:canary-plan --sources <key>` before any canary. `pnpm cli release:canary-run` requires exactly one source,
 `--confirm RUN_BOUNDED_CANARY`, performs two passes and caps `--limit` at 2. Any stop condition requires
 the guarded `release:rollback --confirm DISABLE_COLLECTIONS` path before another attempt. Local
 development canary output is technical validation only and is not production evidence.

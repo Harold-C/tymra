@@ -58,6 +58,7 @@ async function main() {
   await seedCoreScenarios(inventory, stayQuery.id);
   await seedExceptionScenarios(inventory, stayQuery.id);
   await seedOperationalExamples(inventory.targetUnit.id);
+  await rotateDevelopmentFixtureEncryption();
 }
 
 async function seedDevelopmentMember() {
@@ -953,7 +954,20 @@ async function upsertCheck(input: {
       currentResultVersionNumber: resultBearing(input.status) ? 1 : null,
       isDemo: true,
     },
-    update: { status: input.status },
+    update: {
+      status: input.status,
+      emailHash: hashPersonalIdentifier(demoEmail, accessSecret),
+      encryptedEmail: encryptPersonalData(demoEmail, encryptionSecret),
+    },
+  });
+}
+
+async function rotateDevelopmentFixtureEncryption() {
+  const recipientHash = hashPersonalIdentifier(demoEmail, accessSecret);
+  const encryptedRecipient = encryptPersonalData(demoEmail, encryptionSecret);
+  await prisma.emailDelivery.updateMany({
+    where: { priceCheck: { is: { id: { startsWith: "demo-check-" } } } },
+    data: { recipientHash, encryptedRecipient },
   });
 }
 

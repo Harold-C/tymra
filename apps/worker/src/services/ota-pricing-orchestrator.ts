@@ -277,7 +277,9 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
         await prisma.competitorRelationship.upsert({
           where: { targetUnitId_competitorUnitId_version: { targetUnitId: check.unit.id, competitorUnitId: unitId, version: 1 } },
           create: { targetUnitId: check.unit.id, competitorUnitId: unitId, role: "REFERENCE", version: 1, reasonCode: "OTA_ADDRESS_DISCOVERY", suggestedBy: "OTA_DISCOVERY_V1", isDemo: false },
-          update: { validTo: null, role: "REFERENCE", reasonCode: "OTA_ADDRESS_DISCOVERY" },
+          // CompetitorRelationship history is append-only. An identical discovery reuses
+          // the existing version; changing or reopening it requires a new version.
+          update: {},
         });
         discoveredListingIds.push(listing.id);
       }

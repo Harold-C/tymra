@@ -219,7 +219,7 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 ### Membership development verification (2026-08-12)
 
 - Prisma Client generation and TypeScript checks passed for every workspace package.
-- Web/domain/config/provider/database unit suites passed 210 tests; five external provider fixtures remained intentionally skipped. Worker unit suites passed 124 tests.
+- Web/domain/config/provider/database unit suites passed 212 tests; five external provider fixtures remained intentionally skipped. Worker unit suites passed 127 tests.
 - A disposable PostgreSQL database applied all 27 migrations from zero, was seeded through the split source registry and passed 104 database/API/Worker integration tests. The disposable database was removed afterwards.
 - Development seed creates verified `demo1`/Free, `demo2`/Host, `demo3`/Pro and `demo4`/Portfolio accounts with one shared derived or explicitly overridden development password; the legacy member login is deleted.
 - Web lint passed. The Web production build generated 112 pages and the Worker production build completed; only the existing optional LinkeDOM `canvas` warning appeared.
@@ -239,7 +239,7 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 | `pnpm db:seed` | Deterministic demo seed | current worktree verified in the isolated migrated PostgreSQL database |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
 | `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
-| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 210 passed plus 5 external fixtures skipped; 124 Worker tests passed |
+| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 212 passed plus 5 external fixtures skipped; 127 Worker tests passed |
 | `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 104 tests in an isolated seeded database |
 | `pnpm test:e2e` | Playwright and accessibility | Desktop public/Admin scenarios passed and the member matrix passed in the paired desktop/mobile run; final mobile aggregate passed 10 scenarios with live Argus and desktop-only Admin skipped. Password sign-in uses the real form while page QA stays on the direct local Web port to avoid Traefik refresh races |
 | `pnpm test:e2e:member-live` | Real member-to-Argus price delivery | gate implemented and list-validated; not run because no live-member credentials/input were supplied |
@@ -310,4 +310,4 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 | Production fixture guard | Production config rejects both demo and fixture provider modes | verified |
 | External live OTA collection | Tymra accepts strict public `resolve_listing`, `discover_listings` and `collect_rates` contracts for the six active brands and routes each source only to its public connector; address-first checks synchronously resolve and collect the first usable comparable, preserve provider brand/family and never fall back to fixtures | 2026-08-12 Pro-member live E2E passed for direct Bookabach URL (`NZD 591`, two nights) and LINZ address benchmark (`NZD 250`, two nights), both non-demo `PUBLISHED`, `priceResultStatus=COMPLETED`, one observed source and recommendation `NOT_AVAILABLE`; direct URL and address used distinct slots because they were distinct physical properties. Partner APIs remain deferred |
 | Nationwide live panel | Schema, schedules and coverage operations exist; real 1,000-1,500 units require live catalog sources | external prerequisite |
-| Quality baseline | Lint and workspace typecheck pass; current aggregate evidence is 210 Web/domain/provider/database unit tests, 124 Worker tests, 104 isolated PostgreSQL integration tests, a 112-page Next.js build and four Worker entrypoint builds; Next.js reports only LinkeDOM's unused optional-canvas warning | verified |
+| Quality baseline | Lint and workspace typecheck pass; current aggregate evidence is 212 Web/domain/provider/database unit tests, 127 Worker tests, 104 isolated PostgreSQL integration tests, a 112-page Next.js build and four Worker entrypoint builds; Next.js reports only LinkeDOM's unused optional-canvas warning | verified |
