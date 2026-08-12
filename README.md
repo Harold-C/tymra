@@ -253,7 +253,9 @@ checks and prints only hashed Stripe identifiers. Start Stripe CLI webhook forwa
 `http://127.0.0.1:3000/api/v1/billing/stripe/webhook`, use its test signing secret, recreate the Web
 container with billing and the intended membership launch gates enabled, then run
 `pnpm test:e2e:stripe`. The browser test uses Stripe's public `4242` test card, waits for persisted
-Webhook state after every mutation and never retains traces, screenshots or video. It intentionally
+Webhook state after every mutation, follows Stripe Checkout's AI-agent disclosure, and never retains
+traces, screenshots or video. Re-running the development seed preserves an existing Stripe-backed
+subscription instead of resetting its entitlement. The test intentionally
 leaves the disposable subscription active with a scheduled downgrade so the Stripe Dashboard,
 Billing Events admin page and database can be reconciled before manual test-data cleanup.
 

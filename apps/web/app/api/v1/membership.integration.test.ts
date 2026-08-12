@@ -275,28 +275,30 @@ describe("membership persistence and enforcement", () => {
     const { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, createMembershipPortal, resumeMembershipRenewal, setStripeTestRuntime } = await import("@/lib/server/membership/stripe-billing");
     const customer = await createCustomer("stripe-lifecycle");
     const calls: string[] = [];
+    let checkoutInput: { customer_update?: { address?: string; name?: string } } | undefined;
     const subscription = {
       id: `sub_${prefix}`,
       status: "active",
       customer: `cus_${prefix}_lifecycle`,
       cancel_at_period_end: false,
       metadata: { customerUserId: customer.id, membershipPlan: "HOST" },
-      schedule: null,
+      schedule: null as string | null,
       items: { data: [{ id: `si_${prefix}`, current_period_start: 1_786_252_800, current_period_end: 1_788_931_200, quantity: 1, price: { id: "price_host" } }] },
     };
     const fakeStripe = {
       prices: { retrieve: async (id: string) => ({ id, active: true, currency: "nzd", type: "recurring", recurring: { interval: "month" }, unit_amount: id === "price_host" ? 2_900 : id === "price_pro" ? 8_900 : 24_900, tax_behavior: "inclusive" }) },
       customers: { create: async () => { calls.push("customer"); return { id: `cus_${prefix}_lifecycle` }; } },
-      checkout: { sessions: { create: async () => { calls.push("checkout"); return { url: "https://checkout.stripe.test/session" }; } } },
+      checkout: { sessions: { create: async (input: { customer_update?: { address?: string; name?: string } }) => { calls.push("checkout"); checkoutInput = input; return { url: "https://checkout.stripe.test/session" }; } } },
       billingPortal: { sessions: { create: async () => { calls.push("portal"); return { url: "https://billing.stripe.test/session" }; } } },
       subscriptions: {
         retrieve: async () => subscription,
         update: async (_id: string, input: { cancel_at_period_end?: boolean }) => { calls.push(input.cancel_at_period_end === true ? "cancel" : input.cancel_at_period_end === false ? "resume" : "upgrade"); subscription.cancel_at_period_end = input.cancel_at_period_end ?? subscription.cancel_at_period_end; return subscription; },
       },
       subscriptionSchedules: {
-        create: async () => ({ id: `sched_${prefix}`, phases: [{ start_date: subscription.items.data[0].current_period_start }] }),
+        create: async () => { subscription.schedule = `sched_${prefix}`; return { id: `sched_${prefix}`, phases: [{ start_date: subscription.items.data[0].current_period_start }] }; },
         retrieve: async () => ({ id: `sched_${prefix}`, phases: [{ start_date: subscription.items.data[0].current_period_start }] }),
         update: async () => { calls.push("downgrade"); return { id: `sched_${prefix}` }; },
+        release: async () => { calls.push("release"); subscription.schedule = null; return { id: `sched_${prefix}` }; },
       },
     };
     const environment = environmentSchema.parse({
@@ -315,6 +317,7 @@ describe("membership persistence and enforcement", () => {
     setStripeTestRuntime(fakeStripe as never, environment);
     try {
       await expect(createMembershipCheckout(customer.id, "HOST")).resolves.toEqual({ url: "https://checkout.stripe.test/session" });
+      expect(checkoutInput?.customer_update).toEqual({ address: "auto", name: "auto" });
       const membership = await prisma.membershipSubscription.findUniqueOrThrow({ where: { customerUserId: customer.id } });
       expect(membership.stripeCustomerId).toBe(`cus_${prefix}_lifecycle`);
       await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "HOST", stripeSubscriptionId: subscription.id, stripePriceId: "price_host" } });
@@ -325,7 +328,7 @@ describe("membership persistence and enforcement", () => {
       await expect(changeMembershipPlan(customer.id, "HOST")).resolves.toMatchObject({ mode: "DOWNGRADE_SCHEDULED", pendingPlan: "HOST" });
       await expect(cancelMembershipAtPeriodEnd(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: true });
       await expect(resumeMembershipRenewal(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: false });
-      expect(calls).toEqual(["customer", "checkout", "portal", "upgrade", "downgrade", "cancel", "resume"]);
+      expect(calls).toEqual(["customer", "checkout", "portal", "upgrade", "downgrade", "release", "cancel", "resume", "downgrade"]);
     } finally {
       setStripeTestRuntime();
     }

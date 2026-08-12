@@ -112,18 +112,26 @@ async function seedDevelopmentMember() {
         status: CustomerStatus.ACTIVE,
       },
     });
-    await prisma.membershipSubscription.upsert({
+    const membership = await prisma.membershipSubscription.upsert({
       where: { customerUserId: customer.id },
       create: {
         customerUserId: customer.id,
         plan: MembershipPlan[account.plan],
         status: MembershipSubscriptionStatus.ACTIVE,
       },
-      update: {
-        plan: MembershipPlan[account.plan],
-        status: MembershipSubscriptionStatus.ACTIVE,
-      },
+      update: {},
     });
+    // Development seeds may run again while a Stripe acceptance flow is active.
+    // Preserve the paid subscription as the billing source of truth once it exists.
+    if (!membership.stripeSubscriptionId) {
+      await prisma.membershipSubscription.update({
+        where: { id: membership.id },
+        data: {
+          plan: MembershipPlan[account.plan],
+          status: MembershipSubscriptionStatus.ACTIVE,
+        },
+      });
+    }
   }
 }
 

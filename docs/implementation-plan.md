@@ -35,7 +35,7 @@ Last updated: 2026-08-12
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
-| P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 已提供只读 test-account readiness 和无媒体浏览器生命周期验收；本地 fake-Stripe 回归通过，真实 Stripe test account 因凭证未配置尚未执行 |
+| P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 2026-08-12 真实 Sandbox 已完成 Checkout、Host→Pro、Pro→Host 下期降级、取消/恢复和 Portal；37 个近期 webhook 全部处理且零错误，开发 seed 不再覆盖 Stripe-backed 订阅。生产配置仍未启用 |
 | P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 生产接单配置强制 managed 模式，并提供无效 token fail-closed readiness；真实 provider、容量和误判演练未执行 |
 | P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
 | P1 | 会员完整可访问性 | EN/ZH、桌面、390/320px 通过 axe serious/critical=0、全键盘、焦点、reduced motion 和错误状态 | 自动化会员路由矩阵已纳入 Playwright；当前运行结果见追踪表 |
@@ -47,10 +47,10 @@ Last updated: 2026-08-12
 
 ## 交付顺序
 
-1. 提供 Stripe test account 的三个 Price、Portal 配置和 Stripe CLI webhook secret，执行现成的真实付费验收。
-2. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
-3. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
-4. canary 连续稳定后，另行评审 Scheduler 的分阶段启用；本次交付不自动开启生产调度。
+1. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
+2. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
+3. canary 连续稳定后，另行评审 Scheduler 的分阶段启用；本次交付不自动开启生产调度。
+4. Stripe 进入生产前另行配置 live Prices、Portal、Webhook、税务与告警，并执行生产发布清单；Sandbox 验收不得替代生产授权。
 
 ## 2026-08-12 发布护栏本地验收
 

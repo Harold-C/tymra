@@ -51,18 +51,40 @@ async function signIn(page: Page, email: string, password: string) {
 
 async function choosePlan(page: Page, plan: "Host" | "Pro") {
   const card = page.locator(".membership-plan-grid article").filter({ has: page.getByRole("heading", { name: plan, exact: true }) });
+  const responsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST" && /\/api\/v1\/customer\/membership\/(?:checkout|change-plan)$/u.test(new URL(response.url()).pathname),
+  );
   await card.getByRole("button", { name: "Choose plan" }).click();
+  const response = await responsePromise;
+  if (!response.ok()) {
+    const payload = await response.json().catch(() => ({ error: { code: `HTTP_${response.status()}` } })) as { error?: { code?: string; message?: string } };
+    throw new Error(`Stripe billing action failed: ${payload.error?.code ?? `HTTP_${response.status()}`}${payload.error?.message ? ` — ${payload.error.message}` : ""}`);
+  }
 }
 
 async function completeStripeCheckout(page: Page) {
-  await page.locator('input[name="cardNumber"]').fill("4242424242424242");
-  await page.locator('input[name="cardExpiry"]').fill("1234");
-  await page.locator('input[name="cardCvc"]').fill("123");
-  const name = page.locator('input[name="billingName"]');
+  const cardMethod = page.getByRole("radio", { name: /card|银行卡/iu });
+  await cardMethod.waitFor({ state: "attached" });
+  await cardMethod.check({ force: true });
+  await page.getByRole("textbox", { name: /card number|卡号/iu }).fill("4242424242424242");
+  await page.getByRole("textbox", { name: /expir|到期日/iu }).fill("1234");
+  await page.getByRole("textbox", { name: /security code|cvc|卡安全码/iu }).fill("123");
+  const name = page.getByRole("textbox", { name: /cardholder name|name on card|持卡人姓名/iu });
   if (await name.count()) await name.fill("Tymra Stripe Acceptance");
-  const postcode = page.locator('input[name="billingPostalCode"]');
+  const address = page.getByRole("textbox", { name: /address line 1|地址第 1 行|地址/iu });
+  if (await address.count()) await address.first().fill("1 Test Street");
+  const city = page.getByRole("textbox", { name: /city|城市/iu });
+  if (await city.count()) await city.fill("Christchurch");
+  const postcode = page.getByRole("textbox", { name: /postal|postcode|邮编/iu });
   if (await postcode.count()) await postcode.fill("8011");
-  await page.getByRole("button", { name: /subscribe|pay/iu }).click();
+  const agentDisclosure = page.getByRole("checkbox", { name: /AI agent acting on behalf/iu });
+  if (await agentDisclosure.count()) {
+    await agentDisclosure.press("Space");
+    const instructionsAcknowledgement = page.getByRole("checkbox", { name: /AI agent and have followed the instructions/iu });
+    await instructionsAcknowledgement.waitFor({ state: "attached" });
+    await instructionsAcknowledgement.press("Space");
+  }
+  await page.getByTestId("hosted-payment-submit-button").click();
 }
 
 async function expectMembership(page: Page, expected: { plan: string; status: string; pendingPlan?: string | null; cancelAtPeriodEnd?: boolean }) {

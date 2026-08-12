@@ -7,10 +7,8 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 20 * 60_000,
-  expect: { timeout: 30_000 },
-  reporter: [["list"]],
-  outputDir: "output/playwright-stripe-test-results",
   use: {
+    actionTimeout: 30_000,
     baseURL: process.env.STRIPE_TEST_BASE_URL ?? "https://tymra.test",
     ignoreHTTPSErrors: true,
     trace: "off",
@@ -18,4 +16,7 @@ export default defineConfig({
     video: "off",
     ...devices["Desktop Chrome"],
   },
+  expect: { timeout: 30_000 },
+  reporter: [["list"]],
+  outputDir: "output/playwright-stripe-test-results",
 });

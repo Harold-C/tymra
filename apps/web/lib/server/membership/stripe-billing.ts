@@ -95,6 +95,7 @@ export async function createMembershipCheckout(customerUserId: string, planValue
   const session = await client.checkout.sessions.create({
     mode: "subscription",
     customer: stripeCustomerId,
+    customer_update: { address: "auto", name: "auto" },
     client_reference_id: customerUserId,
     line_items: [{ price: priceId, quantity: 1 }],
     allow_promotion_codes: false,
@@ -103,7 +104,7 @@ export async function createMembershipCheckout(customerUserId: string, planValue
     subscription_data: { metadata: { customerUserId, membershipPlan: plan } },
     success_url: `${environment.PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account?billing=success`,
     cancel_url: `${environment.PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account?billing=cancelled`,
-  }, { idempotencyKey: `membership-checkout:${customerUserId}:${plan}:${membership.version}` });
+  }, { idempotencyKey: `membership-checkout:v2:${customerUserId}:${plan}:${membership.version}` });
   if (!session.url) throw new Error("Stripe Checkout did not return a redirect URL.");
   return { url: session.url };
 }
@@ -152,17 +153,7 @@ export async function changeMembershipPlan(customerUserId: string, planValue: un
   if (activePricingUnits > membershipEntitlements[targetPlan].activePricingUnitLimit) {
     throw new BillingError("PRICING_UNIT_SELECTION_REQUIRED", `Deactivate pricing units until ${membershipEntitlements[targetPlan].activePricingUnitLimit} remain before scheduling this downgrade.`);
   }
-  const schedule = typeof subscription.schedule === "string" && subscription.schedule
-    ? await client.subscriptionSchedules.retrieve(subscription.schedule)
-    : await client.subscriptionSchedules.create({ from_subscription: subscription.id });
-  const currentEnd = item.current_period_end;
-  await client.subscriptionSchedules.update(schedule.id, {
-    end_behavior: "release",
-    phases: [
-      { start_date: schedule.phases[0]?.start_date ?? item.current_period_start, end_date: currentEnd, items: [{ price: item.price.id, quantity: item.quantity ?? 1 }] },
-      { start_date: currentEnd, items: [{ price: targetPriceId, quantity: 1 }], metadata: { customerUserId, membershipPlan: targetPlan } },
-    ],
-  }, { idempotencyKey: `membership-downgrade:${membership.id}:${membership.version}:${targetPlan}` });
+  await scheduleMembershipDowngrade(client, subscription, membership, targetPlan, targetPriceId);
   await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { pendingPlan: targetPlan, version: { increment: 1 } } });
   return { mode: "DOWNGRADE_SCHEDULED" as const, pendingPlan: targetPlan };
 }
@@ -170,7 +161,13 @@ export async function changeMembershipPlan(customerUserId: string, planValue: un
 export async function cancelMembershipAtPeriodEnd(customerUserId: string) {
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeSubscriptionId || membership.status === "CANCELLED") throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No active paid subscription is linked to this account.");
-  const subscription = await stripe().subscriptions.update(membership.stripeSubscriptionId, { cancel_at_period_end: true });
+  const client = stripe();
+  let subscription = await client.subscriptions.retrieve(membership.stripeSubscriptionId);
+  if (typeof subscription.schedule === "string") {
+    await client.subscriptionSchedules.release(subscription.schedule, {}, { idempotencyKey: `membership-cancel-release:${membership.id}:${membership.version}` });
+    subscription = await client.subscriptions.retrieve(membership.stripeSubscriptionId);
+  }
+  subscription = await client.subscriptions.update(membership.stripeSubscriptionId, { cancel_at_period_end: true });
   await prisma.membershipSubscription.update({
     where: { id: membership.id },
     data: {
@@ -185,9 +182,38 @@ export async function cancelMembershipAtPeriodEnd(customerUserId: string) {
 export async function resumeMembershipRenewal(customerUserId: string) {
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeSubscriptionId || membership.status === "CANCELLED") throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No renewable paid subscription is linked to this account.");
-  await stripe().subscriptions.update(membership.stripeSubscriptionId, { cancel_at_period_end: false });
+  const client = stripe();
+  const subscription = await client.subscriptions.update(membership.stripeSubscriptionId, { cancel_at_period_end: false });
+  if (membership.pendingPlan && membership.pendingPlan !== "FREE" && membershipPlanRank(membership.pendingPlan) < membershipPlanRank(membership.plan)) {
+    await scheduleMembershipDowngrade(client, subscription, membership, membership.pendingPlan, priceIdForPlan(membership.pendingPlan));
+  }
   await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { cancelAtPeriodEnd: false, version: { increment: 1 } } });
   return { cancelAtPeriodEnd: false };
+}
+
+async function scheduleMembershipDowngrade(
+  client: Stripe,
+  subscription: Stripe.Subscription,
+  membership: { id: string; customerUserId: string; version: number },
+  targetPlan: Exclude<MembershipPlanId, "FREE">,
+  targetPriceId: string,
+) {
+  const item = subscription.items.data[0];
+  if (!item) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "The Stripe subscription has no billable item.");
+  const schedule = typeof subscription.schedule === "string" && subscription.schedule
+    ? await client.subscriptionSchedules.retrieve(subscription.schedule)
+    : await client.subscriptionSchedules.create(
+      { from_subscription: subscription.id },
+      { idempotencyKey: `membership-downgrade-schedule:${membership.id}:${membership.version}:${targetPlan}` },
+    );
+  const currentEnd = item.current_period_end;
+  await client.subscriptionSchedules.update(schedule.id, {
+    end_behavior: "release",
+    phases: [
+      { start_date: schedule.phases[0]?.start_date ?? item.current_period_start, end_date: currentEnd, items: [{ price: item.price.id, quantity: item.quantity ?? 1 }] },
+      { start_date: currentEnd, items: [{ price: targetPriceId, quantity: 1 }], metadata: { customerUserId: membership.customerUserId, membershipPlan: targetPlan } },
+    ],
+  }, { idempotencyKey: `membership-downgrade:${membership.id}:${membership.version}:${targetPlan}` });
 }
 
 export function constructStripeEvent(rawBody: string, signature: string): Stripe.Event {
