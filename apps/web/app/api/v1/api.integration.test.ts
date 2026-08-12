@@ -86,6 +86,14 @@ describe("Release 1 API contracts", () => {
 
     const invalid = await searchProperties(jsonRequest("/api/v1/property-search", { input: "x", locale: "en" }));
     expect(invalid.status).toBe(422);
+
+    const listing = await searchProperties(jsonRequest("/api/v1/property-search", { input: "https://www.booking.com/hotel/nz/christchurch-central-stay.html?aid=tracking", locale: "en" }));
+    expect(listing.status).toBe(200);
+    expect((await listing.json()).data).toMatchObject({
+      supportStatus: "SUPPORTED",
+      matchStatus: "UNIQUE",
+      candidates: [{ inputKind: "OTA_LISTING", listingUrl: "https://www.booking.com/hotel/nz/christchurch-central-stay.html" }],
+    });
   });
 
   it("returns nationwide LINZ address candidates with confirmation-safe identity fields", async () => {
@@ -143,12 +151,14 @@ describe("Release 1 API contracts", () => {
 
       const locationResponse = await createCheck(jsonRequest("/api/v1/price-checks", {
         analysisType: "LOCATION_BENCHMARK", email: `location-benchmark-${suffix}@tymra.test`, locale: "en", input: "100 Queen Street, Auckland 1010",
+        addressExternalId: externalIds[1],
         stayQuery: { checkIn: "2026-09-10T00:00:00.000Z", checkOut: "2026-09-11T00:00:00.000Z", adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" },
         serviceConsent: true, marketingConsent: false, idempotencyKey: `location-benchmark:${suffix}`,
       }));
       localIds.locationCheckId = (await locationResponse.json()).data.checkId;
       const locationCheck = await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.locationCheckId } });
       localIds.locationStayQueryId = locationCheck.stayQueryId!;
+      expect(locationCheck.propertyId).toBe(candidatePropertyIds[1]);
       const locationCookie = locationResponse.headers.get("set-cookie")!.split(";")[0];
       const locationConfirmation = await confirmProperty(jsonRequest(`/api/v1/price-checks/${localIds.locationCheckId}/confirm-property`, { addressExternalId: externalIds[1] }, { cookie: locationCookie }), { params: { checkId: localIds.locationCheckId } });
       expect(locationConfirmation.status).toBe(200);

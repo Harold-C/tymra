@@ -39,6 +39,44 @@ export async function searchProperties(inputValue: unknown) {
     return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
   }
 
+  if (/^https?:\/\//i.test(input.input.trim())) {
+    try {
+      const reference = parseOtaListingReference(input.input);
+      if (!otaArgusConnectorForSource(reference.sourceId)) {
+        return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
+      }
+      const source = await prisma.dataSource.findUnique({ where: { key: reference.sourceId } });
+      if (!source || !source.enabled || source.healthStatus === "DOWN" || source.operationalStatus !== "HEALTHY") {
+        return { supportStatus: "SOURCE_UNAVAILABLE" as const, matchStatus: "NONE" as const, candidates: [] };
+      }
+      const existing = await prisma.listing.findFirst({
+        where: { dataSourceId: source.id, sourceListingId: reference.sourceListingId, listingStatus: "ACTIVE" },
+        include: { property: true, unit: true },
+        orderBy: { lastConfirmedAt: "desc" },
+      });
+      return {
+        supportStatus: "SUPPORTED" as const,
+        matchStatus: "UNIQUE" as const,
+        candidates: [{
+          externalId: `${reference.sourceId}:${reference.sourceListingId}`,
+          canonicalName: existing?.property.canonicalName ?? `${reference.sourceId} listing ${reference.sourceListingId}`,
+          address: existing?.property.address ?? "",
+          city: existing?.property.city ?? "",
+          countryCode: existing?.property.countryCode ?? "NZ",
+          accommodationType: existing?.property.accommodationType ?? "UNCONFIRMED_ACCOMMODATION",
+          matchStatus: "UNIQUE" as const,
+          isDemo: existing?.isDemo ?? false,
+          propertyId: existing?.propertyId ?? null,
+          unitIds: existing ? [existing.unitId] : [],
+          listingUrl: reference.canonicalUrl,
+          inputKind: "OTA_LISTING" as const,
+        }],
+      };
+    } catch {
+      return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
+    }
+  }
+
   if (looksLikeNzStreetAddress(input.input)) {
     try {
       const result = await linzAddressIdentityProvider.search(input.input, {
@@ -166,20 +204,61 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
     };
   }
 
-  const property = input.propertyId
-    ? await prisma.property.findUnique({ where: { id: input.propertyId }, include: { units: { where: { status: "ACTIVE" } } } })
+  const directListingReference = input.analysisType === "LISTING_PRICING" && /^https?:\/\//i.test(input.input.trim())
+    ? parseOtaListingReference(input.input)
     : null;
+  if (directListingReference && !otaArgusConnectorForSource(directListingReference.sourceId)) {
+    throw new Error("This public OTA listing source is not supported for live validation");
+  }
+  const directListingSource = directListingReference
+    ? await prisma.dataSource.findUnique({ where: { key: directListingReference.sourceId } })
+    : null;
+  if (directListingReference && (!directListingSource?.enabled || directListingSource.healthStatus === "DOWN" || directListingSource.operationalStatus !== "HEALTHY")) {
+    throw new Error("This public OTA listing source is not currently available");
+  }
+  const existingListing = directListingReference
+    ? await prisma.listing.findFirst({
+        where: { dataSource: { key: directListingReference.sourceId }, sourceListingId: directListingReference.sourceListingId, listingStatus: "ACTIVE" },
+        include: { property: { include: { units: { where: { status: "ACTIVE" } } } } },
+        orderBy: { lastConfirmedAt: "desc" },
+      })
+    : null;
+  let property = input.propertyId
+    ? await prisma.property.findUnique({ where: { id: input.propertyId }, include: { units: { where: { status: "ACTIVE" } } } })
+    : existingListing?.property ?? null;
+  if (!property && input.addressExternalId) {
+    const promotedPropertyId = await promoteAddressIdentity(input.addressExternalId, input.input);
+    property = await prisma.property.findUnique({ where: { id: promotedPropertyId }, include: { units: { where: { status: "ACTIVE" } } } });
+  }
   let unitId = input.unitId;
+  if (!unitId && existingListing) unitId = existingListing.unitId;
   if (!unitId && property?.units.length === 1) unitId = property.units[0].id;
 
   // Every accepted check passes through the explicit query confirmation screen.
   // Collection starts only after confirmQuery has persisted the user's final dates.
-  const status: PriceCheckStatus = "NEEDS_CONFIRMATION";
+  const status: PriceCheckStatus = directListingReference ? "VALIDATING" : "NEEDS_CONFIRMATION";
   const accessKey = deriveCheckAccessKey(input.idempotencyKey);
   const stay = stayQuerySchema.parse(input.stayQuery);
   const nights = Math.max(1, nzCalendarDayDifference(stay.checkOut, stay.checkIn));
 
   const check = await prisma.$transaction(async (transaction) => {
+    if (directListingReference && !property) {
+      const identity = `${directListingReference.sourceId}:${directListingReference.sourceListingId}`;
+      const propertyId = `property_ota_${stableAddressIdentityId(identity)}`;
+      const provisionalUnitId = `unit_ota_${stableAddressIdentityId(`${identity}:unconfirmed`)}`;
+      property = await transaction.property.upsert({
+        where: { id: propertyId },
+        create: { id: propertyId, canonicalName: `${directListingReference.sourceId} listing ${directListingReference.sourceListingId}`, address: "", city: "", countryCode: "NZ", accommodationType: "UNCONFIRMED_ACCOMMODATION", supportStatus: "INSUFFICIENT_MARKET_DATA", identityConfidence: 0, status: "PENDING_OTA_VERIFICATION", isDemo: false },
+        update: { status: "PENDING_OTA_VERIFICATION" },
+        include: { units: { where: { status: "ACTIVE" } } },
+      });
+      await transaction.sellableUnit.upsert({
+        where: { id: provisionalUnitId },
+        create: { id: provisionalUnitId, propertyId, canonicalName: "Pending OTA unit verification", officialName: "Pending OTA unit verification", capacity: 1, bedrooms: null, bathrooms: null, bedTypes: [], amenities: [], unitType: "UNCONFIRMED", entireOrShared: null, status: "PENDING_OTA_VERIFICATION", isDemo: false },
+        update: { propertyId, status: "PENDING_OTA_VERIFICATION" },
+      });
+      unitId = undefined;
+    }
     const stayQuery = await transaction.stayQuery.create({ data: { ...stay, nights } });
     return transaction.priceCheck.create({
       data: {
@@ -192,6 +271,8 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
         marketingConsent: input.marketingConsent,
         propertyId: property?.id,
         unitId,
+        listingUrl: directListingReference?.canonicalUrl,
+        listingValidationStatus: directListingReference ? "PENDING" : "NOT_REQUIRED",
         stayQueryId: stayQuery.id,
         marketKey: property ? resolveNzAddressSignalCoverage(property)?.marketKey ?? "unknown" : "unknown",
         status,
@@ -202,6 +283,15 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
       },
     });
   });
+
+  if (directListingReference) {
+    await enqueueJob({
+      type: "PROPERTY_IDENTIFICATION",
+      payload: { priceCheckId: check.id },
+      idempotencyKey: `${check.id}:ota-listing:${directListingReference.sourceId}:${stableAddressIdentityId(directListingReference.sourceListingId)}`,
+      priceCheckId: check.id,
+    });
+  }
 
   await queuePriceCheckEmail(check.id, "CHECK_RECEIVED", "check-received");
   await queuePriceCheckEmail(check.id, "CONFIRMATION_REQUIRED", "confirmation-required");

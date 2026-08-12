@@ -51,6 +51,7 @@ export const createPriceCheckSchema = z.object({
   locale: localeSchema,
   input: z.string().trim().min(3).max(500),
   propertyId: z.string().min(1).optional(),
+  addressExternalId: z.string().min(1).optional(),
   unitId: z.string().min(1).optional(),
   stayQuery: stayQuerySchema,
   serviceConsent: z.literal(true),

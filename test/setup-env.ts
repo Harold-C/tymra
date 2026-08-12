@@ -16,6 +16,7 @@ process.env.ACCESS_KEY_SECRET = "test-access-key-secret-32-bytes-minimum--";
 process.env.DATA_ENCRYPTION_KEY = "test-data-encryption-key-32-bytes-minimum";
 process.env.CRON_SECRET = "test-cron-secret-with-at-least-32-bytes";
 process.env.PROVIDER_MODE = "demo";
+process.env.PUBLIC_COLLECTION_MODE = "fixture";
 process.env.DEFAULT_MARKET = "christchurch";
 process.env.AUTO_PUBLISH_ENABLED = "true";
 process.env.ACCEPT_NEW_CHECKS = "true";

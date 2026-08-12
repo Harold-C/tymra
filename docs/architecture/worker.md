@@ -102,7 +102,10 @@ providers and do not participate in discovery or health gates. Address-first che
 target listing against
 the confirmed LINZ address before rate collection; conflicts, imprecise locations, challenges and
 incomplete prices stop with an explicit confirmation or limited state. After target collection, a
-user-triggered bounded catalog job discovers at most eight comparables, collects their rates and
+user-triggered bounded catalog job resolves the first usable comparable synchronously so one valid
+public price is not blocked by full competitor expansion. Search cards that do not
+publish a usable room capacity are resolved through the same source's `resolve_listing` workflow
+before a Sellable Unit is created; Tymra never invents capacity, address or room identity. It then collects rates and
 deduplicates shared property/unit identities across brands before analysis. This integration does not by
 itself claim production availability: the matching Argus connectors and bounded target-environment
 acceptance must also pass. Non-OTA adapters are implemented but remain

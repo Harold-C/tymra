@@ -236,8 +236,11 @@ from an older successful run.
 
 `pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
 `MEMBER_LIVE_EMAIL`, `MEMBER_LIVE_PASSWORD` and `MEMBER_LIVE_INPUT`; use
-`MEMBER_LIVE_LISTING_URL` only when an address flow asks for listing confirmation. The test fails
-unless the member report contains at least one non-demo public OTA price.
+`MEMBER_LIVE_LISTING_URL` only when an address flow asks for listing confirmation, and set
+`MEMBER_LIVE_NIGHTS` when the acceptance property has a public minimum-stay restriction. The test
+fails unless the member report contains at least one non-demo public OTA price. Its dedicated
+Playwright config never retains traces, screenshots or video because those artifacts could capture
+the development credential.
 
 An isolated full-stack smoke environment can run alongside the normal local stack. The command
 always removes its containers and test volumes on success, failure or interruption:

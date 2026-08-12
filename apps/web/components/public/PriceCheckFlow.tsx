@@ -21,6 +21,8 @@ type PropertyCandidate = {
   isDemo: boolean;
   propertyId: string | null;
   addressExternalId?: string;
+  listingUrl?: string;
+  inputKind?: "OTA_LISTING";
   unitIds: string[];
 };
 
@@ -129,6 +131,7 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
           locale,
           email,
           propertyId,
+          addressExternalId: uniqueCandidate?.addressExternalId,
           unitId,
           stayQuery: {
             checkIn: dates.checkIn,
@@ -146,7 +149,13 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
         }),
       });
 
-      const nextStep = addressCandidate || !propertyId ? "property" : uniqueCandidate && uniqueCandidate.unitIds.length > 1 ? "unit" : "query";
+      const nextStep = created.nextAction === "WAIT"
+        ? "status"
+        : addressCandidate || !propertyId
+          ? "property"
+          : uniqueCandidate && uniqueCandidate.unitIds.length > 1
+            ? "unit"
+            : "query";
       router.push(`/${locale}/check/${created.checkId}/${nextStep}`);
     } catch (caught) {
       if (caught instanceof RequestError && caught.fieldErrors) {
