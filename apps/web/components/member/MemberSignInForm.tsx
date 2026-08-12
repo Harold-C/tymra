@@ -4,7 +4,7 @@ import { LoaderCircle, LogIn } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type ApiPayload = { data?: { returnTo: string }; error?: { message?: string } };
 
@@ -21,8 +21,11 @@ export function MemberSignInForm({
 }) {
   const copy = useTranslations("MembershipAuth");
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setHydrated(true), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,7 +54,7 @@ export function MemberSignInForm({
     <span className="rough-eyebrow"><LogIn aria-hidden="true" />{copy("eyebrow")}</span>
     <h1 id="member-signin-heading">{copy("title")}</h1>
     <p>{copy("intro")}</p>
-    <form method="post" onSubmit={submit}>
+    <form method="post" onSubmit={submit} data-hydrated={hydrated ? "true" : "false"}>
       <label htmlFor="member-email">{copy("emailLabel")}</label>
       <input id="member-email" name="email" type="email" autoComplete="username" defaultValue={defaultEmail} placeholder={copy("emailPlaceholder")} required />
       <label htmlFor="member-password">{copy("passwordLabel")}</label>

@@ -91,6 +91,41 @@ describe("Worker baseline pipeline", () => {
     await service.cancelAnalysis(request!.id);
   });
 
+  it("does not route live public OTA validation through the development fixture", async () => {
+    const request = await service.createFormalAnalysis({
+      input: `62 ${prefix.slice(-8)} Fixture Street, Christchurch 8011`,
+      email: `live-listing-${prefix.slice(-8)}@tymra.test`,
+      serviceConsent: true,
+      idempotencyKey: `${prefix}:live-listing-validation`,
+      locale: "en",
+      deviceId: `${prefix}:live-listing-device`,
+      ipAddress: testIp(29),
+    });
+    const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! } });
+    const job = await prisma.job.findFirstOrThrow({ where: { analysisRequestId: request!.id }, orderBy: { createdAt: "asc" } });
+    await prisma.priceCheck.update({
+      where: { id: check.id },
+      data: {
+        listingUrl: "https://www.airbnb.co.nz/rooms/713337408265816459",
+        listingValidationStatus: "PENDING",
+        status: "VALIDATING",
+      },
+    });
+    const liveService = new WorkerService({
+      ...environment,
+      PROVIDER_MODE: "fixture",
+      PUBLIC_COLLECTION_MODE: "live",
+      ARGUS_API_BASE_URL: "http://127.0.0.1:1",
+      ARGUS_TIMEOUT_MS: 100,
+    });
+    await liveService.validatePriceCheckOtaListing(check.id, job.id);
+    const validated = await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } });
+    expect(validated).toMatchObject({ listingValidationStatus: "SOURCE_UNAVAILABLE", isDemo: true });
+    expect(validated.listingValidationMessage).not.toContain("fixture");
+    expect(await prisma.listing.count({ where: { propertyId: check.propertyId!, dataSource: { key: "development-demo" } } })).toBe(0);
+    await service.cancelAnalysis(request!.id);
+  });
+
   it("returns NEEDS_CONFIRMATION when an address resolves to multiple hotel units", async () => {
     const request = await service.createPreview({ input: `88 ${prefix.slice(-8)} Fixture Hotel Road, Christchurch 8011`, idempotencyKey: `${prefix}:address-multiple`, locale: "en", deviceId: `${prefix}:address-multiple-device`, ipAddress: testIp(22) });
     expect(request).toMatchObject({ inputType: "ADDRESS", status: "NEEDS_CONFIRMATION" });

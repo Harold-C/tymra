@@ -282,6 +282,7 @@ enum JobStatus {
 enum ArgusExecutionStatus {
   SUBMITTED
   RUNNING
+  WAITING_FOR_MANUAL
   COMPLETED
   FAILED
   CANCEL_REQUESTED

@@ -121,12 +121,11 @@ async function memberNoVncCapacity(parentJobId: string) {
   const plan = parent.priceCheck?.customerUser?.membership?.plan ?? "FREE";
   const limit = plan === "FREE" || plan === "HOST" ? 1 : plan === "PRO" ? 2 : 4;
   const jobs = await prisma.job.findMany({ where: { priceCheck: { customerUserId } }, select: { id: true } });
-  const executions = await prisma.argusExecution.findMany({ where: { parentJobId: { in: jobs.map((job) => job.id) }, status: "COMPLETED", completedAt: { gte: new Date(Date.now() - 2 * 3_600_000) }, result: { not: Prisma.DbNull } }, select: { result: true } });
+  const executions = await prisma.argusExecution.findMany({ where: { parentJobId: { in: jobs.map((job) => job.id) }, status: "WAITING_FOR_MANUAL", result: { not: Prisma.DbNull } }, select: { result: true } });
   const active = executions.filter((item) => {
     const result = item.result as Record<string, unknown> | null;
-    const challenge = result && typeof result.challenge === "object" && result.challenge && !Array.isArray(result.challenge) ? result.challenge as Record<string, unknown> : null;
-    const session = challenge && typeof challenge.manual_session === "object" && challenge.manual_session && !Array.isArray(challenge.manual_session) ? challenge.manual_session as Record<string, unknown> : null;
-    return typeof session?.expires_at === "string" && Date.parse(session.expires_at) > Date.now();
+    const action = result && typeof result.operator_action === "object" && result.operator_action && !Array.isArray(result.operator_action) ? result.operator_action as Record<string, unknown> : null;
+    return typeof action?.expires_at === "string" && Date.parse(action.expires_at) > Date.now();
   }).length;
   return { allowed: active < limit, active, limit };
 }
@@ -182,10 +181,12 @@ export async function pollArgusExecution(environment: Environment, executionId: 
 
   const remoteStatus = statusResponse.job.status;
   if (!isTerminalArgusJobStatus(remoteStatus)) {
+    const waitingForManual = remoteStatus === "WAITING_FOR_MANUAL";
     await prisma.argusExecution.update({
       where: { id: execution.id },
       data: {
-        status: remoteStatus === "CANCEL_REQUESTED" ? "CANCEL_REQUESTED" : "RUNNING",
+        status: waitingForManual ? "WAITING_FOR_MANUAL" : remoteStatus === "CANCEL_REQUESTED" ? "CANCEL_REQUESTED" : "RUNNING",
+        ...(waitingForManual ? { result: statusResponse.job as unknown as Prisma.InputJsonValue } : {}),
         lastPolledAt: new Date(),
         errorCategory: null,
         errorMessage: null,
@@ -259,6 +260,10 @@ export async function acknowledgePersistedArgusResults(
     );
     if (!acknowledgement.ok) {
       throw new Error(`Argus result acknowledgement failed: ${acknowledgement.message}`);
+    }
+    const purged = await getArgusJobResult(environment, execution.argusJobId);
+    if (purged.ok || purged.httpStatus !== 410) {
+      throw new Error(`Argus result purge verification failed for ${execution.argusJobId}`);
     }
   }
 }

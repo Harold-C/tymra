@@ -1,4 +1,7 @@
-import { recreateRuntime } from "./compose-runtime";
+import { prisma } from "@tymra/db";
+
+import { recreateRuntime, releaseRuntimeLock } from "./compose-runtime";
+import { e2eAdminEmail } from "./test-identities";
 
 export default async function globalTeardown() {
   const restoreEnvironment = { ...process.env };
@@ -9,5 +12,14 @@ export default async function globalTeardown() {
   ]) delete restoreEnvironment[name];
   // Restore the normal development configuration without making the test
   // result depend on optional live services (for example, a local Argus).
-  recreateRuntime(restoreEnvironment, { waitForHealthy: false });
+  try {
+    await prisma.adminUser.deleteMany({ where: { email: e2eAdminEmail } });
+  } finally {
+    await prisma.$disconnect().catch(() => undefined);
+    try {
+      recreateRuntime(restoreEnvironment, { waitForHealthy: false });
+    } finally {
+      releaseRuntimeLock();
+    }
+  }
 }

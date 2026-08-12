@@ -11,6 +11,7 @@
     "cli": "tsx src/cli.ts",
     "accept:public": "tsx src/accept-public-sources.ts",
     "accept:ota": "tsx src/accept-ota-argus.ts",
+    "soak:ota": "tsx src/soak-ota-argus.ts",
     "soak:eventfinda": "tsx src/soak-eventfinda.ts",
     "soak:nz-public-signals": "tsx src/soak-nz-public-signals.ts",
     "test": "vitest run --config vitest.config.ts",

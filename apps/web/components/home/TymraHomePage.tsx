@@ -53,6 +53,7 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputStarted = useRef(false);
   const roughRequestKey = useRef<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [searchState, setSearchState] = useState<SearchState>({ status: "idle", value: "" });
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [openFooterGroup, setOpenFooterGroup] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
   const value = searchState.value;
 
   useEffect(() => {
+    setHydrated(true);
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
     trackEvent({ name: "homepage_viewed", properties: { locale, deviceType: getDeviceType() } });
   }, [locale]);
@@ -179,6 +181,7 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
           onValueChange={updateValue}
           onClear={clearSearch}
           onSubmit={submitSearch}
+          hydrated={hydrated}
         />
 
         <PendingInsightSection copy={t} />
@@ -231,6 +234,7 @@ function HeroSection({
   onValueChange,
   onClear,
   onSubmit,
+  hydrated,
 }: {
   copy: HomeCopy;
   locale: Locale;
@@ -240,6 +244,7 @@ function HeroSection({
   onValueChange: (value: string) => void;
   onClear: () => void;
   onSubmit: (event?: FormEvent) => void;
+  hydrated: boolean;
 }) {
   const isZh = locale === "zh";
 
@@ -306,6 +311,7 @@ function HeroSection({
         onValueChange={onValueChange}
         onClear={onClear}
         onSubmit={onSubmit}
+        hydrated={hydrated}
       />
     </section>
   );
@@ -331,6 +337,7 @@ function SearchCard({
   onValueChange,
   onClear,
   onSubmit,
+  hydrated,
 }: {
   copy: HomeCopy;
   locale: Locale;
@@ -340,6 +347,7 @@ function SearchCard({
   onValueChange: (value: string) => void;
   onClear: () => void;
   onSubmit: (event?: FormEvent) => void;
+  hydrated: boolean;
 }) {
   const hasValidationError = state.status === "validationError";
   const requiresChallenge = state.status === "challenge";
@@ -349,6 +357,7 @@ function SearchCard({
     <form
       id="price-check-search-card"
       onSubmit={onSubmit}
+      data-hydrated={hydrated ? "true" : "false"}
       className={clsx(
         "relative z-10 mx-auto mt-[58px] w-full max-w-[1200px] rounded-[31px] bg-[linear-gradient(115deg,rgba(80,204,255,0.92)_0%,rgba(255,255,255,0.98)_47%,rgba(124,88,255,0.78)_100%)] p-[1.5px] shadow-[0_24px_72px_rgba(37,99,235,0.18),0_0_44px_rgba(56,189,248,0.16)] max-md:mt-8 max-md:rounded-[29px] 2xl:max-w-[1320px]",
         hasValidationError && "bg-[linear-gradient(90deg,rgba(220,38,38,0.55),rgba(255,255,255,0.78),rgba(37,99,235,0.72))]",

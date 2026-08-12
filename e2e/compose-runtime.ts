@@ -1,4 +1,17 @@
 import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const runtimeLockPath = resolve(process.cwd(), "output/e2e-runtime.lock");
+
+export function acquireRuntimeLock() {
+  mkdirSync(resolve(process.cwd(), "output"), { recursive: true });
+  writeFileSync(runtimeLockPath, `${Date.now()}\n`, { encoding: "utf8" });
+}
+
+export function releaseRuntimeLock() {
+  rmSync(runtimeLockPath, { force: true });
+}
 
 export function recreateRuntime(environment: NodeJS.ProcessEnv, options: { waitForHealthy?: boolean } = {}) {
   const waitForHealthy = options.waitForHealthy ?? true;

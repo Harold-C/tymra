@@ -52,7 +52,7 @@ export async function membershipOperationalMetrics(now = new Date()) {
     prisma.membershipRiskCase.groupBy({ by: ["outcome"], where: { status: "OPEN" }, _count: { _all: true } }),
     prisma.job.groupBy({ by: ["status"], where: { type: "MEMBERSHIP_SCHEDULE", createdAt: { gte: last30Days } }, _count: { _all: true } }),
     prisma.job.findFirst({ where: { type: "MEMBERSHIP_SCHEDULE", status: "PENDING" }, orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
-    prisma.argusExecution.count({ where: { submittedAt: { gte: last24Hours }, result: { path: ["status"], equals: "manual_required" } } }),
+    prisma.argusExecution.count({ where: { submittedAt: { gte: last24Hours }, OR: [{ status: "WAITING_FOR_MANUAL" }, { result: { path: ["status"], equals: "manual_required" } }] } }),
   ]);
   const planEconomics = await Promise.all(membershipPlans.map(async (plan) => {
     const [activeSubscriptions, units, analyses] = await Promise.all([

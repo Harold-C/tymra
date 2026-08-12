@@ -278,7 +278,9 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
         status,
         accessKeyHash: checkAccessHash(accessKey),
         idempotencyKey: input.idempotencyKey,
-        isDemo: ["demo", "fixture"].includes(environment.PROVIDER_MODE),
+        isDemo: !directListingReference || environment.PUBLIC_COLLECTION_MODE !== "live"
+          ? ["demo", "fixture"].includes(environment.PROVIDER_MODE)
+          : false,
         customerUserId: customer?.id,
       },
     });

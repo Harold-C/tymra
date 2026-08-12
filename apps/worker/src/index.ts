@@ -55,7 +55,7 @@ while (!stopping) {
         await deferClaimedJob(job.id, environment.WORKER_ID, error.resumeAt, error.message);
         if (job.type !== "ARGUS_JOB_POLL") {
           const activeExternalExecution = await prisma.argusExecution.findFirst({
-            where: { parentJobId: job.id, status: { in: ["SUBMITTED", "RUNNING", "CANCEL_REQUESTED"] } },
+            where: { parentJobId: job.id, status: { in: ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] } },
             select: { id: true },
           });
           if (!activeExternalExecution) {

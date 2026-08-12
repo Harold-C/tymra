@@ -252,7 +252,8 @@ export class WorkerService {
     if (!connectorId) throw new WorkerRequestError("UNSUPPORTED_SOURCE", "This OTA listing source is not supported", 422);
     const provider = otaProviderDetails(reference.sourceId);
     if (!provider) throw new WorkerRequestError("UNSUPPORTED_SOURCE", "This OTA listing source is not supported", 422);
-    if (["demo", "fixture"].includes(this.environment.PROVIDER_MODE)) {
+    if (this.environment.PUBLIC_COLLECTION_MODE !== "live"
+      && ["demo", "fixture"].includes(this.environment.PROVIDER_MODE)) {
       await this.validateFixturePriceCheckListing(check, reference, provider, parentJobId);
       return;
     }
@@ -300,7 +301,8 @@ export class WorkerService {
 
     const extraction = otaResolveListingExtractionSchema.parse(result.extracted);
     const sourceListingIdentityMatches = extraction.sourceListingId === reference.sourceListingId
-      || extraction.sourceListingId === `${reference.sourceId}:${reference.sourceListingId}`;
+      || extraction.sourceListingId === `${reference.sourceId}:${reference.sourceListingId}`
+      || canonicalReferenceIdentityMatches(reference, extraction.canonicalUrl);
     if (extraction.provider !== reference.sourceId || !sourceListingIdentityMatches) {
       await this.markOtaListingConflict(priceCheckId, run.id, "The OTA response did not identify the submitted listing.", ["LISTING_IDENTITY_MISMATCH"]);
       return;
@@ -3618,6 +3620,19 @@ export class WorkerRequestError extends Error {
 
 function emptyPublicCollectionCounters() {
   return { requests: 0, requestsAvoided: 0, discovered: 0, references: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, duplicatesSkipped: 0, unchangedSkipped: 0, failures: 0 };
+}
+
+export function canonicalReferenceIdentityMatches(
+  reference: ReturnType<typeof parseOtaListingReference>,
+  canonicalUrl: string,
+): boolean {
+  try {
+    const resolved = parseOtaListingReference(canonicalUrl);
+    return resolved.sourceId === reference.sourceId
+      && resolved.sourceListingId === reference.sourceListingId;
+  } catch {
+    return false;
+  }
 }
 
 function inferredTimePrecision(event: PublicEvent): "DATE" | "DATETIME" {

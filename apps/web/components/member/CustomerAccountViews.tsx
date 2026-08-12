@@ -72,6 +72,12 @@ export type MembershipSummary = {
 };
 type ApiPayload<T> = { data?: T; error?: { message?: string } };
 
+class CustomerCheckLoadError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+  }
+}
+
 export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; checkId: string }) {
   const copy = accountCopy[locale];
   const [check, setCheck] = useState<CustomerCheck | null>(null);
@@ -79,8 +85,16 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/v1/customer/checks/${checkId}`, { cache: "no-store" });
-    const payload = await response.json() as ApiPayload<CustomerCheck>;
-    if (!response.ok || !payload.data) throw new Error(payload.error?.message ?? copy.loadError);
+    const body = await response.text();
+    let payload: ApiPayload<CustomerCheck>;
+    try {
+      payload = JSON.parse(body) as ApiPayload<CustomerCheck>;
+    } catch {
+      throw new CustomerCheckLoadError(copy.loadError, response.status === 429 || response.status >= 500);
+    }
+    if (!response.ok || !payload.data) {
+      throw new CustomerCheckLoadError(payload.error?.message ?? copy.loadError, response.status === 429 || response.status >= 500);
+    }
     setCheck(payload.data);
     setError(null);
     return payload.data;
@@ -98,8 +112,10 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
       } catch (caught) {
         if (!active) return;
         consecutiveFailures += 1;
-        if (consecutiveFailures < 3) {
-          timer = window.setTimeout(poll, 1_000);
+        const retryable = !(caught instanceof CustomerCheckLoadError) || caught.retryable;
+        if (retryable) {
+          if (consecutiveFailures >= 3) setError(caught instanceof Error ? caught.message : copy.loadError);
+          timer = window.setTimeout(poll, Math.min(5_000, consecutiveFailures * 1_000));
           return;
         }
         setError(caught instanceof Error ? caught.message : copy.loadError);

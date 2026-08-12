@@ -3,7 +3,7 @@
 import { AlertTriangle, BarChart3, CheckCircle2, Clock3, LoaderCircle, ShieldCheck, ThumbsUp } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type Locale = "en" | "zh";
 
@@ -108,7 +108,10 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function FeedbackForm({ insightId, token }: { insightId: string; token: string }) {
   const t = useTranslations("Result");
+  const [hydrated, setHydrated] = useState(false);
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  useEffect(() => setHydrated(true), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,7 +132,7 @@ function FeedbackForm({ insightId, token }: { insightId: string; token: string }
 
   if (state === "sent") return <div className="feedback-success" role="status"><CheckCircle2 size={18} />{t("feedbackThanks")}</div>;
   return (
-    <form className="feedback-form" onSubmit={submit}>
+    <form className="feedback-form" onSubmit={submit} data-hydrated={hydrated ? "true" : "false"}>
       <h3><ThumbsUp size={18} />{t("feedbackTitle")}</h3>
       <div className="feedback-options">
         <label><input type="radio" name="feedbackType" value="INSIGHT_USEFUL" required />{t("feedbackUseful")}</label>

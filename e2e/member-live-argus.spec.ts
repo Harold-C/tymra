@@ -22,6 +22,12 @@ test.describe("member live Argus acceptance", () => {
     if (/\/sign-in(?:[/?]|$)/.test(page.url())) await passwordInput.fill("");
     await expect(page).toHaveURL(/\/en\/account(?:[/?]|$)/);
 
+    const existingCheckId = process.env.MEMBER_LIVE_EXISTING_CHECK_ID?.trim();
+    if (existingCheckId) {
+      await verifyPublishedCheck(page, existingCheckId);
+      return;
+    }
+
     await page.goto("/en/address-check", { waitUntil: "networkidle" });
     await page.locator(`input[name="analysisType"][value="${analysisType}"]`).check();
     await page.locator("#check-input").fill(input);
@@ -34,15 +40,18 @@ test.describe("member live Argus acceptance", () => {
     await completeConfirmations(page, input);
     await expect(page).toHaveURL(new RegExp(`/en/check/${checkId}/status`));
 
-    await waitForLivePublicPrice(page, checkId);
-
-    console.log("member-live public price published");
-    await page.goto(`/en/account/checks/${checkId}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await expect(page.locator("#observed-price-heading")).toBeVisible();
-    await expect(page.locator(".observed-price-list article").first()).toBeVisible();
-    await expect(page.locator(".formal-demo")).toHaveCount(0);
+    await verifyPublishedCheck(page, checkId);
   });
 });
+
+async function verifyPublishedCheck(page: Page, checkId: string) {
+  await waitForLivePublicPrice(page, checkId);
+  console.log("member-live public price published");
+  await page.goto(`/en/account/checks/${checkId}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await expect(page.locator("#observed-price-heading")).toBeVisible();
+  await expect(page.locator(".observed-price-list article").first()).toBeVisible();
+  await expect(page.locator(".formal-demo")).toHaveCount(0);
+}
 
 async function continueAfterAsyncValidation(page: Page, checkId: string) {
   let nextAction = "WAIT";
@@ -99,10 +108,11 @@ async function completeConfirmations(page: Page, originalInput: string) {
         throw new Error("MEMBER_LIVE_NIGHTS must be an integer from 1 to 30");
       }
       await page.locator("#check-in").waitFor({ state: "visible", timeout: 30_000 });
-      if (nights !== 1) {
-        const checkIn = await page.locator("#check-in").inputValue();
-        await page.locator("#check-out").fill(addCalendarDays(checkIn, nights));
-      }
+      const configuredCheckIn = process.env.MEMBER_LIVE_CHECK_IN?.trim();
+      const configuredCheckOut = process.env.MEMBER_LIVE_CHECK_OUT?.trim();
+      if (configuredCheckIn) await page.locator("#check-in").fill(configuredCheckIn);
+      const checkIn = configuredCheckIn ?? await page.locator("#check-in").inputValue();
+      await page.locator("#check-out").fill(configuredCheckOut ?? addCalendarDays(checkIn, nights));
       await page.locator("form button[type=submit]").click();
     } else {
       return;

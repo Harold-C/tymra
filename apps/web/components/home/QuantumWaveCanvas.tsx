@@ -367,6 +367,7 @@ export function QuantumWaveCanvas({ className }: { className?: string }) {
     window.addEventListener("blur", clearPointerInfluence);
     reducedMotion.addEventListener?.("change", handleMotionPreferenceChange);
     draw(performance.now());
+    canvas.dataset.rendered = "true";
     start();
 
     return () => {
@@ -387,6 +388,7 @@ export function QuantumWaveCanvas({ className }: { className?: string }) {
       data-particle-effect="spiral-ribbon"
       data-particle-interaction="pointer"
       data-particle-layers="3"
+      data-rendered="false"
       className={clsx("pointer-events-none block h-full w-full", className)}
       style={{
         WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.45) 12%, black 24%, black 74%, rgba(0,0,0,0.45) 88%, transparent 100%)",

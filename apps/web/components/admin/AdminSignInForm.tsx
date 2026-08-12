@@ -2,7 +2,7 @@
 
 import { LoaderCircle, LockKeyhole } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { adminText, type AdminLocale } from "@/lib/admin-i18n";
 
@@ -14,8 +14,10 @@ type AdminSignInFormProps = {
 
 export function AdminSignInForm({ locale, defaultEmail, defaultPassword }: AdminSignInFormProps) {
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => setHydrated(true), []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -31,5 +33,5 @@ export function AdminSignInForm({ locale, defaultEmail, defaultPassword }: Admin
     setError(payload.error?.message ?? adminText(locale, "signInFailed"));
     setBusy(false);
   }
-  return <form className="admin-signin-form" onSubmit={submit}><div className="field"><label htmlFor="admin-email">{adminText(locale, "email")}</label><input id="admin-email" name="email" type="email" autoComplete="username" defaultValue={defaultEmail} required /></div><div className="field"><label htmlFor="admin-password">{adminText(locale, "password")}</label><input id="admin-password" name="password" type="password" autoComplete="current-password" defaultValue={defaultPassword} minLength={defaultPassword ? 6 : 8} required /></div>{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <LockKeyhole size={18} />}{adminText(locale, busy ? "signingIn" : "signIn")}</button></form>;
+  return <form className="admin-signin-form" method="post" onSubmit={submit} data-hydrated={hydrated ? "true" : "false"}><div className="field"><label htmlFor="admin-email">{adminText(locale, "email")}</label><input id="admin-email" name="email" type="email" autoComplete="username" defaultValue={defaultEmail} required /></div><div className="field"><label htmlFor="admin-password">{adminText(locale, "password")}</label><input id="admin-password" name="password" type="password" autoComplete="current-password" defaultValue={defaultPassword} minLength={defaultPassword ? 6 : 8} required /></div>{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={18} /> : <LockKeyhole size={18} />}{adminText(locale, busy ? "signingIn" : "signIn")}</button></form>;
 }

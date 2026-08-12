@@ -189,7 +189,7 @@ async function collectRates(priceCheckId: string, jobId: string, environment: En
     include: { property: true, unit: true, stayQuery: true },
   });
   if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
-  const isDemo = ["demo", "fixture"].includes(environment.PROVIDER_MODE);
+  const isDemo = usesFixtureRateCollection(environment);
   if (!isDemo) {
     await setCheckStatus(priceCheckId, "COLLECTING", check.analysisType === "LOCATION_BENCHMARK" ? "location_benchmark_collection_started" : "ota_collection_started");
     if (check.analysisType === "LOCATION_BENCHMARK") {
@@ -358,6 +358,13 @@ async function collectRates(priceCheckId: string, jobId: string, environment: En
     return;
   }
   await enqueueNext(priceCheckId, "RATE_NORMALIZATION", "normalize", jobId);
+}
+
+export function usesFixtureRateCollection(
+  environment: Pick<Environment, "PROVIDER_MODE" | "PUBLIC_COLLECTION_MODE">,
+) {
+  return environment.PUBLIC_COLLECTION_MODE !== "live"
+    && ["demo", "fixture"].includes(environment.PROVIDER_MODE);
 }
 
 async function loadManualRates(propertyId: string, unitId: string, checkIn: Date, checkOut: Date, dataSourceId: string) {

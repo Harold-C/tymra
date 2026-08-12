@@ -72,19 +72,33 @@ test.describe("fixed development member plan matrix", () => {
 });
 
 async function signIn(page: Page, email: string, password: string) {
+  await openSignIn(page);
+  let finalStatus = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.locator("#member-email").fill(email);
+    await page.locator("#member-password").fill(password);
+    const responsePromise = page.waitForResponse((candidate) => candidate.request().method() === "POST" && new URL(candidate.url()).pathname === "/api/v1/customer/auth/password");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    const response = await responsePromise;
+    finalStatus = response.status();
+    if (response.ok()) break;
+    if (response.status() < 500 || attempt === 2) break;
+    await page.waitForTimeout(500);
+    await openSignIn(page);
+  }
+  expect(finalStatus, "member password sign-in should return HTTP 201").toBe(201);
+  await expect(page).toHaveURL(/\/en\/account(?:[/?]|$)/u);
+}
+
+async function openSignIn(page: Page) {
   let ready = false;
-  for (let attempt = 0; attempt < 3 && !ready; attempt += 1) {
-    const navigation = await page.goto("/en/sign-in", { waitUntil: "networkidle", timeout: 30_000 }).catch(() => null);
+  for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
+    const navigation = await page.goto("/en/sign-in", { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => null);
     ready = Boolean(navigation?.ok()) && await page.locator("#member-email").isVisible().catch(() => false);
     if (!ready) await page.waitForTimeout(500);
   }
   expect(ready, "canonical development sign-in page should be reachable").toBe(true);
-  await page.locator("#member-email").fill(email);
-  await page.locator("#member-password").fill(password);
-  const response = page.waitForResponse((candidate) => candidate.request().method() === "POST" && new URL(candidate.url()).pathname === "/api/v1/customer/auth/password");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  expect((await response).ok()).toBe(true);
-  await expect(page).toHaveURL(/\/en\/account(?:[/?]|$)/u);
+  await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
 }
 
 async function verifyGatedRoute(page: Page, route: string, entitled: boolean, launched: boolean, launchedText: RegExp) {

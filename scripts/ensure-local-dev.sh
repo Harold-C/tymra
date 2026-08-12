@@ -8,7 +8,16 @@ readonly PUBLIC_URL="https://tymra.test/en"
 readonly ADMIN_URL="https://ops.tymra.test/admin/sign-in"
 readonly WORKER_URL="https://worker.tymra.test/worker/readiness"
 readonly MAILPIT_URL="https://mail.tymra.test/"
+readonly E2E_RUNTIME_LOCK="${PROJECT_DIR}/output/e2e-runtime.lock"
 readonly REQUIRED_SERVICES=(postgres redis web worker api mailpit)
+
+# Playwright briefly removes and recreates the Web/API/Worker services with an
+# isolated runtime configuration. Do not race that controlled transition. A
+# stale lock expires automatically so an interrupted test cannot disable local
+# recovery indefinitely.
+if [[ -f "${E2E_RUNTIME_LOCK}" ]] && [[ -n "$(/usr/bin/find "${E2E_RUNTIME_LOCK}" -mmin -30 -print 2>/dev/null)" ]]; then
+  exit 0
+fi
 
 find_docker() {
   for candidate in /usr/local/bin/docker /opt/homebrew/bin/docker; do

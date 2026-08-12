@@ -90,7 +90,8 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
       where: { jobId: input.parentJobId, dataSourceId: source.id, scope: { path: ["operation"], equals: "OTA_COMPARABLE_DISCOVERY" } },
       orderBy: { createdAt: "desc" },
     });
-    if (!run || ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(run.status)) {
+    if (run && comparableDiscoveryRunIsTerminal(run.status)) continue;
+    if (!run) {
       run = await prisma.collectionRun.create({
         data: {
           jobId: input.parentJobId,
@@ -100,7 +101,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           status: "RUNNING",
           scope: { operation: "OTA_COMPARABLE_DISCOVERY", searchQuery, maxRecords: 3 },
           startedAt: new Date(),
-          attemptCount: (run?.attemptCount ?? 0) + 1,
+          attemptCount: 1,
           isDemo: false,
         },
       });
@@ -299,6 +300,10 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
     data: { status: run.failureCount > 0 ? "PARTIAL" : "SUCCEEDED", finishedAt: new Date() },
   })));
   return { discovered: new Set(discoveredListingIds).size };
+}
+
+export function comparableDiscoveryRunIsTerminal(status: string) {
+  return ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(status);
 }
 
 async function collectComparableOtaRate(input: AddressOtaPricingInput, listingId: string, createRun = false) {

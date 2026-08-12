@@ -97,6 +97,7 @@ beforeEach(() => {
   mocks.rawArtifactFindMany.mockResolvedValue([]);
   mocks.rawArtifactCount.mockResolvedValue(0);
   mocks.collectionRunFindMany.mockResolvedValue([]);
+  mocks.getResult.mockResolvedValue({ ok: false, httpStatus: 410, message: "purged" });
 });
 
 afterEach(async () => {
@@ -136,8 +137,8 @@ describe("durable Argus orchestration", () => {
     mocks.parentFindMany.mockResolvedValue([{ id: "parent-1" }]);
     mocks.executionFindMany.mockResolvedValue([{
       result: {
-        challenge: {
-          manual_session: { expires_at: new Date(Date.now() + 60_000).toISOString() },
+        operator_action: {
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
       },
     }]);
@@ -217,6 +218,37 @@ describe("durable Argus orchestration", () => {
     assert.equal(mocks.executionUpdate.mock.calls[0]?.[0].data.status, "RUNNING");
   });
 
+  it("persists a bounded operator action while Argus waits for the same-session handoff", async () => {
+    mocks.executionFind.mockResolvedValue(activeExecution());
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    const operatorAction = {
+      required: true as const,
+      type: "novnc_handoff" as const,
+      issue_url: "/v1/handoffs" as const,
+      reason: "captcha" as const,
+      session_ttl_seconds: 900,
+      session_id: `manual_${"1".repeat(32)}`,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const summary = { job_id: "argus-1", status: "WAITING_FOR_MANUAL" as const, operator_action: operatorAction };
+    mocks.getJob.mockResolvedValue({ ok: true, job: summary });
+
+    await assert.rejects(
+      pollArgusExecution(environment, "execution-1"),
+      (error: unknown) => error instanceof DeferredJobError,
+    );
+
+    assert.deepEqual(mocks.executionUpdate.mock.calls[0]?.[0].data, {
+      status: "WAITING_FOR_MANUAL",
+      result: summary,
+      lastPolledAt: mocks.executionUpdate.mock.calls[0]?.[0].data.lastPolledAt,
+      errorCategory: null,
+      errorMessage: null,
+      retryable: null,
+    });
+    assert.equal(mocks.getResult.mock.calls.length, 0);
+  });
+
   it("stores the terminal result and wakes the parked parent", async () => {
     mocks.executionFind.mockResolvedValue(activeExecution());
     mocks.parentFind.mockResolvedValue({ status: "PENDING" });
@@ -248,6 +280,7 @@ describe("durable Argus orchestration", () => {
       select: { argusJobId: true, collectionRunId: true, result: true },
     });
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
+    assert.deepEqual(mocks.getResult.mock.calls[0], [environment, "argus-1"]);
   });
 
   it("verifies direct delivery purge after acknowledgement", async () => {

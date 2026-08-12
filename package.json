@@ -18,6 +18,7 @@
     "worker": "pnpm --filter @tymra/worker dev",
     "accept:public": "pnpm --filter @tymra/worker accept:public",
     "accept:soak:eventfinda": "pnpm --filter @tymra/worker soak:eventfinda",
+    "accept:soak:ota": "node --env-file-if-exists=.env node_modules/tsx/dist/cli.mjs apps/worker/src/soak-ota-argus.ts",
     "db:generate": "pnpm --filter @tymra/db db:generate",
     "db:migrate": "pnpm --filter @tymra/db db:migrate",
     "db:seed": "pnpm --filter @tymra/db db:seed",
@@ -32,6 +33,7 @@
     "test:stripe:readiness": "tsx --env-file=.env scripts/verify-stripe-test-readiness.ts",
     "test:e2e:stripe": "STRIPE_TEST_E2E=1 node --env-file=.env node_modules/playwright/cli.js test --config=playwright.stripe-test.config.ts",
     "test:challenge:readiness": "tsx --env-file=.env scripts/verify-managed-challenge-readiness.ts",
+    "test:challenge:controlled": "tsx scripts/verify-managed-challenge-controlled.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:integration && pnpm build"
   },
   "devDependencies": {

@@ -1,7 +1,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { prisma } from "@tymra/db";
-import bcrypt from "bcryptjs";
 import { expect, test } from "playwright/test";
+
+import { e2eAdminEmail, e2eAdminPassword } from "./test-identities";
 
 const resultPath = (locale: "en" | "zh", checkId: string, version = 1) =>
   `/${locale}/result/${encodeURIComponent(`result:${checkId}:${version}`)}`;
@@ -22,7 +23,7 @@ async function goto(page: import("playwright/test").Page, url: string) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
-      const response = await page.goto(url);
+      const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10_000 });
       if (response && (response.status() === 404 || response.status() >= 500)) throw new Error(`Navigation returned ${response.status()}`);
       return response;
     } catch (error) {
@@ -37,7 +38,7 @@ async function gotoAdmin(page: import("playwright/test").Page, pathname: string)
   let lastError: unknown;
   for (let attempt = 1; attempt <= 60; attempt += 1) {
     try {
-      const response = await page.goto(adminUrl(pathname));
+      const response = await page.goto(adminUrl(pathname), { waitUntil: "domcontentloaded", timeout: 10_000 });
       if (response?.status() === 404) throw new Error("Operations route is still refreshing");
       if (response && response.status() >= 500) throw new Error(`Navigation returned ${response.status()}`);
       return response;
@@ -47,6 +48,26 @@ async function gotoAdmin(page: import("playwright/test").Page, pathname: string)
     }
   }
   throw lastError;
+}
+
+async function postJsonFromPage<T>(page: import("playwright/test").Page, url: string, data: unknown) {
+  let lastResponse: { status: number; contentType: string; text: string } | undefined;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    lastResponse = await page.evaluate(async ({ requestUrl, requestData }) => {
+      const response = await fetch(requestUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestData),
+      });
+      return { status: response.status, contentType: response.headers.get("content-type") ?? "", text: await response.text() };
+    }, { requestUrl: url, requestData: data });
+    if (lastResponse.contentType.includes("application/json")) {
+      return { status: lastResponse.status, body: JSON.parse(lastResponse.text) as T };
+    }
+    if (lastResponse.status < 500 && lastResponse.status !== 404) break;
+    await page.waitForTimeout(attempt * 250);
+  }
+  throw new Error(`Expected JSON from ${url}; received ${lastResponse?.status ?? "no response"} ${lastResponse?.contentType || "without a content type"}`);
 }
 
 test.describe("public Release 1", () => {
@@ -75,6 +96,7 @@ test.describe("public Release 1", () => {
       await route.fulfill({ status: 403, json: { error: { code: "ROUGH_CHECK_CHALLENGE_REQUIRED", message: "Verification required", referenceId: "TYM-E2E", details: { challenge: { mode: "deterministic", token: "x".repeat(40) } } } } });
     });
     await goto(page, "/en");
+    await expect(page.locator('#price-check-search-card[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Paste a supported New Zealand OTA listing URL").fill("https://www.booking.com/hotel/nz/challenge-test.html");
     await page.locator("#price-check-search-card").getByRole("button", { name: "Check This Listing" }).click();
     await expect(page.getByTestId("rough-check-challenge")).toContainText("Additional verification required");
@@ -102,7 +124,8 @@ test.describe("public Release 1", () => {
     }));
     expect(activeMotion).toEqual([]);
 
-    const canvas = page.locator("canvas").first();
+    const canvas = page.locator('canvas[data-rendered="true"]').first();
+    await expect(canvas).toBeVisible();
     const firstFrame = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
     await page.waitForTimeout(250);
     const secondFrame = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
@@ -132,7 +155,11 @@ test.describe("public Release 1", () => {
     await expect(addressEntry).toBeVisible();
     await addressEntry.click();
     await expect(page).toHaveURL(new RegExp(`/${locale}/address-check$`));
-    await expect(page.getByRole("radio", { name: locale === "en" ? /Benchmark a real address/ : /查询真实地址周边行情/ })).toBeVisible();
+    const addressMode = page.getByRole("radio", { name: locale === "en" ? /Benchmark a real address/ : /查询真实地址周边行情/ });
+    await expect(async () => {
+      if (!await addressMode.isVisible().catch(() => false)) await goto(page, `/${locale}/address-check`);
+      await expect(addressMode).toBeVisible();
+    }).toPass({ timeout: 30_000 });
   });
 
   test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {
@@ -142,8 +169,14 @@ test.describe("public Release 1", () => {
 
     await goto(page, `/${locale}`);
     if (testInfo.project.name === "mobile") {
-      await page.getByRole("button", { name: locale === "en" ? "Open navigation" : "打开导航" }).click();
-      await expect(page.getByRole("dialog", { name: locale === "en" ? "Mobile navigation" : "移动端导航" }).getByRole("link", { name: signInLabel })).toBeVisible();
+      const mobileNavigation = page.getByRole("dialog", { name: locale === "en" ? "Mobile navigation" : "移动端导航" });
+      await expect.poll(async () => {
+        if (!await mobileNavigation.isVisible().catch(() => false)) {
+          await page.getByRole("button", { name: locale === "en" ? "Open navigation" : "打开导航" }).click();
+          await page.waitForTimeout(100);
+        }
+        return mobileNavigation.getByRole("link", { name: signInLabel }).isVisible().catch(() => false);
+      }, { timeout: 30_000, intervals: [250, 500, 1_000] }).toBe(true);
     } else {
       await expect(page.getByRole("link", { name: signInLabel, exact: true })).toBeVisible();
     }
@@ -183,9 +216,14 @@ test.describe("public Release 1", () => {
         if (usesMenu) {
           const menuButton = page.getByRole("button", { name: "Open navigation" });
           await expect(menuButton).toBeVisible();
-          await menuButton.click();
           const mobileNavigation = page.getByRole("dialog", { name: "Mobile navigation" });
-          await expect(mobileNavigation.getByRole("link", { name: "Sign In", exact: true })).toBeVisible();
+          await expect.poll(async () => {
+            if (!await mobileNavigation.isVisible().catch(() => false)) {
+              await page.getByRole("button", { name: "Open navigation" }).click();
+              await page.waitForTimeout(100);
+            }
+            return mobileNavigation.getByRole("link", { name: "Sign In", exact: true }).isVisible().catch(() => false);
+          }, { timeout: 30_000, intervals: [250, 500, 1_000] }).toBe(true);
         } else {
           await expect(page.getByRole("banner").getByRole("link", { name: "Sign In", exact: true })).toBeVisible();
         }
@@ -210,8 +248,9 @@ test.describe("public Release 1", () => {
 
   test("OTA link, one verification email and authenticated formal report complete the new-user flow", async ({ page }) => {
     test.slow();
-    const email = `e2e-funnel-${Date.now()}-${test.info().project.name}@tymra.test`;
+    const email = `e2e-${Date.now()}-${test.info().project.name}-${crypto.randomUUID().slice(0, 8)}@tymra.test`;
     await goto(page, "/en/check");
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel(listingUrlLabel.en).fill("123 Colombo Street, Christchurch");
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await page.getByRole("button", { name: "Check This Listing" }).click();
@@ -235,7 +274,13 @@ test.describe("public Release 1", () => {
 
     await page.getByLabel("Email address").fill(email);
     await page.getByLabel(/I agree to the account terms/).check();
-    await page.getByRole("button", { name: "Email My Secure Link" }).click();
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await page.getByRole("button", { name: "Email My Secure Link" }).click();
+      const accepted = await page.getByRole("heading", { name: "Check your email" }).waitFor({ state: "visible", timeout: 10_000 }).then(() => true).catch(() => false);
+      if (accepted) break;
+      await expect(page.getByRole("alert")).toBeVisible();
+      if (attempt < 3) await page.waitForTimeout(500);
+    }
     await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 30_000 });
 
     const search = await pollMailpit(page, email, 1);
@@ -246,12 +291,37 @@ test.describe("public Release 1", () => {
     expect(secureHref).toBeTruthy();
     const secureUrl = new URL(secureHref!);
     expect(secureUrl.pathname).toBe("/en/auth/verify");
+    let transientCheckResponses = 0;
+    await page.route("**/api/v1/customer/checks/*", async (route) => {
+      if (transientCheckResponses < 3 && route.request().method() === "GET") {
+        transientCheckResponses += 1;
+        await route.fulfill({ status: 502, contentType: "text/plain", body: "temporary upstream response" });
+        return;
+      }
+      await route.continue();
+    });
     await goto(page, secureUrl.toString());
     await expect(page).toHaveURL(/\/en\/account\/checks\/[^/]+/);
-    await expect(page.getByText("AUTHENTICATED FORMAL REPORT")).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible({ timeout: 30_000 });
-
+    await expect(page.getByText("AUTHENTICATED FORMAL REPORT")).toBeVisible({ timeout: 90_000 });
+    expect(transientCheckResponses).toBe(3);
+    await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible({ timeout: 90_000 });
     const checkId = new URL(page.url()).pathname.split("/").at(-1)!;
+
+    await goto(page, "/en/account/checks");
+    await page.getByLabel("Search").fill("Christchurch Central Stay");
+    const ownedCheck = page.locator(`a[href="/en/account/checks/${checkId}"]`);
+    await expect(ownedCheck).toBeVisible();
+    await ownedCheck.click();
+    await expect(page.getByText("AUTHENTICATED FORMAL REPORT")).toBeVisible();
+
+    await goto(page, "/en/account/pricing-units");
+    const pricingUnitDetails = page.getByRole("link", { name: "View details" });
+    await expect(pricingUnitDetails).toHaveCount(1);
+    await pricingUnitDetails.click();
+    await expect(page).toHaveURL(/\/en\/account\/pricing-units\/[^/]+$/);
+    await expect(page.getByText("PRICING UNIT", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Public platforms" })).toBeVisible();
+
     await expect.poll(async () => (await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } })).inPageDeliveredAt).not.toBeNull();
     await prisma.job.updateMany({ where: { priceCheckId: checkId, type: "RESULT_NOTIFICATION", status: "PENDING" }, data: { runAt: new Date() } });
     await expect.poll(async () => (await prisma.job.findFirstOrThrow({ where: { priceCheckId: checkId, type: "RESULT_NOTIFICATION" } })).status).toBe("SUCCEEDED");
@@ -260,6 +330,7 @@ test.describe("public Release 1", () => {
 
   test("URL pricing context is used without date, guest or room selection", async ({ page }) => {
     await goto(page, "/en/check");
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/nz/riverside-motel.html?checkin=2026-09-10&checkout=2026-09-12&group_adults=3&no_rooms=2");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page.getByText("2026-09-10 → 2026-09-12 · 3 adults · 2 units")).toBeVisible({ timeout: 30_000 });
@@ -270,6 +341,7 @@ test.describe("public Release 1", () => {
   test("Unsupported OTA input and persisted legacy status boundary pages are explicit", async ({ page }) => {
     test.slow();
     await goto(page, "/en/check");
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/au/sydney.html");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page.getByText("Enter a supported public OTA listing URL.")).toBeVisible();
@@ -280,14 +352,7 @@ test.describe("public Release 1", () => {
       ["PARTIAL", "Partial result"],
       ["NEEDS_CONFIRMATION", "Needs confirmation"],
     ]) {
-      const response = await page.evaluate(async (data) => {
-        const result = await fetch("/api/v1/price-checks", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(data),
-        });
-        return { status: result.status, body: await result.json() as { data: { checkId: string } } };
-      }, {
+      const response = await postJsonFromPage<{ data: { checkId: string } }>(page, "/api/v1/price-checks", {
           email: `status-${status.toLowerCase()}@tymra.test`,
           locale: "en",
           input: "Christchurch Central Stay",
@@ -319,6 +384,7 @@ test.describe("public Release 1", () => {
     await goto(page, resultPath("en", "demo-check-normal-high"));
     await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible();
     await expect(page.getByText("Not real market data", { exact: false }).first()).toBeVisible();
+    await expect(page.locator('.feedback-form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Useful").check();
     await page.getByRole("button", { name: "Send feedback" }).click();
     await expect(page.getByText("Feedback received")).toBeVisible();
@@ -354,7 +420,7 @@ async function pollMailpit(page: import("playwright/test").Page, email: string, 
     const response = await page.request.get(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${email}`)}&limit=20`);
     result = await response.json();
     return result.messages_count;
-  }).toBeGreaterThanOrEqual(minimum);
+  }, { timeout: 30_000, intervals: [250, 500, 1_000] }).toBeGreaterThanOrEqual(minimum);
   return result;
 }
 
@@ -384,6 +450,7 @@ test.describe("member accessibility and responsive contract", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     const memberOrigin = "https://tymra.test";
     await goto(page, `${memberOrigin}/en/sign-in?returnTo=${encodeURIComponent("/en/account")}`);
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Membership email").fill(email);
     await page.getByLabel("Password").fill(password);
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -397,9 +464,14 @@ test.describe("member accessibility and responsive contract", () => {
 
     await goto(page, `${memberOrigin}/en`);
     if (testInfo.project.name === "mobile") {
-      await page.getByRole("button", { name: "Open navigation" }).click();
       const memberMenu = page.getByRole("dialog", { name: "Mobile navigation" });
-      await expect(memberMenu.getByRole("link", { name: "My Account", exact: true })).toBeVisible();
+      await expect.poll(async () => {
+        if (!await memberMenu.isVisible().catch(() => false)) {
+          await page.getByRole("button", { name: "Open navigation" }).click();
+          await page.waitForTimeout(100);
+        }
+        return memberMenu.getByRole("link", { name: "My Account", exact: true }).isVisible().catch(() => false);
+      }, { timeout: 30_000, intervals: [250, 500, 1_000] }).toBe(true);
       await expect(memberMenu.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
       await expect(memberMenu.getByRole("link", { name: "Sign In", exact: true })).toHaveCount(0);
     } else {
@@ -441,28 +513,31 @@ test.describe("member accessibility and responsive contract", () => {
 });
 
 test.describe("admin Release 1", () => {
-  let originalHash = "";
-  const password = "local-e2e-password";
-
-  test.beforeAll(async () => {
-    const admin = await prisma.adminUser.findFirstOrThrow({ where: { active: true } });
-    originalHash = admin.passwordHash;
-    await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash: await bcrypt.hash(password, 12) } });
-  });
-
-  test.afterAll(async () => {
-    const admin = await prisma.adminUser.findFirst({ where: { active: true } });
-    if (admin && originalHash) await prisma.adminUser.update({ where: { id: admin.id }, data: { passwordHash: originalHash } });
-    await prisma.$disconnect();
+  test("admin sign-in fails closed without JavaScript and never places credentials in the URL", async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await gotoAdmin(page, "/admin/sign-in");
+      await page.getByLabel("Email").fill("no-js-admin@tymra.test");
+      await page.getByLabel("Password").fill("no-javascript-admin-password");
+      const submitted = page.waitForRequest((request) => request.url().includes("/admin/sign-in") && request.method() === "POST");
+      await page.getByRole("button", { name: "Sign in" }).click();
+      const request = await submitted;
+      expect(request.url()).not.toContain("email=");
+      expect(request.url()).not.toContain("password=");
+    } finally {
+      await context.close();
+    }
   });
 
   test("signs in and opens the operational workspaces", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "The operations workspace is a desktop-only surface.");
     await gotoAdmin(page, "/admin/sign-in");
-    await page.getByLabel("Email").fill(process.env.ADMIN_EMAIL || "admin@tymra.test");
-    await page.getByLabel("Password").fill(password);
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
+    await page.getByLabel("Email").fill(e2eAdminEmail);
+    await page.getByLabel("Password").fill(e2eAdminPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).toHaveURL(/^https?:\/\/ops\.tymra\.test(?::3000)?\/admin\/exceptions/);
+    await expect(page).toHaveURL(/^https?:\/\/ops\.tymra\.test(?::3000)?\/admin\/exceptions/, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Inbox & incidents" })).toBeVisible();
     await gotoAdmin(page, "/admin/checks");
     await expect(page.getByRole("heading", { name: "Price Checks" })).toBeVisible();

@@ -49,11 +49,14 @@ type ApiPayload<T> = { data?: T; error?: { code?: string; message?: string; fiel
 export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Locale; initialInput?: string }) {
   const router = useRouter();
   const requestKey = useRef<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [input, setInput] = useState(initialInput);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const copy = roughCopy[locale];
+
+  useEffect(() => setHydrated(true), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,7 +91,7 @@ export function AnonymousCheckStart({ locale, initialInput = "" }: { locale: Loc
         <span className="rough-eyebrow">{copy.eyebrow}</span>
         <h1>{copy.entryTitle}</h1>
         <p>{copy.entryBody}</p>
-        <form className="rough-entry-form" onSubmit={submit} noValidate>
+        <form className="rough-entry-form" onSubmit={submit} data-hydrated={hydrated ? "true" : "false"} noValidate>
           <label htmlFor="rough-listing-url">{copy.urlLabel}</label>
           <div className="rough-url-control">
             <Search aria-hidden="true" />

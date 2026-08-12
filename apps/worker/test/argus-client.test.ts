@@ -267,6 +267,7 @@ describe("Argus async Job client", () => {
   });
 
   it("requires and exposes an expiring noVNC session for a Booking CAPTCHA", async () => {
+    const expiresAt = new Date(Date.now() + 300_000).toISOString();
     server = jobServer(async () => ({
       ...baseResult("booking-captcha-test", "resolve_listing", "booking-public"),
       ok: false,
@@ -278,7 +279,7 @@ describe("Argus async Job client", () => {
         manual_session: {
           session_id: "manual-booking-captcha-test",
           no_vnc_url: "https://connect.argus.test/session/manual-booking-captcha-test",
-          expires_at: "2099-08-07T01:00:00.000Z",
+          expires_at: expiresAt,
         },
       },
       error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
@@ -297,8 +298,71 @@ describe("Argus async Job client", () => {
       reason: "CAPTCHA",
       sessionId: "manual-booking-captcha-test",
       noVncUrl: "https://connect.argus.test/session/manual-booking-captcha-test",
-      expiresAt: "2099-08-07T01:00:00.000Z",
+      expiresAt,
     });
+  });
+
+  it.each([
+    "https://user:password@connect.argus.test/session/manual-booking-captcha-test",
+    "https://connect.argus.test:8443/session/manual-booking-captcha-test",
+  ])("rejects an unsafe CAPTCHA noVNC URL: %s", async (noVncUrl) => {
+    server = jobServer(async () => ({
+      ...baseResult("booking-captcha-unsafe-session", "resolve_listing", "booking-public"),
+      ok: false,
+      status: "challenge",
+      data: null,
+      challenge: {
+        kind: "CAPTCHA",
+        signals: ["recaptcha"],
+        manual_session: {
+          session_id: "manual-booking-captcha-test",
+          no_vnc_url: noVncUrl,
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+        },
+      },
+      error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
+    }));
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-captcha-unsafe-session",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid CAPTCHA manual-session contract/u);
+  });
+
+  it("rejects a CAPTCHA noVNC session that lasts longer than 15 minutes", async () => {
+    server = jobServer(async () => ({
+      ...baseResult("booking-captcha-long-session", "resolve_listing", "booking-public"),
+      ok: false,
+      status: "challenge",
+      data: null,
+      challenge: {
+        kind: "CAPTCHA",
+        signals: ["recaptcha"],
+        manual_session: {
+          session_id: "manual-booking-captcha-test",
+          no_vnc_url: "https://connect.argus.test/session/manual-booking-captcha-test",
+          expires_at: new Date(Date.now() + 901_000).toISOString(),
+        },
+      },
+      error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
+    }));
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-captcha-long-session",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid CAPTCHA manual-session contract/u);
   });
 
   it("rejects a Booking CAPTCHA without a manual noVNC session", async () => {

@@ -209,7 +209,16 @@ type ArgusCaptureResult = {
 
 export type ArgusJobSummary = {
   job_id: string;
-  status: "QUEUED" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_WARNINGS" | "FAILED" | "CANCEL_REQUESTED" | "CANCELLED";
+  status: "QUEUED" | "RUNNING" | "WAITING_FOR_MANUAL" | "COMPLETED" | "COMPLETED_WITH_WARNINGS" | "FAILED" | "CANCEL_REQUESTED" | "CANCELLED";
+  operator_action?: {
+    required: true;
+    type: "novnc_handoff";
+    issue_url: "/v1/handoffs";
+    reason: "captcha" | "cloudflare" | "bot_verification";
+    session_ttl_seconds: number;
+    session_id: string;
+    expires_at: string;
+  } | null;
 };
 
 export type ArgusJobResult = ArgusJobSummary & {
@@ -567,8 +576,10 @@ function mapManualRequired(result: ArgusCaptureResult): ArgusBrowserTaskResult["
     throw new Error("Argus returned an invalid CAPTCHA noVNC URL");
   }
   const expiresAt = Date.parse(session.expires_at);
-  const allowedHost = noVncUrl.hostname === "connect.argus.test" || noVncUrl.hostname === "connect.argus.nz";
-  if (noVncUrl.protocol !== "https:" || !allowedHost || Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+  const allowedOrigins = new Set(["https://connect.argus.test", "https://connect.argus.nz"]);
+  const remainingMs = expiresAt - Date.now();
+  if (!allowedOrigins.has(noVncUrl.origin) || noVncUrl.username || noVncUrl.password
+    || Number.isNaN(expiresAt) || remainingMs <= 0 || remainingMs > 900_000) {
     throw new Error("Argus returned an invalid CAPTCHA manual-session contract");
   }
   return {

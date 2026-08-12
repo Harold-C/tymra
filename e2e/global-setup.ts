@@ -5,21 +5,73 @@ import { createRequire } from "node:module";
 import bcrypt from "bcryptjs";
 import { prisma } from "@tymra/db";
 
-import { recreateRuntime } from "./compose-runtime";
+import { acquireRuntimeLock, recreateRuntime, releaseRuntimeLock } from "./compose-runtime";
+import { e2eAdminEmail, e2eAdminPassword } from "./test-identities";
 
 const webRequire = createRequire(`${process.cwd()}/apps/web/package.json`);
 const { loadEnvConfig } = webRequire("@next/env") as { loadEnvConfig(directory: string): unknown };
 
 export default async function globalSetup() {
-  loadEnvConfig(process.cwd());
-  const environment = e2eEnvironment();
-  Object.assign(process.env, environment);
-  execFileSync("pnpm", ["--filter", "@tymra/db", "db:deploy"], { cwd: process.cwd(), env: environment, stdio: "inherit" });
-  execFileSync("pnpm", ["--filter", "@tymra/db", "db:seed"], { cwd: process.cwd(), env: environment, stdio: "inherit" });
-  await prisma.usageLedger.deleteMany({ where: { action: "ROUGH_CHECK" } });
-  await prisma.abuseDecision.deleteMany({ where: { action: "ROUGH_CHECK" } });
-  await prisma.$disconnect();
-  recreateRuntime({ ...environment, PROVIDER_MODE: "demo", PUBLIC_COLLECTION_MODE: "fixture", COMPOSE_EMAIL_PROVIDER: "smtp", WORKER_POLL_INTERVAL_MS: "100" });
+  acquireRuntimeLock();
+  try {
+    loadEnvConfig(process.cwd());
+    const environment = e2eEnvironment();
+    Object.assign(process.env, environment);
+    execFileSync("pnpm", ["--filter", "@tymra/db", "db:deploy"], { cwd: process.cwd(), env: environment, stdio: "inherit" });
+    execFileSync("pnpm", ["--filter", "@tymra/db", "db:seed"], { cwd: process.cwd(), env: environment, stdio: "inherit" });
+    const e2eAdminPasswordHash = await bcrypt.hash(e2eAdminPassword, 12);
+    await prisma.adminUser.upsert({
+      where: { email: e2eAdminEmail },
+      create: { email: e2eAdminEmail, passwordHash: e2eAdminPasswordHash, active: true },
+      update: { passwordHash: e2eAdminPasswordHash, active: true },
+    });
+    await prisma.usageLedger.deleteMany({ where: { action: { in: ["ROUGH_CHECK", "MAGIC_LINK"] } } });
+    await prisma.abuseDecision.deleteMany({ where: { action: { in: ["ROUGH_CHECK", "MAGIC_LINK"] } } });
+    await prisma.$disconnect();
+    recreateRuntime({ ...environment, PROVIDER_MODE: "demo", PUBLIC_COLLECTION_MODE: "fixture", COMPOSE_EMAIL_PROVIDER: "smtp", WORKER_POLL_INTERVAL_MS: "100" });
+    waitForCriticalApiContracts(environment);
+  } catch (error) {
+    await prisma.$disconnect().catch(() => undefined);
+    releaseRuntimeLock();
+    throw error;
+  }
+}
+
+function waitForCriticalApiContracts(environment: NodeJS.ProcessEnv) {
+  const contracts = [
+    {
+      url: "https://tymra.test/api/v1/rough-checks",
+      body: JSON.stringify({ input: "not-a-listing-url", locale: "en", idempotencyKey: "e2e-readiness-validation" }),
+      expected: '"code":"VALIDATION_ERROR"',
+      origin: "https://tymra.test",
+    },
+    {
+      url: "https://ops.tymra.test/api/v1/admin/session",
+      body: JSON.stringify({ email: "missing-e2e-admin@tymra.test", password: "invalid-e2e-password" }),
+      expected: '"code":"INVALID_CREDENTIALS"',
+      origin: "https://ops.tymra.test",
+    },
+  ];
+
+  for (const contract of contracts) {
+    let lastResponse = "";
+    for (let attempt = 1; attempt <= 60; attempt += 1) {
+      try {
+        lastResponse = execFileSync("curl", [
+          "--insecure", "--silent", "--show-error", "--max-time", "5",
+          "--request", "POST", contract.url,
+          "--header", "content-type: application/json",
+          "--header", `origin: ${contract.origin}`,
+          "--data", contract.body,
+        ], { cwd: process.cwd(), env: environment, encoding: "utf8" });
+        if (lastResponse.includes(contract.expected)) break;
+      } catch (error) {
+        lastResponse = error instanceof Error ? error.message : String(error);
+      }
+      if (attempt === 60) throw new Error(`Critical API contract did not become ready: ${contract.url}; last response: ${lastResponse}`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
 }
 
 function e2eEnvironment(): NodeJS.ProcessEnv {
