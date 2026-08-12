@@ -26,29 +26,31 @@ Last updated: 2026-08-12
   建议和会员交付。开发 fixture 与真实公开页面结果必须明确隔离。
 - 开发环境提供 `demo1` 至 `demo4` 四个固定会员账号，对应 Free、Host、Pro、Portfolio；密码仅由开发配置派生或覆盖，不进入仓库明文。
 - Pricing Unit 稳定 API 已补齐集合 GET/POST 与单项 GET/PATCH；POST 只接受当前会员已确认并计费过的 Price Check，不接受任意内部房源 ID。
-- 2026-08-12 当前 P0/P1/P2 工作树通过 lint、全仓 TypeScript、210 个 Web/domain/provider/db
-  单元测试（5 个外部 fixture 跳过）、124 个 Worker 测试、104 个隔离 PostgreSQL 集成测试
-  以及 112 页生产构建。精确证据与未验证边界见追踪表。
+- 2026-08-12 当前工作树通过 lint、全仓 TypeScript、212 个 Web/domain/provider/db 单元测试
+  （5 个外部 fixture 跳过）、127 个 Worker 测试及 104 个隔离 PostgreSQL 集成测试。
+  112 页生产构建、生产 Compose 配置解析、开发镜像重建及 Web/Worker/Argus 运行健康检查通过；
+  精确证据与未验证边界见追踪表。
 
 ## 当前优先级
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
-| P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 本地 fake-Stripe 生命周期与 webhook 回归通过；真实 Stripe test account/browser 和生产凭证仍是外部门槛 |
-| P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 服务端合同、认证请求和失败路径已验证；生产 provider、容量和误判演练未执行 |
+| P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 已提供只读 test-account readiness 和无媒体浏览器生命周期验收；本地 fake-Stripe 回归通过，真实 Stripe test account 因凭证未配置尚未执行 |
+| P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 生产接单配置强制 managed 模式，并提供无效 token fail-closed readiness；真实 provider、容量和误判演练未执行 |
 | P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
 | P1 | 会员完整可访问性 | EN/ZH、桌面、390/320px 通过 axe serious/critical=0、全键盘、焦点、reduced motion 和错误状态 | 自动化会员路由矩阵已纳入 Playwright；当前运行结果见追踪表 |
 | P1 | Retention 生命周期 | 隔离数据库覆盖 Free/Host/Pro/Portfolio 及取消账户的独立保留期和 30 天房源占位 | 四档时间推进矩阵已通过 |
-| P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 聚合已实现并验证；生产 dashboard/alert 与注入演练仍是部署工作 |
+| P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 与 `/worker/alerts` 输出机器错误码、等级、聚合值和阈值；生产路由、dashboard 与注入演练仍是部署工作 |
 | P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 2026-08-12 OTA URL 与 LINZ 地址两条真实链路均通过；分别发布 NZD 591 与 NZD 250 的两晚公开价，`priceResultStatus=COMPLETED`、推荐因仅一条证据为 `NOT_AVAILABLE` |
-| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 会员账户与公开客户漏斗 CSS 已独立；Worker OTA 发现仍是下一次独立重构候选，避免与当前 live 修复做高风险搬移 |
-| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 安全保持关闭；不能用本地代码验证替代生产 canary 授权 |
+| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family、seed source registry 和 OTA 定价编排 | 地址型 OTA 搜索、身份解析、可比关系及价格写入已迁移到独立 orchestrator；`WorkerService` 保留稳定调用入口 |
+| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 生产 canary 强制单来源、两轮且每轮最多 2 条；Scheduler 默认关闭，真实生产 canary 尚未获配置和执行授权 |
 
 ## 交付顺序
 
-1. 在真实 Stripe test account 执行付费浏览器验收，并保存 webhook/数据库一致性证据。
-2. 配置生产托管 challenge provider，完成容量、失败注入和误判申诉演练。
-3. 建立生产 dashboard/alert 后进行单来源 Scheduler canary；任何失败都不扩大采集范围。
+1. 提供 Stripe test account 的三个 Price、Portal 配置和 Stripe CLI webhook secret，执行现成的真实付费验收。
+2. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
+3. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
+4. canary 连续稳定后，另行评审 Scheduler 的分阶段启用；本次交付不自动开启生产调度。
 
 ## 已知边界
 

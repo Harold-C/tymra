@@ -15,6 +15,7 @@ const required = {
   EMAIL_FROM: "Tymra <no-reply@tymra.example>",
   ARGUS_API_BASE_URL: "https://api.argus.example",
   ARGUS_API_TOKEN: "argus-token-with-at-least-32-characters",
+  ACCEPT_NEW_CHECKS: "false",
 };
 
 describe("production provider guard", () => {
@@ -52,6 +53,10 @@ describe("production provider guard", () => {
       ABUSE_CHALLENGE_SITE_KEY: "site-key",
       ABUSE_CHALLENGE_SECRET: "provider-secret-with-at-least-32-characters",
     }).ABUSE_CHALLENGE_MODE).toBe("managed");
+  });
+
+  it("does not accept production Price Checks without a managed challenge provider", () => {
+    expect(() => environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", ACCEPT_NEW_CHECKS: "true", ABUSE_CHALLENGE_MODE: "disabled" })).toThrow("managed abuse challenge provider");
   });
 });
 
@@ -137,6 +142,11 @@ describe("membership billing launch gates", () => {
   it("keeps Pro and Portfolio unavailable without their mapped Stripe Prices", () => {
     expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PRO_LAUNCH_ENABLED: "true" })).toThrow("Pro launch gate");
     expect(() => environmentSchema.parse({ ...billing, MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true" })).toThrow("Portfolio launch gate");
+  });
+
+  it("requires Billing and the Host Price before opening the Host launch gate", () => {
+    expect(() => environmentSchema.parse({ ...billing, NODE_ENV: "production", PROVIDER_MODE: "live", BILLING_ENABLED: "false", MEMBERSHIP_HOST_LAUNCH_ENABLED: "true" })).toThrow("require Stripe Billing");
+    expect(() => environmentSchema.parse({ ...billing, NODE_ENV: "production", PROVIDER_MODE: "live", STRIPE_HOST_PRICE_ID: undefined, MEMBERSHIP_HOST_LAUNCH_ENABLED: "true" })).toThrow("Host launch gate");
   });
 
   it("keeps export and API gates subordinate to launched paid plans", () => {

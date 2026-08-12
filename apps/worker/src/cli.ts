@@ -105,6 +105,9 @@ switch (command) {
     if (!requested.length) throw new Error("Missing --sources");
     const technicalValidation = environment.NODE_ENV === "development";
     if (!technicalValidation && option(args, "--confirm") !== "RUN_BOUNDED_CANARY") throw new Error("Canary requires --confirm RUN_BOUNDED_CANARY");
+    const plan = canaryPlan(requested, { technicalValidation });
+    const requestedLimit = integerOption(args, "--limit") ?? plan.maxRecordsPerPass;
+    if (!technicalValidation && requestedLimit > plan.maxRecordsPerPass) throw new Error(`Production canary --limit must not exceed ${plan.maxRecordsPerPass}`);
     const sourceRows = await prisma.dataSource.findMany({ where: { key: { in: requested } } });
     const otaHealth = (await service.otaHealth()).filter((source) => requested.includes(source.key));
     const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), technicalValidation, requestedSourceKeys: requested, sources: sourceRows, otaHealth });
@@ -113,7 +116,7 @@ switch (command) {
       const source = sourceRows.find((item) => item.key === sourceKey)!;
       const before = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
       try {
-        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: integerOption(args, "--limit") ?? 2, dryRun: false, localAcceptance: technicalValidation });
+        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: requestedLimit, dryRun: false, localAcceptance: technicalValidation });
         const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: result.runId } });
         const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
         const after = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });

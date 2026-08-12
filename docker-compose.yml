@@ -38,6 +38,13 @@ x-app-environment: &app-environment
   AUTO_PUBLISH_ENABLED: ${AUTO_PUBLISH_ENABLED:-true}
   ACCEPT_NEW_CHECKS: ${ACCEPT_NEW_CHECKS:-true}
   CUSTOMER_FUNNEL_ENABLED: ${CUSTOMER_FUNNEL_ENABLED:-true}
+  BILLING_ENABLED: ${BILLING_ENABLED:-false}
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  STRIPE_PORTAL_CONFIGURATION_ID: ${STRIPE_PORTAL_CONFIGURATION_ID:-}
+  STRIPE_HOST_PRICE_ID: ${STRIPE_HOST_PRICE_ID:-}
+  STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:-}
+  STRIPE_PORTFOLIO_PRICE_ID: ${STRIPE_PORTFOLIO_PRICE_ID:-}
   MEMBERSHIP_HOST_LAUNCH_ENABLED: ${MEMBERSHIP_HOST_LAUNCH_ENABLED:-false}
   MEMBERSHIP_PRO_LAUNCH_ENABLED: ${MEMBERSHIP_PRO_LAUNCH_ENABLED:-false}
   MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: ${MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED:-false}
@@ -70,6 +77,11 @@ x-app-environment: &app-environment
   PREVIEW_DEVICE_UNITS_30D_LIMIT: ${PREVIEW_DEVICE_UNITS_30D_LIMIT:-10}
   FORMAL_EMAIL_ACTIVE_LIMIT: ${FORMAL_EMAIL_ACTIVE_LIMIT:-1}
   FORMAL_UNIT_30D_LIMIT: ${FORMAL_UNIT_30D_LIMIT:-1}
+  ALERT_QUEUE_DEPTH_WARNING: ${ALERT_QUEUE_DEPTH_WARNING:-100}
+  ALERT_FAILED_JOBS_CRITICAL: ${ALERT_FAILED_JOBS_CRITICAL:-1}
+  ALERT_CAPTCHA_MANUAL_24H_WARNING: ${ALERT_CAPTCHA_MANUAL_24H_WARNING:-5}
+  ALERT_BILLING_FAILURES_CRITICAL: ${ALERT_BILLING_FAILURES_CRITICAL:-1}
+  ALERT_SCHEDULER_OLDEST_PENDING_SECONDS_WARNING: ${ALERT_SCHEDULER_OLDEST_PENDING_SECONDS_WARNING:-900}
 
 x-app-dev-image: &app-dev-image
   image: tymra-app-dev:local
@@ -248,7 +260,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=local"
-      - "traefik.http.routers.tymra-worker-diagnostics.rule=Host(`worker.tymra.test`) && (Path(`/worker/health`) || Path(`/worker/readiness`))"
+      - "traefik.http.routers.tymra-worker-diagnostics.rule=Host(`worker.tymra.test`) && (Path(`/worker/health`) || Path(`/worker/readiness`) || Path(`/worker/alerts`))"
       - "traefik.http.routers.tymra-worker-diagnostics.entrypoints=websecure"
       - "traefik.http.routers.tymra-worker-diagnostics.tls=true"
       - "traefik.http.routers.tymra-worker-diagnostics.service=tymra-worker-api"

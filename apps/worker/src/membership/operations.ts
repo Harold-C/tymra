@@ -42,12 +42,13 @@ export async function cleanupMembershipRetention(now = new Date()) {
 export async function membershipOperationalMetrics(now = new Date()) {
   const last30Days = new Date(now.getTime() - 30 * DAY_MS);
   const last24Hours = new Date(now.getTime() - DAY_MS);
-  const [byPlan, byStatus, usageLast30Days, activePricingUnits, billingFailures, openRiskCases, scheduledJobs, oldestPending, manualRequired] = await Promise.all([
+  const [byPlan, byStatus, usageLast30Days, activePricingUnits, billingFailures, billingFailuresLast24Hours, openRiskCases, scheduledJobs, oldestPending, manualRequired] = await Promise.all([
     prisma.membershipSubscription.groupBy({ by: ["plan"], _count: { _all: true } }),
     prisma.membershipSubscription.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.membershipUsage.groupBy({ by: ["type"], where: { countedAt: { gte: last30Days } }, _count: { _all: true } }),
     prisma.customerPricingUnit.count({ where: { active: true } }),
     prisma.stripeBillingEvent.count({ where: { processingError: { not: null } } }),
+    prisma.stripeBillingEvent.count({ where: { processingError: { not: null }, createdAt: { gte: last24Hours } } }),
     prisma.membershipRiskCase.groupBy({ by: ["outcome"], where: { status: "OPEN" }, _count: { _all: true } }),
     prisma.job.groupBy({ by: ["status"], where: { type: "MEMBERSHIP_SCHEDULE", createdAt: { gte: last30Days } }, _count: { _all: true } }),
     prisma.job.findFirst({ where: { type: "MEMBERSHIP_SCHEDULE", status: "PENDING" }, orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
@@ -67,6 +68,7 @@ export async function membershipOperationalMetrics(now = new Date()) {
     usageLast30Days,
     activePricingUnits,
     billingFailures,
+    billingFailuresLast24Hours,
     openRiskCases,
     scheduler: { jobsLast30Days: scheduledJobs, pending: scheduledJobs.find((item) => item.status === "PENDING")?._count._all ?? 0, oldestPendingAgeSeconds: oldestPending ? Math.max(0, Math.floor((now.getTime() - oldestPending.createdAt.getTime()) / 1_000)) : null },
     captcha: { manualRequiredLast24Hours: manualRequired },

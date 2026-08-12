@@ -13,6 +13,8 @@ apps/
     lib/server/membership/     authentication, entitlement, risk and billing services
   worker/                      durable jobs, collection and Argus orchestration
     src/membership/            membership scheduling, retention and aggregate operations metrics
+    src/services/ota-pricing-orchestrator.ts
+                               address discovery, comparable identity and public OTA rate persistence
 packages/
   config/                      validated runtime configuration
   db/                          Prisma schema, migrations and persistence helpers
@@ -63,6 +65,8 @@ The first behaviour-preserving split is complete:
 - membership retention and privacy-safe operational metrics live in `worker/src/membership/operations.ts`;
 - generic public event/Argus web adapters live in `public-event-web-adapters.ts` behind the unchanged registry;
 - deterministic source definitions live in `prisma/seed-sources.ts`, while orchestration remains in `seed.ts`.
+- address-based OTA discovery and price persistence live in `worker/src/services/ota-pricing-orchestrator.ts`;
+  shared public-price semantics live in `worker/src/services/ota-price.ts`.
 
 Further Worker/source-family decomposition is allowed only as independently reviewed changes with
 the current feature, seed-idempotency and integration suites held constant.

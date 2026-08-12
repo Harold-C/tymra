@@ -43,6 +43,7 @@ app.get("/worker/ota-health", async (request) => {
 app.get("/worker/markets", async () => prisma.marketCoverage.findMany({ orderBy: { key: "asc" } }));
 app.get("/worker/markets/:key/coverage", async (request, reply) => sendFound(reply, await prisma.marketCoverage.findUnique({ where: { key: pathId(request.params) } })));
 app.get("/worker/health", async () => service.health());
+app.get("/worker/alerts", async () => ({ alerts: (await service.health()).alerts }));
 app.get("/worker/readiness", async (_request, reply) => {
   const health = await service.health();
   const ready = health.database.healthy && health.redis.healthy && health.argus.healthy && health.argus.ready;

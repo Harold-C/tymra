@@ -41,10 +41,13 @@ export function productionPreflight(input: {
 
 export function canaryPlan(sourceKeys: string[], options: { technicalValidation?: boolean } = {}) {
   const unique = [...new Set(sourceKeys.map((value) => value.trim()).filter(Boolean))].sort();
+  if (!unique.length) throw new Error("Canary requires one source");
+  if (!options.technicalValidation && unique.length !== 1) throw new Error("Production canary requires exactly one source");
   return {
     mode: options.technicalValidation ? "DEVELOPMENT_TECHNICAL_VALIDATION" as const : "READ_ONLY_BOUNDED" as const,
     sources: unique,
     passes: 2,
+    maxRecordsPerPass: 2,
     stopConditions: ["configuration_changed", "schedule_changed", "parser_failure", "lineage_growth_on_repeat", "remote_evidence_remaining"],
     rollback: "disable all schedules and cancel pending collection jobs",
   };

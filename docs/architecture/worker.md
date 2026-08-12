@@ -57,6 +57,12 @@ resend, cancel, source, market, health and readiness routes. API and CLI call `W
 not duplicate pipeline logic. CLI commands follow the `collect:*`, `analyse:listing`, `source:*`,
 `retention:cleanup` and `seed:fixtures` naming documented in the build baseline.
 
+Address-based OTA pricing is isolated in `services/ota-pricing-orchestrator.ts`. It owns bounded
+market-weighted discovery, optional listing resolution, location/capacity validation, comparable
+relationship persistence and one explicit public price observation. `WorkerService` supplies the
+environment and evidence-persistence callback but no longer embeds that workflow. Shared public-price
+semantics live in `services/ota-price.ts` and remain directly unit tested.
+
 Eventfinda uses direct HTTP for listing and detail collection. Ticketmaster uses direct HTTP listings
 and durable Argus asynchronous Jobs only for selectively required details. RBNZ B1 uses Argus for its rendered table page. Lincoln University annual key dates use Argus and join University of Canterbury direct-HTTP dates under the shared `christchurch_university_dates` standard source. Eventfinda implements nationwide
 discovery, canonical-URL grouping and one detail expansion for all dates in an event series, including
@@ -93,6 +99,17 @@ has a registered public adapter and schedule, is enabled and operationally healt
 hard-disables scheduler execution even if runtime configuration is accidentally enabled. Disabling
 clears `nextRunAt` and remains the rollback path when source health degrades. Both mutations create
 an audit event.
+
+Production release tooling keeps the Scheduler disabled during preflight. A production canary accepts
+exactly one source, executes two passes and caps each pass at two records. Configuration drift,
+schedule drift, parser failure, repeat-pass lineage growth or remaining remote evidence stops the run;
+the guarded rollback disables schedules and cancels pending collection work. Development technical
+validation may request multiple sources but cannot be presented as production evidence.
+
+`/worker/alerts` exposes privacy-safe active alerts derived from dependency health, queue depth,
+24-hour failed-job and Billing-reconciliation counts, 24-hour CAPTCHA handoff volume and membership scheduler delay.
+Each alert contains only a machine code, severity, aggregate value and configured threshold. Routing
+these alerts to a production monitoring service remains a deployment responsibility.
 
 ## External Limits
 

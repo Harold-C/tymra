@@ -717,6 +717,7 @@ describe("Worker baseline pipeline", () => {
     const metrics = await membershipOperationalMetrics(new Date());
     expect(metrics).toHaveProperty("scheduler.pending");
     expect(metrics).toHaveProperty("captcha.manualRequiredLast24Hours");
+    expect(metrics).toHaveProperty("billingFailuresLast24Hours");
     expect(metrics.planEconomics.map((item) => item.plan)).toEqual(["FREE", "HOST", "PRO", "PORTFOLIO"]);
     expect(JSON.stringify(metrics)).not.toMatch(/email|password|token|address/i);
   });

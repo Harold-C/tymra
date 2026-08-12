@@ -89,7 +89,7 @@ Local endpoints:
 | Public Web | `https://tymra.test/en` and `https://tymra.test/zh` |
 | Member sign-in | `https://tymra.test/en/sign-in` and `https://tymra.test/zh/sign-in` |
 | Operations | `https://ops.tymra.test/admin/sign-in` |
-| Worker diagnostics | `https://worker.tymra.test/worker/health` and `/worker/readiness` |
+| Worker diagnostics | `https://worker.tymra.test/worker/health`, `/worker/readiness` and privacy-safe `/worker/alerts` |
 | Direct Worker API fallback | `http://localhost:3100` (loopback only) |
 | Browser handoff | `https://connect.argus.test` (Argus enabled only; use the generated random URL) |
 | Argus diagnostics | `https://argus.test/health` and `/readiness` |
@@ -224,6 +224,9 @@ pnpm test
 pnpm test:integration
 pnpm test:e2e
 pnpm test:e2e:member-live
+pnpm test:stripe:readiness
+pnpm test:e2e:stripe
+pnpm test:challenge:readiness
 pnpm build
 pnpm verify
 ```
@@ -231,7 +234,7 @@ pnpm verify
 `pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
 builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
 behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
-[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-11), not inferred
+[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-12), not inferred
 from an older successful run.
 
 `pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
@@ -241,6 +244,30 @@ from an older successful run.
 fails unless the member report contains at least one non-demo public OTA price. Its dedicated
 Playwright config never retains traces, screenshots or video because those artifacts could capture
 the development credential.
+
+Stripe's real test-mode gate is deliberately separate from `pnpm verify`. Use a disposable,
+verified Free member and a Stripe test account whose Host, Pro and Portfolio Prices are active,
+monthly, NZD and GST-inclusive. First run `pnpm test:stripe:readiness` with
+`STRIPE_ACCEPTANCE_CONFIRM_TEST_MODE=YES`; the command performs read-only account, Portal and Price
+checks and prints only hashed Stripe identifiers. Start Stripe CLI webhook forwarding to
+`http://127.0.0.1:3000/api/v1/billing/stripe/webhook`, use its test signing secret, recreate the Web
+container with billing and the intended membership launch gates enabled, then run
+`pnpm test:e2e:stripe`. The browser test uses Stripe's public `4242` test card, waits for persisted
+Webhook state after every mutation and never retains traces, screenshots or video. It intentionally
+leaves the disposable subscription active with a scheduled downgrade so the Stripe Dashboard,
+Billing Events admin page and database can be reconciled before manual test-data cleanup.
+
+Production Price Checks fail configuration validation unless `ABUSE_CHALLENGE_MODE=managed` with an
+HTTPS verification endpoint, site key and provider secret. After configuring the provider, run
+`CHALLENGE_ACCEPTANCE_CONFIRM_INVALID_PROBE=YES pnpm test:challenge:readiness`; it sends one fixed,
+intentionally invalid token and passes only when the provider rejects it. The command never prints the
+secret or subject hash.
+
+The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `release:preflight` and
+`release:canary-plan` before any canary. `release:canary-run` requires exactly one source,
+`--confirm RUN_BOUNDED_CANARY`, performs two passes and caps `--limit` at 2. Any stop condition requires
+the guarded `release:rollback --confirm DISABLE_COLLECTIONS` path before another attempt. Local
+development canary output is technical validation only and is not production evidence.
 
 An isolated full-stack smoke environment can run alongside the normal local stack. The command
 always removes its containers and test volumes on success, failure or interruption:

@@ -25,13 +25,15 @@ describe("production release safety", () => {
   });
 
   it("creates a deterministic bounded canary and rollback plan", () => {
-    expect(canaryPlan(["ticketek_events", "eventfinda", "eventfinda"])).toMatchObject({
-      mode: "READ_ONLY_BOUNDED", sources: ["eventfinda", "ticketek_events"], passes: 2,
+    expect(canaryPlan(["eventfinda", "eventfinda"])).toMatchObject({
+      mode: "READ_ONLY_BOUNDED", sources: ["eventfinda"], passes: 2, maxRecordsPerPass: 2,
     });
+    expect(() => canaryPlan(["ticketmaster", "eventfinda"])).toThrow("exactly one source");
+    expect(canaryPlan(["ticketmaster", "eventfinda"], { technicalValidation: true }).sources).toEqual(["eventfinda", "ticketmaster"]);
   });
 
   it("executes passes in order and stops at the first failed gate", async () => {
-    const result = await executeCanary(["ticketmaster", "eventfinda"], async (sourceKey, pass) => ({
+    const result = await executeCanary(["eventfinda"], async (sourceKey, pass) => ({
       sourceKey, pass, configurationUnchanged: true, schedulesUnchanged: true,
       parserFailures: sourceKey === "eventfinda" && pass === 2 ? 1 : 0,
       repeatRowGrowth: 0, remoteEvidenceRemaining: 0,

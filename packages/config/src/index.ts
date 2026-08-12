@@ -96,6 +96,11 @@ export const environmentSchema = z
     FORMAL_UNIT_30D_LIMIT: z.coerce.number().int().min(1).max(100).default(1),
     SENTRY_DSN: optionalUrl,
     ANALYTICS_ENDPOINT: optionalUrl,
+    ALERT_QUEUE_DEPTH_WARNING: z.coerce.number().int().min(1).max(1_000_000).default(100),
+    ALERT_FAILED_JOBS_CRITICAL: z.coerce.number().int().min(1).max(1_000_000).default(1),
+    ALERT_CAPTCHA_MANUAL_24H_WARNING: z.coerce.number().int().min(1).max(1_000_000).default(5),
+    ALERT_BILLING_FAILURES_CRITICAL: z.coerce.number().int().min(1).max(1_000_000).default(1),
+    ALERT_SCHEDULER_OLDEST_PENDING_SECONDS_WARNING: z.coerce.number().int().min(60).max(604_800).default(900),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV === "production" && (value.PROVIDER_MODE === "demo" || value.PROVIDER_MODE === "fixture")) {
@@ -119,6 +124,14 @@ export const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ["ABUSE_CHALLENGE_MODE"],
         message: "The deterministic challenge provider is forbidden in production",
+      });
+    }
+
+    if (value.NODE_ENV === "production" && value.ACCEPT_NEW_CHECKS && value.ABUSE_CHALLENGE_MODE !== "managed") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ACCEPT_NEW_CHECKS"],
+        message: "Production Price Checks require a managed abuse challenge provider",
       });
     }
 
@@ -195,6 +208,16 @@ export const environmentSchema = z
 
     if (value.MEMBERSHIP_PRO_LAUNCH_ENABLED && !value.STRIPE_PRO_PRICE_ID) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_PRO_PRICE_ID"], message: "The Pro launch gate requires a Stripe Price ID" });
+    }
+
+    if (value.NODE_ENV === "production"
+      && (value.MEMBERSHIP_HOST_LAUNCH_ENABLED || value.MEMBERSHIP_PRO_LAUNCH_ENABLED || value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED)
+      && !value.BILLING_ENABLED) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["BILLING_ENABLED"], message: "Paid membership launch gates require Stripe Billing to be enabled" });
+    }
+
+    if (value.NODE_ENV === "production" && value.MEMBERSHIP_HOST_LAUNCH_ENABLED && !value.STRIPE_HOST_PRICE_ID) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_HOST_PRICE_ID"], message: "The Host launch gate requires a Stripe Price ID" });
     }
 
     if (value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED && !value.STRIPE_PORTFOLIO_PRICE_ID) {

@@ -41,14 +41,14 @@ Git state is not used as verification evidence.
 | --- | --- | --- |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
 | TypeScript | Web, Worker, config, db, domain, providers and queue passed `tsc --noEmit` | verified |
-| Web/domain/provider/database unit suite | 210 tests passed; 5 external provider fixtures intentionally skipped | verified |
-| Worker unit suite | 124 tests passed, including member scheduling, Argus boundary and New Zealand date policy | verified |
+| Web/domain/provider/database unit suite | 212 tests passed; 5 external provider fixtures intentionally skipped | verified |
+| Worker unit suite | 127 tests passed, including release canary、privacy-safe alerts、member scheduling、Argus boundary and New Zealand date policy | verified |
 | Database/API/Worker integration | 104 tests passed against a clean, migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified |
 | Membership/risk focused regression | Membership integration file passed all 19 scenarios, including Pricing Unit collection/detail GET and confirmed-check POST; configuration/security suites passed the managed-provider and feature-gate contracts | verified |
-| Production build | Worker entrypoints built and Next.js generated 112 pages; only the known optional LinkeDOM `canvas` warning appeared | verified |
+| Production build and runtime | Worker entrypoints built and Next.js generated 112 pages; production Compose config parsed, image `sha256:5efa6dd2e6215c9c3ea190f5b8d0e9beecdff6b3e396bbb75a9b06569faed860` rebuilt, and canonical Web/Worker/Argus readiness returned HTTP 200; only the known optional LinkeDOM `canvas` warning appeared | verified |
 | Member browser QA | Free fixture customer/Admin flows plus all authenticated member routes are covered in the current Playwright suite | verified for named fixture paths; live provider remains separate |
 | Playwright/accessibility matrix | The corrected EN desktop and ZH mobile homepage/address-entry paths passed 2/2 targeted Playwright checks through canonical `https://tymra.test`, including axe serious/critical; the broader unchanged member-route matrix was not rerun in this correction | verified for corrected paths; broader matrix retains prior dated evidence |
-| Production payment/challenge/monitoring | Local contracts exist, but production Stripe, challenge provider, dashboards, capacity and SLA are not established | not_verified |
+| Production payment/challenge/monitoring | Stripe test-mode readiness/E2E、managed challenge invalid-token readiness、隐私安全 `/worker/alerts` 和单来源 2×2 canary 门槛已实现；外部凭证、生产 dashboard、真实演练、容量和 SLA 未建立 | implemented_not_verified |
 
 The active OTA scope is exactly the six channels listed above. Development Scheduler remains off.
 Dated real-page and fixture evidence proves only the named run; it does not establish ongoing source
@@ -206,7 +206,7 @@ The statuses below describe the current implementation, not the target specifica
 | `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe lifecycle and signed/idempotent/out-of-order webhook database tests pass; real Stripe test-account browser evidence and production configuration remain external | `verified_gated_off` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `verified` |
 | `MEM-OPS-001` | Admin customer/membership/billing-event operations, safe reconciliation, session revoke, suspension and deletion support | Isolated PostgreSQL verifies unauthorised denial, audited plan/status corrections, session revoke, export completion evidence and minimised deletion; Stripe-backed manual drift fails closed | `verified` |
-| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health aggregate is test-verified without PII; production dashboard, alert routing and injected-alert acceptance remain deployment gates | `implemented_not_verified` |
+| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health 与 `/worker/alerts` 返回机器错误码、等级、聚合值和阈值且不含 PII；生产 dashboard、通知路由与注入验收仍是部署门槛 | `implemented_not_verified` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; current result recorded below | `verified` |
 | `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Fixture Free/browser and server gates pass; dedicated live Argus acceptance command now fails unless a non-demo public OTA price is delivered, but external live execution remains outstanding | `implemented_not_verified` |
 
