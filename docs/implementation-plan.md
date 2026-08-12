@@ -40,21 +40,22 @@ Last updated: 2026-08-12
 | P1 | 会员完整可访问性 | EN/ZH、桌面、390/320px 通过 axe serious/critical=0、全键盘、焦点、reduced motion 和错误状态 | 自动化会员路由矩阵已纳入 Playwright；当前运行结果见追踪表 |
 | P1 | Retention 生命周期 | 隔离数据库覆盖 Free/Host/Pro/Portfolio 及取消账户的独立保留期和 30 天房源占位 | 四档时间推进矩阵已通过 |
 | P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 聚合已实现并验证；生产 dashboard/alert 与注入演练仍是部署工作 |
-| P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 已提供显式 fail-closed 的 `test:e2e:member-live` 门禁；真实账号/输入/环境运行仍未执行 |
-| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 第一阶段拆分完成；后续大文件拆分保持独立评审，不与当前业务修复混合 |
+| P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 2026-08-12 OTA URL 与 LINZ 地址两条真实链路均通过；分别发布 NZD 591 与 NZD 250 的两晚公开价，`priceResultStatus=COMPLETED`、推荐因仅一条证据为 `NOT_AVAILABLE` |
+| P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family 和 seed source registry | 会员账户与公开客户漏斗 CSS 已独立；Worker OTA 发现仍是下一次独立重构候选，避免与当前 live 修复做高风险搬移 |
 | P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 安全保持关闭；不能用本地代码验证替代生产 canary 授权 |
 
 ## 交付顺序
 
 1. 在真实 Stripe test account 执行付费浏览器验收，并保存 webhook/数据库一致性证据。
 2. 配置生产托管 challenge provider，完成容量、失败注入和误判申诉演练。
-3. 使用 `pnpm test:e2e:member-live` 分别执行 OTA URL 与地址两条真实会员链路。
-4. 建立生产 dashboard/alert 后进行单来源 Scheduler canary；任何失败都不扩大采集范围。
+3. 建立生产 dashboard/alert 后进行单来源 Scheduler canary；任何失败都不扩大采集范围。
 
 ## 已知边界
 
 - 一条有效公开 OTA 目标价格必须交付给用户；证据不足只限制市场结论和推荐置信度，不得抹掉
   已观察价格。不能访问、条件漂移或仅有受限价格时仍必须 fail closed。
+- 地址基准同步解析并采集首个可验证附近房源即可发布价格；完整竞品扩充不得阻塞这一价格，
+  竞品不足只令推荐保持 `NOT_AVAILABLE` 或有限证据状态。
 - 精确逐日价格检查范围与方案权益按会员合同执行；未采集日期显示“无公开 OTA 观测”，不得补值。
 - CAPTCHA 只能由 Argus 暂停同一 Page/BrowserContext 并提供短期 noVNC 人工接管，不自动绕过。
 - 历史 `evidence/` 证明当时的开发验收，不保证外部页面长期稳定、生产容量或 SLA。

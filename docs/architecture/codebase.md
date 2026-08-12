@@ -43,6 +43,9 @@ performed by Argus and reached through the Worker boundary.
 - Admin membership operations are isolated under `components/admin/membership` and protected by the
   existing Admin session. Customer sessions never grant Admin access.
 - A pricing unit represents one real Property whether it began as an OTA URL or a street address.
+- Member account workspace styles and the public customer-funnel styles live in separate CSS
+  surfaces (`member-account.css` and `customer-funnel.css`) so changes to one surface can be
+  reviewed without scanning the other.
   OTA listings and provider-specific room identities do not consume extra property slots.
 
 ## Generated and historical files
