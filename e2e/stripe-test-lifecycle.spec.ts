@@ -3,7 +3,7 @@ import { expect, test, type Page } from "playwright/test";
 test.describe("Stripe test-mode membership lifecycle", () => {
   test.skip(process.env.STRIPE_TEST_E2E !== "1", "Set STRIPE_TEST_E2E=1 explicitly");
 
-  test("completes checkout, upgrade, downgrade, cancellation, resume and Portal", async ({ page }) => {
+  test("covers every paid plan through checkout, upgrades, downgrade, cancellation, resume and Portal", async ({ page }) => {
     expect(process.env.STRIPE_ACCEPTANCE_CONFIRM_TEST_MODE).toBe("YES");
     const email = required("STRIPE_TEST_MEMBER_EMAIL");
     const password = required("STRIPE_TEST_MEMBER_PASSWORD");
@@ -14,7 +14,6 @@ test.describe("Stripe test-mode membership lifecycle", () => {
     await choosePlan(page, "Host");
     await expect(page).toHaveURL(/checkout\.stripe\.com/u, { timeout: 60_000 });
     await completeStripeCheckout(page);
-    await expect(page).toHaveURL(/\/en\/account\?billing=success/u, { timeout: 120_000 });
     await expectMembership(page, { plan: "HOST", status: "ACTIVE" });
 
     await page.goto("/en/account/billing", { waitUntil: "networkidle" });
@@ -22,16 +21,20 @@ test.describe("Stripe test-mode membership lifecycle", () => {
     await expectMembership(page, { plan: "PRO", status: "ACTIVE", pendingPlan: null });
 
     await page.goto("/en/account/billing", { waitUntil: "networkidle" });
+    await choosePlan(page, "Portfolio");
+    await expectMembership(page, { plan: "PORTFOLIO", status: "ACTIVE", pendingPlan: null });
+
+    await page.goto("/en/account/billing", { waitUntil: "networkidle" });
     await choosePlan(page, "Host");
-    await expectMembership(page, { plan: "PRO", status: "ACTIVE", pendingPlan: "HOST" });
+    await expectMembership(page, { plan: "PORTFOLIO", status: "ACTIVE", pendingPlan: "HOST" });
 
     await page.goto("/en/account/billing", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Cancel at period end" }).click();
-    await expectMembership(page, { plan: "PRO", status: "ACTIVE", cancelAtPeriodEnd: true, pendingPlan: "HOST" });
+    await expectMembership(page, { plan: "PORTFOLIO", status: "ACTIVE", cancelAtPeriodEnd: true, pendingPlan: "HOST" });
 
     await page.goto("/en/account/billing", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Resume renewal" }).click();
-    await expectMembership(page, { plan: "PRO", status: "ACTIVE", cancelAtPeriodEnd: false, pendingPlan: "HOST" });
+    await expectMembership(page, { plan: "PORTFOLIO", status: "ACTIVE", cancelAtPeriodEnd: false, pendingPlan: "HOST" });
 
     await page.goto("/en/account/billing", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: "Manage billing" }).click();
@@ -49,7 +52,7 @@ async function signIn(page: Page, email: string, password: string) {
   await expect(page).toHaveURL(/\/en\/account(?:[/?]|$)/u);
 }
 
-async function choosePlan(page: Page, plan: "Host" | "Pro") {
+async function choosePlan(page: Page, plan: "Host" | "Pro" | "Portfolio") {
   const card = page.locator(".membership-plan-grid article").filter({ has: page.getByRole("heading", { name: plan, exact: true }) });
   const responsePromise = page.waitForResponse((response) =>
     response.request().method() === "POST" && /\/api\/v1\/customer\/membership\/(?:checkout|change-plan)$/u.test(new URL(response.url()).pathname),
@@ -84,7 +87,12 @@ async function completeStripeCheckout(page: Page) {
     await instructionsAcknowledgement.waitFor({ state: "attached" });
     await instructionsAcknowledgement.press("Space");
   }
-  await page.getByTestId("hosted-payment-submit-button").click();
+  const submit = page.getByRole("button", { name: /subscribe|pay/iu }).last();
+  await expect(submit).toBeEnabled();
+  await Promise.all([
+    page.waitForURL(/\/en\/account\?billing=success/u, { timeout: 120_000 }),
+    submit.click(),
+  ]);
 }
 
 async function expectMembership(page: Page, expected: { plan: string; status: string; pendingPlan?: string | null; cancelAtPeriodEnd?: boolean }) {

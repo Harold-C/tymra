@@ -48,6 +48,17 @@ export function planLaunchAvailability(): Record<MembershipPlanId, boolean> {
   };
 }
 
+export function membershipFeatureLaunchAvailability() {
+  const environment = billingEnvironment();
+  const plans = planLaunchAvailability();
+  return {
+    alerts: plans.HOST,
+    portfolio: plans.PRO,
+    exports: plans.PRO && environment.MEMBERSHIP_EXPORT_LAUNCH_ENABLED,
+    integrations: plans.PORTFOLIO && environment.MEMBERSHIP_API_LAUNCH_ENABLED,
+  };
+}
+
 function priceIdForPlan(plan: Exclude<MembershipPlanId, "FREE">): string {
   const environment = billingEnvironment();
   const priceId = plan === "HOST" ? environment.STRIPE_HOST_PRICE_ID : plan === "PRO" ? environment.STRIPE_PRO_PRICE_ID : environment.STRIPE_PORTFOLIO_PRICE_ID;

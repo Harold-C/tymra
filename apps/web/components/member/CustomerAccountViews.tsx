@@ -68,6 +68,7 @@ export type MembershipSummary = {
   usage: { initialReportConsumed: boolean; rollingSpotChecks: number; remainingSpotChecks: number; nextSpotCheckAt: string | null };
   pricingUnits: Array<{ id: string; active: boolean; occupiesSlot: boolean; sellableUnitId: string; unitName: string; propertyName: string; city: string; activatedAt: string; deactivatedAt: string | null; slotRetainedUntil: string | null }>;
   launchAvailability: Record<MembershipPlan, boolean>;
+  featureAvailability: { alerts: boolean; portfolio: boolean; exports: boolean; integrations: boolean };
 };
 type ApiPayload<T> = { data?: T; error?: { message?: string } };
 

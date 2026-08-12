@@ -19,15 +19,21 @@ const entries = [
 
 const planOrder: Record<MembershipPlan, number> = { FREE: 0, HOST: 1, PRO: 2, PORTFOLIO: 3 };
 
-export function CustomerAccountNav({ locale, plan }: { locale: "en" | "zh"; plan: MembershipPlan }) {
+type FeatureAvailability = { alerts: boolean; portfolio: boolean; exports: boolean; integrations: boolean };
+
+export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | "zh"; plan: MembershipPlan; features: FeatureAvailability }) {
   const pathname = usePathname();
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeLinkRef = useRef<HTMLAnchorElement>(null);
   const [scrollEdges, setScrollEdges] = useState(0);
   const root = `/${locale}/account`;
-  const visibleEntries = planOrder[plan] >= planOrder.PRO
-    ? [...entries.slice(0, 5), { path: "/exports", icon: Download, en: "Exports", zh: "数据导出" } as const, ...entries.slice(5)]
-    : entries;
+  const advancedEntries = [
+    ...(features.alerts && planOrder[plan] >= planOrder.HOST ? [{ path: "/alerts", icon: Bell, en: "Alerts", zh: "提醒" } as const] : []),
+    ...(features.portfolio && planOrder[plan] >= planOrder.PRO ? [{ path: "/portfolio", icon: Building2, en: "Portfolio", zh: "组合管理" } as const] : []),
+    ...(features.exports && planOrder[plan] >= planOrder.PRO ? [{ path: "/exports", icon: Download, en: "Exports", zh: "数据导出" } as const] : []),
+    ...(features.integrations && planOrder[plan] >= planOrder.PORTFOLIO ? [{ path: "/integrations", icon: Settings2, en: "Integrations", zh: "系统集成" } as const] : []),
+  ];
+  const visibleEntries = [...entries.slice(0, 4), ...advancedEntries, ...entries.slice(5)];
 
   useEffect(() => {
     const scroller = scrollRef.current;

@@ -76,3 +76,47 @@ none had `processingError`.
 This is Stripe Sandbox development evidence. It does not authorize Stripe live mode, production tax
 settings, production webhook delivery, refunds, disputes, Radar operations, capacity, monitoring or an
 SLA. Production billing remains gated until the live release checklist is separately completed.
+
+## Four-plan extension
+
+The acceptance was extended on the same date to cover the complete membership matrix rather than
+inferring Portfolio behaviour from Pro:
+
+- `demo1@tymra.test` verified `FREE`: 1 property slot, 14 daily-price days, 30 monitoring days and
+  the Free rolling-check contract.
+- `demo2@tymra.test` verified `HOST`: 1 property slot, 30 daily-price days, 90 monitoring days and
+  the Host rolling-check contract.
+- `demo3@tymra.test` verified `PRO`: 5 property slots, 90 daily-price days, 180 monitoring days and
+  the Pro rolling-check contract.
+- `demo4@tymra.test` verified `PORTFOLIO`: 20 property slots, 180 daily-price days, 365 monitoring
+  days and the Portfolio rolling-check contract.
+
+All four accounts passed a serial browser matrix covering password sign-in, authenticated membership
+API state, billing-card values, occupied-slot display, navigation visibility and direct route access.
+The matrix also exposed and corrected a contract drift: Alerts was shown to Free, Exports was shown
+without its independent launch gate, and Portfolio/Integrations were absent even when eligible. The
+navigation and pages now require both the membership entitlement and the corresponding server-side
+launch gate.
+
+A second Stripe Sandbox subscription used Stripe's public test payment method, real Stripe objects
+and signed webhook forwarding to verify the persisted sequence:
+
+```text
+FREE -> HOST -> PRO -> PORTFOLIO -> PORTFOLIO (pending HOST)
+     -> cancel at period end -> resume renewal -> Customer Portal
+```
+
+The Sandbox subscription was then cancelled and `demo1@tymra.test` was restored to `FREE / ACTIVE`.
+The fixed four-account matrix passed again after cleanup (`4 passed, 0 failed`). No Sandbox listener
+secret or browser artifact was retained.
+
+Final extension regression also passed: lint, workspace type checking, 212 Web/domain tests with five
+documented external-fixture skips, 127 Worker tests, 104/104 tests on a clean migrated and seeded
+isolated PostgreSQL database, Web/Worker production builds and the disposable Compose smoke stack.
+The build retains only the existing optional LinkeDOM `canvas` warning.
+
+The previously accepted hosted Checkout flow remains valid evidence for initial Host purchase. During
+the extension run, Stripe's current AI-agent Checkout layer accepted the disclosed agent state and
+test-card fields but did not submit the hosted form in two retries. That external hosted-page retry is
+not counted as a new pass; the extension's paid-plan evidence is the real Stripe API, invoice and
+signed-webhook lifecycle described above.
