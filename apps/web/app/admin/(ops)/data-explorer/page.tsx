@@ -2,6 +2,7 @@ import { Prisma, prisma } from "@tymra/db";
 import Link from "next/link";
 
 import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
+import { AdminListTools } from "@/components/admin/AdminListControls";
 import { AdminTable, StatusPill, type AdminColumn, type AdminRow } from "@/components/admin/AdminTable";
 import { adminDateLocale, formatAdminValue, type AdminLocale } from "@/lib/admin-i18n";
 import { getAdminLocale } from "@/lib/server/admin-locale";
@@ -72,7 +73,8 @@ export default async function DataExplorerPage({ searchParams }: { searchParams:
         <button className="button button-secondary" type="submit">{text.apply}</button>
         <Link className="button button-secondary" href={explorerHref({ layer, dataset, page: 1 })}>{text.reset}</Link>
       </form>
-      <div className="data-explorer-result-meta"><strong>{datasetLabel(locale, layer, dataset)}</strong><span>{text.total.replace("{count}", result.total.toLocaleString())}</span></div>
+      <div className="data-explorer-result-meta"><strong>{datasetLabel(locale, layer, dataset)}</strong></div>
+      <div className="admin-list-summary"><span>{text.total.replace("{count}", result.total.toLocaleString())}</span><AdminListTools locale={locale} viewName={`${text.title} · ${datasetLabel(locale, layer, dataset)}`} /></div>
       <AdminTable columns={result.columns} rows={result.rows} emptyTitle={text.emptyTitle} emptyBody={text.emptyBody} />
       <Pagination locale={locale} page={page} total={result.total} state={state} />
     </section>

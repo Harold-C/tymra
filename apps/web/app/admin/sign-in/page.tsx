@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AdminSignInForm } from "@/components/admin/AdminSignInForm";
+import type { Metadata } from "next";
 import { AdminLanguageSwitch } from "@/components/admin/AdminLanguageSwitch";
 import { adminText } from "@/lib/admin-i18n";
 import { getAdminForPage } from "@/lib/server/admin-auth";
@@ -14,3 +15,4 @@ export default async function AdminSignInPage() {
   const locale = getAdminLocale();
   return <main className="admin-signin-page"><section><div className="admin-signin-toolbar"><div className="admin-signin-brand">Tymra <span>{adminText(locale, "operations")}</span></div><AdminLanguageSwitch locale={locale} /></div><h1>{adminText(locale, "signIn")}</h1><p>{adminText(locale, "signInIntro")}</p><AdminSignInForm locale={locale} defaultEmail={developmentCredentials.email} defaultPassword={developmentCredentials.password} /></section></main>;
 }
+export const metadata: Metadata = { title: "Administrator sign in · Tymra", robots: { index: false, follow: false } };

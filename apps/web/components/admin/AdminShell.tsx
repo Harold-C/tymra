@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Building2,
   CalendarClock,
+  ChevronDown,
   ClipboardCheck,
   Database,
   Gauge,
@@ -21,11 +22,12 @@ import {
   Users,
   WalletCards,
   Tags,
+  Star,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AdminLocale } from "@/lib/admin-i18n";
 
@@ -61,6 +63,14 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; url: string }>>([]);
+  const [recentPages, setRecentPages] = useState<string[]>([]);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const wasMenuOpen = useRef(false);
   const text = copy(locale);
   const groups: NavigationGroup[] = [
     {
@@ -114,8 +124,69 @@ export function AdminShell({
       ],
     },
   ];
+  const allItems = [{ label: text.overview, href: "/admin", icon: LayoutDashboard }, ...groups.flatMap((group) => group.items)];
+  const activeItem = allItems.find((item) => item.href === "/admin" ? pathname === "/admin" : isActivePath(pathname, item.href));
+  const pageLabel = pathname === "/admin/search" ? text.search : activeItem ? localized(activeItem.label, locale) : text.console;
+  const pageTitle = `${pageLabel} · Tymra`;
 
   useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    setCollapsedGroups(readStringSet("tymra.admin.collapsed-groups.v1"));
+    setFavorites([...readStringSet("tymra.admin.favorites.v1")]);
+    setRecentPages([...readStringSet("tymra.admin.recent-pages.v1")]);
+    const refreshSavedViews = () => setSavedViews(readSavedViews());
+    refreshSavedViews();
+    window.addEventListener("tymra:saved-views", refreshSavedViews);
+    return () => window.removeEventListener("tymra:saved-views", refreshSavedViews);
+  }, []);
+  useEffect(() => {
+    document.title = pageTitle;
+    if (pathname === "/admin") return;
+    setRecentPages((current) => {
+      const next = [pathname, ...current.filter((item) => item !== pathname)].slice(0, 4);
+      window.localStorage.setItem("tymra.admin.recent-pages.v1", JSON.stringify(next));
+      return next;
+    });
+  }, [pageTitle, pathname]);
+  useEffect(() => {
+    if (!menuOpen) {
+      document.body.style.removeProperty("overflow");
+      if (wasMenuOpen.current) menuButtonRef.current?.focus();
+      wasMenuOpen.current = false;
+      return;
+    }
+    wasMenuOpen.current = true;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); return; }
+      if (event.key !== "Tab") return;
+      const focusable = [...(sidebarRef.current?.querySelectorAll<HTMLElement>('a[href],button:not([disabled])') ?? [])];
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); document.body.style.removeProperty("overflow"); };
+  }, [menuOpen]);
+
+  function toggleGroup(key: string) {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      window.localStorage.setItem("tymra.admin.collapsed-groups.v1", JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  function toggleFavorite() {
+    setFavorites((current) => {
+      const next = current.includes(pathname) ? current.filter((item) => item !== pathname) : [...current, pathname].slice(-8);
+      window.localStorage.setItem("tymra.admin.favorites.v1", JSON.stringify(next));
+      return next;
+    });
+  }
 
   const navigation = (
     <>
@@ -123,10 +194,18 @@ export function AdminShell({
         <LayoutDashboard size={17} aria-hidden="true" />
         <span>{localized(text.overview, locale)}</span>
       </Link>
+      {favorites.length ? <section className="admin-nav-group admin-favorites-group"><h2>{locale === "zh" ? "收藏" : "Favorites"}</h2>{favorites.map((href) => {
+        const item = allItems.find((candidate) => candidate.href === "/admin" ? href === "/admin" : isActivePath(href, candidate.href));
+        if (!item) return null;
+        const Icon = item.icon;
+        return <Link className={pathname === href ? "is-active" : ""} href={href} key={href}><Icon size={17} aria-hidden="true" /><span>{localized(item.label, locale)}</span></Link>;
+      })}</section> : null}
+      {savedViews.length ? <section className="admin-nav-group admin-saved-views"><h2>{locale === "zh" ? "已保存视图" : "Saved views"}</h2>{savedViews.map((view) => <Link href={view.url} key={view.url}><BookmarkIcon /><span>{view.name}</span></Link>)}</section> : null}
+      {recentPages.length ? <section className="admin-nav-group admin-recent-pages"><h2>{locale === "zh" ? "最近访问" : "Recent"}</h2>{recentPages.map((href) => { const item = allItems.find((candidate) => candidate.href === "/admin" ? href === "/admin" : isActivePath(href, candidate.href)); if (!item) return null; const Icon = item.icon; return <Link href={href} key={href}><Icon size={17} aria-hidden="true" /><span>{localized(item.label, locale)}</span></Link>; })}</section> : null}
       {groups.map((group) => (
         <section className="admin-nav-group" key={group.label.en}>
-          <h2>{localized(group.label, locale)}</h2>
-          {group.items.map((item) => {
+          <h2><button type="button" aria-expanded={!collapsedGroups.has(group.label.en)} onClick={() => toggleGroup(group.label.en)}><span>{localized(group.label, locale)}</span><ChevronDown size={13} aria-hidden="true" /></button></h2>
+          {!collapsedGroups.has(group.label.en) ? group.items.map((item) => {
             const active = isActivePath(pathname, item.href);
             const Icon = item.icon;
             return (
@@ -136,7 +215,7 @@ export function AdminShell({
                 {item.badge ? <strong className="admin-nav-badge" aria-label={text.pendingLabel.replace("{count}", String(item.badge))}>{item.badge}</strong> : null}
               </Link>
             );
-          })}
+          }) : null}
         </section>
       ))}
     </>
@@ -144,23 +223,24 @@ export function AdminShell({
 
   return (
     <div className="admin-app">
-      <button className={`admin-sidebar-scrim ${menuOpen ? "is-visible" : ""}`} type="button" aria-label={text.closeMenu} onClick={() => setMenuOpen(false)} />
-      <aside className={`admin-sidebar ${menuOpen ? "is-open" : ""}`}>
+      <button className={`admin-sidebar-scrim ${menuOpen ? "is-visible" : ""}`} type="button" aria-label={text.closeMenu} tabIndex={menuOpen ? 0 : -1} aria-hidden={!menuOpen || undefined} onClick={() => setMenuOpen(false)} />
+      <aside className={`admin-sidebar ${menuOpen ? "is-open" : ""}`} ref={sidebarRef} role={menuOpen ? "dialog" : undefined} aria-modal={menuOpen || undefined} aria-label={menuOpen ? text.navigation : undefined}>
         <div className="admin-sidebar-heading">
           <Link className="admin-brand" href="/admin">Tymra <span>{text.console}</span></Link>
-          <button className="icon-button admin-sidebar-close" type="button" aria-label={text.closeMenu} onClick={() => setMenuOpen(false)}><X size={18} /></button>
+          <button className="icon-button admin-sidebar-close" ref={closeButtonRef} type="button" aria-label={text.closeMenu} onClick={() => setMenuOpen(false)}><X size={18} /></button>
         </div>
         <nav aria-label={text.navigation}>{navigation}</nav>
         <div className="admin-account"><div><span>{text.signedIn}</span><strong>{email}</strong></div><AdminSignOut locale={locale} /></div>
       </aside>
-      <div className="admin-workspace">
+      <div className="admin-workspace" aria-hidden={menuOpen || undefined}>
         <header className="admin-topbar">
-          <button className="icon-button admin-mobile-menu-button" type="button" aria-label={text.openMenu} aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={19} /></button>
+          <button className="icon-button admin-mobile-menu-button" ref={menuButtonRef} type="button" aria-label={text.openMenu} aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Menu size={19} /></button>
           <form className="admin-global-search" action="/admin/search" role="search">
             <Search size={16} aria-hidden="true" />
             <input name="q" aria-label={text.search} placeholder={text.searchPlaceholder} />
           </form>
           <div className="admin-topbar-actions">
+            <button className={`admin-favorite-toggle ${favorites.includes(pathname) ? "is-active" : ""}`} type="button" aria-pressed={favorites.includes(pathname)} aria-label={favorites.includes(pathname) ? (locale === "zh" ? "取消收藏当前页面" : "Remove current page from favorites") : (locale === "zh" ? "收藏当前页面" : "Favorite current page")} title={favorites.includes(pathname) ? (locale === "zh" ? "取消收藏" : "Remove favorite") : (locale === "zh" ? "收藏页面" : "Favorite page")} onClick={toggleFavorite}><Star size={15} /></button>
             <Link className="admin-pending-link" href="/admin/exceptions"><AlertTriangle size={15} /><span>{text.pending}</span><strong>{pendingCount}</strong></Link>
             <span className={`admin-runtime-chip ${schedulerEnabled ? "is-on" : "is-off"}`}><i />{schedulerEnabled ? text.schedulerOn : text.schedulerOff}</span>
             <span className="admin-environment-chip">{environment}</span>
@@ -172,6 +252,18 @@ export function AdminShell({
     </div>
   );
 }
+
+function readStringSet(key: string) {
+  try { const value = JSON.parse(window.localStorage.getItem(key) ?? "[]"); return new Set<string>(Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []); }
+  catch { return new Set<string>(); }
+}
+
+function readSavedViews() {
+  try { const value = JSON.parse(window.localStorage.getItem("tymra.admin.saved-views.v1") ?? "[]"); return Array.isArray(value) ? value.filter((entry): entry is { name: string; url: string } => typeof entry?.name === "string" && typeof entry?.url === "string") : []; }
+  catch { return []; }
+}
+
+function BookmarkIcon() { return <Star size={17} aria-hidden="true" />; }
 
 function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
