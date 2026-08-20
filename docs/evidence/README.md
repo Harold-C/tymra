@@ -18,6 +18,7 @@ revision, environment and run; current implementation status belongs in
 - [Argus 023 ACK and purge — 2026-08-01](./argus-023-acceptance-2026-08-01.md)
 - [Argus 025–030 — 2026-08-02](./argus-025-030-acceptance-2026-08-02.md)
 - [Tymra to Argus six-OTA E2E — 2026-08-08](./tymra-argus-six-ota-e2e-acceptance-2026-08-08.md)
+- [OTA soak cycle 2 manual waiver — 2026-08-21](./ota-soak-cycle-2-manual-waiver-2026-08-21.md)
 
 ## Public market signals
 

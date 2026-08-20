@@ -1,6 +1,6 @@
 # Tymra Release 1 And 1.5 Traceability
 
-Last updated: 2026-08-12
+Last updated: 2026-08-21
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, `verified_gated_off`, and `verified`. No
@@ -25,7 +25,7 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production activation and schedule activation remain separate |
 | Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production activation remains separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
-| Six active public OTA channels | Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com have strict Argus contracts, stable provider-family identity, bounded comparable discovery/rate workflows, evidence lifecycle and cross-brand deduplication | Wotif, Hotels.com and Vrbo are disabled compatibility only; Google Hotels is excluded; production capacity and long-term page stability remain unverified |
+| Six active public OTA channels | Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com have strict Argus contracts, stable provider-family identity, bounded comparable discovery/rate workflows, evidence lifecycle and cross-brand deduplication. The retained 2026-08-17 soak cycle 1 passed; cycle 2 was cancelled under the documented 2026-08-21 manual release waiver | The automated two-day soak remains `NOT_PASSED`; Wotif, Hotels.com and Vrbo are disabled compatibility only; Google Hotels is excluded; production capacity and long-term page stability remain unverified |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
