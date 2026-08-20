@@ -270,11 +270,21 @@ export type ArgusCaptureInput = {
   children?: number;
   units?: number;
   currency?: "NZD";
+  maxAttempts?: 1 | 2;
+  timeoutMs?: number;
 };
 
 export type CaptureResponse =
   | { ok: true; httpStatus: number; payload: ArgusBrowserTaskResult; delivery: ArgusResultDelivery }
-  | { ok: false; httpStatus: number; message: string; delivery?: ArgusResultDelivery };
+  | { ok: false; httpStatus: number; message: string; delivery?: ArgusResultDelivery; manualRequired?: ArgusManualHandoff };
+
+export type ArgusManualHandoff = {
+  jobId: string;
+  reason: string;
+  sessionId: string;
+  noVncUrl: string;
+  expiresAt: string;
+};
 
 export type ArgusResultDelivery = {
   jobId: string;
@@ -444,7 +454,10 @@ export async function captureBrowserTaskWithArgus(
   environment: Environment,
   input: ArgusCaptureInput,
 ): Promise<CaptureResponse> {
-  const deadline = Date.now() + environment.ARGUS_JOB_POLL_TIMEOUT_MS;
+  const maxAttempts = input.maxAttempts ?? 1;
+  const captureTimeoutMs = input.timeoutMs ?? environment.ARGUS_TIMEOUT_MS;
+  const pollTimeoutMs = environment.ARGUS_JOB_POLL_TIMEOUT_MS * maxAttempts;
+  const deadline = Date.now() + pollTimeoutMs;
 
   try {
     const submission = await submitArgusCapture(environment, input);
@@ -454,11 +467,23 @@ export async function captureBrowserTaskWithArgus(
     let summary = created;
     while (!terminalJobStatuses.has(summary.status)) {
       const remaining = deadline - Date.now();
-      if (remaining <= 0) return { ok: false, httpStatus: 504, message: "Argus job polling timed out" };
+      if (remaining <= 0) {
+        const delivery = await cancelAndCollectArgusDelivery(environment, created.job_id, captureTimeoutMs);
+        return { ok: false, httpStatus: 504, message: "Argus job polling timed out", ...(delivery ? { delivery } : {}) };
+      }
       await wait(Math.min(500, remaining));
       const statusResponse = await getArgusJob(environment, created.job_id);
-      if (!statusResponse.ok) return statusResponse;
+      if (!statusResponse.ok) {
+        if (statusResponse.httpStatus >= 500) continue;
+        return statusResponse;
+      }
       summary = statusResponse.job;
+      if (summary.status === "WAITING_FOR_MANUAL") {
+        const handoff = await issueArgusManualHandoff(environment, summary);
+        return handoff.ok
+          ? { ok: false, httpStatus: 409, message: "Argus requires same-session manual verification", manualRequired: handoff.handoff }
+          : handoff;
+      }
     }
 
     const resultResponse = await getArgusJobResult(environment, created.job_id);
@@ -478,6 +503,60 @@ export async function captureBrowserTaskWithArgus(
     const timeout = error instanceof DOMException && error.name === "TimeoutError" || /timed? ?out|timeout|aborted/i.test(message);
     return { ok: false, httpStatus: timeout ? 504 : 503, message: `Argus request failed: ${message}` };
   }
+}
+
+async function issueArgusManualHandoff(
+  environment: Environment,
+  job: ArgusJobSummary,
+): Promise<{ ok: true; handoff: ArgusManualHandoff } | { ok: false; httpStatus: number; message: string }> {
+  const action = job.operator_action;
+  if (!action?.session_id) return { ok: false, httpStatus: 502, message: "Argus manual Job has no operator session" };
+  try {
+    const response = await fetch(new URL("/v1/handoffs", environment.ARGUS_API_BASE_URL!), {
+      method: "POST",
+      headers: argusHeaders(environment),
+      body: JSON.stringify({ contract_version: "1.0", job_id: job.job_id, session_id: action.session_id, ttl_seconds: 900 }),
+      signal: AbortSignal.timeout(environment.ARGUS_TIMEOUT_MS),
+    });
+    const body = await jsonResponse<{ url?: string; expires_at?: string; session_id?: string }>(response);
+    if (!response.ok) return failedResponse(response.status, body);
+    const url = new URL(body.url ?? "");
+    const expiresAt = Date.parse(body.expires_at ?? "");
+    if (!new Set(["https://connect.argus.test", "https://connect.argus.nz"]).has(url.origin)
+      || url.username || url.password || body.session_id !== action.session_id
+      || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return { ok: false, httpStatus: 502, message: "Argus returned an invalid manual handoff" };
+    }
+    return { ok: true, handoff: {
+      jobId: job.job_id, reason: action.reason, sessionId: action.session_id,
+      noVncUrl: url.toString(), expiresAt: new Date(expiresAt).toISOString(),
+    } };
+  } catch (error) {
+    return requestFailure(error);
+  }
+}
+
+async function cancelAndCollectArgusDelivery(
+  environment: Environment,
+  jobId: string,
+  captureTimeoutMs: number,
+): Promise<ArgusResultDelivery | undefined> {
+  await cancelArgusJob(environment, jobId);
+  const cleanupDeadline = Date.now() + Math.max(30_000, captureTimeoutMs + 30_000);
+  while (Date.now() < cleanupDeadline) {
+    const statusResponse = await getArgusJob(environment, jobId);
+    if (statusResponse.ok && terminalJobStatuses.has(statusResponse.job.status)) {
+      const resultResponse = await getArgusJobResult(environment, jobId);
+      if (!resultResponse.ok) return undefined;
+      return {
+        jobId: resultResponse.job.job_id,
+        resultSha256: resultResponse.job.result_sha256,
+        job: resultResponse.job,
+      };
+    }
+    await wait(500);
+  }
+  return undefined;
 }
 
 export function mapArgusJobResult(
@@ -755,13 +834,13 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.children === undefined ? {} : { children: input.children }),
       ...(input.units === undefined ? {} : { units: input.units }),
       ...(input.currency === undefined ? {} : { currency: input.currency }),
-      timeout_ms: environment.ARGUS_TIMEOUT_MS,
+      timeout_ms: input.timeoutMs ?? environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",
       ...(input.maxRecords === undefined ? {} : { max_records: Math.min(500, Math.max(1, input.maxRecords)) }),
     }],
     execution_profile: "self_hosted",
     egress_profile_id: "direct",
-    retry: { max_attempts: 1, base_delay_ms: 100 },
+    retry: { max_attempts: input.maxAttempts ?? 1, base_delay_ms: 500 },
   };
 }
 

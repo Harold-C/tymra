@@ -302,6 +302,46 @@ describe("Argus async Job client", () => {
     });
   });
 
+  it("returns a noVNC handoff immediately when an Argus Job waits for manual verification", async () => {
+    const sessionId = `manual_${"b".repeat(32)}`;
+    const expiresAt = new Date(Date.now() + 600_000).toISOString();
+    server = http.createServer(async (request, response) => {
+      if (request.method === "POST" && request.url === "/v1/jobs") {
+        await body(request);
+        return json(response, 202, { contract_version: "1.0", job_id: jobId, status: "QUEUED" });
+      }
+      if (request.method === "GET" && request.url === `/v1/jobs/${jobId}`) {
+        return json(response, 200, {
+          contract_version: "1.0", job_id: jobId, status: "WAITING_FOR_MANUAL",
+          operator_action: { required: true, type: "novnc_handoff", issue_url: "/v1/handoffs", reason: "captcha", session_ttl_seconds: 900, session_id: sessionId, expires_at: expiresAt },
+        });
+      }
+      if (request.method === "POST" && request.url === "/v1/handoffs") {
+        const requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+        assert.equal(requestBody.job_id, jobId);
+        assert.equal(requestBody.session_id, sessionId);
+        return json(response, 201, { status: "ready", url: `https://connect.argus.test/vnc.html?session=${sessionId}`, expires_at: expiresAt, ttl_seconds: 600, session_id: sessionId });
+      }
+      json(response, 404, { error: "NOT_FOUND" });
+    });
+    const environment = await listenEnvironment();
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-waiting-captcha-test",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.deepEqual(response.manualRequired, {
+      jobId, reason: "captcha", sessionId,
+      noVncUrl: `https://connect.argus.test/vnc.html?session=${sessionId}`,
+      expiresAt,
+    });
+  });
+
   it.each([
     "https://user:password@connect.argus.test/session/manual-booking-captcha-test",
     "https://connect.argus.test:8443/session/manual-booking-captcha-test",
@@ -478,12 +518,16 @@ describe("Argus async Job client", () => {
       children: 0,
       units: 1,
       currency: "NZD",
+      maxAttempts: 2,
+      timeoutMs: 60_000,
     });
     assert.equal(response.ok, false);
     assert.match(response.ok ? "" : response.message, /invalid ota-public\.collect_rates data/u);
     if (!response.ok) assert.equal(response.delivery?.jobId, "job_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
     assert.deepEqual({ checkIn: capture.check_in, checkOut: capture.check_out, adults: capture.adults, units: capture.units, currency: capture.currency }, { checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, units: 1, currency: "NZD" });
+    assert.equal(capture.timeout_ms, 60_000);
+    assert.deepEqual(requestBody?.retry, { max_attempts: 2, base_delay_ms: 500 });
     for (const removedField of ["context_url", "source_listing_id", "children_ages", "latitude", "longitude", "radius_km", "accommodation_ids", "language", "country_code", "booker_country", "booker_platform"]) {
       assert.equal(removedField in capture, false);
     }
@@ -508,14 +552,29 @@ describe("Argus async Job client", () => {
     assert.match(response.ok ? "" : response.message, /invalid ticketek-public\.collect_detail data/u);
   });
 
-  it("uses the independent Job polling deadline", async () => {
+  it("cancels a Job that exceeds its polling deadline and returns the result for ACK cleanup", async () => {
+    let cancelled = false;
     server = http.createServer(async (request, response) => {
       if (request.method === "POST" && request.url === "/v1/jobs") {
         await body(request);
         return json(response, 202, { contract_version: "1.0", job_id: jobId, status: "QUEUED" });
       }
+      if (request.method === "DELETE" && request.url === `/v1/jobs/${jobId}`) {
+        cancelled = true;
+        return json(response, 202, { contract_version: "1.0", job_id: jobId, status: "CANCEL_REQUESTED" });
+      }
       if (request.method === "GET" && request.url === `/v1/jobs/${jobId}`) {
-        return json(response, 200, { contract_version: "1.0", job_id: jobId, status: "RUNNING" });
+        return json(response, 200, { contract_version: "1.0", job_id: jobId, status: cancelled ? "CANCELLED" : "RUNNING" });
+      }
+      if (request.method === "GET" && request.url === `/v1/jobs/${jobId}/result` && cancelled) {
+        return json(response, 200, {
+          contract_version: "1.0",
+          job_id: jobId,
+          status: "CANCELLED",
+          result_sha256: "c".repeat(64),
+          items: [],
+          error: null,
+        });
       }
       json(response, 404, { error: "NOT_FOUND" });
     });
@@ -529,11 +588,51 @@ describe("Argus async Job client", () => {
       url: "https://www.ticketmaster.co.nz/discover/christchurch",
     });
 
-    assert.deepEqual(response, {
-      ok: false,
-      httpStatus: 504,
-      message: "Argus job polling timed out",
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.equal(response.httpStatus, 504);
+    assert.equal(response.message, "Argus job polling timed out");
+    assert.equal(response.delivery?.jobId, jobId);
+    assert.equal(response.delivery?.resultSha256, "c".repeat(64));
+    assert.equal(cancelled, true);
+  });
+
+  it("scales the polling window with the requested Argus attempt count", async () => {
+    const startedAt = Date.now();
+    server = http.createServer(async (request, response) => {
+      if (request.method === "POST" && request.url === "/v1/jobs") {
+        await body(request);
+        return json(response, 202, { contract_version: "1.0", job_id: jobId, status: "QUEUED" });
+      }
+      if (request.method === "GET" && request.url === `/v1/jobs/${jobId}`) {
+        return json(response, 200, {
+          contract_version: "1.0",
+          job_id: jobId,
+          status: Date.now() - startedAt >= 30 ? "COMPLETED" : "RUNNING",
+        });
+      }
+      if (request.method === "GET" && request.url === `/v1/jobs/${jobId}/result`) {
+        const itemResult = listingResult();
+        return json(response, 200, {
+          contract_version: "1.0", job_id: jobId, status: "COMPLETED",
+          result_sha256: "d".repeat(64),
+          items: [{ trace_id: itemResult.trace_id, status: "COMPLETED", result: itemResult, error_category: null }],
+          error: null,
+        });
+      }
+      json(response, 404, { error: "NOT_FOUND" });
     });
+    const environment = { ...await listenEnvironment(), ARGUS_JOB_POLL_TIMEOUT_MS: 20 };
+
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "ticketmaster-test",
+      connectorId: "ticketmaster-public",
+      workflowId: "collect_listing",
+      url: "https://www.ticketmaster.co.nz/discover/christchurch",
+      maxAttempts: 2,
+    });
+
+    assert.equal(response.ok, true);
   });
 
   it("acknowledges the exact persisted result hash and observes remote 410 cleanup", async () => {

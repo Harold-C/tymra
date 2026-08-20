@@ -14,7 +14,11 @@ import { finalizeDirectArgusDelivery } from "./services/argus-orchestrator";
 const environment = getEnvironment();
 const suffix = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const outputRoot = path.resolve(environment.ARGUS_EVIDENCE_ROOT, `ota-e2e-${suffix}`);
-const stay = { checkIn: "2026-08-14", checkOut: "2026-08-15", adults: 2, children: 0, units: 1, currency: "NZD" as const };
+const todayNz = nzCalendarDate();
+const checkIn = process.env.ACCEPTANCE_CHECK_IN ?? addCalendarDays(todayNz, 30);
+const checkOut = process.env.ACCEPTANCE_CHECK_OUT ?? addCalendarDays(checkIn, 1);
+assertFutureStay(todayNz, checkIn, checkOut);
+const defaultStay = { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" as const };
 
 const sources = [
   { key: "booking", connectorId: "booking-public", url: "https://www.booking.com/hotel/nz/5-minutes-airport-3-bedroom-6-guests.en-gb.html" },
@@ -24,12 +28,14 @@ const sources = [
   { key: "agoda", connectorId: "agoda-public", url: "https://www.agoda.com/en-nz/novotel-christchurch-airport/hotel/christchurch-nz.html" },
   { key: "trip", connectorId: "trip-public", url: "https://nz.trip.com/hotels/christchurch-2-hotel-detail-9824700/novotel-christchurch-airport/" },
 ] as const satisfies ReadonlyArray<{ key: string; connectorId: ArgusCaptureInput["connectorId"]; url: string }>;
+const sourceStays = Object.fromEntries(sources.map((source) => [source.key, sourceStay(source.key, defaultStay)])) as Record<(typeof sources)[number]["key"], typeof defaultStay>;
 
 const selectedSourceKeys = selectedValues("ACCEPTANCE_SOURCES");
 const selectedWorkflows = selectedValues("ACCEPTANCE_WORKFLOWS");
 const requestedSources = sources.filter((source) => selectedSourceKeys.size === 0 || selectedSourceKeys.has(source.key));
 const requestedWorkflows = (["resolve_listing", "collect_rates"] as const).filter((workflow) => selectedWorkflows.size === 0 || selectedWorkflows.has(workflow));
 const passCount = boundedInteger("ACCEPTANCE_PASSES", 2, 1, 3);
+const captureTimeoutMs = boundedInteger("ACCEPTANCE_CAPTURE_TIMEOUT_MS", 60_000, 15_000, 60_000);
 const releaseInputs = {
   argusCommitSha: process.env.ARGUS_COMMIT_SHA ?? null,
   argusSourceDigest: process.env.ARGUS_SOURCE_DIGEST ?? null,
@@ -37,6 +43,9 @@ const releaseInputs = {
   tymraCommitSha: process.env.TYMRA_COMMIT_SHA ?? null,
   tymraSourceDigest: process.env.TYMRA_SOURCE_DIGEST ?? null,
   tymraImageId: process.env.TYMRA_IMAGE_ID ?? null,
+  acceptanceStayMatrix: JSON.stringify(sourceStays),
+  acceptanceMaxAttempts: "2",
+  acceptanceCaptureTimeoutMs: String(captureTimeoutMs),
 };
 if (requestedSources.length === 0 || requestedWorkflows.length === 0) throw new Error("OTA acceptance selection matched no sources or workflows");
 if (process.env.ACCEPTANCE_REQUIRE_FROZEN === "1" && Object.values(releaseInputs).some((value) => !value)) {
@@ -46,27 +55,34 @@ if (process.env.ACCEPTANCE_REQUIRE_FROZEN === "1" && Object.values(releaseInputs
 const runs: Array<Record<string, unknown>> = [];
 await mkdir(outputRoot, { recursive: true, mode: 0o700 });
 
-for (const source of requestedSources) {
+acceptanceLoop: for (const source of requestedSources) {
   for (const workflowId of requestedWorkflows) {
     for (let pass = 1; pass <= passCount; pass += 1) {
       const traceId = `tymra-ota-e2e-${source.key}-${workflowId}-pass-${pass}-${suffix}`;
+      const stay = sourceStays[source.key];
       const input: ArgusCaptureInput = {
         traceId,
         connectorId: source.connectorId,
         workflowId,
         url: source.url,
         maxRecords: workflowId === "collect_rates" ? 20 : undefined,
+        maxAttempts: 2,
+        timeoutMs: captureTimeoutMs,
         ...(workflowId === "collect_rates" ? stay : {}),
       };
       const startedAt = Date.now();
       const response = await captureBrowserTaskWithArgus(environment, input);
       if (!response.ok) {
+        if (response.manualRequired) {
+          runs.push({ source: source.key, workflowId, pass, ok: false, httpStatus: response.httpStatus, message: response.message, manualRequired: response.manualRequired, durationMs: Date.now() - startedAt });
+          break acceptanceLoop;
+        }
         if (response.delivery) {
           const rawEvidence = response.delivery.job.items.flatMap((item) => item.result?.evidence ?? []);
           const copiedEvidence = await copyEvidence(source.key, workflowId, pass, rawEvidence);
-          assertRequiredEvidence(source.key, workflowId, copiedEvidence);
+          const evidenceFailure = requiredEvidenceFailure(source.key, workflowId, copiedEvidence);
           await finalizeDirectArgusDelivery(environment, `ota-e2e-${source.key}-${workflowId}-pass-${pass}`, response.delivery, false);
-          runs.push({ source: source.key, workflowId, pass, ok: false, httpStatus: response.httpStatus, message: response.message, evidenceCopiedBeforeAck: true, evidence: copiedEvidence, ackedAndPurged: true, durationMs: Date.now() - startedAt });
+          runs.push({ source: source.key, workflowId, pass, ok: false, httpStatus: response.httpStatus, message: response.message, evidenceFailure, evidenceCopiedBeforeAck: true, evidence: copiedEvidence, ackedAndPurged: true, durationMs: Date.now() - startedAt });
         } else {
           runs.push({ source: source.key, workflowId, pass, ok: false, httpStatus: response.httpStatus, message: response.message, durationMs: Date.now() - startedAt });
         }
@@ -74,10 +90,9 @@ for (const source of requestedSources) {
       }
 
       const copiedEvidence = await copyEvidence(source.key, workflowId, pass, response.payload.evidence);
-      assertRequiredEvidence(source.key, workflowId, copiedEvidence);
-
       const summary = summarize(response.payload.extracted);
-      const semanticFailure = targetSemanticFailure(source.key, workflowId, response.payload);
+      const evidenceFailure = requiredEvidenceFailure(source.key, workflowId, copiedEvidence);
+      const semanticFailure = evidenceFailure ?? targetSemanticFailure(source.key, workflowId, response.payload);
       await finalizeDirectArgusDelivery(environment, `ota-e2e-${source.key}-${workflowId}-pass-${pass}`, response.delivery, false);
       runs.push({
         source: source.key,
@@ -87,6 +102,7 @@ for (const source of requestedSources) {
         ok: response.payload.ok && semanticFailure === null,
         status: response.payload.status,
         semanticFailure,
+        argusError: response.payload.error,
         readonlyOnly: response.payload.readonlyOnly,
         externalSideEffectsPerformed: response.payload.externalSideEffectsPerformed,
         evidenceCopiedBeforeAck: true,
@@ -217,6 +233,42 @@ function boundedInteger(name: string, fallback: number, minimum: number, maximum
   return value;
 }
 
+function nzCalendarDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function addCalendarDays(value: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new Error(`Invalid acceptance date: ${value}`);
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
+  return date.toISOString().slice(0, 10);
+}
+
+function assertFutureStay(today: string, checkInDate: string, checkOutDate: string): void {
+  const normalizedCheckIn = addCalendarDays(checkInDate, 0);
+  const normalizedCheckOut = addCalendarDays(checkOutDate, 0);
+  if (normalizedCheckIn !== checkInDate || normalizedCheckOut !== checkOutDate) {
+    throw new Error("Acceptance dates must be real ISO calendar dates");
+  }
+  if (checkInDate <= today) throw new Error(`ACCEPTANCE_CHECK_IN must be after the current New Zealand date (${today})`);
+  if (checkOutDate <= checkInDate) throw new Error("ACCEPTANCE_CHECK_OUT must be after ACCEPTANCE_CHECK_IN");
+}
+
+function sourceStay(key: string, fallback: typeof defaultStay): typeof defaultStay {
+  const prefix = `ACCEPTANCE_${key.toUpperCase()}_`;
+  const sourceCheckIn = process.env[`${prefix}CHECK_IN`] ?? fallback.checkIn;
+  const sourceCheckOut = process.env[`${prefix}CHECK_OUT`] ?? (sourceCheckIn === fallback.checkIn ? fallback.checkOut : addCalendarDays(sourceCheckIn, 1));
+  assertFutureStay(todayNz, sourceCheckIn, sourceCheckOut);
+  return { ...fallback, checkIn: sourceCheckIn, checkOut: sourceCheckOut };
+}
+
 async function copyEvidence(source: string, workflow: string, pass: number, pointers: Parameters<typeof downloadArgusEvidence>[1][]) {
   const copied: Array<{ kind: string; bytes: number; sha256: string; file: string }> = [];
   for (const [index, pointer] of pointers.entries()) {
@@ -231,8 +283,9 @@ async function copyEvidence(source: string, workflow: string, pass: number, poin
   return copied;
 }
 
-function assertRequiredEvidence(source: string, workflow: string, evidence: Array<{ kind: string }>): void {
+function requiredEvidenceFailure(source: string, workflow: string, evidence: Array<{ kind: string }>): string | null {
   if (!evidence.some((item) => item.kind === "html") || !evidence.some((item) => item.kind === "screenshot")) {
-    throw new Error(`${source}/${workflow} did not expose both HTML and screenshot evidence`);
+    return `${source}/${workflow} did not expose both HTML and screenshot evidence`;
   }
+  return null;
 }

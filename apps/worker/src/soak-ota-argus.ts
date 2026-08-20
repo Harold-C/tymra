@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nzDateKey } from "@tymra/domain";
+import { parseAcceptanceProcessOutput, resolveFrozenAcceptanceDates } from "./ota-soak-process";
 
 type AcceptanceReport = {
   generatedAt: string;
@@ -13,7 +14,7 @@ type AcceptanceReport = {
   passCount: number;
   releaseInputs: Record<string, string | null>;
   stability: Array<{ source: string; workflowId: string; stable: boolean }>;
-  runs: Array<{ source: string; workflowId: string; pass: number; ok: boolean; ackedAndPurged?: boolean; stableProjection?: unknown }>;
+  runs: Array<{ source: string; workflowId: string; pass: number; ok: boolean; ackedAndPurged?: boolean; stableProjection?: unknown; manualRequired?: unknown }>;
 };
 
 type CycleResult = {
@@ -26,6 +27,7 @@ type CycleResult = {
   releaseFingerprint: string;
   resultFingerprint: string;
   error?: string;
+  manualRequired?: unknown;
 };
 
 type Checkpoint = {
@@ -39,6 +41,7 @@ type Checkpoint = {
   minimumElapsedMs: number;
   failureRate: number;
   maxFailureRate: number;
+  acceptanceDateEnvironment: Record<string, string>;
   stable: boolean;
   alert: "FAILURE_RATE_EXCEEDED" | "INSUFFICIENT_DISTINCT_DAYS" | "INSUFFICIENT_ELAPSED_TIME" | "RESULT_DRIFT" | null;
   capacity: { totalDurationMs: number; maxCycleDurationMs: number };
@@ -61,6 +64,13 @@ await mkdir(dirname(checkpointPath), { recursive: true });
 
 const previous = await loadCheckpoint(checkpointPath);
 if (previous && previous.sourceKey !== sources.join(",")) throw new Error("Existing OTA soak checkpoint belongs to a different source set");
+if (previous && !previous.acceptanceDateEnvironment) throw new Error("Existing OTA soak checkpoint predates frozen acceptance dates and cannot be resumed");
+const acceptanceDateEnvironment = resolveFrozenAcceptanceDates(
+  process.env,
+  previous?.acceptanceDateEnvironment,
+  sources,
+  nzDateKey(new Date()),
+);
 const results = previous?.results ?? [];
 const importPaths = selectedValues("SOAK_IMPORT_ACCEPTANCE_PATHS", []);
 if (!previous && importPaths.length) {
@@ -69,15 +79,20 @@ if (!previous && importPaths.length) {
 }
 if (results.length > cycles) throw new Error(`Checkpoint contains ${results.length} cycles but SOAK_CYCLES is ${cycles}`);
 
-let checkpoint = buildCheckpoint(results);
+let checkpoint = buildCheckpoint(results, acceptanceDateEnvironment);
 await writeCheckpoint(checkpoint);
 const runThroughCycle = importOnly ? results.length : Math.min(cycles, results.length + cyclesPerInvocation);
 for (let cycle = results.length + 1; cycle <= runThroughCycle; cycle += 1) {
   const startedAt = new Date();
-  const report = await runAcceptance();
-  const result = cycleFromReports([report], cycle, startedAt);
+  let result: CycleResult;
+  try {
+    const report = await runAcceptance(acceptanceDateEnvironment);
+    result = cycleFromReports([report], cycle, startedAt);
+  } catch (error) {
+    result = failedCycle(cycle, startedAt, error);
+  }
   results.push(result);
-  checkpoint = buildCheckpoint(results);
+  checkpoint = buildCheckpoint(results, acceptanceDateEnvironment);
   await writeCheckpoint(checkpoint);
   process.stderr.write(`${JSON.stringify({ event: "ota_argus_soak_checkpoint", cycle, passed: result.passed, stable: checkpoint.stable, alert: checkpoint.alert, checkpointPath })}\n`);
   if (checkpoint.alert === "FAILURE_RATE_EXCEEDED" || checkpoint.alert === "RESULT_DRIFT") { process.exitCode = 1; break; }
@@ -104,6 +119,7 @@ function cycleFromReports(reports: AcceptanceReport[], cycle: number, startedAt?
     && JSON.stringify(reportSources) === JSON.stringify(expectedSources)
     && releaseFingerprints.size === 1
     && frozenReports;
+  const manualRequired = reports.flatMap((report) => report.runs).find((run) => run.manualRequired)?.manualRequired;
   const observedAt = startedAt ?? new Date(Math.min(...reports.map((report) => Date.parse(report.generatedAt))));
   const finishedAt = startedAt ? new Date() : new Date(Math.max(...reports.map((report) => Date.parse(report.generatedAt))));
   return {
@@ -115,6 +131,7 @@ function cycleFromReports(reports: AcceptanceReport[], cycle: number, startedAt?
     sourceKeys: reportSources,
     releaseFingerprint: [...releaseFingerprints][0] ?? "",
     resultFingerprint: stableHash(projections),
+    ...(manualRequired ? { manualRequired } : {}),
     ...(!passed ? { error: "Acceptance was incomplete, unfrozen, unstable, unpurged or covered the wrong source set" } : {}),
   };
 }
@@ -129,7 +146,22 @@ function crossCycleIdentityProjection(value: unknown): unknown {
   };
 }
 
-function buildCheckpoint(cycleResults: CycleResult[]): Checkpoint {
+function failedCycle(cycle: number, startedAt: Date, error: unknown): CycleResult {
+  const finishedAt = new Date();
+  return {
+    cycle,
+    startedAt: startedAt.toISOString(),
+    finishedAt: finishedAt.toISOString(),
+    durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+    passed: false,
+    sourceKeys: [...sources].sort(),
+    releaseFingerprint: "",
+    resultFingerprint: "",
+    error: error instanceof Error ? error.message : "OTA acceptance failed before producing a report",
+  };
+}
+
+function buildCheckpoint(cycleResults: CycleResult[], frozenDates: Record<string, string>): Checkpoint {
   const passed = cycleResults.filter((item) => item.passed);
   const failureRate = cycleResults.length ? (cycleResults.length - passed.length) / cycleResults.length : 0;
   const successfulDays = [...new Set(passed.map((item) => nzDateKey(new Date(item.startedAt))))];
@@ -150,6 +182,7 @@ function buildCheckpoint(cycleResults: CycleResult[]): Checkpoint {
   return {
     sourceKey: sources.join(","), sources, configuredCycles: cycles, completedCycles: cycleResults.length,
     successfulDays, minimumSuccessfulDays, elapsedWindowMs, minimumElapsedMs, failureRate, maxFailureRate,
+    acceptanceDateEnvironment: frozenDates,
     stable: complete && alert === null,
     alert,
     capacity: {
@@ -160,20 +193,19 @@ function buildCheckpoint(cycleResults: CycleResult[]): Checkpoint {
   };
 }
 
-function runAcceptance(): Promise<AcceptanceReport> {
+function runAcceptance(frozenDates: Record<string, string>): Promise<AcceptanceReport> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn("pnpm", ["--filter", "@tymra/worker", "accept:ota"], {
       cwd: workspaceRoot,
-      env: { ...process.env, ACCEPTANCE_SOURCES: sources.join(","), ACCEPTANCE_PASSES: "2", ACCEPTANCE_REQUIRE_FROZEN: "1" },
+      env: { ...process.env, ...frozenDates, ACCEPTANCE_SOURCES: sources.join(","), ACCEPTANCE_PASSES: "2", ACCEPTANCE_REQUIRE_FROZEN: "1" },
       stdio: ["ignore", "pipe", "inherit"],
     });
     let stdout = "";
     child.stdout.on("data", (chunk) => { stdout += String(chunk); });
     child.on("error", rejectRun);
     child.on("close", (code) => {
-      if (code !== 0) return rejectRun(new Error(`OTA acceptance exited ${code ?? "unknown"}`));
-      try { resolveRun(JSON.parse(stdout.slice(stdout.indexOf("{"))) as AcceptanceReport); }
-      catch { rejectRun(new Error("OTA acceptance output was not valid JSON")); }
+      try { resolveRun(parseAcceptanceProcessOutput<AcceptanceReport>(stdout, code)); }
+      catch (error) { rejectRun(error); }
     });
   });
 }
