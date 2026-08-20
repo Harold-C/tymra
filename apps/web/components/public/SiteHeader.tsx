@@ -180,7 +180,7 @@ export function SiteHeader({
                 aria-current={active ? (item.section && isHome ? "location" : "page") : undefined}
                 className={clsx(
                   "group relative inline-flex min-h-11 items-center rounded-xl px-2.5 transition-[color,background-color] duration-200 hover:bg-[#F4F8FF] hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]",
-                  active && "bg-[#F4F8FF]/80 text-[#0969FF]",
+                  active && "bg-[#F4F8FF]/80 text-[#0758D2]",
                 )}
                 href={item.href}
                 onClick={(event) => navigateToSection(event, item)}

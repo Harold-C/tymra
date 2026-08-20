@@ -19,6 +19,11 @@ const insightsHeading = {
 
 const adminUrl = (pathname: string) => new URL(pathname, "https://ops.tymra.test").toString();
 
+function isMobileProject(testInfo: import("playwright/test").TestInfo) {
+  const viewport = testInfo.project.use.viewport;
+  return testInfo.project.use.isMobile === true || (viewport?.width ?? Number.POSITIVE_INFINITY) <= 600;
+}
+
 async function goto(page: import("playwright/test").Page, url: string) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 60; attempt += 1) {
@@ -138,7 +143,7 @@ test.describe("public Release 1", () => {
 
   test("English and Chinese Home are usable and accessible", async ({ page }, testInfo) => {
     test.slow();
-    const locale = testInfo.project.name === "mobile" ? "zh" : "en";
+    const locale = isMobileProject(testInfo) ? "zh" : "en";
     await goto(page, `/${locale}`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByRole("link", { name: /Tymra/i }).first()).toBeVisible();
@@ -163,12 +168,12 @@ test.describe("public Release 1", () => {
   });
 
   test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {
-    const locale = testInfo.project.name === "mobile" ? "zh" : "en";
+    const locale = isMobileProject(testInfo) ? "zh" : "en";
     const pricingLabel = locale === "en" ? "Plans & Pricing" : "会员方案";
     const signInLabel = locale === "en" ? "Sign In" : "登录";
 
     await goto(page, `/${locale}`);
-    if (testInfo.project.name === "mobile") {
+    if (isMobileProject(testInfo)) {
       const mobileNavigation = page.getByRole("dialog", { name: locale === "en" ? "Mobile navigation" : "移动端导航" });
       await expect.poll(async () => {
         if (!await mobileNavigation.isVisible().catch(() => false)) {
@@ -205,7 +210,7 @@ test.describe("public Release 1", () => {
   });
 
   test("public navigation remains reachable without tablet overflow", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name === "mobile", "The desktop project explicitly exercises every responsive breakpoint.");
+    test.skip(isMobileProject(testInfo), "The desktop project explicitly exercises every responsive breakpoint.");
     test.slow();
     for (const width of [1440, 1280, 960, 820, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
@@ -234,7 +239,7 @@ test.describe("public Release 1", () => {
   test("Public shell preserves the current route and query when changing language", async ({ page }, testInfo) => {
     const listingUrl = "https://www.booking.com/hotel/nz/christchurch-central-stay.html";
     await goto(page, `/en/check?input=${encodeURIComponent(listingUrl)}`);
-    if (testInfo.project.name === "mobile") {
+    if (isMobileProject(testInfo)) {
       await expect(page.locator(".footer-links-mobile")).toBeVisible();
       await expect(page.locator(".footer-links-desktop").first()).toBeHidden();
     } else {
@@ -463,7 +468,7 @@ test.describe("member accessibility and responsive contract", () => {
     await expect(page).toHaveURL(/\/en\/account$/, { timeout: 30_000 });
 
     await goto(page, `${memberOrigin}/en`);
-    if (testInfo.project.name === "mobile") {
+    if (isMobileProject(testInfo)) {
       const memberMenu = page.getByRole("dialog", { name: "Mobile navigation" });
       await expect.poll(async () => {
         if (!await memberMenu.isVisible().catch(() => false)) {
@@ -508,7 +513,7 @@ test.describe("member accessibility and responsive contract", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= 320)).toBe(true);
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
-    if (testInfo.project.name === "mobile") await expect(page.locator(".customer-account-nav")).toBeVisible();
+    if (isMobileProject(testInfo)) await expect(page.locator(".customer-account-nav")).toBeVisible();
   });
 });
 
@@ -531,7 +536,7 @@ test.describe("admin Release 1", () => {
   });
 
   test("signs in and opens the operational workspaces", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name === "mobile", "The operations workspace is a desktop-only surface.");
+    test.skip(isMobileProject(testInfo), "The operations workspace is a desktop-only surface.");
     await gotoAdmin(page, "/admin/sign-in");
     await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Email").fill(e2eAdminEmail);
