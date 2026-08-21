@@ -1,29 +1,32 @@
-# Tymra Release 1.5 Customer Funnel Requirements
+# Tymra Customer Funnel Requirements
 
-Last updated: 2026-07-16
+Last updated: 2026-08-21
 
-Status: **Product-approved baseline. Core new-visitor funnel implemented and verified locally; remaining hardening is tracked in `traceability.md`.**
+Status: **Product-approved current client baseline. It deploys with the national data core and starts as `DEPLOYED_HIDDEN`; remaining evidence is tracked in `traceability.md`.**
 
-This document turns the product discussion about anonymous value, email verification, customer
-accounts and abuse prevention into an implementable Release 1.5 baseline. It amends the Release 1
-public flow without changing the completed Release 1 evidence. If this document conflicts with the
-Release 1 implementation, this document describes the intended Release 1.5 behaviour only.
+Production navigation, membership and public Price Check entry points are initially hidden from the homepage, public navigation and marketing CTA. The routes, APIs, sessions, Worker flows and result access still deploy and must pass production acceptance. Hidden discovery is not an authorization boundary.
+
+This document defines the single current client flow for anonymous value, email verification,
+customer accounts and abuse prevention. There is no legacy customer architecture or migration
+compatibility requirement.
 
 ## 1. Product Objective
 
-Tymra must let a new visitor experience useful value before asking for an email address, then use a
-single secure email interaction to verify identity, create or resume a customer account, start the
-costly formal analysis and protect the resulting report.
+Tymra lets a new visitor experience useful value before asking
+for an email address, then uses a single secure email interaction to verify identity, create or
+resume a customer account, start the costly formal analysis and protect the resulting report.
+Returning members sign in independently with their email username and password.
 
 The target funnel is:
 
 ```text
-Anonymous supported OTA listing URL
+Anonymous supported OTA listing URL or resolvable New Zealand address
+  -> LISTING_PRICING or LOCATION_BENCHMARK
   -> low-cost rough analysis
   -> useful rough result
   -> email unlock request
   -> one-time magic link
-  -> verified customer session
+  -> verified customer session and password setup/resumption
   -> formal Price Check
   -> authenticated report
 ```
@@ -32,8 +35,9 @@ Anonymous supported OTA listing URL
 
 1. **Value before identity:** an anonymous visitor receives a genuine rough result before email is
    requested.
-2. **Listing-first input:** anonymous analysis starts only from a valid supported OTA listing URL;
-   a property name or natural address cannot directly trigger pricing analysis.
+2. **Explicit target mode:** a supported OTA listing URL starts `LISTING_PRICING`; a resolvable New
+   Zealand address starts `LOCATION_BENCHMARK`. The address path must never fabricate a target
+   Listing or attribute a nearby property's price to the submitted address.
 3. **Zero configuration for new visitors:** the anonymous flow does not ask for dates, guest count
    or room type and instead captures the URL context or OTA default display context.
 4. **Honest progressive disclosure:** the rough result is useful but clearly less precise than the
@@ -52,7 +56,8 @@ Anonymous supported OTA listing URL
 
 ### 3.1 In scope
 
-- Anonymous supported OTA listing resolution and rough result.
+- Anonymous supported OTA listing resolution or New Zealand address resolution and rough result.
+- Explicit `LISTING_PRICING` and `LOCATION_BENCHMARK` target semantics.
 - Automatic use of URL-supplied pricing context or the OTA's observed default display context.
 - Low-cost cached or aggregate rough analysis.
 - Email verification through a one-time magic link.
@@ -64,7 +69,6 @@ Anonymous supported OTA listing URL
 - Conditional result-ready email.
 - Rate limits, quotas, risk decisions, idempotency and challenge escalation.
 - English and Chinese copy, responsive behaviour, accessibility and reduced motion.
-- Migration away from the four-email Release 1 happy path.
 
 ### 3.2 Out of scope
 
@@ -74,27 +78,33 @@ Anonymous supported OTA listing URL
 - PMS or Channel Manager ownership verification.
 - Billing, subscriptions or paid quota upgrades are not defined by this authentication document; the approved product contract is in `membership-plans.md`.
 - Public report sharing by default.
-- Password authentication.
-- Property-name or natural-address input that directly starts pricing analysis.
+- Free-text property-name-only discovery without a resolvable New Zealand address or supported OTA
+  Listing URL.
 - Mandatory date, guest-count or room-type selection in the new-visitor flow.
-- Live OTA scraping or unrestricted raw competitor export.
+- Unbounded raw competitor export or provider work outside approved collection contracts.
 
-Billing and paid upgrades remain outside this authentication/funnel document, not outside the approved Post-Release product.
+Billing and paid upgrades remain outside this authentication/funnel document; their current contract is `membership-plans.md`.
 
 ## 4. End-to-End User Flow
 
 ### 4.1 New visitor
 
-1. The visitor pastes a supported New Zealand OTA listing URL. The form does not request dates,
-   guest count or room type.
-2. Tymra sanitizes and normalizes the URL, identifies the OTA and stable listing ID, validates that
-   the listing is supported and evaluates abuse risk before starting work.
-3. When the URL contains supported pricing context, Tymra uses it without asking the visitor to
-   confirm it. Otherwise Tymra uses the configuration shown by the OTA's default listing view.
-4. Tymra records the configuration actually observed, including any available dates, guest count,
-   room or unit, rate plan, currency, tax treatment, source and capture time.
-5. Tymra resolves the property and reads a recent validated cached or aggregate market snapshot for
-   the normalized listing and observed context.
+1. The visitor submits either a supported New Zealand OTA listing URL or a resolvable New Zealand
+   street address. The form does not request dates, guest count or room type.
+2. For a URL, Tymra sanitizes and normalizes it, identifies the OTA and stable listing ID, validates
+   support and selects `LISTING_PRICING`. For an address, Tymra normalizes and geocodes the address,
+   resolves or creates the stable Property／spatial anchor and selects `LOCATION_BENCHMARK` with
+   `targetListingId=null`. Both paths evaluate abuse risk before starting work.
+3. When a URL contains supported pricing context, Tymra uses it without asking the visitor to
+   confirm it; otherwise it uses the OTA's observed default display context. Address mode uses the
+   standard default Stay Query and finds bounded nearby comparable public listings under the
+   geographic expansion rules.
+4. Tymra records the target mode and configuration actually observed, including available dates,
+   guest count, room or unit, rate plan, currency, tax treatment, source, capture time and any
+   address-search scope expansion.
+5. Tymra reads a recent validated cached or aggregate snapshot for the resolved target. Listing mode
+   keeps target and comparable observations separate; address mode returns nearby market prices and
+   must not claim that any observation is the submitted property's own price.
 6. The page presents real progress stages while the rough result is prepared.
 7. Tymra shows the rough result without requiring an email address.
 8. The visitor selects **Unlock the formal report**.
@@ -120,9 +130,9 @@ Billing and paid upgrades remain outside this authentication/funnel document, no
 6. A new customer registers at `/{locale}/sign-up`; registration creates a Free membership and no pricing work.
 7. Signing out revokes the current customer session but does not cancel membership, delete data or revoke an Admin session.
 
-### 4.3 Supported listing URL and default-context contract
+### 4.3 Supported target and default-context contract
 
-A URL is valid for anonymous analysis only when all of the following are true:
+A URL is valid for anonymous `LISTING_PRICING` only when all of the following are true:
 
 - its hostname and URL shape belong to a configured supported OTA;
 - Tymra can extract and normalize a stable listing ID;
@@ -144,15 +154,31 @@ URL handling rules:
   the OTA default changes.
 - URL syntax alone is not sufficient. An inaccessible, inactive, unsupported or non-price-bearing
   listing cannot start rough pricing analysis.
-- A property name or natural address may support a future discovery experience, but the visitor must
-  select a valid supported OTA listing before analysis starts.
+
+An address is valid for anonymous `LOCATION_BENCHMARK` only when all of the following are true:
+
+- it resolves to a New Zealand standard address or a stable geographic anchor with sufficient
+  confidence;
+- the normalized target can be reused for quota, duplicate and abuse controls without relying on the
+  submitted spelling alone;
+- at least one enabled and healthy provider can search the bounded surrounding market under the
+  standard Stay Query;
+- every returned price remains bound to the actual nearby Listing and is labelled as a comparable or
+  market observation, not as the target address's own price;
+- geographic expansion is recorded, lowers comparability and is disclosed rather than presented as
+  an exact-address match.
+
+URL and address representations that resolve to the same physical Property consume one property
+slot. A customer cannot obtain a new slot by changing address spelling, URL parameters or OTA
+channel; cross-account benefit controls remain defined by `membership-plans.md` and the shared
+business rules.
 
 ### 4.4 Unsupported or insufficient rough data
 
 - Unsupported markets show the actual coverage state and do not imply that formal analysis will
   produce a result.
-- Natural addresses, property names, malformed links and unsupported OTA links show a specific input
-  state and do not start pricing work.
+- Unresolvable or non-New-Zealand addresses, property names without a resolvable address, malformed
+  links and unsupported OTA links show a specific input state and do not start pricing work.
 - When the OTA default view exposes no valid quote or no identifiable default room/unit, Tymra shows
   `NO_DEFAULT_QUOTE` or an equivalent honest state and does not fabricate a price.
 - When the property is identified but the rough evidence is insufficient, Tymra says so explicitly
@@ -211,7 +237,7 @@ ACTIVE -> SUSPENDED | DELETED
 
 `PENDING` belongs to `VerificationStatus`, not to an active `CustomerUser` record.
 
-The initial customer role is `OPERATOR`. Release 1.5 has no customer role that grants `/admin`
+The initial customer role is `OPERATOR`. No customer role grants `/admin`
 access.
 
 ### 6.2 Creation point
@@ -226,7 +252,7 @@ access.
 
 - A customer owns their Price Check records and reports, not the public property identity.
 - Multiple customers may analyse the same public property.
-- No Release 1.5 action claims exclusive operational ownership of a property.
+- No customer action claims exclusive operational ownership of a property.
 
 ## 7. Magic Link And Session Security
 
@@ -261,9 +287,8 @@ blocked or unknown customer identities wherever operationally possible.
 - Each formal check belongs to exactly one customer account.
 - A customer can view only their own checks and reports.
 - Formal result routes are session-protected and do not rely on a durable report token in the URL.
-- Public sharing is disabled in Release 1.5. A future share link must be explicit, read-only,
+- Public sharing is disabled. A future share link must be explicit, read-only,
   expiring and revocable.
-- Existing Release 1 secure result tokens remain supported only for a bounded migration period.
 
 Required customer authentication and account routes:
 
@@ -415,7 +440,7 @@ Formal PriceCheckStatus
 
 ## 13. Proposed Data Additions
 
-The detailed schema remains an implementation decision, but Release 1.5 needs equivalent records:
+The detailed schema remains an implementation decision, but the current product needs equivalent records:
 
 - `CustomerUser`: customer identity, encrypted email, email hash and lifecycle state.
 - `CustomerSession`: opaque session hash, expiry, revocation and activity metadata.
@@ -426,7 +451,7 @@ The detailed schema remains an implementation decision, but Release 1.5 needs eq
   freshness, cache key and limitations.
 - `UsageLedger`: quota consumption by action and privacy-preserving subject.
 - `AbuseDecision`: signals, outcome, challenge state, cooldown and audit metadata.
-- `PriceCheck.customerUserId`: required for new formal checks after migration.
+- `PriceCheck.customerUserId`: required for every formal customer check.
 
 No table stores a plaintext magic token, plaintext long-lived session identifier, complete submitted
 listing URL or unrelated OTA query parameters.
@@ -468,7 +493,7 @@ Required aggregate events:
 
 Primary funnel metrics:
 
-1. supported listing URL submission to rough-result completion;
+1. supported listing URL or resolvable New Zealand address submission to rough-result completion;
 2. rough result to unlock request;
 3. unlock request to verified email;
 4. verification to formal-result completion;
@@ -486,9 +511,10 @@ with the verified core funnel.
 | --- | --- | --- |
 | R15-FLOW-001 | A fresh visitor obtains a rough result without submitting an email | EN/ZH desktop/mobile E2E |
 | R15-FLOW-002 | The rough result visibly distinguishes rough from formal evidence | Copy and result-contract tests |
-| R15-INPUT-001 | Only a valid supported OTA listing URL can start anonymous pricing analysis; names, natural addresses and unsupported links cannot | Input contract and EN/ZH browser tests |
-| R15-INPUT-002 | A new visitor is not asked to select dates, guest count or room type; supported URL context is used first and the OTA default display context otherwise | Browser and resolver integration tests |
-| R15-INPUT-003 | Tymra records and discloses the observed default context and returns an honest terminal state when no valid default quote is available | Provider fixture, persistence and result-contract tests |
+| R15-INPUT-001 | A supported OTA listing URL starts `LISTING_PRICING`; a resolvable New Zealand address starts `LOCATION_BENCHMARK`; property-name-only, unresolvable address and unsupported-link inputs cannot start analysis | Input contract and EN/ZH browser tests |
+| R15-INPUT-002 | A new visitor is not asked to select dates, guest count or room type; URL mode uses supported URL context or the observed OTA default, while address mode uses the standard Stay Query and bounded geographic expansion | Browser and resolver integration tests |
+| R15-INPUT-003 | Tymra records and discloses target mode, observed query context and any address-search expansion; it returns an honest terminal state when no valid quote is available | Provider fixture, persistence and result-contract tests |
+| R15-INPUT-004 | Address mode never fabricates `targetListingId` or attributes a nearby Listing price to the target; URL and address variants resolving to one Property share one membership property slot | Schema, identity, quota and cross-mode integration tests |
 | R15-COST-001 | Anonymous rough work never starts the formal provider pipeline | Worker/API integration test |
 | R15-ID-001 | Email submission does not activate a customer before verification | Database/API integration test |
 | R15-ID-002 | A valid magic link creates or resumes one customer and one session | Auth integration and E2E |
@@ -510,21 +536,7 @@ with the verified core funnel.
 | R15-MOTION-001 | Progress maps to real states and reduced motion remains complete | Browser and reduced-motion E2E |
 | R15-RET-001 | Anonymous and verification records expire under the retention policy | Scheduled cleanup integration test |
 | R15-AN-001 | Funnel analytics contain no email, complete address or listing URL, OTA query parameters, auth token, session ID or report content | Event contract and redaction tests |
-| R15-MIG-001 | Existing Release 1 result links remain bounded and do not grant customer ownership | Migration/security test |
-
-## 17. Migration From Release 1
-
-1. Preserve existing Release 1 checks and immutable result versions.
-2. Introduce customer identity and anonymous-check records without retroactively assigning ownership.
-3. Add the anonymous rough flow alongside the current flow behind a development feature flag.
-4. Add magic-link authentication and authenticated report routes.
-5. Start new formal checks only after verification.
-6. Replace the Release 1 four-email happy path with the Release 1.5 email policy.
-7. Keep old secure result links for their existing bounded lifetime; do not silently convert a bearer
-   link into customer ownership.
-8. Remove or archive the legacy unauthenticated creation path after migration acceptance passes.
-
-## 18. Product Decisions Still Requiring Approval
+## 17. Remaining External Decisions
 
 The recommended defaults above can drive implementation, but these external product decisions need
 explicit approval before production launch:
@@ -534,10 +546,7 @@ explicit approval before production launch:
 - challenge provider selection;
 - pilot quotas after observing real provider cost and false positives;
 - whether the included first formal check becomes a permanent free entitlement;
-- future billing, team accounts, property verification and report sharing.
+- team accounts, stronger property verification and report sharing.
 
-The supported-OTA-link and automatic default-context input contract is product-approved in D-025.
-It remains `not_implemented` and requires the R15-INPUT acceptance evidence above.
-
-Until approval and implementation evidence exist, this entire Release 1.5 baseline is
-`not_implemented` and `not_verified`.
+The supported-OTA-link and automatic default-context input contract is current. Individual
+implementation and acceptance status is maintained only in `traceability.md`.

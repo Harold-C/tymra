@@ -1,17 +1,17 @@
 # Tymra by Synix 页面结构
 
-## 状态：Active — Release 1 Information Architecture Baseline v1.2｜基线集合：Tymra Release 1 Codex Build Baseline v1.2｜基线日期：2026-07-16
+## 状态：Active — Current Information Architecture Baseline v1.3｜基线集合：Tymra National Data Core Baseline v1.3｜基线日期：2026-08-21
 
-文档定位：本文件是 Tymra Release 1 的页面、路由和用户流程契约，定义公开网站、真实价格检查、异步状态、结果、安全链接、Exception Inbox、市场运维页面、页面数据需求和 API 绑定。Codex 必须按本文创建路由和页面，不得加入未批准的 Dashboard、Billing、自动调价或复杂账户流程。PG-\* 标识必须进入 docs/traceability.md，并映射到路由、组件和端到端测试。
+文档定位：本文件是 Tymra 当前开发版本的页面、路由和用户流程契约，定义公开网站、真实价格检查、客户会员、Stripe Billing、异步状态、结果、Exception Inbox、市场运维页面、页面数据需求和 API 绑定。PG-\* 标识必须进入 docs/traceability.md，并映射到路由、组件和端到端测试。
 
 ## 基线控制
 
-本文件属于 Tymra Release 1 Codex Build Baseline v1.2。页面必须服从《需求说明》的范围和《业务规则》的状态与判断，视觉样式由《视觉交互》定义。本文件只定义路由、页面区域、内容顺序、用户流程、页面数据需求和 API 绑定，不重复定义颜色、字号、圆角、栅格或动效；首页视觉统一引用 \[UI-HOME\]。本文列出的公开和后台路由均属于 Release 1 当前实现；未列出的业务页面默认不创建。路由示例中的 {locale} 只能为 en 或 zh。
+本文件属于当前统一生产部署。页面必须服从《需求说明》的范围和《业务规则》的状态与判断，视觉样式由《视觉交互》定义。本文件只定义路由、页面区域、内容顺序、用户流程、页面数据需求和 API 绑定，不重复定义颜色、字号、圆角、栅格或动效；首页视觉统一引用 \[UI-HOME\]。本文列出的公开、客户和后台路由均随同一版本部署；未列出的业务页面默认不创建。路由示例中的 {locale} 只能为 en 或 zh。
 
 # \[PG-IA\] 一、信息架构原则
 
-• Search-first 首页是公开产品的核心入口，用户无需先注册即可创建一次真实 Price Check。  
-• 用户流程分为识别确认、任务处理和安全结果三段，异步任务不得伪装为同步秒级结果。  
+• Search-first 是客户端入口恢复后的公开主流程；`DEPLOYED_HIDDEN` 启用时首页不展示该入口，但直接路由仍部署。
+• 用户流程分为识别确认、任务处理和已认证结果三段，异步任务不得伪装为同步秒级结果。
 • 后台以 Exception Inbox 为默认首页，只突出需要单人运营者决定的异常。  
 • 页面必须保留已输入信息，刷新、返回和语言切换不得无故丢失当前任务。  
 • 移动端按任务重新组织，不是桌面端简单缩小。
@@ -24,14 +24,16 @@
 
 ## 2.2 Public Routes
 
+以下路由全部随生产版本部署。`DEPLOYED_HIDDEN` 只控制首页、导航、Footer 和 CTA 是否链接到 Price Check、Pricing 和客户认证路由。
+
 • /{locale}：首页。  
-• /{locale}/check：创建 Price Check 和识别房源。  
-• /{locale}/address-check：从具体 OTA Listing 或真实新西兰地址创建正式 Price Check；两种分析模式明确分开，地址模式不要求目标 OTA Listing。
+• /{locale}/check：从受支持 OTA Listing URL 创建匿名 `LISTING_PRICING` 粗略检查。
+• /{locale}/address-check：从真实新西兰地址创建匿名 `LOCATION_BENCHMARK` 粗略检查；不要求目标 OTA Listing。
+• /{locale}/rough/{checkId}：显示与目标模式一致的匿名粗略结果，并提供邮箱验证解锁正式检查。
 • /{locale}/check/{checkId}/property：Property 候选确认。  
 • /{locale}/check/{checkId}/unit：Sellable Unit 确认。  
 • /{locale}/check/{checkId}/query：Stay Query 确认。  
 • /{locale}/check/{checkId}/status：任务状态、异常等待和下一动作。  
-• /{locale}/result/{token}：安全结果页。  
 • /{locale}/waitlist：非新西兰或未开放市场登记。  
 • /{locale}/methodology：公开方法说明，不公开权重和阈值。  
 • /{locale}/faq：FAQ 独立页；首页同时保留 FAQ 摘要。  
@@ -57,11 +59,11 @@
 
 ## 2.4 当前不创建
 
-公开 Sign in、用户 Dashboard、90-day Calendar、Monitoring、Billing、Team、PMS Connection 和自动调价页面不属于 Release 1。不得创建禁用菜单、空白路由或“即将推出”的假入口，除非本文明确列出。
+Team、PMS Connection 和自动调价页面不属于当前范围。不得创建空白路由或“即将推出”的假入口。
 
-## 2.5 Post-Release 会员体系路由修订（2026-08-10）
+## 2.5 当前会员体系路由
 
-第 2.4 节只描述 Release 1 历史范围。会员体系已经另行批准，因此下列客户路由属于当前目标产品，并覆盖第 2.4 节对公开 Sign in、客户账户、Monitoring 和 Billing 的旧排除。Team、PMS Connection 和自动调价仍不创建。
+下列客户路由属于当前统一生产部署。初期隐藏入口不删除、禁用或替换这些路由。
 
 ### 2.5.1 公共认证
 
@@ -88,7 +90,7 @@
 
 ### 2.5.3 会员导航
 
-公开 Header 固定显示“会员方案 / Plans & Pricing”。无有效客户会话时同时显示“会员登录 / Member Sign In”；存在有效客户会话时显示“会员账户 / Account”和“退出 / Sign out”。这些入口必须在桌面、平板和移动菜单中连续可达。客户导航至少包含概览、定价单位、价格检查和设置。账单入口对所有会员可见；计划功能入口只有在方案权益和生产 Launch Gate 同时有效时才可交互。
+`DEPLOYED_HIDDEN` 启用时，公开 Header、移动菜单和首页 CTA 不显示“会员方案 / Plans & Pricing”“会员登录 / Member Sign In”“会员账户 / Account”“退出 / Sign out”或 Run Free Price Check。对应路由仍可直接访问，并执行完整认证、资源归属、方案权益与支付检查。展示配置关闭后，未登录状态显示 Plans & Pricing 和 Member Sign In；已登录状态显示 Account 和 Sign out。客户账户内部导航始终包含概览、定价单位、价格检查和设置；账单入口对所有会员可见。
 
 不得把未开放功能显示为可购买或可执行。可以在方案比较中说明目标权益及“尚未开放”，但账户导航不能指向空白页、静态假页面或绕过门槛的 API。
 
@@ -101,9 +103,9 @@
 
 这些路由沿用独立 Admin 认证和 `ops` origin。不得向客户导航暴露，不得提供客户模拟登录或显示任何 Magic Link、会话、API、Webhook 或付款秘密。
 
-# [PG-MEMBER] Post-Release 会员模块页面契约
+# [PG-MEMBER] 当前会员模块页面契约
 
-本章是 Post-Release 会员页面的权威结构；原第三章及后续 Release 1 章节编号保持历史稳定，不因本修订重排。
+本章是当前会员页面的权威结构。
 
 ## PG-MEMBER-AUTH 独立登录与退出
 
@@ -202,11 +204,11 @@ Memberships 页按待处理风险排序，Billing Events 页按未处理/失败�
 
 ## 3.1 Header
 
-桌面从左到右：Logo、How It Works、What You’ll Get、Plans & Pricing、Methodology、FAQ、Contact、中文／English、Member Sign In（登录后为 Account 和 Sign out）、Run Free Price Check。首页的主 CTA 平滑定位并聚焦首页核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端保留 Logo、语言切换和 Hamburger，会员方案、会员登录/账户及主 CTA 均在菜单中可达，主 CTA 固定在菜单底部。
+完整桌面导航从左到右：Logo、How It Works、What You’ll Get、Plans & Pricing、Methodology、FAQ、Contact、中文／English、Member Sign In（登录后为 Account 和 Sign out）、Run Free Price Check。`DEPLOYED_HIDDEN` 启用时移除 Plans & Pricing、Member Sign In／Account／Sign out 和 Run Free Price Check，其余导航保持稳定。首页主 CTA 在可见时平滑定位并聚焦核心输入；其他公开页面进入 /{locale}/check。Logo 返回当前语言首页。移动端执行相同展示规则。
 
 ## 3.2 Footer
 
-品牌说明；Product：Free Price Check、Plans & Pricing、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。只显示真实存在的链接。
+品牌说明；Product：Free Price Check、Plans & Pricing、How It Works、What You’ll Get；Resources：Methodology、FAQ、Contact；Legal：Privacy、Terms、Cookies、Disclaimer、Data Deletion；语言切换；© Synix。`DEPLOYED_HIDDEN` 启用时 Footer 同样移除 Free Price Check 与 Plans & Pricing。只显示真实存在且当前允许发现的链接。
 
 ## 3.3 公共系统条
 
@@ -244,7 +246,7 @@ Search Card 下方必须提供独立且可聚焦的地址入口：No listing lin
 
 ## 4.6 Market Coverage
 
-只声明当前正式支持 Christchurch 及已批准周边。显示 Supported、Pilot available、Coming soon 的含义，不显示未经证实的全国覆盖数字。
+声明新西兰全国是当前采集范围，同时按实际数据分别显示 Supported、Partial Coverage、Pilot、Insufficient Data 和 Source Unavailable。Christchurch 只能作为早期验收样本，不得代表全国；不得展示未经实际 Source Registry、样本和 Freshness 支持的覆盖数字。
 
 ## 4.7 FAQ Summary
 
@@ -254,31 +256,36 @@ Search Card 下方必须提供独立且可聚焦的地址入口：No listing lin
 
 重复核心价值；主操作链接 `/{locale}/check`，并提供进入 `/{locale}/address-check` 的次操作。首页不得把地址基准描述成目标房源定价，也不得强制先选择套餐。
 
-# \[PG-CHECK\] 五、创建 Price Check /{locale}/check
+# \[PG-CHECK\] 五、创建匿名粗略检查与解锁正式 Price Check
 
 ## 5.1 页面目的
 
-完成原始输入、邮箱和服务同意，调用 POST /api/v1/property-search；根据结果进入 Property 确认、Unit 确认、Waitlist、Unsupported 或创建任务。
+`/{locale}/check` 接受受支持 OTA Listing URL 并创建 `LISTING_PRICING` 粗略检查；`/{locale}/address-check` 接受真实新西兰地址并创建 `LOCATION_BENCHMARK` 粗略检查。两者在展示匿名价值前都不要求邮箱；提交后进入 `/{locale}/rough/{checkId}`。邮箱验证成功后才启动正式 provider 流程，并根据身份情况进入 Property、Unit、Query 或 Status。
 
 ## 5.2 页面区域
 
-标题和范围说明；Property Search Input；Email；服务邮件同意说明；独立未预选 Marketing Checkbox；主 CTA；隐私短说明；返回首页。
+标题和范围说明；明确的目标模式；对应的 OTA URL 或地址输入；主 CTA；数据与隐私短说明；返回首页。粗略结果页依次显示目标摘要、真实粗略证据、限制、正式报告增加内容、邮箱解锁说明、Email、服务消息与账户条款同意、独立且未预选的 Marketing Checkbox 和 Unlock CTA。
 
 ## 5.3 表单字段
 
-input 必填，3–500 字符；email 必填；locale 隐藏保存；serviceConsent 必须为 true；marketingConsent 可选且默认 false。
+初始 input 必填，3–500 字符，按模式校验；locale 隐藏保存。粗略结果解锁时 email 必填，serviceConsent 必须为 true，marketingConsent 可选且默认 false。OTA URL 和完整自然地址不得进入 analytics、页面标题或公开日志。
 
 ## 5.4 提交状态
 
-Idle、Typing、Validating、Searching、Candidates Found、No Match、Unsupported、Source Unavailable、Rate Limited 和 System Error。提交时不得清空输入；重复点击使用同一幂等键。
+Idle、Typing、Validating、Resolving、Preparing Rough Result、No Match、Unsupported、Source Unavailable、Rate Limited 和 System Error。提交时不得清空输入；重复点击使用同一幂等键。地址模式的范围扩大必须显示；两种模式不得互换结果语义。
 
 ## 5.5 下一路由
 
-• UNIQUE Property 且 Unit 明确：创建 Price Check，进入 /status。  
-• MULTIPLE Property：创建草稿任务，进入 /property。  
-• Property 唯一但多 Unit：进入 /unit。  
-• Market 未开放或非新西兰：进入 /waitlist 或明确状态页。  
-• Source 暂不可用：保留表单并提供 Retry later。
+• 有足够粗略证据：进入 `/{locale}/rough/{checkId}`；不得在邮箱验证前启动正式 provider pipeline。
+• 邮箱验证并建立客户会话后，目标身份和 Unit 已明确：创建正式 Price Check 并进入 /query 或 /status。
+• 邮箱验证后出现多个 Property：创建草稿任务并进入 /property。
+• Property 唯一但多 Unit 且模式需要目标 Unit：进入 /unit。地址基准不为复用该页面而伪造 Unit。
+• 非新西兰、无法解析或当前来源不可服务：显示明确状态；只有用户主动选择接收市场开放通知时才进入 /waitlist。
+• Source 暂不可用：保留输入并提供 Retry later。
+
+## 5.6 地址模式约束
+
+地址输入解析为稳定 Property／空间锚点，`targetListingId=null`。周边价格始终显示其真实 Listing 身份和与地址的关系，不称为该地址的自有价格。若扩大搜索范围，页面显示扩大级别、距离／市场范围和降低后的 Comparability。地址与 OTA URL 后续确认属于同一物理 Property 时，共用一个会员房源额度。
 
 # \[PG-PROPERTY\] 六、Property 确认 /check/{checkId}/property
 
@@ -312,11 +319,11 @@ Select Unit；None of these；Back to Property。选择后进入 /query。
 
 ## 8.1 默认值
 
-2 Adults、0 Children、1 Unit、默认 1 Night、`Pacific/Auckland`、NZD。Release 1 匿名/一次性正式流程默认未来 30 天；登录会员的精确逐日价格范围按 Free 14、Host 30、Pro 90、Portfolio 180 天执行，并与更长的监测范围分开显示。
+2 Adults、0 Children、1 Unit、默认 1 Night、`Pacific/Auckland`、NZD。匿名／一次性正式流程默认未来 30 天；登录会员的精确逐日价格范围按 Free 14、Host 30、Pro 90、Portfolio 180 天执行，并与更长的监测范围分开显示。
 
 ## 8.2 可编辑字段
 
-成人、儿童、单位数和住宿晚数。匿名 Release 1 流程的检查日期窗口固定为未来 30 天；会员页面不得沿用该固定值，必须从服务端方案权益读取范围。
+成人、儿童、单位数和住宿晚数。匿名流程的检查日期窗口固定为未来 30 天；会员页面不得沿用该固定值，必须从服务端方案权益读取范围。
 
 ## 8.3 提示
 
@@ -330,7 +337,7 @@ Select Unit；None of these；Back to Property。选择后进入 /query。
 
 ## 9.1 访问
 
-使用 checkId 和 accessKey；accessKey 存在 HttpOnly 或安全会话中，不写分析事件、不显示在页面。
+正式任务状态使用已认证客户会话、checkId 和服务端资源归属检查。匿名粗略结果单独使用 roughCheckId 与不可猜测 accessKey；accessKey 存在 HttpOnly 或等效安全状态中，不写分析事件、不显示在页面，也不能读取正式结果。
 
 ## 9.2 页面顶部
 
@@ -357,15 +364,15 @@ Check ID、Property、Unit、Stay Query、创建时间和邮件地址脱敏显�
 
 页面使用轮询或 Server-Sent Events 获取状态；失去连接不改变任务。用户可关闭页面，结果通过邮件通知。提供 Copy Check ID。
 
-# \[PG-RESULT\] 十、安全结果 /{locale}/result/{token}
+# \[PG-RESULT\] 十、已认证结果 /{locale}/account/checks/{checkId}
 
 ## 10.1 访问状态
 
-Valid、Expired、Withdrawn、Superseded、Invalid。Invalid、Expired 和 Withdrawn 不显示 Property 名称或结果摘要。
+Valid、Withdrawn、Superseded、Not Found。未认证、跨账户、无效和无归属请求统一不泄露 Property 名称或结果摘要。
 
 ## 10.2 Result Header
 
-Tymra Logo；Property；Sellable Unit；Stay Query；Generated at；Data last checked；Analysis version；Confidence；语言切换。语言切换使用同一 token，只改变文案。
+Tymra Logo；Property；Sellable Unit；Stay Query；Generated at；Data last checked；Analysis version；Confidence；语言切换。语言切换保持同一已认证 checkId，只改变文案。
 
 ## 10.3 Summary
 
@@ -399,7 +406,7 @@ Superseded 结果显示新版本可用提示并链接最新 token；Withdrawn �
 
 ## 11.3 Insufficient Data
 
-在 /status 和 /result 中作为正式结果状态。说明哪些日期可用、哪些缺失、为什么不能给建议。不得显示空白图表。
+在 /status 和 `/{locale}/account/checks/{checkId}` 中作为正式结果状态。说明哪些日期可用、哪些缺失、为什么不能给建议。不得显示空白图表。
 
 ## 11.4 Source Unavailable / Retry Later
 
@@ -435,7 +442,7 @@ Superseded 结果显示新版本可用提示并链接最新 token；Withdrawn �
 
 ## 13.3 移动后台
 
-Release 1 后台主要按桌面优化，但 768px 以下仍可完成紧急查看、接受建议、重试和暂停自动发布。复杂批量操作可以要求桌面。
+后台主要按桌面优化，但 768px 以下仍可完成紧急查看、接受建议、重试和暂停自动发布。复杂批量操作可以要求桌面。
 
 # \[PG-EXC\] 十四、Exception Inbox /admin/exceptions
 
@@ -515,11 +522,11 @@ Tabs：Overview、Collection Runs、Observations、Competitors、Analysis、Resu
 
 # \[PG-API\] 十八、页面与 API 绑定
 
-• 首页和 /check 使用 POST /api/v1/property-search。  
-• 创建任务使用 POST /api/v1/price-checks。  
+• `/check` 和 `/address-check` 使用 POST /api/v1/rough-checks；`/rough/{checkId}` 使用 GET /api/v1/rough-checks/{checkId} 和 POST /unlock。
+• 邮箱验证后创建正式任务使用 POST /api/v1/price-checks；必要的候选解析使用 POST /api/v1/property-search。
 • /property、/unit、/query 使用对应 confirm API。  
-• /status 使用 GET /api/v1/price-checks/{checkId}，需要 accessKey。  
-• /result 使用 GET /api/v1/results/{token}；反馈使用 POST /feedback。  
+• /status 使用 GET /api/v1/price-checks/{checkId}，需要客户会话和资源归属。
+• `/account/checks/{checkId}` 使用 GET /api/v1/customer/checks/{checkId}；反馈与在页交付确认使用该客户资源下的 feedback 和 acknowledge API。
 • Exception 页面使用 admin exceptions API。  
 • Price Check 管理使用 admin price-check APIs。  
 • Market、Collections、Data Sources 和 Audit 使用《业务规则》列出的 admin API。  

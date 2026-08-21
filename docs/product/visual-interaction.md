@@ -1,12 +1,12 @@
 # Tymra by Synix 视觉交互
 
-## 状态：Active — Release 1 Visual & Interaction Baseline v1.2｜基线集合：Tymra Release 1 Codex Build Baseline v1.2｜基线日期：2026-07-16
+## 状态：Active — Current Visual & Interaction Baseline v1.3｜基线集合：Tymra National Data Core Baseline v1.3｜基线日期：2026-08-21
 
-文档定位：本文件是 Tymra Release 1 的视觉系统、组件和交互实现契约，定义设计令牌、排版、响应式、公开流程、真实结果、Exception Inbox、后台工作台、状态反馈、动效、双语和无障碍。Codex 必须按本文建立共享 UI package 和页面样式，不得使用随机模板、未定义颜色、虚构数据或未经批准的交互模式。UI-\* 标识必须进入 docs/traceability.md，并映射到组件、页面和视觉回归测试。
+文档定位：本文件是 Tymra 当前开发版本的视觉系统、组件和交互实现契约，定义设计令牌、排版、响应式、公开流程、会员、真实结果、Exception Inbox、后台工作台、状态反馈、动效、双语和无障碍。Codex 必须按本文建立共享 UI package 和页面样式，不得使用随机模板、未定义颜色、虚构数据或未经批准的交互模式。UI-\* 标识必须进入 docs/traceability.md，并映射到组件、页面和视觉回归测试。
 
 ## 基线控制
 
-本文件属于 Tymra Release 1 Codex Build Baseline v1.2。视觉必须服从《需求说明》的产品边界、《业务规则》的状态语义和《页面结构》的路由层级。本文件只定义视觉令牌、排版、布局、组件状态、操作反馈、动效和无障碍；业务状态名、路由和 CTA 文案仅为上游引用，不在本文件创建新语义。通用颜色、尺寸和组件规则是默认值；页面专用章节的明确数值仅在该页面内优先。只有为满足可访问性、中文排版或响应式安全所必需时才允许局部调整，并保持令牌化。Phase 0 Preview 视觉不再作为当前主流程。
+本文件属于 Tymra 当前统一生产部署。视觉必须服从《需求说明》的产品边界、《业务规则》的状态语义和《页面结构》的路由层级。本文件只定义视觉令牌、排版、布局、组件状态、操作反馈、动效和无障碍；业务状态名、路由和 CTA 文案仅为上游引用，不在本文件创建新语义。通用颜色、尺寸和组件规则是默认值；页面专用章节的明确数值仅在该页面内优先。只有为满足可访问性、中文排版或响应式安全所必需时才允许局部调整，并保持令牌化。`DEPLOYED_HIDDEN` 的入口显隐完全服从《页面结构》，不得留下空白导航位或不可见可聚焦控件。
 
 # \[UI-GEN\] 一、设计目标
 
@@ -372,9 +372,9 @@ Tabs 使用水平可滚动但无页面横向溢出。Observation 表格固定日
 
 DataSourceStatusBadge 显示 PILOT、SUSPENDED、DISABLED、DEPRECATED、UNKNOWN；SourceHealthBadge 显示 HEALTHY、DEGRADED、DOWN。每项同时显示 Last success、Error rate 和 Retention。来源未启用或运行状态为 BLOCKED/DOWN 时使用 Warning/Danger 并禁止自动发布。
 
-# [UI-MEMBER] Post-Release 会员视觉与交互系统
+# [UI-MEMBER] 当前会员视觉与交互系统
 
-本章覆盖已批准会员范围，并在会员页面内覆盖 Release 1 “不创建用户 Dashboard/Billing”的旧视觉边界。它不引入团队、PMS 写入或自动调价界面。
+本章覆盖当前会员范围。它不引入团队、PMS 写入或自动调价界面。
 
 ## UI-MEMBER-1 客户 Shell 与导航
 
@@ -498,7 +498,7 @@ apps/web 页面只组合共享组件和业务容器；不得在每页创建新�
 
 ## 17.3 CSS
 
-颜色和间距使用 CSS variables 与 Tailwind theme，不在 JSX 内写十六进制颜色。支持 dark mode 不是 Release 1 范围，不创建未验收的暗色主题。
+颜色和间距使用 CSS variables 与 Tailwind theme，不在 JSX 内写十六进制颜色。Dark mode 不在当前范围，不创建未验收的暗色主题。
 
 ## 17.4 图标
 

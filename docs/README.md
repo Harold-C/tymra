@@ -4,7 +4,7 @@
 
 ## 记忆口径
 
-- `product/` 保存产品意图和已迁移的五份 Google 文档基线，不随一次运行结果改写。
+- `product/` 保存当前产品合同，是唯一产品权威来源，不随一次运行结果改写。
 - `traceability.md` 保存当前实现、当前工作树验证状态和尚未完成的边界，是状态事实源。
 - `implementation-plan.md` 保存下一步顺序、完成条件和当前风险，不重复维护需求全文。
 - `decisions.md` 保存稳定的产品与技术取舍；`evidence/` 只保存带日期的不可变验收快照。
@@ -12,13 +12,14 @@
 
 ## 产品
 
-- [产品基线与五份 Google 文档迁移清单](./product/README.md)
+- [产品基线与文档权威顺序](./product/README.md)
 - [需求说明](./product/requirements.md)
+- [全国住宿数据核心契约](./product/data-core.md)
 - [业务规则](./product/business-rules.md)
 - [页面结构](./product/page-structure.md)
 - [视觉与交互](./product/visual-interaction.md)
 - [核心策略](./product/core-strategy.md)
-- [Release 1.5 客户漏斗](./product/customer-funnel.md)
+- [客户漏斗](./product/customer-funnel.md)
 - [会员方案与完整功能合同](./product/membership-plans.md)
 
 ## 架构

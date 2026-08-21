@@ -2,10 +2,10 @@
 
 ## Status
 
-- Product decision: approved target membership structure, optimised commercial contract
+- Product decision: approved current membership structure and commercial contract
 - Effective definition date: 2026-08-10, Pacific/Auckland
-- Scope: post-Release 1 commercial product definition
-- Runtime status: specification only; a capability listed here must not be marketed as available until its implementation and production acceptance gates pass
+- Scope: current unified production deployment; initial public discovery state is `DEPLOYED_HIDDEN`
+- Runtime status: client routes, APIs, Worker flows, Stripe and data lifecycle deploy with the national data core; homepage, public navigation and marketing CTA entry points remain hidden until discovery is enabled
 
 ## Product decisions
 
@@ -67,7 +67,7 @@ All customer pages use the selected `en` or `zh` locale and preserve a safe rela
 | `/{locale}/account/billing` | Current plan, invoices, renewal, cancellation and Stripe Portal actions | Authenticated |
 | `/{locale}/account/settings` | Locale, service-notification preferences, sign-out and data/account actions | Authenticated |
 
-The global public header must expose **Sign in** when there is no valid customer session and **Account** plus **Sign out** when a valid session exists. Direct navigation to an authenticated route redirects to `/{locale}/sign-in?returnTo=...`; it must not redirect through the Price Check funnel.
+When public discovery is enabled, the global header exposes **Sign in** without a valid customer session and **Account** plus **Sign out** with a valid session. Under `DEPLOYED_HIDDEN`, the public header and marketing surfaces omit those entries, while direct routes remain deployed. Direct navigation to an authenticated route redirects to `/{locale}/sign-in?returnTo=...`; it must not redirect through the Price Check funnel.
 
 ### Required customer API boundary
 
@@ -327,7 +327,7 @@ One billing unit is one stable physical `Property`, exposed to members as a prop
 - Deactivation stops scheduled monitoring immediately but retains the occupied slot for 30 days. This prevents repeated address replacement from bypassing the plan limit.
 - Address identity uses the stable provider identity produced by the approved New Zealand address-resolution flow, not raw user-entered spelling.
 
-Internal compatibility names may continue to use `CustomerPricingUnit` and `activePricingUnitLimit`, but entitlement enforcement and customer-facing copy mean physical-property slots.
+The internal model uses `CustomerPricingUnit` and `activePricingUnitLimit`; entitlement enforcement and customer-facing copy mean physical-property slots. No legacy customer model or compatibility mapping is required.
 
 ## Prices and entitlements
 
@@ -585,7 +585,7 @@ Automatic price synchronisation may become a separately approved add-on after PM
 
 ## Launch gates
 
-This specification does not change Release 1 runtime capability. A paid plan may be offered only after the corresponding gates pass.
+All plans deploy in the current production version. A paid plan may be publicly offered only after the corresponding production gates pass and public discovery is enabled.
 
 ### Host gate
 

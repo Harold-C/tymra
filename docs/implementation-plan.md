@@ -1,6 +1,6 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-08-12
+Last updated: 2026-08-21
 
 ## 状态源与代码边界
 
@@ -15,13 +15,14 @@ Last updated: 2026-08-12
 ## 当前实现快照
 
 - 会员体系已实现独立邮箱/密码注册登录、Free 自动开户、邮箱验证、定价单位、额度、报告、
-  日历、风险归组、Admin 会员操作、Stripe 合同和开发环境 gated UI。付费与高级功能仍受
-  Launch Gate 约束，不得描述为生产可用。
+  日历、风险归组、Admin 会员操作、Stripe 合同和开发环境 gated UI。首次生产版本必须同时
+  部署公开 Price Check、客户登录、四档会员、Pricing、Stripe、客户结果和监测；初期仅从首页、
+  公共导航和营销 CTA 隐藏发现入口，隐藏状态不代替生产验收。
 - 地址和 OTA URL 都归一到真实 Property；一个 Property 只占一个会员房源额度。30 天占位、
   Benefit Group、设备/Property/付款主体和数据库唯一约束共同限制换地址及多账号套利。
 - 所有住宿业务日期使用 `Pacific/Auckland`；时间戳、证据和安全过期继续使用绝对 UTC。
 - OTA 执行范围固定为六个 active 渠道：Booking.com、Airbnb、Expedia、Bookabach、Agoda、
-  Trip.com。Wotif、Hotels.com、Vrbo 只保留禁用的合同兼容；Google Hotels 不在执行范围。
+  Trip.com。其他 OTA 不属于当前合同、发现、健康或验收范围，不保留旧渠道兼容要求。
 - Argus 负责浏览器采集和证据生命周期；Tymra 负责身份、额度、竞品选择、市场信号、价格
   建议和会员交付。开发 fixture 与真实公开页面结果必须明确隔离。
 - 开发环境提供 `demo1` 至 `demo4` 四个固定会员账号，对应 Free、Host、Pro、Portfolio；密码仅由开发配置派生或覆盖，不进入仓库明文。
@@ -35,6 +36,8 @@ Last updated: 2026-08-12
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
+| P0 | National Data Core v1.3 差距审计 | 对 `DATA-CORE-001..022` 逐项映射代码、Schema、任务、后台页面和测试，列出缺失项并更新追踪表 | 产品合同已更新；代码与 Schema 的完整差距审计尚未执行 |
+| P0 | 统一生产部署与隐藏入口 | 同一构建部署后台、Price Check、登录、四档会员、Pricing、Stripe、结果和监测；`DEPLOYED_HIDDEN` 只隐藏首页、公共导航、Footer 和营销 CTA，直接路由继续执行认证、归属、权益与支付检查 | 现有客户能力已有开发验收；新展示合同和统一生产配置需要实现与发布级回归 |
 | P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 2026-08-12 真实 Sandbox 已完成 Checkout、Host→Pro、Pro→Host 下期降级、取消/恢复和 Portal；37 个近期 webhook 全部处理且零错误，开发 seed 不再覆盖 Stripe-backed 订阅。生产配置仍未启用 |
 | P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 生产接单配置强制 managed 模式，并提供无效 token fail-closed readiness；真实 provider、容量和误判演练未执行 |
 | P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
@@ -47,10 +50,12 @@ Last updated: 2026-08-12
 
 ## 交付顺序
 
-1. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
-2. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
-3. canary 连续稳定后，另行评审 Scheduler 的分阶段启用；本次交付不自动开启生产调度。
-4. Stripe 进入生产前另行配置 live Prices、Portal、Webhook、税务与告警，并执行生产发布清单；Sandbox 验收不得替代生产授权。
+1. 完成 `DATA-CORE-001..022` 的代码、Schema、任务、页面与测试差距审计，并把结果更新到追踪表。
+2. 实现 `DEPLOYED_HIDDEN` 展示配置和统一生产部署合同，验证公开入口不可发现、直接路由可达且安全控制完整。
+3. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
+4. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
+5. canary 连续稳定后，分阶段启用 Scheduler；生产启动时必须覆盖全国分层计划，不以 Christchurch 作为调度边界。
+6. 配置 Stripe live Prices、Portal、Webhook、税务与告警并执行生产发布清单；Sandbox 验收不得替代生产授权。后台与客户能力作为同一个生产候选冻结、回归和回滚。
 
 ## 2026-08-12 发布护栏本地验收
 

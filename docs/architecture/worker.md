@@ -113,12 +113,13 @@ these alerts to a production monitoring service remains a deployment responsibil
 
 ## External Limits
 
-Tymra implements the active durable Argus boundary for six public OTA brands: Booking.com, Airbnb,
-Expedia, Bookabach, Agoda and Trip.com. Wotif, Hotels.com and Vrbo remain disabled contract-compatible
-providers and do not participate in discovery or health gates. Address-first checks validate a
-target listing against
-the confirmed LINZ address before rate collection; conflicts, imprecise locations, challenges and
-incomplete prices stop with an explicit confirmation or limited state. After target collection, a
+Tymra implements the active durable Argus boundary for exactly six public OTA brands: Booking.com,
+Airbnb, Expedia, Bookabach, Agoda and Trip.com. Other OTA brands are outside the current connector,
+discovery, health and acceptance contract. `LISTING_PRICING` validates a target Listing and its
+Property identity before rate collection. `LOCATION_BENCHMARK` resolves a New Zealand address to a
+stable Property／spatial anchor, allows `targetListingId=null` and keeps nearby prices attributed to
+their actual Listings. Conflicts, imprecise locations, challenges and incomplete prices stop with an
+explicit confirmation or limited state. After target collection or address resolution, a
 user-triggered bounded catalog job resolves the first usable comparable synchronously so one valid
 public price is not blocked by full competitor expansion. Search cards that do not
 publish a usable room capacity are resolved through the same source's `resolve_listing` workflow

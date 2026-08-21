@@ -1,10 +1,10 @@
-# Tymra Release 1 And 1.5 Product And Technical Decisions
+# Tymra Product And Technical Decisions
 
-Last updated: 2026-08-11
+Last updated: 2026-08-21
 
-This file records completed Release 1 implementation decisions and the recommended Release 1.5
-product decisions. D-015 onward are proposed and not implemented until their acceptance evidence is
-complete unless an individual decision explicitly records product approval.
+This file records current product and technical decisions. Decision history explains rationale but
+does not create migration or compatibility requirements; current scope and verification status are
+defined by the active product documents and `docs/traceability.md`.
 
 ## D-001 Preserve The Existing Root Web Application (Superseded)
 
@@ -41,7 +41,8 @@ It also lets secure HttpOnly sessions, API validation and noindex metadata share
 or append-only records have explicit version/idempotency keys and no update path in normal services.
 
 **Reason:** Prisma is required by the baseline. Opaque IDs are convenient for local and distributed
-creation, while public access still requires a separate hashed access key or result token.
+creation, while anonymous rough-task status uses a hashed access key and formal results use an
+authenticated customer session with server-side ownership checks.
 
 ## D-005 Persistent Worker Claiming
 
@@ -62,7 +63,7 @@ enabled and operationally healthy, and all quality gates pass.
 
 **Decision:** Host development supports `EMAIL_PROVIDER=log` as a zero-dependency option. Compose
 defaults to SMTP through Mailpit so complete local messages can be inspected. Email logging stores
-only delivery metadata and redacts complete secure links.
+only delivery metadata and redacts verification links and tokens.
 
 **Reason:** Both paths are locally demonstrable without external credentials.
 
@@ -72,19 +73,20 @@ only delivery metadata and redacts complete secure links.
 `ADMIN_PASSWORD_HASH`. Password verification and session creation happen server-side. The session
 cookie is signed, HttpOnly, SameSite=Lax, Secure outside plain local HTTP, and has a bounded lifetime.
 
-**Reason:** This is the smallest implementation satisfying the baseline without adding Release 2
-accounts or roles.
+**Reason:** Admin identity remains isolated from customer accounts, cookies and authorization.
 
-## D-009 Secure Public Access
+## D-009 Secure One-Time Verification
 
-**Decision:** Generate 32 random bytes for result tokens and access keys. Persist only keyed hashes,
-never complete values. Result links default to 14 days and support supersede, revoke and reissue.
+**Decision:** Generate 32 random bytes for one-time verification tokens and anonymous rough-task
+access keys. Persist only keyed hashes, never complete values. Verification tokens are purpose-bound,
+single-use, expire after 15 minutes and are removed from the URL after consumption. Formal results
+use authenticated customer sessions and do not support durable bearer result links.
 
-**Reason:** This meets the 256-bit requirement and makes database disclosure insufficient for link
-access.
+**Reason:** This meets the 256-bit requirement, keeps short-lived secrets out of storage and prevents
+URL possession from granting durable report access.
 
-The host Web launcher additionally redacts result route segments from Next.js development access
-logs because framework request logging occurs below the application logger.
+The host Web launcher additionally redacts verification route segments from Next.js development
+access logs because framework request logging occurs below the application logger.
 
 ## D-010 Local Domain And Service Lifetime
 
@@ -132,7 +134,8 @@ text fallback until a formal SVG is supplied. Do not generate a replacement bran
 
 ## D-015 Two-Stage Customer Funnel
 
-**Status:** Product-approved; implemented and locally verified.
+**Status:** Product-approved; the two-stage flow is implemented, but current two-mode input and
+hidden-entry acceptance require fresh verification.
 
 **Decision:** Replace the email-first public flow with two stages: an anonymous low-cost rough result,
 followed by email verification and an authenticated formal Price Check. The rough result must provide
@@ -177,11 +180,12 @@ consuming provider, Worker and storage resources.
 
 ## D-019 Authenticated Formal Reports
 
-**Status:** Product-approved; implemented and locally verified.
+**Status:** Product-approved; authenticated ownership is implemented, but obsolete bearer-result
+route removal and fresh route acceptance remain unverified.
 
-**Decision:** New formal reports are protected by customer sessions and server-side ownership checks.
-Durable bearer result tokens are not the primary Release 1.5 access model. Existing Release 1 links
-remain valid only for their bounded migration lifetime; public sharing is deferred.
+**Decision:** Formal reports are protected by customer sessions and server-side ownership checks.
+Durable bearer result tokens are not a supported customer access model; public sharing is deferred.
+No legacy result-link compatibility path is required.
 
 **Reason:** Session-owned reports provide revocation, history and cross-account isolation without
 placing durable report authority in a URL.
@@ -194,11 +198,10 @@ placing durable report authority in a URL.
 two-minute notification grace period. The authenticated page records an idempotent acknowledgement
 only after the terminal result renders; the terminal email is sent when that acknowledgement is
 absent at the end of the grace period. Partial, insufficient and failed terminal emails replace
-`RESULT_READY`. The Release 1 happy-path triggers `CHECK_RECEIVED`, in-page
-`CONFIRMATION_REQUIRED` and immediate `CHECK_PROCESSING` are removed.
+`RESULT_READY`. `CHECK_RECEIVED`, in-page `CONFIRMATION_REQUIRED` and immediate
+`CHECK_PROCESSING` are not part of the current happy path.
 
-**Reason:** The Release 1 email type list defined supported templates, not a requirement to send every
-transition. Conditional delivery reduces noise and avoids sending messages that repeat the page the
+**Reason:** Conditional delivery reduces noise and avoids sending messages that repeat the page the
 customer is already using.
 
 ## D-021 Layered Abuse And Quota Controls
@@ -216,7 +219,7 @@ signal.
 **Reason:** Progressive controls protect cost and email reputation without unnecessarily blocking
 operators on shared hotel or office networks.
 
-## D-022 No Exclusive Property Claim In Release 1.5
+## D-022 No Exclusive Property Claim
 
 **Status:** Product-approved; implemented and locally verified.
 
@@ -225,7 +228,7 @@ customers may analyse the same property. PMS ownership verification, teams and o
 deferred.
 
 **Reason:** Exclusive claims require stronger business verification and support processes that are
-outside the first customer-account release.
+outside the current product scope.
 
 ## D-023 Proposed Retention Defaults
 
@@ -250,26 +253,29 @@ complete, and animation failure cannot block the result.
 **Reason:** The desired experience should feel sophisticated without misrepresenting work or reducing
 accessibility and reliability.
 
-## D-025 Supported OTA Link With Automatic Default Context
+## D-025 Supported OTA Link Or New Zealand Address With Explicit Target Mode
 
-**Status:** Product-approved; implemented and locally verified.
+**Status:** Product-approved current contract; implementation and fresh two-mode acceptance require
+audit.
 
-**Decision:** The anonymous new-visitor flow accepts only a valid supported OTA listing URL as the
-pricing-analysis input. A property name or natural address cannot directly start analysis. The flow
-does not ask the visitor to select dates, guest count or room type. Tymra uses supported pricing
-context carried by the URL when present; otherwise it captures the configuration actually shown by
-the OTA's default listing view, including the default room or unit when multiple options exist.
+**Decision:** The anonymous new-visitor flow accepts either a valid supported OTA listing URL or a
+resolvable New Zealand address. A URL selects `LISTING_PRICING`; an address selects
+`LOCATION_BENCHMARK` with `targetListingId=null`. The flow does not ask the visitor to select dates,
+guest count or room type. URL mode uses supported pricing context carried by the URL when present or
+captures the OTA's observed default listing context. Address mode uses the standard Stay Query and a
+bounded, disclosed geographic expansion to find nearby public listings.
 
 Tymra must normalize the platform and stable listing ID, remove unrelated and sensitive URL
 parameters, record the source, observed context and capture time, and disclose the relevant context
 with the rough result. A syntactically valid link is insufficient: an inactive, inaccessible,
 unsupported or non-price-bearing listing returns an honest terminal state and no fabricated price.
-Natural-address discovery may be added later, but analysis cannot start until the visitor selects a
-valid supported OTA listing.
+Address mode must resolve a stable Property／spatial anchor, keep every price attributed to its
+actual nearby Listing, and never describe a neighbourhood observation as the submitted property's
+own price. Address and URL variants that resolve to one physical Property share one membership slot.
 
-**Reason:** A natural address does not identify the OTA listing, displayed room or current pricing
-context needed for a meaningful comparison. Automatic use of the observed default configuration
-keeps the first interaction frictionless while preserving an auditable explanation of the result.
+**Reason:** Many operators know only a physical address and need surrounding market prices, while an
+OTA URL permits a target-specific price result. Explicitly separating the modes preserves honest
+price attribution without excluding either valid customer need.
 
 ## D-026 Worker Baseline v1 Source And Fixture Boundary
 
@@ -479,27 +485,14 @@ request, three success artifacts and no active browser task left behind.
 
 **Status:** Implemented and verified.
 
-**Decision:** The five product documents formerly stored in the Google Drive folder `nbc/tymra` are
-preserved in full under `docs/product`. That directory and its manifest are the canonical
-local project memory. The four Release 1 v1.2 documents retain their own stated precedence;
-`core-strategy.md` remains the longer-term data-collection and price-analysis strategy, bounded by
-current release decisions and traceability evidence.
-
-The source Google Docs may be permanently deleted only after every target ID and parent folder are
-verified, every fresh Markdown export matches its local file after final-newline normalization, the
-manifest contains source identity and local hashes, and project documentation points to the local
-baseline. Same-named files outside `nbc/tymra` are excluded.
+**Decision:** `docs/product` is the only canonical product baseline. No Google Doc, exported hash,
+legacy release document or external copy acts as an authority or compatibility source.
 
 **Reason:** A single local system of record keeps product intent versionable beside implementation
 and prevents future work from depending on deleted or ambiguous same-named Drive files.
 
-**Verification:** Five documents totaling 2,392 lines and 170,069 local bytes passed fresh-export
-content comparison. The migration manifest records the exact source file IDs, source modification
-times, local paths and SHA-256 values. README and traceability now resolve the local baseline. The
-first connector deletion attempt returned `403 appNotAuthorizedToFile` and changed no files; the
-five verified targets were subsequently moved to trash and permanently deleted through the
-authenticated Google Drive UI. The source folder then listed no files, the five targets disappeared
-from trash, and Drive metadata lookup returned `404 Not Found` for every recorded source ID.
+**Verification:** Product README, current requirement precedence and traceability resolve only
+repository files.
 
 ## D-034 Use Explicit Application Boundaries And Remove Phantom Packages
 
@@ -562,9 +555,9 @@ Eventfinda groups canonical URLs and expands all advertised dates from one detai
 Ticketmaster persists complete five-city listing records directly and sends only incomplete groups
 to its bounded detail frontier. Other public collectors deduplicate references, raw identities and
 normalised identities, use a lightweight touch path for unchanged records and expose avoided-request
-counters. A single development-only runner executes all 17 configured non-OTA public sources twice
-inside one fixed window and checks lineage, configuration preservation, disabled schedules and zero
-second-pass source/link growth.
+counters. A single development-only runner derives the current enabled acceptance set from the
+Source Registry, executes every selected public source twice inside one fixed window and checks
+lineage, configuration preservation, disabled schedules and zero second-pass source/link growth.
 
 **Reason:** Request volume, challenge exposure and duplicate canonical writes are operational risks,
 not just performance details. One bounded runner makes the same persistence and idempotency contract
@@ -603,10 +596,10 @@ disabled.
 **Status:** Tymra implementation complete; live cross-service acceptance pending.
 
 **Decision:** Tymra actively collects Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com
-through one versioned OTA contract. Wotif, Hotels.com and Vrbo remain disabled compatibility
-providers and are excluded from discovery, health gates and production claims. Every Listing stores both the public brand
-and its provider family. Expedia/Wotif/Hotels.com share `EXPEDIA_GROUP`; Bookabach/Vrbo share
-`VRBO_GROUP`; Booking/Agoda share `BOOKING_HOLDINGS`. Address-driven discovery is bounded to eight
+through one versioned OTA contract. Other OTA brands are outside the current contract and require
+no compatibility path. Every Listing stores both the public brand and its provider family.
+Booking.com/Agoda share `BOOKING_HOLDINGS`; the other active brands retain their configured family.
+Address-driven discovery is bounded to eight
 competitor listings, retains each observed brand quote, and maps equivalent property/unit identities
 to the same canonical records before analysis so one accommodation is not counted repeatedly.
 
@@ -614,8 +607,7 @@ to the same canonical records before analysis so one accommodation is not counte
 family. Keeping both dimensions preserves evidence while preventing duplicated supply from inflating
 competitor counts.
 
-**Verification:** URL, provider contract and cross-brand duplicate tests retain compatibility coverage
-for all nine providers; active-scope tests restrict execution to the six accepted providers.
+**Verification:** URL, provider contract and cross-brand duplicate tests cover the six current providers.
 Argus fixture contracts and a final bounded cross-service run remain required before any new source
 is described as externally verified. User-triggered jobs remain the only OTA execution path and
 automatic scheduling stays disabled.
@@ -870,3 +862,67 @@ preserves useful evidence without falsely attributing a nearby rate to the submi
 enforce stable physical-Property quota identity, return a single valid applicable observation and
 keep recommendation status independent. Public EN/ZH browser checks verify separate OTA-link and
 address entry points. Production launch still requires a bounded real-provider address-benchmark run.
+
+## D-049 Treat The Accommodation Data Core As The Asset And Product Surfaces As Outputs
+
+**Status:** Product-approved strategy; no additional product surface is approved by this decision.
+
+**Decision:** Tymra's current strategic core is New Zealand accommodation market intelligence, not
+an unbounded general-purpose New Zealand data warehouse. The system continuously accumulates
+versioned and comparable evidence about accommodation identity, public prices, availability,
+demand signals and change over time. The member experience is the first commercial surface over
+that core. Future group, tourism-market, accommodation-investment, event-impact or API/data-service
+surfaces may reuse the same core only after their users, contracts, launch gates and
+commercial promises are independently approved.
+
+The core asset must preserve a unified Source Registry, explicit source/effective/collection/ingest
+time semantics, raw/normalised/derived layers, Confidence and Freshness, address-to-OTA identity,
+Listing change history and end-to-end Data Lineage. Short-lived Argus evidence may still be purged
+after verified ACK; durable lineage relies on permitted normalised facts, source identifiers,
+timestamps, quality state and hashes rather than indefinite retention of browser material.
+
+**Reason:** Pages and individual workflows can be reproduced. Long-running national coverage,
+stable accommodation identity, historical depth, calibrated quality and auditable provenance are
+the compounding assets that make later analysis and additional products defensible.
+
+**Verification:** This decision clarifies strategy and data-governance requirements only. Current
+implementation status remains governed by `docs/traceability.md`; each future surface requires its
+own approved requirements and acceptance evidence before it may be described as available.
+
+## D-050 Deploy The Nationwide Data Core And Hidden Client Surface Together
+
+**Status:** Product-approved current baseline; documentation updated, implementation gap audit
+required.
+
+**Decision:** New Zealand nationwide accommodation data collection is current scope now.
+Christchurch remains an early real-acceptance and regression market but is not a product, scheduler
+or data-coverage boundary. Nationwide coverage means five explicit layers: the national
+Property/Unit/Listing identity directory, national public market signals, a stratified
+representative OTA price/availability panel, bounded on-demand collection for any reliably resolved
+New Zealand address or supported OTA URL, and plan-aware daily monitoring for activated
+member properties. It does not mean recollecting every listing, OTA and future day combination.
+
+The same production version deploys the internal collection backend, Worker, scheduler, source
+health, exceptions, coverage and data-asset operations together with public Price Check, customer
+sign-in, membership, plan pricing, Stripe billing and customer results. Client discovery initially
+uses `DEPLOYED_HIDDEN`: homepage, public navigation and marketing CTA entries are hidden, while the
+routes, APIs, Worker paths, database and webhooks remain deployed and must pass production gates.
+Hidden discovery never substitutes for authentication, authorization or entitlement checks.
+
+The Source Registry remains an operational registry of source identity, data domain, capabilities,
+lifecycle, enablement, health, schedule, concurrency/budget, retention and ownership. Sources use
+capability-based contracts rather than a universal OTA method set.
+
+Price facts and recommendations remain separate. One valid, attributable and query-compatible
+public price produces a successful price result; weak comparable or market-signal evidence limits
+only the recommendation. Address snapshots may have no target Listing and must not fabricate one.
+
+**Reason:** A Christchurch-only dataset cannot compound into a defensible national accommodation
+market asset. One production artifact prevents the hidden client surface and data core from drifting
+into separate architectures while allowing Tymra to delay public discovery during early data
+accumulation.
+
+**Verification:** `docs/product/data-core.md` defines `DATA-CORE-001..022`. The current codebase must
+be audited against those clauses before the backend is called nationwide-production-ready.
+Customer-browser, membership and Stripe paths require production acceptance even while their entry
+points remain hidden.

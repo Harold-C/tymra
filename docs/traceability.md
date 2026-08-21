@@ -1,10 +1,12 @@
-# Tymra Release 1 And 1.5 Traceability
+# Tymra Current Development Traceability
 
 Last updated: 2026-08-21
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
-Release 1.5 uses `proposed`, `not_implemented`, `implemented_not_verified`, `verified_gated_off`, and `verified`. No
-Release 1.5 row may inherit `verified` from Release 1 evidence.
+The current baseline uses `proposed`, `not_implemented`, `partially_implemented_not_verified`,
+`implemented_not_verified`, `verified_for_prior_development_candidate`, `historical_verified`, and
+`verified`. A development candidate is not a production release. Prior dated evidence is
+informational only and does not create compatibility requirements.
 
 The tables below contain both current status and explicitly dated historical evidence. A historical
 `verified` result remains valid for that snapshot but does not mean the current revision was
@@ -25,29 +27,30 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 | School Sport NZ / Canterbury | Fresh two-pass cross-service collection through `api.argus.test`; 20/6 NZ raw/promoted and 13/0 Canterbury raw/promoted; local evidence retained before ACK | Production activation and schedule activation remain separate |
 | Ticketek | Fresh two-pass listing/detail collection succeeded through `api.argus.test`; 15 raw records and 11 events per pass, with zero second-pass growth | Production activation remains separate; source remains disabled |
 | Manual import | Parser and database regression verified | `not_verified`: genuine operator export and two-pass real-file evidence are missing |
-| Six active public OTA channels | Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com have strict Argus contracts, stable provider-family identity, bounded comparable discovery/rate workflows, evidence lifecycle and cross-brand deduplication. The retained 2026-08-17 soak cycle 1 passed; cycle 2 was cancelled under the documented 2026-08-21 manual release waiver | The automated two-day soak remains `NOT_PASSED`; Wotif, Hotels.com and Vrbo are disabled compatibility only; Google Hotels is excluded; production capacity and long-term page stability remain unverified |
+| Six active public OTA channels | Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com have strict Argus contracts, stable provider-family identity, bounded comparable discovery/rate workflows, evidence lifecycle and cross-brand deduplication. The retained 2026-08-17 soak cycle 1 passed; cycle 2 was cancelled under the documented 2026-08-21 manual release waiver | The automated two-day soak remains `NOT_PASSED`; all other OTA brands are outside the current contract; production capacity and long-term page stability remain unverified |
 
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
 
-## Current Worktree Verification (2026-08-12)
+## Latest Development Candidate Verification And Current Documentation Delta (2026-08-21)
 
-The current revision includes the complete development membership surface, P0/P1/P2 anti-abuse
-controls, New Zealand business-date policy, the feature-oriented membership directory boundary and
-the corrected public distinction between target-listing pricing and address neighbourhood benchmarks.
-Git state is not used as verification evidence.
+The latest development-candidate code evidence predates this documentation-only National Data Core v1.3
+baseline. It includes the complete development membership surface, P0/P1/P2 anti-abuse controls,
+New Zealand business-date policy, address benchmarks, the OTA soak waiver and cross-browser canary.
+The new `DATA-CORE-001..022` contract has not yet received a code/schema implementation-gap audit or
+fresh regression. Git state is not used as verification evidence.
 
 | Gate | Fresh evidence from current worktree | Status |
 | --- | --- | --- |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
 | TypeScript | Web, Worker, config, db, domain, providers and queue passed `tsc --noEmit` | verified |
-| Web/domain/provider/database unit suite | 218 tests passed; 5 external provider fixtures intentionally skipped | verified |
-| Worker unit suite | 135 tests passed, including release canary、privacy-safe alerts、member scheduling、Argus boundary and New Zealand date policy | verified |
+| Web/domain/provider/database unit suite | Latest development-candidate evidence: 222 tests passed; 5 external provider fixtures intentionally skipped | verified_for_prior_development_candidate |
+| Worker unit suite | Latest development-candidate evidence: 141 tests passed, including release canary、privacy-safe alerts、member scheduling、Argus boundary and New Zealand date policy | verified_for_prior_development_candidate |
 | Database/API/Worker integration | 105 tests passed against a clean, migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified |
 | Membership/risk focused regression | Membership integration file passed all 19 scenarios, including Pricing Unit collection/detail GET and confirmed-check POST; configuration/security suites passed the managed-provider and feature-gate contracts | verified |
-| Production build and runtime | Worker entrypoints built and Next.js generated 114 pages; isolated Compose smoke passed and normal development public/Admin routes return HTTP 200. The restored default live Worker currently fails readiness closed because external `api.argus.test` returns 404 for health/readiness; only the known optional LinkeDOM `canvas` warning appeared | verified_application_external_argus_unavailable |
-| Member browser QA | Free、Host、Pro and Portfolio fixture contracts passed in the current desktop and mobile Playwright runs; all EN/ZH authenticated member routes, customer/Admin credential safety and the Admin workspaces were exercised | verified for named fixture paths; live provider remains separate |
-| Playwright/accessibility matrix | Desktop passed all 19 locally executable scenarios and mobile passed all 17 locally executable scenarios through canonical `https://tymra.test`, including axe serious/critical、keyboard、reduced motion、compact width、bilingual navigation、Mailpit and status boundaries. Live Argus、Stripe-hosted lifecycle and desktop-only/mobile-only exclusions remain explicit skips | verified for all locally executable paths |
+| Production build and runtime | Latest development-candidate evidence: Worker entrypoints built, Next.js generated 114 pages, isolated Compose smoke passed, Argus health/readiness and Tymra Worker readiness returned HTTP 200 | verified_for_prior_development_candidate |
+| Member browser QA | Free、Host、Pro and Portfolio fixture contracts passed named desktop and mobile paths; the new `DEPLOYED_HIDDEN` discovery behaviour has not been implemented or rerun | implemented_not_verified |
+| Playwright/accessibility matrix | Latest development-candidate evidence: five-browser canary 36 passed with 4 intentional skips; Chromium desktop 19 passed with 2 skips; mobile 17 passed with 4 skips; Compose smoke passed through canonical `https://tymra.test` | verified_for_prior_development_candidate |
 | Payment/challenge/monitoring | Stripe Sandbox configuration readiness passed. A fresh hosted-Checkout browser revalidation reached Stripe Sandbox with an active test-card submission but did not return to Tymra before the external timeout, so it is not recorded as a fresh lifecycle pass. Managed challenge readiness remains blocked by absent provider URL/site key/secret. Privacy-safe `/worker/alerts` and the single-source 2×2 canary gate are implemented; Stripe live、production challenge/provider、dashboard、notification routing、capacity and SLA remain external | test_mode_readiness_verified_external_lifecycle_not_verified |
 
 The active OTA scope is exactly the six channels listed above. Development Scheduler remains off.
@@ -60,15 +63,16 @@ availability or production readiness.
 | --- | --- | --- | --- |
 | PRD-PRODUCT, PRD-OVERVIEW, PRD-USERS | Public copy, locale messages, legal/methodology content | Public page and copy tests | verified |
 | PRD-GOALS, PRD-PRINCIPLES, PRD-AUTOMATION | Domain decisions, worker pipeline, publication policy | Decision and worker integration tests | verified |
-| PRD-SCOPE | Public routes, admin routes, API, worker and database | Route inventory and E2E suites | verified |
-| PRD-DATA | Prisma models, append-only services, provider metadata | Database integration tests | verified |
-| PRD-RESULT | Result versions, insights, secure links and feedback | Result API and E2E tests | verified |
+| PRD-SCOPE unified production deployment | Existing Admin/client routes, APIs, Worker and database; nationwide scope and `DEPLOYED_HIDDEN` navigation/CTA behaviour require a fresh gap audit | Prior route inventory and E2E suites do not prove the new deployment contract | implemented_not_verified |
+| PRD-DATA 6.1–6.7 | Prisma market models, append-only services, provider metadata and collection modes | Database integration tests | verified |
+| DATA-CORE-001..022 / D-049 / D-050 | Existing source, observation, identity, quality and collection models cover parts of the contract; capability registry, versioned identity/history, generic lineage, address-mode snapshot and nationwide acceptance gaps require audit | No dedicated National Data Core v1.3 implementation/acceptance run yet | partially_implemented_not_verified |
+| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Existing customer-session and ownership tests pass; durable bearer-result code removal and route inventory require a fresh audit | implemented_not_verified |
 | PRD-OPS | Exception Inbox and operational views | Admin API and Playwright tests | verified |
 | PRD-MARKET | Market records, NZ eligibility and locale behaviour | Domain and bilingual flow tests | verified |
-| PRD-COMMERCIAL, PRD-ROLES | Release 1 route guardrails and single admin | Route absence and auth tests | verified |
+| PRD-COMMERCIAL, PRD-ROLES | Single-admin and customer/member surfaces exist; client discovery must be hidden without disabling deployed routes or security | Fresh production-config, direct-route, navigation and Stripe evidence required | implemented_not_verified |
 | PRD-METRICS | Event contracts and operational aggregates | Event payload and metrics tests | verified |
 | PRD-NFR, PRD-COMPLIANCE | Config guards, audit, redaction, Docker and docs | Security, production-start and Compose checks | verified |
-| PRD-AT-001..010 | End-to-end release acceptance | Release acceptance Playwright project | verified |
+| PRD-AT-001..010 | End-to-end development-candidate acceptance | Existing Playwright project predates PRD-AT-010 unified deployment and hidden-entry contract | implemented_not_verified |
 | PRD-CODEX | Workspace, commands, docs, CI and verification | `pnpm verify`, Compose and CI | verified |
 
 Grouped identifiers retain the exact requirement-family names from the baseline documents. The
@@ -88,8 +92,8 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | BR-CONF, BR-RISK, BR-DEC | Confidence, risk and publication decisions | Decision table tests | verified |
 | BR-EXC | Exception model, actions, priority and workspace | Admin API/E2E tests | verified |
 | BR-DATA | Append-only records and identity merge history | Database integration tests | verified |
-| BR-RES | Immutable results, links and notifications | Link/version/email tests | verified |
-| BR-API | `/api/v1` response and error contracts | Public/admin API tests | verified |
+| BR-RES | Immutable results, authenticated ownership and notifications | Existing version/email/session tests pass; obsolete bearer-result removal and conditional delivery need fresh regression | implemented_not_verified |
+| BR-API | `/api/v1` response and error contracts | Rough/customer APIs exist; current two-mode input, authenticated result route inventory and obsolete endpoint removal need fresh audit | implemented_not_verified |
 | BR-FB | Feedback and learning boundaries | Feedback integration tests | verified |
 | BR-LIMIT | Idempotency, free-check reuse and rate limits | Abuse/idempotency tests | verified |
 | BR-PRIV, BR-SEC | Consent, retention, hashing, redaction and audit | Security tests | verified |
@@ -102,11 +106,11 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | Requirement | Route/module | Automated evidence | Status |
 | --- | --- | --- | --- |
 | PG-IA, PG-ROUTES | Root redirect, `/en`, `/zh`, all listed public/admin routes | Route inventory test | verified |
-| PG-LAYOUT, PG-HOME | Public shell and locale home | EN/ZH desktop/mobile E2E | verified |
-| PG-CHECK | `/{locale}/check` | Validation and submission E2E | verified |
+| PG-LAYOUT, PG-HOME | Public shell and locale home | Earlier EN/ZH desktop/mobile E2E predates nationwide coverage copy and hidden discovery | implemented_not_verified |
+| PG-CHECK | `/{locale}/check`, `/{locale}/address-check` and `/{locale}/rough/{checkId}` | Routes exist; current two-mode, pre-email rough-value and no-formal-provider-before-verification contract needs fresh E2E | implemented_not_verified |
 | PG-PROPERTY, PG-UNIT, PG-QUERY | Confirmation routes and APIs | Candidate/unit/query E2E | verified |
-| PG-STATUS, PG-BIZSTATE | Persisted task status and terminal states | Status matrix tests | verified |
-| PG-RESULT | Secure result route and feedback | Valid/expired/withdrawn E2E | verified |
+| PG-STATUS, PG-BIZSTATE | Persisted task status and terminal states | Existing status matrix predates authenticated formal-status and separate rough access contract | implemented_not_verified |
+| PG-RESULT | Authenticated owner-only account result route and feedback | Earlier secure-link E2E is historical; bearer-route removal, account route and ownership need fresh inventory and browser acceptance | implemented_not_verified |
 | PG-PUBLIC | Methodology, FAQ, contact and legal routes | Public route/copy tests | verified |
 | PG-ADMIN | Protected admin shell and sign-in | Auth and 403 tests | verified |
 | PG-EXC, PG-EXC-DETAIL | Inbox and single-screen workspace | Admin E2E tests | verified |
@@ -115,7 +119,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | PG-API, PG-SHARED | Uniform response and page state handling | HTTP error matrix tests | verified |
 | PG-RESP, PG-SEO | Responsive layouts, metadata and noindex | Viewport and metadata tests | verified |
 | PG-EVT | Safe analytics binding | Event tests | verified |
-| PG-AT-001..008 | Complete page acceptance | Playwright release suite | verified |
+| PG-AT-001..008 | Complete page acceptance | Existing Playwright suite predates the current nationwide, two-mode and hidden-entry page contract | implemented_not_verified |
 
 ## Visual And Interaction Requirements
 
@@ -124,26 +128,27 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | UI-GEN, UI-BRAND, UI-TOKEN, UI-TYPE | `apps/web/app/globals.css`, Web components and typography | Component tests plus post-move desktop/mobile browser QA | verified |
 | UI-LAYOUT | Public, result and admin layout primitives | 390, 1440 and 1920 browser QA plus responsive Playwright | verified |
 | UI-COMP, UI-IMPL | Shared buttons, fields, cards, states, tables and dialogs | Component interaction tests | verified |
-| UI-HOME, UI-CHECK, UI-RESULT | Product-specific feature compositions | EN/ZH desktop/mobile Playwright and browser screenshots | verified |
+| UI-HOME, UI-CHECK, UI-RESULT | Product-specific feature compositions | Existing EN/ZH desktop/mobile evidence predates nationwide copy, two target modes and hidden public discovery | implemented_not_verified |
 | UI-STATE, UI-FORM | Canonical status mapping and async feedback | State matrix tests | verified |
 | UI-OPS | Admin shell, inbox, workspace and operations | Admin visual/E2E tests | verified |
 | UI-MOTION | Motion tokens and reduced-motion behaviour | Reduced-motion tests | verified |
 | UI-A11Y | Semantic forms, keyboard, focus and non-colour cues | axe plus keyboard tests | verified |
 | UI-I18N | `next-intl` messages and locale formatting | Translation parity tests | verified |
 | UI-SEO | Metadata, hreflang, noindex and redaction | Metadata/security tests | verified |
-| UI-QA, UI-AT-001..008 | Full visual acceptance matrix | Screenshot and accessibility projects | verified |
+| UI-QA, UI-AT-001..008 | Full visual acceptance matrix | Existing screenshot/accessibility projects require rerun after current page-contract implementation | implemented_not_verified |
 
-## Release 1.5 Customer Funnel Requirements
+## Customer Funnel Requirements
 
-Authoritative source: [Release 1.5 customer funnel requirements](product/customer-funnel.md).
+Authoritative source: [Customer funnel requirements](product/customer-funnel.md).
 
 | Requirement | Planned implementation boundary | Required evidence | Status |
 | --- | --- | --- | --- |
-| R15-FLOW-001 | Anonymous supported-listing input, persisted `AnonymousCheck`, rough-result route and UI | EN/ZH desktop/mobile E2E obtains value without email | verified |
+| R15-FLOW-001 | Anonymous supported OTA URL or New Zealand address input, persisted `AnonymousCheck`, rough-result route and UI | Existing URL E2E obtains value without email; address-mode rough flow needs fresh EN/ZH desktop/mobile evidence | implemented_not_verified |
 | R15-FLOW-002 | Rough-result presentation contract and limitation copy | Browser assertions distinguish rough/demo/formal evidence | verified |
-| R15-INPUT-001 | Supported OTA URL allowlist, URL normalization, listing-ID resolution and invalid-input states | 7 resolver tests plus valid/invalid browser coverage | verified |
-| R15-INPUT-002 | Automatic URL-context/default-context resolver with no anonymous date, guest or room controls | Resolver tests and control-absence E2E | verified |
-| R15-INPUT-003 | Observed-context persistence/disclosure and `NO_DEFAULT_QUOTE` terminal handling | Persistence/browser disclosure plus no-default-quote integration regression | verified |
+| R15-INPUT-001 | OTA URL selects `LISTING_PRICING`; resolvable New Zealand address selects `LOCATION_BENCHMARK`; invalid target states fail closed | Existing URL resolver tests pass; unified two-mode browser and API contract requires implementation audit | implemented_not_verified |
+| R15-INPUT-002 | URL context/default context or address standard Stay Query with no anonymous date, guest or room controls | Existing URL resolver/control-absence evidence passes; address geographic-expansion path needs fresh evidence | implemented_not_verified |
+| R15-INPUT-003 | Target-mode, observed-context and address-scope persistence/disclosure plus honest no-quote terminal handling | Existing URL persistence and `NO_DEFAULT_QUOTE` tests pass; address disclosure needs fresh integration/browser regression | implemented_not_verified |
+| R15-INPUT-004 | Address mode has no fabricated target Listing or price attribution; URL/address variants of one Property share one slot | Membership mode/identity tests cover parts; anonymous cross-mode identity and rough-result evidence require a dedicated audit | implemented_not_verified |
 | R15-COST-001 | Rough analysis service and aggregate/cache provider boundary | Integration proves no `PriceCheck` before verification | verified |
 | R15-ID-001 | Pending verification separate from active `CustomerUser` | Integration proves email request creates no customer | verified |
 | R15-ID-002 | Idempotent magic-link consume transaction and `CustomerSession` | Concurrent consume produces exactly one success, customer session and formal job | verified |
@@ -161,27 +166,25 @@ Authoritative source: [Release 1.5 customer funnel requirements](product/custome
 | R15-MOTION-001 | Real-state progress components and reduced-motion path | Desktop/mobile reduced-motion E2E proves no active motion, static canvas and interactive FAQ | verified |
 | R15-RET-001 | Scheduled cleanup expires unused links, keeps terminal token metadata for 30 days, removes expired anonymous records without formal ownership, removes expired/revoked sessions after 30 days, and removes rate-limit/abuse hashes after 90 days | Time-controlled Worker integration matrix | verified |
 | R15-AN-001 | Daily aggregate counters with strict event/dimension allowlists; no row-level user/check/session identity or raw URL/query/report content | All 11 event names covered by contract/redaction tests; funnel integration verifies aggregate deltas and stored-value redaction | verified |
-| R15-MIG-001 | Feature flag and bounded coexistence for legacy result links | Independent customer-funnel flag, migration/legacy-link tests and local rollback/restore exercise | verified |
-
-## Release 1.5 Decision Trace
+## Customer Funnel Decision Trace
 
 | Decision | Requirement coverage | Current evidence | Status |
 | --- | --- | --- | --- |
-| D-015 Two-stage customer funnel | R15-FLOW-001, R15-FLOW-002, R15-COST-001 | API, Mailpit and desktop/mobile E2E | verified |
+| D-015 Two-stage customer funnel | R15-FLOW-001, R15-FLOW-002, R15-COST-001 | Existing URL API, Mailpit and desktop/mobile E2E pass; two-mode flow requires fresh acceptance | implemented_not_verified |
 | D-016 Customer/Admin separation | R15-ID-001, R15-ID-003, R15-SEC-003 | Separate models/cookies and authorization tests | verified |
 | D-017 Verify before account activation | R15-ID-001, R15-ID-002, R15-SEC-001 | Pending state plus replay/expiry/concurrent activation integration and valid-link E2E | verified |
 | D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck` plus pre-enqueue quota boundary | verified |
-| D-019 Authenticated formal reports | R15-OWN-001, R15-MIG-001 | Cross-account denial and legacy-link E2E | verified |
+| D-019 Authenticated formal reports | R15-OWN-001 | Cross-account denial and authenticated-result E2E pass; obsolete bearer endpoints still require removal audit | implemented_not_verified |
 | D-020 Minimal conditional email | R15-EMAIL-001, R15-EMAIL-002, R15-CONSENT-001 | Single-message Mailpit and acknowledgement E2E | verified |
 | D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, challenge handshake, email cooldown, device 429 and formal quota tests | verified |
 | D-022 No exclusive property claim | R15-OWN-001 | Independent anonymous records and customer ownership guard | verified |
 | D-023 Retention defaults | R15-RET-001, R15-AN-001 | Recommended 7/30/90-day defaults implemented and tested; final production privacy approval remains external | implemented_not_verified |
 | D-024 Real-state motion | R15-MOTION-001 | Server-backed stages plus desktop/mobile reduced-motion E2E | verified |
-| D-025 Supported OTA link with automatic default context | R15-INPUT-001, R15-INPUT-002, R15-INPUT-003, R15-AN-001 | Resolver tests plus desktop/mobile browser evidence | verified |
+| D-025 OTA link or address with explicit target mode | R15-INPUT-001..004, R15-AN-001 | Existing URL and member address evidence covers parts; anonymous two-mode resolver and browser acceptance remain open | implemented_not_verified |
 
-## Post-Release Membership System
+## Membership System
 
-Authoritative commercial and functional contract: [Membership plans](product/membership-plans.md). Authentication requirements remain in [Release 1.5 customer funnel requirements](product/customer-funnel.md); customer routes and page composition remain in [page structure](product/page-structure.md); responsive, state and visual acceptance remain in [visual interaction](product/visual-interaction.md).
+Authoritative commercial and functional contract: [Membership plans](product/membership-plans.md). Authentication requirements remain in [customer funnel requirements](product/customer-funnel.md); customer routes and page composition remain in [page structure](product/page-structure.md); responsive, state and visual acceptance remain in [visual interaction](product/visual-interaction.md).
 
 The statuses below describe the current implementation, not the target specification. Price Check unlock Magic Links are separate from the member email/password login and do not verify membership authentication. A membership backend, plan card or authenticated check page does not by itself verify the complete customer membership module.
 
@@ -195,26 +198,26 @@ The statuses below describe the current implementation, not the target specifica
 | `MEM-RISK-002` | Unique Free/promotion claims, serializable retries, concurrent collection/noVNC limits and independent export/API quotas | Three-way concurrent Free claim, idempotent NZ-month export and payment-promotion uniqueness integration | `verified` |
 | `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence, payment reuse/refund, customer appeal and Admin review tests pass; production Radar delivery remains external | `implemented_not_verified` |
 | `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API plus privacy-safe aggregate metrics and controlled retention lifecycle pass; production operating exercise remains external | `implemented_not_verified` |
-| `MEM-NAV-001` | Session-aware public/customer navigation with Sign in, Account and Sign out | Real EN/ZH authenticated/anonymous browser QA at desktop, 390px and 320px | `verified` |
-| `MEM-PUBLIC-001` | Public bilingual membership/pricing comparison plus explicit OTA-link and address-benchmark entry points with property-slot, daily-price-check, monitoring and launch-gate semantics | EN/ZH desktop/mobile accessibility and address-navigation tests plus source-of-truth entitlement rendering | `verified` |
+| `MEM-NAV-001` | Session-aware customer navigation plus `DEPLOYED_HIDDEN` public-header/footer/CTA suppression | Existing visible-navigation EN/ZH browser evidence predates the hidden-entry requirement; direct-route and security behaviour also need fresh evidence | `implemented_not_verified` |
+| `MEM-PUBLIC-001` | Bilingual membership/pricing and OTA-link/address entry routes deploy but are omitted from public discovery while hidden | Existing page/accessibility evidence passes; hidden homepage/navigation/CTA behaviour needs fresh browser acceptance | `implemented_not_verified` |
 | `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
 | `MEM-UNIT-001` | Pricing-unit list/detail GET, confirmed-owned-Price-Check POST, activation, deactivation, reactivation and downgrade selection | API integration verifies list/detail/add, stable Property identity, unit limits and transactional cancellation; the current desktop/mobile browser flow creates the confirmed unit, opens it from the slot list and verifies its detail | `verified` |
 | `MEM-CHECK-001` | Owner-only filterable history and result detail with mode-aware target or neighbourhood observations and observed-price/recommendation separation | Cross-account, pagination/filter, retention, one-valid-price acceptance and `LISTING_PRICING`/`LOCATION_BENCHMARK` separation pass in integration; the current desktop/mobile browser flow filters the owner history and reopens the authenticated formal detail | `verified` |
 | `MEM-CAL-001` | Plan-aware exact daily calendar and separately labelled monitoring extension in `Pacific/Auckland` | NZ-time/domain boundaries, owner-only API, no-fabrication data states and responsive browser QA | `verified` |
-| `MEM-ALERT-001` | Host core alerts and Pro/Portfolio settings/controls behind entitlement and launch gates | Entitlement-aware unavailable state is implemented and browser-verified; delivery remains closed pending the documented alert gate | `verified_gated_off` |
-| `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Export/API now require serviceable membership, entitlement, independent quota/idempotency and subordinate server launch flags; credential/webhook delivery stays gated | `verified_gated_off` |
-| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe and isolated PostgreSQL lifecycle pass; earlier 2026-08-12 dated Sandbox evidence covered Checkout, prorated upgrade, scheduled downgrade, schedule-aware cancel/resume and Portal with all 37 recorded webhooks processed. The fresh current-worktree revalidation reached hosted Checkout but timed out before returning, so that earlier evidence is not promoted to a fresh pass. Stripe live remains gated off | `test_mode_verified_gated_off` |
+| `MEM-ALERT-001` | Host core alerts and Pro/Portfolio settings/controls behind entitlement | Entitlement-aware unavailable state is browser-verified; production delivery path must deploy and pass notification acceptance even while discovery is hidden | `implemented_not_verified` |
+| `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Export/API enforce membership, entitlement, independent quota and idempotency; production credential/webhook delivery still needs acceptance | `implemented_not_verified` |
+| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe and isolated PostgreSQL lifecycle pass; dated Sandbox evidence covered the full lifecycle and 37 webhooks. Fresh hosted Checkout timed out before return, so production deployment acceptance remains open | `implemented_not_verified` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `verified` |
 | `MEM-OPS-001` | Admin customer/membership/billing-event operations, safe reconciliation, session revoke, suspension and deletion support | Isolated PostgreSQL verifies unauthorised denial, audited plan/status corrections, session revoke, export completion evidence and minimised deletion; Stripe-backed manual drift fails closed | `verified` |
 | `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health 与 `/worker/alerts` 返回机器错误码、等级、聚合值和阈值且不含 PII；生产 dashboard、通知路由与注入验收仍是部署门槛 | `implemented_not_verified` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; current result recorded below | `verified` |
 | `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Fixture Free/browser and server gates pass; dedicated live Argus acceptance command now fails unless a non-demo public OTA price is delivered, but external live execution remains outstanding | `implemented_not_verified` |
 
-The Free customer module is implemented and development-verified. Production payment credentials,
-provider telemetry and live Argus membership evidence remain release gates, not claims of production
-readiness. `verified_gated_off` means the closed state is verified and must not be marketed as
-available. CSV export and the Portfolio read API now also enforce independent server-side feature
-flags in addition to entitlement, verified email, serviceability, idempotency and quota.
+The customer module is implemented and development-verified. Production payment credentials,
+provider telemetry and live Argus membership evidence remain deployment gaps, not optional client
+gates. `DEPLOYED_HIDDEN` controls only homepage, public navigation and marketing CTA discovery.
+CSV export and the Portfolio read API continue to enforce entitlement, verified email,
+serviceability, idempotency and quota.
 
 ### Membership development verification (2026-08-12)
 
@@ -236,7 +239,7 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 | `pnpm dev` | Next.js local development | current worktree image running and HTTPS route returns 200 |
 | `pnpm worker` | Persistent Worker | current worktree image running; health/readiness return 200 |
 | `pnpm db:generate` | Prisma client generation | current worktree verified on host and in Docker |
-| `pnpm db:migrate` | Development migration | Release 1.5 retention/analytics and event-impact migrations applied in development |
+| `pnpm db:migrate` | Development migration | Current retention/analytics and event-impact migrations applied in development |
 | `pnpm db:seed` | Deterministic demo seed | current worktree verified in the isolated migrated PostgreSQL database |
 | `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
 | `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
@@ -251,14 +254,14 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 
 | Gate | Evidence | Status |
 | --- | --- | --- |
-| Product baseline/control files | Five Google Docs migrated to canonical local product files; source IDs and migration-time hashes are retained as historical provenance while current changes are tracked by Git | verified |
+| Product baseline/control files | Repository product documents are the sole current authority; no external-document or legacy compatibility dependency remains | verified |
 | Routes and bilingual UI | Next build inventory plus EN/ZH desktop/mobile Playwright | verified |
 | Database and seed | Clean Compose volume migrated; seed repeated without duplicate growth | verified |
 | Web, Worker and Admin | HTTP 200, running Worker, protected Admin sign-in and workspace E2E | verified |
 | Providers and exceptions | Demo/Manual provider tests, real import preview/import, exception workspace E2E | verified |
-| Secure links and email | Link integration/E2E, reissue API, real Mailpit SMTP delivery | verified |
+| Verification and email | One-time verification, customer-session ownership and Mailpit delivery evidence; obsolete bearer-result route removal needs fresh audit | implemented_not_verified |
 | Quality commands | lint, typecheck, 26 unit, 24 integration, build and `pnpm verify` | verified |
-| Browser QA | 16/16 Release 1 Playwright, axe, 390/1440/1920 viewport matrix | verified |
+| Browser QA | Dated 16/16 Playwright, axe, 390/1440/1920 viewport matrix | verified for that revision |
 | Compose and README | Clean `up --build`, migration, repeat seed, endpoints and teardown exercised | verified |
 | Persistent local URL | Web/Worker/health-check LaunchAgents restored; `tymra.test/en` HTTP 200 | verified |
 
@@ -266,23 +269,23 @@ flags in addition to entitlement, verified email, serviceability, idempotency an
 
 | Gate | Current evidence | Status |
 | --- | --- | --- |
-| Release 1 homepage copy and navigation | EN/ZH desktop/mobile E2E; no Phase 0 preview or pilot-only homepage flow | verified |
+| Dated homepage copy and navigation | EN/ZH desktop/mobile E2E for the then-current visible navigation; superseded by the unverified `DEPLOYED_HIDDEN` requirement | historical_verified |
 | Homepage to rough-result handoff | Supported OTA URL creates a persisted `/{locale}/rough/{checkId}` result before email | verified |
 | Locale continuity | Locale switch preserves check/result route and query parameters | verified |
 | Mobile accessibility | Axe serious/critical violations: 0; horizontal insight region is keyboard focusable | verified |
 | Responsive browser QA | Chrome at 390x844, 1440x900 and 1920x1080; no horizontal overflow | verified |
 | Automated checks | `pnpm verify`: 26 unit and 24 integration tests; 16 desktop/mobile E2E; production build | verified |
 
-## Release 1.5 Documentation Gate
+## Customer Funnel Documentation Gate
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Product recommendation captured | Flow, rough/formal contract, identity, email, abuse, retention and migration documented | verified |
-| Product approval | Explicit approval of the Release 1.5 baseline and D-025 defaults | verified |
-| Implementation plan | Phases 1.5-0 through 1.5-8, dependencies, risks and gates recorded | verified |
+| Product recommendation captured | Flow, rough/formal contract, identity, email, abuse and retention documented | verified |
+| Product approval | Explicit approval of the current funnel and D-025 defaults | verified |
+| Implementation plan | Dependencies, risks and gates recorded | verified |
 | Implementation | Core funnel, cleanup, safe aggregate analytics, security/quota boundaries and rollback flag are implemented; interactive challenge provider remains external | implemented_not_verified |
 | Automated acceptance | All locally implementable named matrices pass; neutral-response timing acceptance and external product/production gates remain | implemented_not_verified |
-| Runtime acceptance | Chrome, Mailpit, migration, abuse cooldown and persistent-service evidence | verified |
+| Runtime acceptance | Chrome, Mailpit, abuse cooldown and persistent-service evidence | verified |
 
 ## Worker Baseline v1 Evidence (2026-07-18)
 
