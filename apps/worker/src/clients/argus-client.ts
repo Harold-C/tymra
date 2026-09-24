@@ -497,7 +497,7 @@ export async function captureBrowserTaskWithArgus(
         message: job.error?.message ?? item?.error_category ?? `Argus job ended with ${job.status}`,
       };
     }
-    return mapArgusJobResult(job, input);
+    return mapArgusJobResult(job, input, environment);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const timeout = error instanceof DOMException && error.name === "TimeoutError" || /timed? ?out|timeout|aborted/i.test(message);
@@ -522,7 +522,7 @@ async function issueArgusManualHandoff(
     if (!response.ok) return failedResponse(response.status, body);
     const url = new URL(body.url ?? "");
     const expiresAt = Date.parse(body.expires_at ?? "");
-    if (!new Set(["https://connect.argus.test", "https://connect.argus.nz"]).has(url.origin)
+    if (!allowedManualOrigins(environment).has(url.origin)
       || url.username || url.password || body.session_id !== action.session_id
       || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       return { ok: false, httpStatus: 502, message: "Argus returned an invalid manual handoff" };
@@ -562,6 +562,7 @@ async function cancelAndCollectArgusDelivery(
 export function mapArgusJobResult(
   job: ArgusJobResult,
   input: Pick<ArgusCaptureInput, "traceId" | "connectorId" | "workflowId">,
+  environment: Environment,
 ): CaptureResponse {
   const item = job.items?.find((candidate) => candidate.trace_id === input.traceId) ?? job.items?.[0];
   if (!item?.result) {
@@ -575,7 +576,7 @@ export function mapArgusJobResult(
     return {
       ok: true,
       httpStatus: 200,
-      payload: mapArgusResult(item.result, input.connectorId, input.workflowId),
+      payload: mapArgusResult(item.result, input.connectorId, input.workflowId, environment),
       delivery: { jobId: job.job_id, resultSha256: job.result_sha256, job },
     };
   } catch (error) {
@@ -603,6 +604,7 @@ function mapArgusResult(
   result: ArgusCaptureResult,
   connectorId: ArgusConnectorId,
   workflowId: ArgusWorkflowId,
+  environment: Environment,
 ): ArgusBrowserTaskResult {
   if (
     result.contract_version !== "1.0"
@@ -633,14 +635,20 @@ function mapArgusResult(
     } : null,
     evidence: result.evidence,
     error: result.error,
-    manualRequired: manualRequired ? mapManualRequired(result) : null,
+    manualRequired: manualRequired ? mapManualRequired(result, environment) : null,
     readonlyOnly: true,
     externalSideEffectsPerformed: false,
     extracted: adaptExtraction(result.data, connectorId, workflowId, result.page?.title),
   };
 }
 
-function mapManualRequired(result: ArgusCaptureResult): ArgusBrowserTaskResult["manualRequired"] {
+function allowedManualOrigins(environment: Environment): Set<string> {
+  return new Set(environment.NODE_ENV === "production"
+    ? ["https://connect.argus.nz"]
+    : ["https://connect.argus.test", "https://connect.argus.nz"]);
+}
+
+function mapManualRequired(result: ArgusCaptureResult, environment: Environment): ArgusBrowserTaskResult["manualRequired"] {
   const reason = result.challenge?.kind ?? result.status;
   if (!/captcha/iu.test(reason)) return { reason, sessionId: null, noVncUrl: null, expiresAt: null };
 
@@ -655,7 +663,7 @@ function mapManualRequired(result: ArgusCaptureResult): ArgusBrowserTaskResult["
     throw new Error("Argus returned an invalid CAPTCHA noVNC URL");
   }
   const expiresAt = Date.parse(session.expires_at);
-  const allowedOrigins = new Set(["https://connect.argus.test", "https://connect.argus.nz"]);
+  const allowedOrigins = allowedManualOrigins(environment);
   const remainingMs = expiresAt - Date.now();
   if (!allowedOrigins.has(noVncUrl.origin) || noVncUrl.username || noVncUrl.password
     || Number.isNaN(expiresAt) || remainingMs <= 0 || remainingMs > 900_000) {

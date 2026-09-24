@@ -94,6 +94,47 @@ switch (command) {
     print({ ...result, checkedSources: sources.map((source) => source.key), mutationPerformed: false });
     break;
   }
+  case "release:bootstrap-lincoln": {
+    if (environment.NODE_ENV !== "production" || option(args, "--confirm") !== "BOOTSTRAP_LINCOLN_PRODUCTION") {
+      throw new Error("Lincoln production bootstrap requires production and --confirm BOOTSTRAP_LINCOLN_PRODUCTION");
+    }
+    if (await prisma.dataSource.count() !== 0 || await prisma.scheduleDefinition.count() !== 0) {
+      throw new Error("Lincoln production bootstrap requires an empty source registry and no schedules");
+    }
+    const source = await prisma.dataSource.create({
+      data: {
+        key: "christchurch_university_dates",
+        name: "Lincoln University 2026 key dates acceptance",
+        providerType: "PUBLIC",
+        sourceType: "PUBLIC_DATA",
+        lifecycle: "PILOT",
+        supportedDomains: ["www.lincoln.ac.nz"],
+        adapterKey: "public:christchurch_university_dates:key-dates-v2",
+        environments: ["PRODUCTION"],
+        accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY",
+        retentionPolicy: { rawHours: 72, parserFailureHours: 168 },
+        concurrencyLimit: 1,
+        dailyBudget: 1,
+        operationalStatus: "HEALTHY",
+        healthSummary: { mode: "bounded_release_acceptance", verified: false },
+        metadata: { lincolnAcceptanceOnly: true },
+        status: "PILOT",
+        healthStatus: "HEALTHY",
+        enabled: true,
+        acquisitionMethod: "PUBLIC_WEB_ARGUS_READ_ONLY",
+        retentionDays: 365,
+        owner: "Tymra production",
+        isDemo: false,
+        capabilities: { create: [
+          { capability: "COLLECT_PUBLIC_SIGNALS", version: 1, contractVersion: "source-capability-v1" },
+          { capability: "HEALTH_CHECK", version: 1, contractVersion: "source-capability-v1" },
+        ] },
+      },
+      select: { id: true, key: true, metadata: true },
+    });
+    print({ source, mutationPerformed: true });
+    break;
+  }
   case "release:canary-plan": {
     const requested = csvOption(args, "--sources");
     if (!requested.length) throw new Error("Missing --sources");
@@ -160,6 +201,7 @@ switch (command) {
         sourceId,
         marketScope: option(args, "--market") ?? "new-zealand",
         ...collectionOptions(args),
+        lincolnOnly: args.includes("--lincoln-only"),
         phase: eventCollectionPhase(args),
         maxPages: integerOption(args, "--max-pages"),
         maxDetails: integerOption(args, "--max-details"),
@@ -170,7 +212,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|ota:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|schedule:eventfinda:enable|schedule:eventfinda:disable|schedule:ticketmaster:enable|schedule:ticketmaster:disable|retention:cleanup|queue:audit|queue:history|events:reconcile|release:preflight|release:canary-plan|release:canary-run|release:rollback|seed:fixtures> ...\n");
+    process.stderr.write("Usage: cli <argus:health|ota:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|release:bootstrap-lincoln|release:preflight|release:canary-plan|release:canary-run|release:rollback|enqueue-source|run-job> ...\n");
     process.exitCode = 2;
 }
 

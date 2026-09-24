@@ -302,6 +302,34 @@ describe("Argus async Job client", () => {
     });
   });
 
+  it("rejects a test manual-session origin in production", async () => {
+    server = jobServer(async () => ({
+      ...baseResult("booking-production-origin", "resolve_listing", "booking-public"),
+      ok: false,
+      status: "challenge",
+      data: null,
+      challenge: {
+        kind: "CAPTCHA",
+        signals: ["recaptcha"],
+        manual_session: {
+          session_id: "manual-booking-production-origin",
+          no_vnc_url: "https://connect.argus.test/session/manual-booking-production-origin",
+          expires_at: new Date(Date.now() + 300_000).toISOString(),
+        },
+      },
+      error: { category: "ACCESS_CHALLENGE", message: "Operator action required", retryable: true },
+    }));
+    const environment = { ...await listenEnvironment(), NODE_ENV: "production" as const };
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "booking-production-origin",
+      connectorId: "booking-public",
+      workflowId: "resolve_listing",
+      url: "https://www.booking.com/hotel/nz/example-stay.html",
+    });
+    assert.equal(response.ok, false);
+    assert.match(response.ok ? "" : response.message, /invalid CAPTCHA manual-session contract/u);
+  });
+
   it("returns a noVNC handoff immediately when an Argus Job waits for manual verification", async () => {
     const sessionId = `manual_${"b".repeat(32)}`;
     const expiresAt = new Date(Date.now() + 600_000).toISOString();

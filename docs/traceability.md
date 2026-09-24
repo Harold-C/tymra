@@ -1,6 +1,19 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-08-21
+Last updated: 2026-09-24
+
+## 2026-09-24 production Argus attempt — rolled back
+
+A single bounded Lincoln University 2026 production Job reached and completed Argus, but Tymra
+failed before business persistence and ACK. `UNIVERSITY_CALENDAR` was missing from the persisted
+signal enum/mapping, and the HTML evidence delivered through the production API did not match
+Argus's size/SHA-256 metadata. Worker/API and the candidate Web image were rolled back, the
+Argus environment values restored, and the acceptance source suspended. The local-only signal
+type fix and migration have not been deployed; the evidence-byte mismatch remains a release blocker.
+Exact image, backup, Job, database and remote-result evidence is in
+[`evidence/tymra-argus-production-attempt-2026-09-24.md`](./evidence/tymra-argus-production-attempt-2026-09-24.md).
+The production service is still Admin-only; collection and Scheduler are off.
+
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 The current baseline uses `proposed`, `not_implemented`, `partially_implemented_not_verified`,

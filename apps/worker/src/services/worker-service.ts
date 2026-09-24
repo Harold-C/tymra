@@ -193,6 +193,7 @@ type ConfirmWorkerRequest = {
 
 type CollectSourceOptions = {
   jobId?: string;
+  lincolnOnly?: boolean;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -1006,6 +1007,12 @@ export class WorkerService {
   }
 
   async collectSource(sourceId: string, marketScope = "new-zealand", analysisRequestId?: string, options: CollectSourceOptions = {}) {
+    if (options.lincolnOnly && (sourceId !== "christchurch_university_dates" || !options.jobId
+      || options.from?.getTime() !== nzStartOfDay("2026-01-01").getTime()
+      || options.to?.getTime() !== nzStartOfDay("2027-01-01").getTime()
+      || options.limit !== 2)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Lincoln-only acceptance requires the queued 2026 collection with a two-record limit", 422);
+    }
     if (sourceId === "eventfinda") return this.collectEventfindaSource(marketScope, analysisRequestId, options);
     if (sourceId === "ticketmaster") return this.collectTicketmasterSource(marketScope, analysisRequestId, options);
     if (sourceId === "fx_rates") return this.collectRbnzFxSource(marketScope, analysisRequestId, options);
@@ -1018,8 +1025,12 @@ export class WorkerService {
       select: {
         id: true, key: true, name: true, enabled: true, environments: true,
         lifecycle: true, operationalStatus: true, healthStatus: true,
+        metadata: true,
       },
     });
+    if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly) {
+      throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Lincoln acceptance source requires the bounded Lincoln-only job", 409);
+    }
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
     const requestedFrom = options.from ?? new Date();
     const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
@@ -1092,7 +1103,7 @@ export class WorkerService {
     try {
       if (!localAcceptance) this.assertSourceCollectionAllowed(source);
       const result = await withRedisLock(`source:${sourceId}`, 60_000, async () => {
-        const adapterReferences = await adapter.discover({ marketScope, from, to, limit }, context);
+        const adapterReferences = options.lincolnOnly ? [] : await adapter.discover({ marketScope, from, to, limit }, context);
         const discovered = sourceId === "christchurch_university_dates"
           ? [LINCOLN_KEY_DATES_URL, ...adapterReferences]
           : adapterReferences;
@@ -2464,7 +2475,8 @@ export class WorkerService {
     const traceId = parentJobId
       ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
       : `lincoln-key-dates-${randomUUID()}`;
-    const input = { traceId, url, connectorId, workflowId };
+    const academicYear = Number(nzDateKey(context.collectionRange?.from ?? new Date()).slice(0, 4));
+    const input = { traceId, url, connectorId, workflowId, academicYear };
     const response = parentJobId
       ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
       : await captureBrowserTaskWithArgus(this.environment, input);
@@ -2481,6 +2493,7 @@ export class WorkerService {
       if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, result.traceId);
       throw new AdapterError("PARSING_ERROR", `Lincoln University extractor returned an invalid payload: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
     }
+    if (parsed.data.academicYear !== academicYear) throw new AdapterError("PARSING_ERROR", "Lincoln University returned a different academic year", false);
     const range = context.collectionRange ?? { from: new Date(0), to: new Date(8_640_000_000_000_000) };
     const signals = normaliseLincolnKeyDateSignals(parsed.data, range, context.collectionLimits?.maxRecords);
     return signals.map((signal, index) => ({
@@ -4070,7 +4083,7 @@ function mapWorkerStatusToPriceCheck(status: string) {
   return mapping[status];
 }
 
-function mapSignalType(type: string): "PUBLIC_HOLIDAY" | "ANNIVERSARY_DAY" | "SCHOOL_HOLIDAY" | "MAJOR_EVENT" | "WEEKEND_PATTERN" | "PRICE_RISING" | "AVAILABILITY_TIGHTENING" | "RESTRICTION_INCREASING" | "WEATHER_OR_ACCESS_DISRUPTION" | "TOURISM_DEMAND" | "TRANSPORT_FLOW" | "FX_RATE" {
-  if (["PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "MAJOR_EVENT", "WEEKEND_PATTERN", "PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING", "WEATHER_OR_ACCESS_DISRUPTION", "TOURISM_DEMAND", "TRANSPORT_FLOW", "FX_RATE"].includes(type)) return type as ReturnType<typeof mapSignalType>;
+function mapSignalType(type: string): "PUBLIC_HOLIDAY" | "ANNIVERSARY_DAY" | "SCHOOL_HOLIDAY" | "UNIVERSITY_CALENDAR" | "MAJOR_EVENT" | "WEEKEND_PATTERN" | "PRICE_RISING" | "AVAILABILITY_TIGHTENING" | "RESTRICTION_INCREASING" | "WEATHER_OR_ACCESS_DISRUPTION" | "TOURISM_DEMAND" | "TRANSPORT_FLOW" | "FX_RATE" {
+  if (["PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "UNIVERSITY_CALENDAR", "MAJOR_EVENT", "WEEKEND_PATTERN", "PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING", "WEATHER_OR_ACCESS_DISRUPTION", "TOURISM_DEMAND", "TRANSPORT_FLOW", "FX_RATE"].includes(type)) return type as ReturnType<typeof mapSignalType>;
   throw new AdapterError("PARSING_ERROR", `Unsupported public signal type: ${type}`, false);
 }

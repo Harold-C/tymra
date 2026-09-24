@@ -120,6 +120,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@prisma/client':
+        specifier: 6.19.0
+        version: 6.19.0(prisma@6.19.0(typescript@5.9.3))(typescript@5.9.3)
       '@tymra/config':
         specifier: workspace:*
         version: link:../../packages/config

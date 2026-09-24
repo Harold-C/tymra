@@ -75,7 +75,7 @@ export async function captureBrowserTaskWithDurableArgus(
   }
 
   if ((execution.status === "COMPLETED" || execution.status === "FAILED") && execution.result) {
-    return mapArgusJobResult(execution.result as unknown as ArgusJobResult, input);
+    return mapArgusJobResult(execution.result as unknown as ArgusJobResult, input, environment);
   }
   if (execution.status === "FAILED" || execution.status === "CANCELLED") {
     return {

@@ -28,7 +28,7 @@ FROM base AS build
 RUN cd apps/web \
   && NODE_ENV=production NEXT_DIST_DIR=.next-build ./node_modules/.bin/next build \
   && cd /app/apps/worker \
-  && ./node_modules/.bin/tsup src/index.ts src/api.ts src/scheduler.ts src/cli.ts --format esm --platform node --target node22 --out-dir dist --sourcemap --clean
+  && pnpm build
 
 FROM build AS production
 ENV NODE_ENV=production
