@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canaryPlan, executeCanary, productionPreflight } from "../src/operations/release-safety";
+import { boundProductionCanaryResults, canaryPlan, executeCanary, productionPreflight } from "../src/operations/release-safety";
 
 describe("production release safety", () => {
   const source = { key: "eventfinda", enabled: true, status: "PILOT", operationalStatus: "HEALTHY" };
@@ -30,6 +30,12 @@ describe("production release safety", () => {
     });
     expect(() => canaryPlan(["ticketmaster", "eventfinda"])).toThrow("exactly one source");
     expect(canaryPlan(["ticketmaster", "eventfinda"], { technicalValidation: true }).sources).toEqual(["eventfinda", "ticketmaster"]);
+  });
+
+  it("caps the combined business records after one source record expands", () => {
+    expect(boundProductionCanaryResults(["event-1", "event-2", "event-3"], ["signal-1"], 2)).toEqual({ events: ["event-1", "event-2"], signals: [] });
+    expect(boundProductionCanaryResults([], ["signal-1", "signal-2", "signal-3"], 2)).toEqual({ events: [], signals: ["signal-1", "signal-2"] });
+    expect(() => boundProductionCanaryResults([], [], 3)).toThrow("one or two");
   });
 
   it("executes passes in order and stops at the first failed gate", async () => {

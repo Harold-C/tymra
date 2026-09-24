@@ -53,6 +53,12 @@ export function canaryPlan(sourceKeys: string[], options: { technicalValidation?
   };
 }
 
+export function boundProductionCanaryResults<Event, Signal>(events: Event[], signals: Signal[], limit: number) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 2) throw new Error("Production canary result limit must be one or two");
+  const boundedEvents = events.slice(0, limit);
+  return { events: boundedEvents, signals: signals.slice(0, limit - boundedEvents.length) };
+}
+
 export type CanaryPassResult = {
   sourceKey: string;
   pass: number;

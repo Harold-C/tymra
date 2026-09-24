@@ -75,6 +75,7 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
+import { boundProductionCanaryResults } from "../operations/release-safety";
 import { enrichEventVenue } from "../collection/venue-reference";
 import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
@@ -1202,8 +1203,11 @@ export class WorkerService {
         try {
           const normalisedSignals = await adapter.normalise(raw, context);
           const normalisedEvents = adapter.normaliseEvents ? await adapter.normaliseEvents(raw, context) : [];
-          signals = uniqueByExternalId(normalisedSignals, counters);
-          events = uniqueByExternalId(normalisedEvents, counters);
+          const uniqueEvents = uniqueByExternalId(normalisedEvents, counters);
+          const uniqueSignals = uniqueByExternalId(normalisedSignals, counters);
+          const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!) : { events: uniqueEvents, signals: uniqueSignals };
+          events = bounded.events;
+          signals = bounded.signals;
         } catch (error) {
           if (!options.dryRun) {
             await prisma.rawArtifact.updateMany({ where: { collectionRunId: run.id }, data: { parserFailure: true, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_FAILURE_TTL_HOURS * 3_600_000) } });
