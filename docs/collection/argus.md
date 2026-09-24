@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-08-05
+Last updated: 2026-09-13 (responsibility and evidence-date clarification; no runtime change)
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
 Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
@@ -65,23 +65,26 @@ covers queueing plus execution and must be greater than the capture deadline.
 - A polling deadline marks the execution failed with `TIMEOUT`, requests remote cancellation and
   wakes the parent so normal source failure handling can finish the `CollectionRun`.
 
-Direct CLI calls without a database Job retain the synchronous compatibility path. Scheduled and
-manually queued Eventfinda, Ticketmaster, RBNZ, School Sport and Ticketek collections use the durable path.
+Direct browser CLI calls without a database Job retain the synchronous compatibility path. Scheduled
+and manually queued browser captures, including required Ticketmaster details, RBNZ, School Sport and
+Ticketek, use the durable Argus path. Eventfinda listing/detail and Ticketmaster listings use direct
+HTTP in Tymra; their collection Jobs do not make those HTTP steps Argus executions.
 
 The accepted Argus data contracts are currently:
 
 | Connector/workflow | `data_schema` | `schema_version` |
 | --- | --- | --- |
-| `ticketmaster-public / collect_listing` | `ticketmaster-public.collect_listing` | `1.0.0` |
 | `ticketmaster-public / collect_detail` | `ticketmaster-public.collect_detail` | `1.0.0` |
-| `eventfinda-public / collect_listing` | `eventfinda-public.collect_listing` | `1.0.0` |
-| `eventfinda-public / collect_detail` | `eventfinda-public.collect_detail` | `1.0.0` |
 | `ourauckland-public / collect_listing` | `ourauckland-public.collect_listing` | `1.0.0` |
 | `ourauckland-public / collect_detail` | `ourauckland-public.collect_detail` | `1.0.0` |
 | `rbnz-fx / collect_exchange_rates` | `rbnz-fx.collect_exchange_rates` | `1.0.0` |
 | `sporty-school-sport-public / collect_events` | `sporty-school-sport-public.collect_events` | `1.0.0` |
 | `ticketek-public / collect_listing` | `ticketek-public.collect_listing` | `1.0.0` |
 | `ticketek-public / collect_detail` | `ticketek-public.collect_detail` | `1.0.0` |
+
+Historical `ticketmaster-public.collect_listing` and `eventfinda-public.collect_listing` /
+`collect_detail` contracts used schema version `1.0.0`. Retained Argus connector code and old evidence
+do not make them Tymra's current collection path. See [Eventfinda scope](./eventfinda.md#scope).
 
 The Worker reaches the same HTTPS API origin used by cross-network clients. Docker maps `api.argus.test`
 to the host gateway, and Node trusts only the mounted mkcert development root CA. Do not disable TLS
@@ -157,7 +160,10 @@ detail payloads passed `ourauckland-public.collect_detail@1.0.0`, Tymra normalis
 failures, and dry-run persistence remained empty. See
 [`argus-025-030-acceptance-2026-08-02.md`](../evidence/argus-025-030-acceptance-2026-08-02.md).
 
-## Current local runtime snapshot
+## Historical local runtime snapshot (2026-08-05)
+
+This snapshot predates the [2026-09-13 workspace/runtime baseline](../traceability.md#current-workspace-and-runtime-baseline-2026-09-13).
+It does not establish current Argus availability, readiness or scheduler state.
 
 On 2026-08-05 `https://api.argus.test/health` and `/readiness` returned HTTP 200. The current Tymra
 containers reached that origin with the shared development CA and service token; Tymra Web and Worker

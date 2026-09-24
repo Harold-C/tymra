@@ -41,8 +41,8 @@ unavailable core rate source returns `SOURCE_UNAVAILABLE` and publishes neither 
 
 ## Safety And Retention
 
-Query and email identifiers are hashed; email addresses are encrypted. Result tokens are stored only
-as hashes and expire by default after 14 days. Public source responses are redacted for credential,
+Query and email identifiers are hashed; email addresses are encrypted. Formal results are available
+only through authenticated customer sessions and server-side ownership checks; persistent bearer result links are not supported. Public source responses are redacted for credential,
 cookie, session and token keys, hashed and retained for 72 hours. Parser-failure retention can be
 configured up to seven days. Cleanup removes expired payloads and storage references.
 

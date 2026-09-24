@@ -25,6 +25,39 @@ Argus 结果且不再次访问 Lincoln 源站的恢复方案。未完成这些�
 不启用 Scheduler。具体证据见
 [`evidence/tymra-argus-production-attempt-2026-09-24.md`](./evidence/tymra-argus-production-attempt-2026-09-24.md)。
 
+## 2026-09-24 首次生产访问边界
+
+当前用户要求首次生产阶段仅开放管理员后台，公开站和客户 API 不对外提供，且暂不供搜索收录。
+本地候选已在生产 Compose 保留 `ops.tymra.nz` 路由、默认启用应用层后台独占限制，并验证
+禁索引响应；旧 bearer 结果入口残留已清理，本地 Web 类型检查和镜像构建通过。确切验证与
+镜像身份见 `traceability.md`。SPM 上的后台部署、生产 DNS、公开 TLS 与桌面浏览器
+管理员流程已验证。公开客户端开放是后续
+独立步骤，仍须按正式产品规范完成客户、支付和直接路由验收。
+
+用户已指定 Spicy Maggie 主机和新注册的 `tymra.nz`。已只读核实目标是
+`spm-prod-01` / `148.135.121.30`，现有服务 healthy，使用 `spm_ingress` 和
+`letsencrypt` 证书解析器。Cloudflare DNS 页面当前为零记录。主机为 x86_64，需使用
+对应 amd64 镜像；生产管理员和禁用外部服务的决定已落实如下。
+普通 seed 会创建演示数据，未用于生产。用户已确认 `ict@spicym.nz` 和暂不接入外部服务。
+SPM 已完成原生 amd64 构建、32 项迁移及独立管理员初始化，后台、数据库和缓存 healthy；
+源站登录、退出、会话失效及公开路径拒绝验证通过。采集/API、Scheduler 进程未启动。
+用户确认后已保存唯一 `ops` 代理记录，启用 Cloudflare 完全（严格）模式；源站与公网证书
+验证均通过。Playwright 完成登录、概览、列表导航和退出；用户 Safari 正常打开登录页。
+确切镜像、源码包、界面证据和回退材料在 `traceability.md`。
+后续重点是正式接入生产 Argus、完善不含演示数据的业务配置并独立验收，再决定启用采集；
+本次不启动外部服务，不开放客户入口。
+
+## 2026-09-13 接续前置条件
+
+项目已迁入新 Development 目录，产品候选和既有未提交工作保留。开始以下产品交付步骤前，
+先读 `traceability.md` 中本次本机核对：当前服务运行已构建镜像，Argus 健康路由返回 404，
+Worker API readiness 为 503。需在相应 Argus/本机运维任务中恢复依赖路由，再按实际源码、
+数据库和配置重新验收目标候选。本次不启用 Scheduler，不执行新 migration、seed、真实采集、
+Stripe 或发布；不能用项目建立代替这些门禁。
+
+Web 类型检查另有六项既有错误：旧 token-result、feedback 和 reissue 路由仍引用已删除的
+`resolveResultLink`、`ResultView` 与 `LINK_REISSUED`。原目录复现完全相同错误。下一次 Tymra
+产品任务先按 v1.3 正式规范处理这些残留入口，再运行相应验收；本次目录迁移不修改业务实现。
 
 ## 状态源与代码边界
 
@@ -51,17 +84,25 @@ Argus 结果且不再次访问 Lincoln 源站的恢复方案。未完成这些�
   建议和会员交付。开发 fixture 与真实公开页面结果必须明确隔离。
 - 开发环境提供 `demo1` 至 `demo4` 四个固定会员账号，对应 Free、Host、Pro、Portfolio；密码仅由开发配置派生或覆盖，不进入仓库明文。
 - Pricing Unit 稳定 API 已补齐集合 GET/POST 与单项 GET/PATCH；POST 只接受当前会员已确认并计费过的 Price Check，不接受任意内部房源 ID。
-- 2026-08-12 当前工作树通过 lint、全仓 TypeScript、212 个 Web/domain/provider/db 单元测试
+- 2026-08-12 当时的工作树通过 lint、全仓 TypeScript、212 个 Web/domain/provider/db 单元测试
   （5 个外部 fixture 跳过）、127 个 Worker 测试及 104 个隔离 PostgreSQL 集成测试。
   112 页生产构建、生产 Compose 配置解析、开发镜像重建及 Web/Worker/Argus 运行健康检查通过；
-  精确证据与未验证边界见追踪表。
+  这是历史候选的验证结果；2026-09-13 基线已发现 Web 六项类型错误及 readiness 503，
+  当前候选不能沿用旧通过结论。精确证据与未验证边界见追踪表。
 
 ## 当前优先级
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
-| P0 | National Data Core v1.3 差距审计 | 对 `DATA-CORE-001..022` 逐项映射代码、Schema、任务、后台页面和测试，列出缺失项并更新追踪表 | 产品合同已更新；代码与 Schema 的完整差距审计尚未执行 |
-| P0 | 统一生产部署与隐藏入口 | 同一构建部署后台、Price Check、登录、四档会员、Pricing、Stripe、结果和监测；`DEPLOYED_HIDDEN` 只隐藏首页、公共导航、Footer 和营销 CTA，直接路由继续执行认证、归属、权益与支付检查 | 现有客户能力已有开发验收；新展示合同和统一生产配置需要实现与发布级回归 |
+| P0 | National Data Core v1.3 差距审计 | 对 `DATA-CORE-001..022` 逐项映射代码、Schema、任务、后台页面和测试，列出缺失项并更新追踪表 | 2026-08-21 已完成；逐项证据、状态和优先级见 `traceability.md` |
+| P0 | 数据正确性 Schema | 增加显式 Source capability、精确 coverage taxonomy、全部 17 Region 身份、版本化 Property/Unit/Listing 映射与 Listing 变化、完整时间字段、TransformationRun/lineage edge；MarketSnapshot 支持两种模式并允许地址模式没有目标 Listing；删除 ResultAccessToken | 已实现；32 个迁移从零应用、seed、Schema drift 和追加历史/lineage 集成测试通过 |
+| P0 | 全国目录与 OTA 面板执行器 | Catalog Job 实际执行分层发现、去重和持久化；Panel Builder 建立 1,000–1,500 个分层唯一 Unit，Anchor/Rotating Job 对批准日期篮子发起有界六 OTA 采集并更新覆盖事实 | 已实现 17×6 durable frontier、分层 840 Anchor/360 Rotating 选择及每任务最多三成员采集；真实全国填充仍属于运行验收 |
+| P0 | Capability-gated 编排 | 每个 Source 注册版本化 capability；Job 在网络访问前校验 capability、启用、环境、健康、预算和并发，缺失能力返回机器错误码 | 已实现并由缺失 capability 的零网络集成测试验证；既有来源预算和并发门保持生效 |
+| P0 | 地址快照与历史 lineage | `LOCATION_BENCHMARK` 以稳定 Property／空间锚点创建快照，不伪造 Listing；全部正常化、快照、分析和结果写入可查询 lineage，Listing 更新追加变化版本 | 已实现 Property/Unit/Listing 追加版本、关系版本、原始→事实→快照→结果/Insight lineage 和地址空间锚点；数据库契约验证通过 |
+| P0 | 统一部署与隐藏入口 | 同一构建部署后台、Price Check、登录、四档会员、Pricing、Stripe、结果和监测；`DEPLOYED_HIDDEN` 只隐藏首页、公共导航、Footer 和营销 CTA，直接路由继续执行认证、归属、权益与支付检查；删除 bearer 结果 API、邮件 URL 和 Admin reissue | 尚未完成当前源码验收：2026-09-13 仍有旧 token-result、feedback 和 reissue 路由引用已删除符号，产生六项 Web 类型错误。先完成残留入口清理及认证回归，再执行发布级浏览器矩阵；不沿用历史“全部删除”结论 |
+| P0 | 全国生产候选验收 | 干净数据库迁移/seed、17 Region coverage、六 OTA registry、两种 target mode、历史/lineage 不可变、单价格返回、证据 ACK/purge、隐藏入口/直接路由安全、回滚与生产构建全部通过 | 本地数据库/代码候选已通过；非 demo 全国真实采集、证据 ACK/purge、发布级浏览器矩阵与生产运行仍未执行 |
+| P1 | 全国运营深度 | 补齐 listing/样本/地域/Freshness/gap 等 coverage facts、类型化 Freshness/Confidence、其余 Region 公共信号深度、内部地址/Listing 有界采集 UI 和真实会员计划监测 | Schema、17 Region coverage facts、类型化质量对象和 Admin 有界按需入口已实现并集成验证；连续全国信号深度与全部会员方案真实调度仍需运行验收 |
+| P2 | 规模与效率优化 | 自适应面板轮换/权重、按波动和成本调频、lineage Explorer、覆盖缺口优先级和长期运行调优 | 已实现波动/成本评分、自适应 12–168 小时 cadence、轮换、lineage Explorer 和 gap priority；阈值仍需真实长期数据校准 |
 | P0 | 付费方案开发验收 | Stripe test mode 覆盖 Checkout、Portal、升级/降级、取消/恢复、宽限、乱序/重复 webhook，并验证数据库状态 | 2026-08-12 真实 Sandbox 已完成 Checkout、Host→Pro、Pro→Host 下期降级、取消/恢复和 Portal；37 个近期 webhook 全部处理且零错误，开发 seed 不再覆盖 Stripe-backed 订阅。生产配置仍未启用 |
 | P0 | 生产挑战与反滥用门槛 | 托管 challenge 必须使用 HTTPS、secret 和 fail-closed 验证；不保存原始 IP/设备/卡信息 | 生产接单配置强制 managed 模式，并提供无效 token fail-closed readiness；真实 provider、容量和误判演练未执行 |
 | P0 | 高级能力服务端 Launch Gate | CSV export、Portfolio read API 在服务端同时校验会员可服务状态、权益、额度及独立上线开关 | 已完成；默认关闭，且 export 依赖 Pro gate、API 依赖 Portfolio gate |
@@ -74,12 +115,17 @@ Argus 结果且不再次访问 Lincoln 源站的恢复方案。未完成这些�
 
 ## 交付顺序
 
-1. 完成 `DATA-CORE-001..022` 的代码、Schema、任务、页面与测试差距审计，并把结果更新到追踪表。
-2. 实现 `DEPLOYED_HIDDEN` 展示配置和统一生产部署合同，验证公开入口不可发现、直接路由可达且安全控制完整。
-3. 配置生产托管 challenge provider，运行无效 token readiness，再完成容量、失败注入和误判申诉演练。
-4. 将 `/worker/alerts` 接入监控路由和通知目标；确认无告警后授权一个来源执行 2×2 bounded canary。
-5. canary 连续稳定后，分阶段启用 Scheduler；生产启动时必须覆盖全国分层计划，不以 Christchurch 作为调度边界。
-6. 配置 Stripe live Prices、Portal、Webhook、税务与告警并执行生产发布清单；Sandbox 验收不得替代生产授权。后台与客户能力作为同一个生产候选冻结、回归和回滚。
+1. 先完成 P0 数据正确性迁移：Source capability、coverage taxonomy、17 Region 身份、版本化
+   identity/Listing history、完整时间语义、lineage、双目标模式快照，并删除旧 bearer 结果模型。
+2. 再实现 P0 全国执行器：目录发现与持久化、分层 OTA 面板构建和采集、capability-gated
+   编排、地址快照、认证结果交付及 `DEPLOYED_HIDDEN`。
+3. 在干净数据库和同一发布候选上完成全国 P0 验收；失败时回滚整个候选，不能用历史证据、
+   Christchurch-only 数据或演示 fixture 代替。
+4. P0 稳定后补齐 P1 全国运营深度、托管 challenge、生产监控通知和单来源 2×2 bounded
+   canary；确认无告警后分阶段启用覆盖全国的 Scheduler。
+5. 配置 Stripe live Prices、Portal、Webhook、税务与告警并执行生产发布清单；Sandbox 验收
+   不得替代生产授权。后台与隐藏的客户能力作为同一生产候选冻结、回归和回滚。
+6. 累积足够真实全国运行数据后再实施 P2 自适应采集、成本优化和 lineage/coverage 运营工具。
 
 ## 2026-08-12 发布护栏本地验收
 

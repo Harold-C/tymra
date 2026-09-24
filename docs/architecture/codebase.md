@@ -2,6 +2,24 @@
 
 Last updated: 2026-08-11
 
+## Local workspace layout (2026-09-13)
+
+- Business entry: `/Users/haroldchen/Library/Mobile Documents/com~apple~CloudDocs/Workspaces/tymra`;
+  contains routing and historical-source indexes, not copied product contracts or Git data.
+- Engineering root: `/Users/haroldchen/Development/tymra/repo`. Future linked worktrees belong under
+  `/Users/haroldchen/Development/tymra/worktrees/<topic>` when a task needs them; only main exists now.
+- Existing containers run the retained built application image and do not bind-mount this source
+  tree. Their original Compose path labels are creation metadata, not active source dependencies.
+  Use the new repository for future explicitly requested builds and configuration changes.
+- PostgreSQL, Redis and local Argus evidence remain in `tymra_postgres_data`, `tymra_redis_data`
+  and `tymra_argus_evidence`. Shared local CA files remain outside the repository.
+- Repository `ops/launchd` templates point to the new root but are not installed or loaded.
+  Old copies now in `/Users/haroldchen/Development/tymra/history/legacy-local-launchers` are retained historical
+  helpers, not active supervisors; do not execute them as current project entrypoints.
+- Sources, runtime configuration, data volumes, Mailpit container files and the exact built
+  application image are preserved in the comprehensive recovery ZIP.
+  Use the [recovery guide](</Users/haroldchen/Development/life/work-environment/chatgpt-rebuild/备份恢复说明.md>); superseded local backup folders are retired. Current sources and formal history remain in their new locations; iCloud is not a full runtime backup.
+
 ## Runtime and package boundaries
 
 ```text

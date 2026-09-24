@@ -7,6 +7,15 @@ Product changes are made here first and reflected in `docs/decisions.md` and
 `docs/traceability.md`. Git history is the change record; no external copy is an authority or
 fallback.
 
+## Company and brand context
+
+Harold confirmed during the September 2026 workspace rebuild that Tymra and Synix are parallel
+products owned by Spicy Maggie. Argus is a separate shared platform owned by the same company.
+The existing wording and artwork “Tymra by Synix” describe branding; they do not establish a
+parent/subsidiary product relationship, a legal entity or ownership of Tymra's customer data.
+This workspace migration preserves existing product behaviour and artwork. Future endorsement,
+copyright or public naming changes are product work, not an automatic consequence of moving files.
+
 ## Authority and scope
 
 The current National Data Core v1.3 documents use this precedence:

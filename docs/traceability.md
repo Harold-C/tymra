@@ -28,6 +28,105 @@ Exact image, backup, Job, database and remote-result evidence is in
 [`evidence/tymra-argus-production-attempt-2026-09-24.md`](./evidence/tymra-argus-production-attempt-2026-09-24.md).
 The production service is still Admin-only; collection and Scheduler are off.
 
+## 2026-09-24 Admin-only production access candidate
+
+The current request is to expose only the operations backend during the first production stage.
+The existing `DEPLOYED_HIDDEN` switch alone does not meet that requirement: it hides links while
+direct customer routes and APIs remain reachable. The production Compose candidate now has only
+the `ops.tymra.nz` Web router, defaults `ADMIN_ONLY_ACCESS=true`, and uses an Admin sign-in
+healthcheck. Production middleware denies non-Admin pages/APIs on every host, including the public
+hostname, and adds `X-Robots-Tag: noindex, nofollow, noarchive`. The Operations router adds the
+same header. Existing Admin authentication and API authorization remain in place. Public and www
+routers were removed from this candidate; the customer site cannot be opened merely by knowing a
+direct route. This stage is distinct from client `DEPLOYED_HIDDEN` and does not claim customer launch.
+
+Four residual bearer-result/reissue routes referring to removed `ResultView`, `resolveResultLink`
+and `LINK_REISSUED` were deleted in line with the approved owner-authenticated result contract.
+Web TypeScript now passes. Middleware boundary tests passed 9/9, including public page/API denials,
+Operations access, a mismatched forwarded Host and the production fail-closed default. Production Compose rendered with safe placeholder
+values and contained only the Operations router. A sanitized 492-file source context with no `.env`,
+runtime data, historical evidence or Git metadata built the local `production` image successfully:
+`tymra:admin-only-20260924`, image ID
+`sha256:514a7d16c31f932b0d276e19221b8ed7bacffc3c711bdbf6b1b7c5a288bc4309`
+(linux/arm64). Build log SHA-256:
+`adbf0724c48ed5140bdbee5f47c7dd8322986174f5ae97cae33e4d6da898fc02` at
+`/Users/haroldchen/Development/tymra/runtime/release-candidates/tymra-admin-only-20260924-build.log`.
+The temporary source context was removed.
+
+In a disposable local container with placeholder configuration and no business database, the
+Operations sign-in returned 200 with `noindex`; the Operations host's customer page/API and the
+public/www hosts' home, Price Check, customer API and Admin sign-in returned 404 with `noindex`.
+The test container was stopped. This verifies routing and unauthenticated sign-in rendering only;
+authenticated Admin operations, production data, DNS/TLS/ingress and search platform indexing were
+not verified. On 2026-09-24 `tymra.nz`, `www.tymra.nz` and `ops.tymra.nz` did not resolve from this
+host. The existing local Tymra services remain on the prior built image; no migration, scheduler,
+real collection, production write or deployment occurred. Full product, source, retention, capacity,
+recovery and rollback gates below remain open. This image is a local access candidate, not a
+release approval.
+
+The user subsequently selected the Spicy Maggie host and registered `tymra.nz`. Read-only SSH
+confirmed `spmadmin@148.135.121.30` is `spm-prod-01`, linux/x86_64, with about 83 GiB disk and
+4.8 GiB memory available. The existing website and Traefik containers were healthy. The shared
+proxy uses the existing `spm_ingress` network and an HTTP-challenge `letsencrypt` certificate
+resolver; the candidate Operations router now selects that resolver. No existing Tymra containers,
+Docker volumes or application directory were observed in the inspected deployment locations.
+The authenticated Cloudflare DNS page showed zero records for `tymra.nz`; no records were changed.
+Fresh lint and all workspace type checks passed; root unit tests passed 225 with 5 skipped and
+Worker unit tests passed 141. The earlier arm64 image was not used on this host. The user confirmed
+administrator `ict@spicym.nz` and backend-only operation with external services disabled.
+
+The amd64 local build passed. Its large image transfer was stopped before import completed because
+of upload speed; the verified 492-file source package was then built natively on SPM. Source archive
+SHA-256: `fb9c1de9a6f2847f995805b7a078f14c43a724c7769ff27bc8282f8cad84aecc`.
+The server image is `sha256:ed9e56e89aab5ed82211660d893aae424d2a5e9e41d5e3f9dae2056bed7b9417`.
+Protected deployment files are in `/srv/apps/tymra/releases/admin-only-20260924/`; the environment
+file is `/srv/apps/tymra/shared/production.env` (root-only). Only Postgres, Redis and Web are running;
+the 32 migrations completed successfully. Worker/API require the `collection` profile, Scheduler
+requires the `scheduler` profile, and neither is enabled. SMTP is unset, email transport is `log`,
+and the disabled Argus endpoint is loopback port 9 with a non-working random token. Billing,
+customer funnel, new checks, internal on-demand and schedulers are disabled. No production Argus
+integration or live external-service acceptance is claimed.
+
+The general seed was not run. Exactly one administrator was created; customer, check and collection
+run counts were zero. Origin HTTP verification passed for sign-in, authenticated overview/checks/
+data sources/market coverage/exceptions, logout and session revocation. Unauthenticated Admin
+access redirected to sign-in; customer/public routes returned 404 with noindex. Web/Postgres/Redis
+are healthy and the pre-existing SPM website and Traefik remained healthy. Pre-DNS browser attempts
+did not establish UI acceptance; the subsequent public checks below supersede that boundary.
+
+After execution-time confirmation, Cloudflare saved the sole proxied A record `ops.tymra.nz` to
+`148.135.121.30`. No apex/www records were added. The Operations certificate was issued after a
+Tymra-Web-only restart retriggered issuance following the initial NXDOMAIN attempt; the shared
+Traefik service was not restarted. Both origin and public TLS verification returned 200. Cloudflare
+was changed from Full to Full (strict), read back in its dashboard, and public HTTPS remained 200.
+Public sign-in returned 200, unauthenticated Admin page redirected 307, unauthenticated Admin API
+returned 403 (`Administrator access is required`), and customer page/API returned 404; all checked
+responses carried `X-Robots-Tag: noindex, nofollow, noarchive`.
+
+Playwright desktop (1440 x 1000) verified sign-in, overview, list navigation, logout and return to
+sign-in over public HTTPS with certificate verification enabled. The browser title was
+`Overview · Tymra`, meaningful empty-state content rendered, no framework error overlay or page
+exceptions appeared, and the screenshot was inspected. Five console messages in the final run
+were RSC prefetch cancellations, each matched to `net::ERR_ABORTED` during navigation; there were
+no other console errors. Browser plugin was absent, so existing project Playwright was used.
+Because local command-line DNS returned an inconsistent address/negative cache, this automated
+check pinned the Cloudflare address verified through encrypted DNS; importantly the user's Safari
+subsequently opened the normal HTTPS login URL successfully without a DNS override. No system DNS
+or security settings were changed. Screenshot:
+`/Users/haroldchen/Development/tymra/runtime/release-candidates/tymra-admin-only-20260924-admin.png`.
+Argus is visibly unavailable by design in this phase. No collection, mail delivery, billing,
+customer flow, mobile viewport, search-engine indexing or full disaster recovery is claimed.
+The generated administrator credential is in the local protected runtime secrets directory; its
+value is not recorded here. Final source/config diff checks passed; no commit or push was made.
+
+Recovery files are root-only under `/srv/apps/tymra/backups/admin-only-20260924/`:
+`before-migration.dump` SHA-256 `642c6b5645418f190cc3ebcba2a4cc71292efa4cdaf5a67e620eff09157af1a6`,
+and initialized database dump SHA-256
+`d4602cca5795f791cf9716987a42ea9ada7da6b0a2fa34c5739363a4f76807a4`.
+The pre-migration archive table of contents was readable. An environment recovery copy is retained
+there; no secrets are included in this record. Roll back initial exposure by stopping only Web with
+the installed Compose/environment files, preserving all volumes and the shared proxy. Do not use
+`down -v` or restore the empty database over later business data. Full disaster restore is untested.
 
 Status is `verified` only after the named automated checks and relevant runtime evidence pass.
 The current baseline uses `proposed`, `not_implemented`, `partially_implemented_not_verified`,
@@ -39,12 +138,48 @@ The tables below contain both current status and explicitly dated historical evi
 `verified` result remains valid for that snapshot but does not mean the current revision was
 rerun through the same gate. The current-worktree section is authoritative for fresh verification.
 
-## Current Collection Status
+## Current Workspace And Runtime Baseline (2026-09-13)
 
-Current status is maintained here; detailed historical run IDs and counts are preserved in the
+The editable main checkout is now `/Users/haroldchen/Development/tymra/repo`; the iCloud business
+entry is `Workspaces/tymra`. HEAD remains `4def572f18dbeb1cd332430fcc3bd900443a5446`, with the
+original 53 dirty paths preserved, including intentional deletions and new migrations. The old
+checkout remains intact. This migration does not release or complete that development candidate.
+Company ownership and current local-document authority are defined in [product/README.md](./product/README.md).
+
+| Check | Observed result | Consequence |
+| --- | --- | --- |
+| Local unit tests | 222 root tests passed, 5 skipped; 141 worker tests passed | Unit coverage only; no fresh database integration, live provider, UI or release acceptance |
+| Type checks | Config, DB, domain, providers, queue and worker passed; Web failed with six errors | Old token-result, feedback and reissue routes still reference removed `resolveResultLink`, `ResultView` and `LINK_REISSUED`; the original checkout produces the same six errors |
+| Existing runtime | Six Tymra containers retain their original identities and built images; no source bind mounts | Editing the new checkout does not replace the running candidate. No rebuild, migration, seed or scheduler activation occurred |
+| Local HTTP | English/Chinese site, admin sign-in and Mailpit returned 200 with TLS verification | These checks establish endpoint availability, not authenticated business or rendered-UI acceptance |
+| Existing API fault | Worker API readiness returns 503; database and Redis pass, Argus health/readiness return 404. Public worker routes also return 404 | Present before migration. Resolve Argus dependency/routing in the appropriate product/platform task before claiming readiness |
+| Frozen backups | Source and dormant host helpers, PostgreSQL/Redis/evidence volumes, Mailpit container filesystem and exact application image preserved in six encrypted archives | PostgreSQL 17 and Redis restored successfully into isolated disposable copies; 80 public tables readable and complete PostgreSQL logical dump passed. Original volumes retained |
+| Host helper templates | Two repo scripts resolve their own new location; three launchd templates point to the new repo | No Tymra LaunchAgent was installed or loaded at inspection. The former 60-second auto-recovery claim is not current; templates remain inactive |
+
+The package-manager check initially reconciled copied dependencies automatically and was interrupted.
+Those dependency trees were retained outside the active repo, then restored from the unchanged original
+and hash-verified. The results above use the copied compiler and Vitest directly, without another install.
+No application source, package versions, test expectations or runtime environment values were changed.
+
+Remaining candidate work starts with removing or reconciling the stale result-link routes under the
+approved v1.3 specification, then the required checks. Existing Argus availability and the dated product
+acceptance gaps below remain separate. The older collection and development results are preserved as
+2026-08-21 or earlier evidence and do not supersede this fresh baseline.
+
+Detailed migration and restore evidence is in
+`/Users/haroldchen/Development/life/work-environment/chatgpt-rebuild/tymra-final-verification.json`
+and `tymra-data-restore-verification.json`; after retirement of superseded local backup folders,
+restore order is described in the [recovery guide](</Users/haroldchen/Development/life/work-environment/chatgpt-rebuild/备份恢复说明.md>). On 2026-09-13 the saved project configuration was checked: `Tymra` uses
+the business entry as primary root and `/Users/haroldchen/Development/tymra/repo` as an additional
+root. This verifies saved configuration; rendered desktop UI and remote iCloud sync are separate checks.
+
+## Collection Status At The Prior Development Baseline
+
+The rows in this section describe the prior development baseline, not fresh runtime checks.
+Detailed historical run IDs and counts are preserved in the
 [2026-07-30 full public-source acceptance](./evidence/public-source-acceptance-2026-07-30.md).
 
-| Channel | Current local state | Remaining boundary |
+| Channel | Prior observed state | Remaining boundary |
 | --- | --- | --- |
 | Eventfinda | Bounded two-pass real collection, persistence and idempotency verified | Nationwide multi-day unattended stability requires a deployed long-running environment |
 | Ticketmaster | Implementation and automated two-pass persistence verified; live detail attempts stop and cool down on challenge | Repeat live detail acceptance when the public page permits passive access |
@@ -59,13 +194,68 @@ Current status is maintained here; detailed historical run IDs and counts are pr
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
 
-## Latest Development Candidate Verification And Current Documentation Delta (2026-08-21)
+## National Data Core v1.3 Implementation Gap Audit (2026-08-21)
 
-The latest development-candidate code evidence predates this documentation-only National Data Core v1.3
-baseline. It includes the complete development membership surface, P0/P1/P2 anti-abuse controls,
-New Zealand business-date policy, address benchmarks, the OTA soak waiver and cross-browser canary.
-The new `DATA-CORE-001..022` contract has not yet received a code/schema implementation-gap audit or
-fresh regression. Git state is not used as verification evidence.
+This table began as the approved `DATA-CORE-001..022` gap audit and now records the implementation
+state of the same scope. `P0` blocks the first unified production candidate or would cause irreversible
+loss/misattribution; `P1` completes nationwide operating depth; `P2` improves scale and operator
+efficiency. Tymra has never launched, so obsolete development-only schema and routes were deleted
+directly without a compatibility layer or historical backfill. `implemented_database_verified` means
+the code, clean migration/seed and isolated PostgreSQL contracts passed; it does not claim a nationwide
+non-demo run or production acceptance.
+
+| Requirement | Current repository evidence | Concrete gap | Priority | Status |
+| --- | --- | --- | --- | --- |
+| `DATA-CORE-001` nationwide identity directory | 17 Region × six OTA durable crawl frontier; bounded discovery persists explicit Property/Unit/Listing identities and versions | Nationwide non-demo population depth has not yet been run or measured | P0 | `implemented_database_verified` |
+| `DATA-CORE-002` nationwide public signals | National aggregators, 15 major-market mappings, regional official adapters and canonical event/signal persistence exist | Continuous enabled operation is unproved; Chatham Islands, Gisborne, Marlborough and West Coast depth is not represented by the 15-market operating set; production schedules remain disabled | P1 | `partially_implemented_not_verified` |
+| `DATA-CORE-003` representative OTA panel | Region-stratified 840 Anchor + 360 Rotating selector, approved date basket, bounded Argus rate collection and coverage update | Real nationwide inventory must fill and calibrate the target panel | P0 | `implemented_database_verified` |
+| `DATA-CORE-004` nationwide bounded on-demand collection | Admin `/admin/on-demand` accepts one unique NZ address or supported OTA URL and starts the existing auditable Price Check/Argus path with 30-night/365-day/occupancy bounds | Live address and all-six-OTA operator acceptance remains | P1 | `implemented_database_verified` |
+| `DATA-CORE-005` member-property monitoring | Host/Pro/Portfolio scheduler, plan cadence, quota and NZ business-date query plans exist | Unified-production and real-provider scheduled monitoring have no fresh all-plan acceptance; scheduler reuses the latest check and does not yet prove full target-mode/context preservation | P1 | `implemented_not_verified` |
+| `DATA-CORE-006` all-region acceptance | Seed and coverage refresh explicitly maintain all 17 Regions and do not substitute Christchurch for nationwide scope | Non-demo dispersed-region run evidence remains | P0 | `implemented_database_verified` |
+| `DATA-CORE-007` coverage levels | Exact `SUPPORTED/PARTIAL_COVERAGE/PILOT/INSUFFICIENT_DATA/SOURCE_UNAVAILABLE` taxonomy is migrated and used | Runtime states still depend on real observations | P0 | `implemented_database_verified` |
+| `DATA-CORE-008` coverage facts | Region rows store Property/Unit/Listing/panel counts, composition, geography, 24/72 coverage, freshness, explicit gaps, last success and priority | TA-level depth and thresholds need operational calibration | P1 | `implemented_database_verified` |
+| `DATA-CORE-009` Source Registry | Versioned capability rows are seeded for every source; OTA sources and capabilities are visible in Admin | Production configuration review remains | P0 | `implemented_database_verified` |
+| `DATA-CORE-010` capability-based adapters | Catalog, panel, Listing resolution, rate collection and public signal jobs check registered capability before network execution and return `SOURCE_CAPABILITY_MISSING` | None at code-contract level | P0 | `verified` |
+| `DATA-CORE-011` raw/normalised/derived layers | `RawArtifact`, normalised identity/observation/event/signal models and derived snapshots/results exist with separate retention fields | Dedicated layer-boundary regression and category-specific retention acceptance must be rerun after the schema work | P1 regression | `implemented_not_verified` |
+| `DATA-CORE-012` Argus/Tymra evidence boundary | Result/schema/hash verification, ACK/purge, local durable facts and multiple dated real acceptance reports exist | Production-duration evidence lifecycle remains an external operating gate, but no contract redesign is required | Regression only | `verified_for_prior_development_candidate` |
+| `DATA-CORE-013` time fields | Observation and identity versions expose source/effective/observed/collected/ingested/business/validity/superseded semantics; NZ business dates remain `Pacific/Auckland` | Nullable source timestamps honestly remain null when a provider does not publish them | P0 | `implemented_database_verified` |
+| `DATA-CORE-014` Freshness | Typed versioned `FreshnessAssessment` stores domain, purpose, reference, age, limit, state and limitations | Cross-domain policy thresholds need real operating data | P1 | `implemented_database_verified` |
+| `DATA-CORE-015` Confidence | Typed layered `ConfidenceAssessment` supports identity, field, snapshot and derived result scopes | Real thresholds need calibration | P1 | `implemented_database_verified` |
+| `DATA-CORE-016` versioned identity graph | `IdentityEntityVersion` preserves Property/Unit history; `ListingVersion` and `IdentityRelationVersion` preserve Listing and Listing→Unit evidence/validity | Split/conflict operating exercises remain | P0 | `implemented_database_verified` |
+| `DATA-CORE-017` Listing change history | All current catalog, OTA resolution, address promotion and manual-import mutation paths append content-addressed identity/Listing versions | Real multi-pass source-change acceptance remains | P0 | `implemented_database_verified` |
+| `DATA-CORE-018` Data Lineage | `TransformationRun` and `LineageEdge` connect raw artifacts, normalized rates, snapshots, analyses, results and insights; Admin explorer queries the graph | Production-scale query tuning remains | P0 | `implemented_database_verified` |
+| `DATA-CORE-019` snapshot target modes | `MarketSnapshot.analysisType` is required; address mode uses nullable Listing/Unit and a spatial anchor without fabricated target Listing | Fresh live two-mode acceptance remains | P0 | `implemented_database_verified` |
+| `DATA-CORE-020` price/recommendation separation | Separate result statuses, one-valid-price delivery behavior and dedicated integration tests exist | Preserve through the schema migration and rerun both target modes; no new product behavior is required | Regression only | `verified_for_prior_development_candidate` |
+| `DATA-CORE-021` unified nationwide backend gate | Required code/schema paths now exist with clean migration/seed, drift-free schema and integration coverage | Non-demo nationwide execution, capacity, evidence ACK/purge and production readiness remain release gates | P0 dependency gate | `implemented_not_live_accepted` |
+| `DATA-CORE-022` client same-version deployment and hidden discovery | Approved target is hidden discovery with owner-authenticated results; the 2026-09-13 source baseline still contains token-result, feedback and reissue routes referencing deleted symbols | Remove/reconcile residual routes, pass Web type checks and authentication regression, then rerun hidden/direct-route browser acceptance | P0 | `partially_implemented_not_verified` |
+
+### Approved implementation order from the audit
+
+1. **P0 schema and domain correctness:** capability registry, exact coverage taxonomy, all-Region
+   coverage identities, versioned identity/Listing history, complete time fields,
+   `TransformationRun`/lineage edges, mode-aware snapshots and removal of durable bearer results.
+2. **P0 execution paths:** capability-gated orchestration, real catalog discovery, stratified panel
+   construction and collection, address snapshot generation, authenticated result delivery and
+   `DEPLOYED_HIDDEN` configuration.
+3. **P0 acceptance:** clean migration/seed, all 17 Regions, six-OTA registry, both target modes,
+   history/lineage immutability, one-price behavior, hidden/direct-route security and rollback.
+4. **P1 operating depth:** coverage fact completeness, typed Freshness/Confidence, remaining regional
+   signal depth, internal bounded on-demand UI and real scheduled-member monitoring.
+5. **P2 optimisation:** adaptive panel rotation/weights, cost-aware cadence, lineage exploration,
+   coverage-gap prioritisation and long-running production tuning.
+
+## Historical Development Candidate Verification And Documentation Delta (2026-08-21)
+
+The following candidate and requirement matrices retain their dated evidence. They were not rerun
+for the migrated checkout. In particular, previous bearer-route removal claims are superseded by
+the six Web errors and residual routes in the 2026-09-13 baseline and `DATA-CORE-022` row above.
+
+The current working candidate now includes the National Data Core v1.3 P0 schema/execution paths,
+P1 operating surfaces and P2 optimisation controls described above, together with the complete
+development membership surface, anti-abuse controls, New Zealand business-date policy and the prior
+OTA soak waiver. Clean isolated PostgreSQL migration/seed/schema-drift and 110 integration tests pass;
+the push-time browser/release matrix and non-demo nationwide operating acceptance are still pending. Git state is not used
+as verification evidence.
 
 | Gate | Fresh evidence from current worktree | Status |
 | --- | --- | --- |
@@ -92,8 +282,8 @@ availability or production readiness.
 | PRD-GOALS, PRD-PRINCIPLES, PRD-AUTOMATION | Domain decisions, worker pipeline, publication policy | Decision and worker integration tests | verified |
 | PRD-SCOPE unified production deployment | Existing Admin/client routes, APIs, Worker and database; nationwide scope and `DEPLOYED_HIDDEN` navigation/CTA behaviour require a fresh gap audit | Prior route inventory and E2E suites do not prove the new deployment contract | implemented_not_verified |
 | PRD-DATA 6.1–6.7 | Prisma market models, append-only services, provider metadata and collection modes | Database integration tests | verified |
-| DATA-CORE-001..022 / D-049 / D-050 | Existing source, observation, identity, quality and collection models cover parts of the contract; capability registry, versioned identity/history, generic lineage, address-mode snapshot and nationwide acceptance gaps require audit | No dedicated National Data Core v1.3 implementation/acceptance run yet | partially_implemented_not_verified |
-| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Existing customer-session and ownership tests pass; durable bearer-result code removal and route inventory require a fresh audit | implemented_not_verified |
+| DATA-CORE-001..022 / D-049 / D-050 | Capability registry, 17-Region frontier/coverage, representative panel, versioned identity/history, generic lineage, address-mode snapshot, hidden client discovery and bounded Admin on-demand workflow are implemented | Clean migration/seed/drift and isolated integration pass; push-time browser matrix plus non-demo nationwide operating acceptance remain | implemented_not_live_accepted |
+| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Prior ownership tests remain historical evidence; the 2026-09-13 checkout still has residual bearer-related routes and six Web type errors | partially_implemented_not_verified |
 | PRD-OPS | Exception Inbox and operational views | Admin API and Playwright tests | verified |
 | PRD-MARKET | Market records, NZ eligibility and locale behaviour | Domain and bilingual flow tests | verified |
 | PRD-COMMERCIAL, PRD-ROLES | Single-admin and customer/member surfaces exist; client discovery must be hidden without disabling deployed routes or security | Fresh production-config, direct-route, navigation and Stripe evidence required | implemented_not_verified |
@@ -119,7 +309,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | BR-CONF, BR-RISK, BR-DEC | Confidence, risk and publication decisions | Decision table tests | verified |
 | BR-EXC | Exception model, actions, priority and workspace | Admin API/E2E tests | verified |
 | BR-DATA | Append-only records and identity merge history | Database integration tests | verified |
-| BR-RES | Immutable results, authenticated ownership and notifications | Existing version/email/session tests pass; obsolete bearer-result removal and conditional delivery need fresh regression | implemented_not_verified |
+| BR-RES | Immutable results, authenticated ownership and notifications | Earlier immutable-result, email and owner-session integration passed; residual bearer-related routes still need removal/reconciliation and fresh regression under the 2026-09-13 baseline | partially_implemented_not_verified |
 | BR-API | `/api/v1` response and error contracts | Rough/customer APIs exist; current two-mode input, authenticated result route inventory and obsolete endpoint removal need fresh audit | implemented_not_verified |
 | BR-FB | Feedback and learning boundaries | Feedback integration tests | verified |
 | BR-LIMIT | Idempotency, free-check reuse and rate limits | Abuse/idempotency tests | verified |
@@ -137,7 +327,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | PG-CHECK | `/{locale}/check`, `/{locale}/address-check` and `/{locale}/rough/{checkId}` | Routes exist; current two-mode, pre-email rough-value and no-formal-provider-before-verification contract needs fresh E2E | implemented_not_verified |
 | PG-PROPERTY, PG-UNIT, PG-QUERY | Confirmation routes and APIs | Candidate/unit/query E2E | verified |
 | PG-STATUS, PG-BIZSTATE | Persisted task status and terminal states | Existing status matrix predates authenticated formal-status and separate rough access contract | implemented_not_verified |
-| PG-RESULT | Authenticated owner-only account result route and feedback | Earlier secure-link E2E is historical; bearer-route removal, account route and ownership need fresh inventory and browser acceptance | implemented_not_verified |
+| PG-RESULT | Authenticated owner-only account result route and feedback | Owner-only delivery is the approved target; residual token-result/feedback/reissue routes and Web type errors remain in the 2026-09-13 checkout | partially_implemented_not_verified |
 | PG-PUBLIC | Methodology, FAQ, contact and legal routes | Public route/copy tests | verified |
 | PG-ADMIN | Protected admin shell and sign-in | Auth and 403 tests | verified |
 | PG-EXC, PG-EXC-DETAIL | Inbox and single-screen workspace | Admin E2E tests | verified |
@@ -201,7 +391,7 @@ Authoritative source: [Customer funnel requirements](product/customer-funnel.md)
 | D-016 Customer/Admin separation | R15-ID-001, R15-ID-003, R15-SEC-003 | Separate models/cookies and authorization tests | verified |
 | D-017 Verify before account activation | R15-ID-001, R15-ID-002, R15-SEC-001 | Pending state plus replay/expiry/concurrent activation integration and valid-link E2E | verified |
 | D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck` plus pre-enqueue quota boundary | verified |
-| D-019 Authenticated formal reports | R15-OWN-001 | Cross-account denial and authenticated-result E2E pass; obsolete bearer endpoints still require removal audit | implemented_not_verified |
+| D-019 Authenticated formal reports | R15-OWN-001 | Earlier cross-account denial and authenticated-result tests passed; the 2026-09-13 source baseline still requires bearer-route cleanup and fresh regression | partially_implemented_not_verified |
 | D-020 Minimal conditional email | R15-EMAIL-001, R15-EMAIL-002, R15-CONSENT-001 | Single-message Mailpit and acknowledgement E2E | verified |
 | D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, challenge handshake, email cooldown, device 429 and formal quota tests | verified |
 | D-022 No exclusive property claim | R15-OWN-001 | Independent anonymous records and customer ownership guard | verified |
@@ -261,23 +451,31 @@ serviceability, idempotency and quota.
 
 ## Required Commands
 
+These command descriptions remain useful, but the results below belong to earlier development
+runs (including 2026-08-12). They are not current-worktree acceptance. The 2026-09-13 baseline
+records six Web type errors, readiness 503 and no loaded Tymra LaunchAgent; no command here was
+rerun during the document correction.
+
 | Command | Intended coverage | Status |
 | --- | --- | --- |
-| `pnpm dev` | Next.js local development | current worktree image running and HTTPS route returns 200 |
-| `pnpm worker` | Persistent Worker | current worktree image running; health/readiness return 200 |
-| `pnpm db:generate` | Prisma client generation | current worktree verified on host and in Docker |
-| `pnpm db:migrate` | Development migration | Current retention/analytics and event-impact migrations applied in development |
-| `pnpm db:seed` | Deterministic demo seed | current worktree verified in the isolated migrated PostgreSQL database |
-| `pnpm lint` | Workspace lint | current worktree verified; no warnings or errors |
-| `pnpm typecheck` | Workspace type checking | current worktree verified through aggregate command |
-| `pnpm test` | Unit/domain and Worker suites | current worktree verified: 218 passed plus 5 external fixtures skipped; 135 Worker tests passed |
-| `pnpm test:integration` | Database/API/Worker integration | current worktree verified: 105 tests in an isolated seeded database |
+| `pnpm dev` | Next.js local development | earlier candidate image ran and HTTPS route returned 200 |
+| `pnpm worker` | Persistent Worker | earlier candidate image ran with health/readiness 200; superseded by the 2026-09-13 readiness 503 observation |
+| `pnpm db:generate` | Prisma client generation | earlier candidate verified on host and in Docker |
+| `pnpm db:migrate` | Development migration | retention/analytics and event-impact migrations applied to the earlier development database |
+| `pnpm db:seed` | Deterministic demo seed | earlier candidate verified in the isolated migrated PostgreSQL database |
+| `pnpm lint` | Workspace lint | earlier candidate verified; no warnings or errors |
+| `pnpm typecheck` | Workspace type checking | earlier candidate passed; superseded by the six Web type errors in the 2026-09-13 baseline |
+| `pnpm test` | Unit/domain and Worker suites | earlier candidate: 218 passed plus 5 external fixtures skipped; 135 Worker tests passed |
+| `pnpm test:integration` | Database/API/Worker integration | earlier candidate: 105 tests in an isolated seeded database |
 | `pnpm test:e2e` | Playwright and accessibility | Canonical `https://tymra.test` desktop run passed 19 executable scenarios with 2 explicit external skips; the final mobile run passed 17 executable scenarios with 4 explicit external/not-applicable skips. E2E now isolates its Admin identity, verifies critical API contracts before starting and prevents the local recovery agent from racing controlled Compose recreation |
 | `pnpm test:e2e:member-live` | Real member-to-Argus price delivery | gate implemented and list-validated; not run because no live-member credentials/input were supplied |
 | `pnpm build` | Production Web and Worker build | 112-page Web build and Worker entrypoints verified; known optional LinkeDOM canvas warning only |
 | `pnpm verify` | Lint, typecheck, unit, integration, build | constituent gates verified on 2026-08-12; integration used a migrated, seeded and then deleted isolated database |
 
 ## Final Acceptance Evidence
+
+These results preserve earlier evidence and its original counts. They are not final acceptance of
+the migrated workspace or a production release; current blockers are recorded at the top of this file.
 
 | Gate | Evidence | Status |
 | --- | --- | --- |
@@ -286,11 +484,11 @@ serviceability, idempotency and quota.
 | Database and seed | Clean Compose volume migrated; seed repeated without duplicate growth | verified |
 | Web, Worker and Admin | HTTP 200, running Worker, protected Admin sign-in and workspace E2E | verified |
 | Providers and exceptions | Demo/Manual provider tests, real import preview/import, exception workspace E2E | verified |
-| Verification and email | One-time verification, customer-session ownership and Mailpit delivery evidence; obsolete bearer-result route removal needs fresh audit | implemented_not_verified |
+| Verification and email | Earlier one-time verification, ownership and Mailpit evidence; the claimed complete bearer-route removal is superseded by the 2026-09-13 source baseline | historical_evidence_current_cleanup_incomplete |
 | Quality commands | lint, typecheck, 26 unit, 24 integration, build and `pnpm verify` | verified |
 | Browser QA | Dated 16/16 Playwright, axe, 390/1440/1920 viewport matrix | verified for that revision |
 | Compose and README | Clean `up --build`, migration, repeat seed, endpoints and teardown exercised | verified |
-| Persistent local URL | Web/Worker/health-check LaunchAgents restored; `tymra.test/en` HTTP 200 | verified |
+| Persistent local URL | Earlier Web/Worker/health-check LaunchAgents were reported restored with HTTP 200; the 2026-09-13 inspection found no loaded Tymra LaunchAgent | historical_verified_not_current |
 
 ## 2026-07-16 Homepage And Public Flow Refresh
 

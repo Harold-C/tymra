@@ -12,6 +12,12 @@ Use the [documentation index](docs/README.md) as the single entry point. Product
 `docs/collection`, historical run records in `docs/evidence`, and current implementation status in
 [`docs/traceability.md`](docs/traceability.md). The former Google Docs are no longer authoritative.
 
+The current local engineering root is `/Users/haroldchen/Development/tymra/repo`.
+The iCloud `Workspaces/tymra` directory is the business navigation entry, not a second source tree.
+See `docs/architecture/codebase.md` for directory boundaries and `docs/traceability.md` for the
+current runtime and migration status. Existing containers run a built image; editing this tree
+does not change their application code until an explicitly requested candidate switch.
+
 ## Prerequisites
 
 - Docker Desktop with Docker Compose v2
@@ -163,12 +169,13 @@ pnpm cli collect:disruptions
 pnpm cli retention:cleanup
 ```
 
-### Browser event collection status
+### Event collection and browser responsibility
 
-Eventfinda, Ticketmaster and RBNZ use durable Argus read-only browser Jobs.
-Queued collections persist each Argus execution, release the Worker while it runs, poll through a
-separate delayed database Job and resume the same collection after completion or restart. There is
-no in-process or private-browser fallback. Eventfinda supports
+Eventfinda listing and detail pages use ordinary read-only HTTP directly in Tymra. Ticketmaster
+listings are also direct HTTP; selectively required Ticketmaster details and RBNZ browser captures
+use durable Argus Jobs. Those browser collections persist each Argus execution, release the Worker
+while it runs, poll through a separate delayed database Job and resume the same collection after
+completion or restart. There is no in-process or private-browser fallback. Eventfinda supports
 nationwide paginated discovery, one detail target per event series, multi-date expansion and
 development-only bootstrap runs. Ticketmaster collects complete structured events directly from five
 verified city listing routes and schedules a detail page only when required identity, date, status or
@@ -179,12 +186,12 @@ discovery schedule and six-hour fallback-detail schedule are defined but remain 
 Current real-page acceptance is partial because two later captures remained challenged after the
 bounded passive wait; no Ticketmaster API key or API endpoint is used.
 
-On the configured Mac, Docker `restart: unless-stopped` policies keep the required long-running
-services alive. `com.harold.nbc-tymra.healthcheck` checks the core Compose stack and configured HTTPS
-hosts every 60 seconds, restores missing containers, and starts the shared Traefik container when
-needed. It does not start the disabled Scheduler.
-The older host-based Web and Worker LaunchAgents are retained only as an emergency fallback and must
-not run at the same time as the Compose application processes.
+Docker `restart: unless-stopped` policies remain configured on the current local services.
+As verified on 2026-09-13, no Tymra LaunchAgent is installed or loaded; the earlier claim that a
+60-second host health check is active no longer describes this Mac. Repository templates and
+scripts remain available for a separately requested setup. Running the recovery script can start
+shared Traefik and execute Compose up, including migrations/seed; do not use it as a read-only check.
+Host-based Web/Worker fallbacks must remain unloaded while the Compose application processes run.
 
 ## Production Domains
 
@@ -201,10 +208,21 @@ Production secrets and service settings use explicit `PROD_*` variables, such as
 `PROD_POSTGRES_PASSWORD`, `PROD_SESSION_SECRET`, `PROD_ADMIN_EMAIL`, `PROD_EMAIL_FROM` and
 `PROD_SMTP_URL`. This prevents Compose from silently reusing the local `.env` values.
 
-The public and Operations hosts share the Next.js deployment but are separated by Host middleware.
-Customer APIs remain same-origin under `/api/v1`; there is no public `api.tymra.nz`. PostgreSQL,
-Redis, Worker, Scheduler and the Worker API remain on the internal Docker network. Mailpit is not
-part of the production Compose file. `www.tymra.nz` permanently redirects to `tymra.nz`.
+The backend-only deployment uses `PROD_EMAIL_PROVIDER=log` and leaves SMTP unset.
+Collection Worker/API services require the `collection` Compose profile, and the Scheduler
+requires the `scheduler` profile. After the restricted Argus production acceptance on 2026-09-24,
+Worker/API remain running with production Argus credentials; Scheduler remains disabled. The
+initial deployment used a disabled loopback endpoint and non-working token until that acceptance.
+Do not run the development seed for production: it creates demonstration scenarios. Bootstrap
+only the explicitly selected administrator into the fresh, migrated production database.
+
+The first production ingress exposes only `ops.tymra.nz` for Admin. The production Compose file
+defaults to `ADMIN_ONLY_ACCESS=true`, has no public or www Web router, and marks Admin responses
+`noindex`. The public hostname, customer routes and same-origin customer APIs remain closed even
+when their code is present in the image. PostgreSQL, Redis, Worker, Scheduler and the Worker API
+remain on the internal Docker network. Mailpit is not part of the production Compose file.
+Opening the customer site later requires a separate ingress change and the client release gates
+in `docs/product/requirements.md`.
 
 ## Manual Import
 
@@ -234,7 +252,7 @@ pnpm verify
 `pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
 builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
 behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
-[`docs/traceability.md`](docs/traceability.md#current-worktree-verification-2026-08-12), not inferred
+[`docs/traceability.md`](docs/traceability.md#current-workspace-and-runtime-baseline-2026-09-13), not inferred
 from an older successful run.
 
 `pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
