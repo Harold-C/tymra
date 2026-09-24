@@ -1,8 +1,19 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-24
+Last updated: 2026-09-24（后台与受限 Argus collection 已验收）
 
-## 2026-09-24 Argus 生产接入阻断
+## 2026-09-24 受限生产采集验收完成
+
+Argus 证据经 Cloudflare 的原始字节和哈希已恢复一致；Tymra 仅新增
+`UNIVERSITY_CALENDAR` migration。复用原 Lincoln 2026 Argus Job 的有界重试已写入两条
+不重复的生产市场信号、复制并校验两份证据，ACK 后结果为 410、远端证据为 404。
+Worker/API 保持健康运行，Scheduler、客户入口、新 Check、内部按需、Stripe、SMTP 和会员
+继续关闭。当前只验收这一条公开只读 Connector；RBNZ 和其他 Connector 未验收。
+下一阶段应逐个解决各 Connector 的独立问题，再准备单来源持续金丝雀、告警和
+Scheduler 启用门槛，不把本次一次性验收当作持续运行验收。完整证据见
+[`evidence/tymra-argus-production-acceptance-2026-09-24.md`](./evidence/tymra-argus-production-acceptance-2026-09-24.md)。
+
+## 2026-09-24 先前 Argus 生产接入阻断（历史）
 
 一次有界 Lincoln 2026 生产队列验收已到达 Argus 并完成抓取，但 Tymra 因
 `UNIVERSITY_CALENDAR` 持久化类型缺失而失败，随后 HTML 证据字节与 Argus 哈希不符，

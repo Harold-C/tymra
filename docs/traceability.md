@@ -1,8 +1,20 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-24
+Last updated: 2026-09-24 (Admin-only production and restricted Argus collection accepted)
 
-## 2026-09-24 production Argus attempt — rolled back
+## 2026-09-24 restricted production Argus acceptance
+
+The production `collection` Worker/API profile is healthy on the exact v3 image; the Admin-only
+Web image remains in place. A single retry of the existing Lincoln University 2026 parent Job
+reused its completed Argus execution, wrote two distinct `UNIVERSITY_CALENDAR` signals, copied
+and verified the two evidence files, ACKed Argus, and observed result HTTP 410 and evidence HTTP
+404. The new enum migration is the only additional production migration (33 successful total).
+Scheduler and all customer, intake, billing and mail functions remain disabled. The detailed
+image identities, backups, Job IDs, file hashes and validation boundaries are in
+[`evidence/tymra-argus-production-acceptance-2026-09-24.md`](./evidence/tymra-argus-production-acceptance-2026-09-24.md).
+This acceptance supersedes the stopped state below; it does not accept RBNZ or other connectors.
+
+## 2026-09-24 earlier production Argus attempt — rolled back (historical)
 
 A single bounded Lincoln University 2026 production Job reached and completed Argus, but Tymra
 failed before business persistence and ACK. `UNIVERSITY_CALENDAR` was missing from the persisted

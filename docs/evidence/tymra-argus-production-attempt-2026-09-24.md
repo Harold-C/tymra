@@ -1,6 +1,8 @@
 # Tymra → Argus production acceptance attempt, 2026-09-24
 
 Status: **stopped and rolled back**. This is an execution record, not a production acceptance.
+The subsequent restricted production acceptance is recorded in
+[`tymra-argus-production-acceptance-2026-09-24.md`](./tymra-argus-production-acceptance-2026-09-24.md).
 
 ## Scope and release identity
 
