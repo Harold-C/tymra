@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
-import { enqueueJob, hashPersonalIdentifier, prisma, revokeResultLinks, type Prisma } from "@tymra/db";
+import { enqueueJob, hashPersonalIdentifier, prisma, type Prisma } from "@tymra/db";
 import { exceptionActionSchema, type ExceptionAction } from "@tymra/domain";
 import { z } from "zod";
 
@@ -181,7 +181,6 @@ async function applyAction(priceCheckId: string, action: ExceptionAction, payloa
     case "WITHDRAW_RESULT": {
       const results = await prisma.resultVersion.findMany({ where: { priceCheckId, status: "PUBLISHED" }, select: { id: true } });
       for (const result of results) {
-        await revokeResultLinks(result.id, "Withdrawn by administrator");
         await prisma.resultVersion.update({ where: { id: result.id }, data: { status: "WITHDRAWN" } });
       }
       await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "WITHDRAWN" } });

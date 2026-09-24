@@ -3,7 +3,6 @@ import {
   decryptPersonalData,
   enqueueJob,
   hashPersonalIdentifier,
-  issueResultLink,
   prisma,
   syncCollectionIncident,
   type EmailType,
@@ -82,9 +81,6 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         requiredString(payload, "suffix"),
       );
       return;
-    case "LINK_EXPIRY":
-      await expireLinks();
-      return;
     case "SOURCE_HEALTH_CHECK":
       if (optionalString(payload, "sourceId")) {
         await new WorkerService(environment).sourceHealth(optionalString(payload, "sourceId"));
@@ -128,13 +124,16 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         await enqueueNext(priceCheckId, "RATE_NORMALIZATION", "normalize", job.id);
         return;
       }
-      await new WorkerService(environment).refreshCatalog(optionalString(payload, "marketScope") ?? "new-zealand");
+      await new WorkerService(environment).refreshCatalog(optionalString(payload, "marketScope") ?? "new-zealand", job.id);
+      await acknowledgePersistedArgusResults(environment, job.id);
       return;
     case "ANCHOR_PANEL_COLLECTION":
-      await new WorkerService(environment).refreshPanel("ANCHOR", optionalString(payload, "marketScope") ?? "new-zealand");
+      await new WorkerService(environment).refreshPanel("ANCHOR", optionalString(payload, "marketScope") ?? "new-zealand", job.id);
+      await acknowledgePersistedArgusResults(environment, job.id);
       return;
     case "ROTATING_PANEL_COLLECTION":
-      await new WorkerService(environment).refreshPanel("ROTATING", optionalString(payload, "marketScope") ?? "new-zealand");
+      await new WorkerService(environment).refreshPanel("ROTATING", optionalString(payload, "marketScope") ?? "new-zealand", job.id);
+      await acknowledgePersistedArgusResults(environment, job.id);
       return;
     case "PROPERTY_IDENTIFICATION":
       await validatePropertyIdentification(requiredString(payload, "priceCheckId"), job.id, environment);
@@ -463,7 +462,7 @@ async function autoValidate(priceCheckId: string, sourceJobId: string, environme
   }
 
   const decision = decidePublication({
-    marketStatus: check.property?.supportStatus ?? "INSUFFICIENT_MARKET_DATA",
+    marketStatus: check.property?.supportStatus ?? "INSUFFICIENT_DATA",
     propertyConfirmed: Boolean(check.propertyId),
     unitConfirmed: Boolean(check.unitId),
     targetRatePresent: false,
@@ -629,8 +628,17 @@ async function deliverEmail(deliveryId: string, environment: Environment) {
   const recipient = decryptPersonalData(delivery.encryptedRecipient, environment.DATA_ENCRYPTION_KEY);
   let safeActionUrl: string | undefined;
   if (delivery.resultVersionId) {
-    const issued = await issueResultLink(delivery.resultVersionId, environment.RESULT_TOKEN_SECRET, environment.RESULT_LINK_TTL_DAYS);
-    safeActionUrl = `${environment.PUBLIC_ORIGIN}/${delivery.locale === "zh" ? "zh" : "en"}/result/${issued.token}`;
+    const result = await prisma.resultVersion.findUnique({
+      where: { id: delivery.resultVersionId },
+      select: { priceCheckId: true, priceCheck: { select: { customerUserId: true } } },
+    });
+    if (result) {
+      const locale = delivery.locale === "zh" ? "zh" : "en";
+      const destination = `/${locale}/account/checks/${result.priceCheckId}`;
+      safeActionUrl = result.priceCheck.customerUserId
+        ? `${environment.PUBLIC_ORIGIN}${destination}`
+        : `${environment.PUBLIC_ORIGIN}/${locale}/sign-in?returnTo=${encodeURIComponent(destination)}`;
+    }
   } else if (delivery.priceCheckId) {
     const check = await prisma.priceCheck.findUnique({ where: { id: delivery.priceCheckId }, select: { customerUserId: true } });
     if (check?.customerUserId) {
@@ -660,19 +668,6 @@ async function deliverEmail(deliveryId: string, environment: Environment) {
   } catch (error) {
     await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 1_000) : "Email delivery failed" } });
     throw error;
-  }
-}
-
-async function expireLinks() {
-  const expired = await prisma.resultAccessToken.findMany({
-    where: { expiresAt: { lte: new Date() }, revokedAt: null },
-    select: { resultVersion: { select: { priceCheckId: true } } },
-  });
-  for (const item of expired) {
-    await prisma.priceCheck.updateMany({
-      where: { id: item.resultVersion.priceCheckId, status: "PUBLISHED" },
-      data: { status: "EXPIRED" },
-    });
   }
 }
 
@@ -759,6 +754,16 @@ async function validatePropertyIdentification(priceCheckId: string, jobId: strin
   if (check.listingUrl) {
     await new WorkerService(environment).validatePriceCheckOtaListing(priceCheckId, jobId);
     await acknowledgePersistedArgusResults(environment, jobId);
+    const resolved = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { stayQuery: true } });
+    if (resolved.requestOrigin === "INTERNAL_OPERATOR" && resolved.listingValidationStatus === "VERIFIED") {
+      if (!resolved.unitId || !resolved.stayQuery) {
+        await ensureWorkerException(priceCheckId, "UNIT_MATCH", "Select the exact Sellable Unit for this internal on-demand request", "internal-on-demand-unit");
+        await setCheckStatus(priceCheckId, "EXCEPTION", "internal_on_demand_unit_confirmation_required");
+        return;
+      }
+      await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "QUEUED" } });
+      await enqueueJob({ type: "RATE_COLLECTION", payload: { priceCheckId }, idempotencyKey: `${priceCheckId}:internal-on-demand-rate`, priceCheckId });
+    }
     return;
   }
   if (check.propertyId) {
@@ -806,9 +811,12 @@ async function refreshMarketCoverage() {
   const measuredAt = new Date();
   const since72h = new Date(measuredAt.getTime() - 72 * 3_600_000);
   const since216h = new Date(measuredAt.getTime() - 216 * 3_600_000);
-  const [properties, units, recentRuns, recentSignals, coverageRows, dataSources] = await Promise.all([
+  const [properties, units, listings, panelMemberships, recentObservations, recentRuns, recentSignals, coverageRows, dataSources] = await Promise.all([
     prisma.property.findMany({ where: { status: "ACTIVE", mergedIntoId: null }, select: { id: true, city: true, region: true, territorialAuthority: true, rto: true } }),
     prisma.sellableUnit.findMany({ where: { status: "ACTIVE", mergedIntoId: null, property: { status: "ACTIVE", mergedIntoId: null } }, select: { id: true, property: { select: { city: true, region: true, territorialAuthority: true, rto: true } } } }),
+    prisma.listing.findMany({ where: { listingStatus: "ACTIVE", isDemo: false }, select: { id: true, property: { select: { region: true } }, dataSourceId: true } }),
+    prisma.panelMembership.findMany({ where: { active: true }, select: { marketKey: true, membershipType: true, lastSuccessfulAt: true, coverage24h: true, coverage72h: true } }),
+    prisma.rateObservation.findMany({ where: { isDemo: false, collectedAt: { gte: since216h } }, select: { collectedAt: true, property: { select: { region: true } } } }),
     prisma.collectionRun.findMany({ where: { createdAt: { gte: since216h } }, select: { status: true, scope: true, createdAt: true, finishedAt: true, dataSource: { select: { key: true } } } }),
     prisma.sourceMarketSignal.findMany({ where: { lastSeenAt: { gte: since216h } }, select: { marketKey: true, dataSource: { select: { key: true } } } }),
     prisma.marketCoverage.findMany({ select: { key: true, region: true } }),
@@ -867,6 +875,66 @@ async function refreshMarketCoverage() {
       },
     });
   }
+  for (const [regionKey, regionName] of NZ_REGION_COVERAGE) {
+    const key = `region-${regionKey}`;
+    const propertiesInRegion = properties.filter((property) => canonicalRegionKey(property.region) === regionKey);
+    const unitsInRegion = units.filter((unit) => canonicalRegionKey(unit.property.region) === regionKey);
+    const listingsInRegion = listings.filter((listing) => canonicalRegionKey(listing.property.region) === regionKey);
+    const panel = panelMemberships.filter((member) => member.marketKey === key);
+    const observations = recentObservations.filter((observation) => canonicalRegionKey(observation.property.region) === regionKey);
+    const newestObservation = latestDate(observations.map((observation) => observation.collectedAt));
+    const ageHours = newestObservation ? Math.max(0, (measuredAt.getTime() - newestObservation.getTime()) / 3_600_000) : null;
+    const status = !dataSources.some((source) => source.enabled && source.operationalStatus === "HEALTHY")
+      ? "SOURCE_UNAVAILABLE"
+      : observations.length && panel.length ? "SUPPORTED"
+        : propertiesInRegion.length || listingsInRegion.length ? "PARTIAL_COVERAGE"
+          : "PILOT";
+    const coverageGaps = [
+      ...(propertiesInRegion.length ? [] : ["NO_DIRECTORY_IDENTITIES"]),
+      ...(panel.length ? [] : ["NO_REPRESENTATIVE_OTA_PANEL"]),
+      ...(observations.length ? [] : ["NO_RECENT_OTA_OBSERVATIONS"]),
+    ];
+    const gapPriorityScore = (status === "SOURCE_UNAVAILABLE" ? 50 : 0)
+      + (propertiesInRegion.length ? 0 : 40)
+      + (panel.length ? 0 : 30)
+      + (observations.length ? 0 : 30);
+    await prisma.marketCoverage.upsert({
+      where: { key },
+      create: { key, name: regionName, status, region: { country: "NZ", level: "REGION", regionName }, acceptNewChecks: true },
+      update: {
+        status,
+        knownPropertyCount: propertiesInRegion.length,
+        knownUnitCount: unitsInRegion.length,
+        knownListingCount: listingsInRegion.length,
+        activePanelCount: panel.length,
+        anchorPanelCount: panel.filter((member) => member.membershipType === "ANCHOR").length,
+        rotatingPanelCount: panel.filter((member) => member.membershipType === "ROTATING").length,
+        coverage24h: panel.length ? panel.reduce((sum, member) => sum + member.coverage24h, 0) / panel.length : 0,
+        coverage72h: panel.length ? panel.reduce((sum, member) => sum + member.coverage72h, 0) / panel.length : 0,
+        geographicCoverage: propertiesInRegion.length ? Math.min(1, new Set(propertiesInRegion.map((property) => property.territorialAuthority).filter(Boolean)).size / 3) : 0,
+        sampleComposition: { accommodationUnits: unitsInRegion.length, otaListings: listingsInRegion.length, sources: new Set(listingsInRegion.map((listing) => listing.dataSourceId)).size },
+        freshness: { state: ageHours === null ? "UNKNOWN" : ageHours <= 24 ? "FRESH" : ageHours <= 72 ? "AGING" : "STALE", ageHours, limitHours: 72, policyVersion: "coverage-freshness-v1", calculatedAt: measuredAt.toISOString() },
+        coverageGaps,
+        gapPriorityScore,
+        lastSuccessfulAt: newestObservation,
+        lastHealthAt: measuredAt,
+        acceptNewChecks: true,
+      },
+    });
+  }
+}
+
+const NZ_REGION_COVERAGE = [
+  ["northland", "Northland"], ["auckland", "Auckland"], ["waikato", "Waikato"], ["bay-of-plenty", "Bay of Plenty"],
+  ["gisborne", "Gisborne"], ["hawkes-bay", "Hawke's Bay"], ["taranaki", "Taranaki"], ["manawatu-whanganui", "Manawatū-Whanganui"],
+  ["wellington", "Wellington"], ["tasman", "Tasman"], ["nelson", "Nelson"], ["marlborough", "Marlborough"],
+  ["west-coast", "West Coast"], ["canterbury", "Canterbury"], ["otago", "Otago"], ["southland", "Southland"],
+  ["chatham-islands", "Chatham Islands"],
+] as const;
+
+function canonicalRegionKey(value: string | null) {
+  const key = (value ?? "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return key === "hawke-s-bay" ? "hawkes-bay" : key;
 }
 
 export function marketKeysForOperationalEvidence(

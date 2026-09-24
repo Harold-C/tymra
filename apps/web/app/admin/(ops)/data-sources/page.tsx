@@ -16,7 +16,7 @@ export default async function DataSourcesPage({ searchParams }: { searchParams: 
   const healthStates = ["HEALTHY", "DEGRADED", "DOWN", "UNCONFIGURED", "BLOCKED"];
   const health = healthStates.includes(searchParams.health ?? "") ? searchParams.health : undefined;
   const enabled = searchParams.enabled === "true" ? true : searchParams.enabled === "false" ? false : undefined;
-  const scope: Prisma.DataSourceWhereInput = { providerType: { in: ["PUBLIC", "MANUAL"] }, sourceType: { in: ["PUBLIC_DATA", "MANUAL_IMPORT"] }, isDemo: false };
+  const scope: Prisma.DataSourceWhereInput = { isDemo: false };
   const where: Prisma.DataSourceWhereInput = { ...scope, ...(health ? { operationalStatus: health as never } : {}), ...(enabled === undefined ? {} : { enabled }), ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { key: { contains: q, mode: "insensitive" } }] } : {}) };
   const [total, totalSources, enabledCount, healthy, production, items] = await Promise.all([
     prisma.dataSource.count({ where }), prisma.dataSource.count({ where: scope }), prisma.dataSource.count({ where: { ...scope, enabled: true } }), prisma.dataSource.count({ where: { ...scope, operationalStatus: "HEALTHY" } }), prisma.dataSource.count({ where: { ...scope, environments: { has: "PRODUCTION" }, enabled: true, operationalStatus: "HEALTHY" } }), prisma.dataSource.findMany({

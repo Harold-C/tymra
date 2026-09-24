@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { Environment } from "@tymra/config";
-import { prisma, Prisma } from "@tymra/db";
+import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, sourceHasCapability } from "@tymra/db";
 import { nzDateKey } from "@tymra/domain";
 import {
   locateOtaDiscoveryCandidate,
@@ -105,6 +105,10 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           isDemo: false,
         },
       });
+    }
+    if (!await sourceHasCapability(source.id, "DISCOVER_LISTINGS")) {
+      await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: "SOURCE_CAPABILITY_MISSING", errorSummary: `${source.key} is not registered for DISCOVER_LISTINGS`, finishedAt: new Date() } });
+      continue;
     }
     activeRunIds.add(run.id);
     const traceId = durableArgusTraceId(input.parentJobId, connectorId, "discover_listings", discoveryUrl);
@@ -244,6 +248,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           status: "ACTIVE",
         },
       });
+      await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { discoveredFor: check.propertyId, sourceListingId: candidate.sourceListingId } });
       const comparableUnits = candidateUnits
         .filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null)
         .sort((left, right) => {
@@ -261,6 +266,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           create: { id: unitId, propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE", isDemo: false },
           update: { propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE" },
         });
+        await recordIdentityEntityVersion("SELLABLE_UNIT", unitId, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId } });
         const externalId = `${candidate.sourceListingId}:${unit.externalId}`;
         const metadata = {
           discoveredFor: check.propertyId,
@@ -273,6 +279,13 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           where: { dataSourceId_externalId: { dataSourceId: source.id, externalId } },
           create: { propertyId: property.id, unitId, dataSourceId: source.id, platform: candidate.provider, providerBrand: provider.brand, providerFamily: provider.family, externalId, sourceListingId: candidate.sourceListingId, canonicalUrl: candidate.canonicalUrl, rawUrl: candidate.canonicalUrl, url: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: candidateQuality === "complete" && location.citySource === "LISTING" ? 0.9 : 0.7, operationalStatus: "HEALTHY", metadata, isDemo: false },
           update: { propertyId: property.id, unitId, providerBrand: provider.brand, providerFamily: provider.family, canonicalUrl: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", operationalStatus: "HEALTHY", metadata },
+        });
+        await recordListingVersion(listing.id, {
+          collectedAt: new Date(candidate.observedAt),
+          collectionRunId: run.id,
+          collectorVersion: "argus-ota-v1",
+          parserVersion: "ota-public.discover_listings@1.0.0",
+          identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId, fieldSources: candidateFieldSources },
         });
         if (listing.propertyId === check.propertyId && listing.unitId === check.unitId) continue;
         await prisma.competitorRelationship.upsert({
@@ -312,6 +325,9 @@ async function collectComparableOtaRate(input: AddressOtaPricingInput, listingId
     prisma.listing.findUniqueOrThrow({ where: { id: listingId }, include: { dataSource: true, unit: true } }),
   ]);
   if (!check.stayQuery) return false;
+  if (!await sourceHasCapability(listing.dataSourceId, "COLLECT_RATES")) {
+    throw new Error(`SOURCE_CAPABILITY_MISSING: ${listing.dataSource.key} is not registered for COLLECT_RATES`);
+  }
   const connectorId = otaArgusConnectorForSource(listing.dataSource.key);
   if (!connectorId) return false;
   let run = await prisma.collectionRun.findFirst({

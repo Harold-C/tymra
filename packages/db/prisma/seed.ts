@@ -16,6 +16,7 @@ import {
   RiskLevel,
   SourceHealthStatus,
   SourceLifecycle,
+  SourceCapabilityName,
   SourceType,
 } from "@prisma/client";
 import { DEVELOPMENT_MEMBER_ACCOUNTS, getDevelopmentMemberCredentials } from "@tymra/config";
@@ -26,7 +27,6 @@ import { ARGUS_PUBLIC_MARKET_SEED_SOURCES, registrySourceSeedRecords } from "./s
 
 const prisma = new PrismaClient();
 
-const resultSecret = required("RESULT_TOKEN_SECRET");
 const accessSecret = required("ACCESS_KEY_SECRET");
 const encryptionSecret = required("DATA_ENCRYPTION_KEY");
 const adminEmail = required("ADMIN_EMAIL").toLowerCase();
@@ -311,6 +311,18 @@ async function seedDataSources() {
       },
     });
     created.set(record.key, source);
+    const capabilities: SourceCapabilityName[] = record.providerType === ProviderType.OTA || record.providerType === ProviderType.DEMO || record.providerType === ProviderType.FIXTURE
+      ? [SourceCapabilityName.DISCOVER_LISTINGS, SourceCapabilityName.RESOLVE_LISTING, SourceCapabilityName.COLLECT_RATES, SourceCapabilityName.HEALTH_CHECK]
+      : record.providerType === ProviderType.PUBLIC
+        ? [SourceCapabilityName.COLLECT_PUBLIC_SIGNALS, SourceCapabilityName.HEALTH_CHECK]
+        : [SourceCapabilityName.IMPORT_MANUAL_DATA, SourceCapabilityName.HEALTH_CHECK];
+    for (const capability of capabilities) {
+      await prisma.dataSourceCapability.upsert({
+        where: { dataSourceId_capability_version: { dataSourceId: source.id, capability, version: 1 } },
+        create: { dataSourceId: source.id, capability, version: 1, contractVersion: "source-capability-v1", enabled: true },
+        update: { contractVersion: "source-capability-v1", enabled: true, validTo: null },
+      });
+    }
   }
 
   const ticketmaster = created.get("ticketmaster");
@@ -358,7 +370,7 @@ async function seedMarketCoverage() {
       create: {
         key,
         name: christchurch ? "Christchurch Development Demo Coverage" : name,
-        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PILOT_AVAILABLE,
+        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PARTIAL_COVERAGE,
         region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
         knownPropertyCount: christchurch ? 12 : 0,
         knownUnitCount: christchurch ? 21 : 0,
@@ -372,9 +384,37 @@ async function seedMarketCoverage() {
       },
       update: {
         name: christchurch ? "Christchurch Development Demo Coverage" : name,
-        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PILOT_AVAILABLE,
+        status: christchurch ? MarketStatus.SUPPORTED : MarketStatus.PARTIAL_COVERAGE,
         region: { country: "NZ", marketName: name, publicSignalStatus, note: christchurch ? "Development Demo Data" : "Public-signal coverage only; OTA market support is not yet enabled" },
         acceptNewChecks: christchurch,
+      },
+    });
+  }
+
+  const regions = [
+    ["northland", "Northland"], ["auckland", "Auckland"], ["waikato", "Waikato"],
+    ["bay-of-plenty", "Bay of Plenty"], ["gisborne", "Gisborne"], ["hawkes-bay", "Hawke's Bay"],
+    ["taranaki", "Taranaki"], ["manawatu-whanganui", "Manawatū-Whanganui"], ["wellington", "Wellington"],
+    ["tasman", "Tasman"], ["nelson", "Nelson"], ["marlborough", "Marlborough"],
+    ["west-coast", "West Coast"], ["canterbury", "Canterbury"], ["otago", "Otago"],
+    ["southland", "Southland"], ["chatham-islands", "Chatham Islands"],
+  ] as const;
+  for (const [slug, name] of regions) {
+    await prisma.marketCoverage.upsert({
+      where: { key: `region-${slug}` },
+      create: {
+        key: `region-${slug}`,
+        name,
+        status: MarketStatus.PILOT,
+        region: { country: "NZ", level: "REGION", regionName: name },
+        acceptNewChecks: true,
+        freshness: { state: "UNKNOWN", policyVersion: "coverage-freshness-v1" },
+        coverageGaps: ["NATIONWIDE_DIRECTORY_PENDING", "REPRESENTATIVE_OTA_PANEL_PENDING"],
+      },
+      update: {
+        name,
+        region: { country: "NZ", level: "REGION", regionName: name },
+        acceptNewChecks: true,
       },
     });
   }
@@ -1035,22 +1075,6 @@ async function seedResult(
     update: {},
   });
 
-  const tokenHash = hashOpaqueToken(`result:${priceCheckId}:1`, resultSecret);
-  await prisma.resultAccessToken.upsert({
-    where: { tokenHash },
-    create: {
-      resultVersionId: result.id,
-      tokenHash,
-      expiresAt: outcome === PriceCheckStatus.EXPIRED ? addDays(seedDate, -1) : addDays(seedDate, 14),
-      revokedAt: outcome === PriceCheckStatus.WITHDRAWN ? seedDate : null,
-      revokeReason: outcome === PriceCheckStatus.WITHDRAWN ? "Development demo withdrawn result" : null,
-    },
-    update: {
-      expiresAt: outcome === PriceCheckStatus.EXPIRED ? addDays(seedDate, -1) : addDays(seedDate, 14),
-      revokedAt: outcome === PriceCheckStatus.WITHDRAWN ? seedDate : null,
-      revokeReason: outcome === PriceCheckStatus.WITHDRAWN ? "Development demo withdrawn result" : null,
-    },
-  });
 }
 
 async function seedSupersededResult(priceCheckId: string) {
@@ -1099,12 +1123,6 @@ async function seedSupersededResult(priceCheckId: string) {
       },
     },
     update: {},
-  });
-  const tokenHash = hashOpaqueToken(`result:${priceCheckId}:2`, resultSecret);
-  await prisma.resultAccessToken.upsert({
-    where: { tokenHash },
-    create: { resultVersionId: result.id, tokenHash, expiresAt: addDays(seedDate, 14) },
-    update: { expiresAt: addDays(seedDate, 14), revokedAt: null, revokeReason: null },
   });
   await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { currentResultVersionNumber: 2, status: PriceCheckStatus.PUBLISHED } });
 }

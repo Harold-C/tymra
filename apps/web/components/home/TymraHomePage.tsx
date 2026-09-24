@@ -44,7 +44,7 @@ function getDeviceType(): DeviceType {
   return window.matchMedia("(max-width: 1023px)").matches ? "mobile" : "desktop";
 }
 
-export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
+export function TymraHomePage({ signedIn = false, discoveryHidden = false }: { signedIn?: boolean; discoveryHidden?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const locale = getLocaleFromPath(pathname);
@@ -165,14 +165,15 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
         copy={t.nav}
         locale={locale}
         signedIn={signedIn}
-        onPrimaryAction={focusSearchFromHeader}
+        discoveryHidden={discoveryHidden}
+        onPrimaryAction={discoveryHidden ? undefined : focusSearchFromHeader}
       />
 
       <main
         id="main-content"
         className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_10%,rgba(37,99,235,0.055),transparent_36%),radial-gradient(circle_at_86%_28%,rgba(124,58,237,0.045),transparent_30%),linear-gradient(180deg,#FFFFFF_0%,#F8FBFF_58%,#FFFFFF_100%)] text-[#0B1F3A]"
       >
-        <HeroSection
+        {!discoveryHidden ? <HeroSection
           copy={t}
           locale={locale}
           searchState={searchState}
@@ -182,15 +183,15 @@ export function TymraHomePage({ signedIn = false }: { signedIn?: boolean }) {
           onClear={clearSearch}
           onSubmit={submitSearch}
           hydrated={hydrated}
-        />
+        /> : null}
 
         <PendingInsightSection copy={t} />
         <ProcessSection copy={t} />
         <ReleaseContextSection copy={t} locale={locale} />
         <FAQSection copy={t} openFaq={openFaq} onToggle={toggleFaq} />
-        <FinalCTA copy={t} locale={locale} />
+        {!discoveryHidden ? <FinalCTA copy={t} locale={locale} /> : null}
       </main>
-      <Footer copy={t} locale={locale} openGroup={openFooterGroup} onGroupChange={setOpenFooterGroup} />
+      <Footer copy={t} locale={locale} openGroup={openFooterGroup} onGroupChange={setOpenFooterGroup} discoveryHidden={discoveryHidden} />
     </>
   );
 }
@@ -730,14 +731,16 @@ function Footer({
   locale,
   openGroup,
   onGroupChange,
+  discoveryHidden,
 }: {
   copy: HomeCopy;
   locale: Locale;
   openGroup: string | null;
   onGroupChange: (group: string | null) => void;
+  discoveryHidden: boolean;
 }) {
   const groups = [
-    { key: "product", label: t.footer.product, links: t.footer.links.product },
+    { key: "product", label: t.footer.product, links: discoveryHidden ? t.footer.links.product.filter((link) => !/\/(?:en|zh)\/(?:check|pricing|sign-in|sign-up|address-check)(?:$|[?#])/.test(link.href)) : t.footer.links.product },
     { key: "resources", label: t.footer.resources, links: t.footer.links.resources },
     { key: "legal", label: t.footer.legal, links: t.footer.links.legal },
   ];

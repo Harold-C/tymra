@@ -23,6 +23,7 @@ import {
   WalletCards,
   Tags,
   Star,
+  Zap,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -86,6 +87,7 @@ export function AdminShell({
         { label: text.readiness, href: "/admin/production-readiness", icon: ShieldCheck },
         { label: text.sources, href: "/admin/data-sources", icon: Database },
         { label: text.runs, href: "/admin/collection-runs", icon: Activity },
+        { label: text.onDemand, href: "/admin/on-demand", icon: Zap },
         { label: text.manualBrowser, href: "/admin/argus-manual-actions", icon: MonitorUp },
         { label: text.schedules, href: "/admin/collection-control", icon: CalendarClock },
       ],
@@ -96,6 +98,7 @@ export function AdminShell({
         { label: text.intelligence, href: "/admin/market-intelligence", icon: RadioTower },
         { label: text.coverage, href: "/admin/market-coverage", icon: Gauge },
         { label: text.explorer, href: "/admin/data-explorer", icon: Search },
+        { label: text.lineage, href: "/admin/data-lineage", icon: History },
       ],
     },
     {
@@ -283,12 +286,14 @@ function copy(locale: AdminLocale) {
     readiness: { en: "Production readiness", zh: "生产就绪" },
     sources: { en: "Data sources", zh: "数据来源" },
     runs: { en: "Collection runs", zh: "采集运行" },
+    onDemand: { en: "On-demand collection", zh: "按需采集" },
     manualBrowser: { en: "Manual browser actions", zh: "人工浏览器接管" },
     schedules: { en: "Schedules & queue", zh: "计划与队列" },
     marketData: { en: "Market data", zh: "市场数据" },
     intelligence: { en: "Events & signals", zh: "事件与信号" },
     coverage: { en: "Market coverage", zh: "市场覆盖" },
     explorer: { en: "Data explorer", zh: "数据浏览器" },
+    lineage: { en: "Data lineage", zh: "数据血缘" },
     accommodation: { en: "Accommodation", zh: "住宿资产" },
     accommodations: { en: "Properties & units", zh: "房源与房型" },
     listings: { en: "Platform listings", zh: "平台房源" },

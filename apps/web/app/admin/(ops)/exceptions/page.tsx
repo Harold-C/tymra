@@ -16,7 +16,7 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: R
   const kind: InboxKind = searchParams.kind === "business" || searchParams.kind === "collection" ? searchParams.kind : "all";
   const status = statuses.includes(searchParams.status as ExceptionStatus) ? searchParams.status as ExceptionStatus : undefined;
   const priority = priorities.includes(searchParams.priority as ExceptionPriority) ? searchParams.priority as ExceptionPriority : undefined;
-  const sourceScope: Prisma.DataSourceWhereInput = { providerType: { in: ["PUBLIC", "MANUAL"] }, sourceType: { in: ["PUBLIC_DATA", "MANUAL_IMPORT"] }, isDemo: false };
+  const sourceScope: Prisma.DataSourceWhereInput = { isDemo: false };
   const [businessCount, collectionCount, sources] = await Promise.all([
     prisma.exceptionCase.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, isDemo: false } }),
     prisma.collectionIncident.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, isDemo: false, collectionRun: { dataSource: sourceScope } } }),

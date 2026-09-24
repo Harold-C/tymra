@@ -51,11 +51,13 @@ export function SiteHeader({
   copy,
   locale,
   signedIn = false,
+  discoveryHidden = false,
   onPrimaryAction,
 }: {
   copy: SiteHeaderCopy;
   locale: Locale;
   signedIn?: boolean;
+  discoveryHidden?: boolean;
   onPrimaryAction?: () => void;
 }) {
   const pathname = usePathname();
@@ -68,7 +70,7 @@ export function SiteHeader({
   const navItems: HeaderNavItem[] = [
     { label: copy.howItWorks, href: `${isHome ? "" : homePath}#how-it-works`, section: "how-it-works" },
     { label: copy.whatYouGet, href: `${isHome ? "" : homePath}#what-you-get`, section: "what-you-get" },
-    { label: copy.pricing, href: `/${locale}/pricing`, path: `/${locale}/pricing` },
+    ...(discoveryHidden ? [] : [{ label: copy.pricing, href: `/${locale}/pricing`, path: `/${locale}/pricing` }]),
     { label: copy.methodology, href: `/${locale}/methodology`, path: `/${locale}/methodology` },
     {
       label: copy.faq,
@@ -202,16 +204,16 @@ export function SiteHeader({
           <span aria-hidden="true" className="mr-3 h-7 w-px bg-[#D8E3F1]/80" />
           <div className="flex items-center gap-0.5">
             <LanguageSelector copy={copy} locale={locale} />
-            {signedIn ? (
+            {!discoveryHidden && signedIn ? (
               <HeaderAccountMenu copy={copy} locale={locale} />
-            ) : (
+            ) : !discoveryHidden ? (
               <Link className="inline-flex min-h-11 items-center rounded-xl px-3 text-[0.94rem] font-semibold text-[#071A3D] transition-colors duration-200 hover:bg-[#EDF5FF] hover:text-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]" href={`/${locale}/sign-in`}>
                 {copy.signIn}
               </Link>
-            )}
+            ) : null}
           </div>
 
-          {onPrimaryAction ? (
+          {discoveryHidden ? null : onPrimaryAction ? (
             <button type="button" onClick={runPrimaryAction} className="ml-3.5 inline-flex h-11 min-w-[154px] items-center justify-center rounded-[12px] bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_46%,#7C3AED_100%)] px-5 text-[0.94rem] font-bold text-white shadow-[0_8px_20px_rgba(37,99,235,0.16)] transition duration-200 hover:-translate-y-px hover:shadow-[0_11px_24px_rgba(37,99,235,0.22)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2563EB] motion-reduce:transform-none">
               {copy.cta}
             </button>
@@ -244,6 +246,7 @@ export function SiteHeader({
           locale={locale}
           items={navItems}
           signedIn={signedIn}
+          discoveryHidden={discoveryHidden}
           activeSection={activeSection}
           pathname={pathname}
           isHome={isHome}
@@ -336,6 +339,7 @@ function MobileNavigation({
   locale,
   items,
   signedIn,
+  discoveryHidden,
   activeSection,
   pathname,
   isHome,
@@ -347,6 +351,7 @@ function MobileNavigation({
   locale: Locale;
   items: HeaderNavItem[];
   signedIn: boolean;
+  discoveryHidden: boolean;
   activeSection: HeaderSectionId | null;
   pathname: string;
   isHome: boolean;
@@ -447,15 +452,15 @@ function MobileNavigation({
             </a>
           );
         })}
-        {signedIn ? (
+        {!discoveryHidden && signedIn ? (
           <>
             <Link href={`/${locale}/account`} onClick={() => onMenuChange(false)} className="block min-h-12 rounded-[16px] px-4 py-3 text-[1rem] font-semibold text-[#071A3D] transition hover:bg-[#F2F7FF]">{copy.account}</Link>
             <div className="px-4 py-3"><CustomerSignOut locale={locale} label={copy.signOut} /></div>
           </>
-        ) : (
+        ) : !discoveryHidden ? (
           <Link href={`/${locale}/sign-in`} onClick={() => onMenuChange(false)} className="block min-h-12 rounded-[16px] px-4 py-3 text-[1rem] font-semibold text-[#41506B] transition hover:bg-[#F2F7FF] hover:text-[#075ED8]">{copy.signIn}</Link>
-        )}
-        {onPrimaryAction ? (
+        ) : null}
+        {discoveryHidden ? null : onPrimaryAction ? (
           <button type="button" onClick={onPrimaryAction} className="mt-2 inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[16px] bg-[linear-gradient(92deg,#0969FF_0%,#2563EB_46%,#7C3AED_100%)] px-4 text-[1rem] font-bold text-white shadow-[0_12px_28px_rgba(37,99,235,0.24)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]">
             {copy.cta}
             <ArrowRight className="h-5 w-5" aria-hidden="true" />

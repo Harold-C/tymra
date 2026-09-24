@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
-import { hashPersonalIdentifier, prisma, syncCollectionIncident, type Prisma } from "@tymra/db";
+import { hashPersonalIdentifier, prisma, recordIdentityEntityVersion, recordListingVersion, syncCollectionIncident, type Prisma } from "@tymra/db";
 import { nzCalendarDayDifference } from "@tymra/domain";
 import { previewManualImport, type ManualImportPreview, type ManualImportRow } from "@tymra/providers";
 import { withRedisLock } from "@tymra/queue";
@@ -253,6 +253,7 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
     },
     update: { canonicalName: row.property_name, address: row.property_address },
   });
+  await recordIdentityEntityVersion("PROPERTY", propertyId, { collectedAt: row.collected_at, collectionRunId, collectorVersion: "manual-import-v1", parserVersion: "manual-import@1.0.0", identityEvidence: { propertyExternalId: row.property_external_id } }, tx);
   await tx.sellableUnit.upsert({
     where: { id: unitId },
     create: {
@@ -267,6 +268,7 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
     },
     update: { canonicalName: row.unit_name, officialName: row.unit_name, status: "ACTIVE" },
   });
+  await recordIdentityEntityVersion("SELLABLE_UNIT", unitId, { collectedAt: row.collected_at, collectionRunId, collectorVersion: "manual-import-v1", parserVersion: "manual-import@1.0.0", identityEvidence: { unitExternalId: row.unit_external_id } }, tx);
   const listing = await tx.listing.upsert({
     where: { dataSourceId_externalId: { dataSourceId, externalId: row.listing_external_id } },
     create: {
@@ -294,6 +296,7 @@ async function persistRow(tx: TransactionClient, dataSourceId: string, collectio
       onlineStatus: row.availability_status === "AVAILABLE" ? "ONLINE" : row.availability_status,
     },
   });
+  await recordListingVersion(listing.id, { collectedAt: row.collected_at, collectionRunId, collectorVersion: "manual-import-v1", parserVersion: "manual-import@1.0.0", identityEvidence: { listingExternalId: row.listing_external_id } }, tx);
   await tx.stayQuery.upsert({
     where: { id: stayQueryId },
     create: {

@@ -10,7 +10,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { handleJob } from "../src/jobs/job-handlers";
 import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
 import { durableArgusTraceId } from "../src/services/argus-orchestrator";
-import { WorkerService } from "../src/services/worker-service";
+import { WorkerRequestError, WorkerService } from "../src/services/worker-service";
 import { membershipOperationalMetrics } from "../src/membership/operations";
 
 const environment = getEnvironment();
@@ -29,6 +29,24 @@ describe("Worker baseline pipeline", () => {
       mode: "fixture",
       latencyMs: 0,
     });
+  });
+
+  it("builds the six-OTA by 17-Region catalog frontier without starting network work", async () => {
+    const result = await service.refreshCatalog("new-zealand");
+    expect(result).toMatchObject({ frontier: 102, attempted: 0, discovered: 0, failed: 0 });
+    expect(await prisma.sourceCrawlTarget.count({ where: { kind: "OTA_REGION_DISCOVERY", active: true } })).toBe(102);
+  });
+
+  it("fails before adapter or network execution when a registered capability is missing", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "public_holidays_nz" }, include: { capabilities: { where: { capability: "COLLECT_PUBLIC_SIGNALS", validTo: null } } } });
+    const capability = source.capabilities[0];
+    expect(capability).toBeTruthy();
+    await prisma.dataSourceCapability.update({ where: { id: capability.id }, data: { enabled: false } });
+    try {
+      await expect(service.collectSource(source.key, "new-zealand")).rejects.toMatchObject<Partial<WorkerRequestError>>({ code: "SOURCE_CAPABILITY_MISSING", statusCode: 409 });
+    } finally {
+      await prisma.dataSourceCapability.update({ where: { id: capability.id }, data: { enabled: true } });
+    }
   });
 
   it("runs an anonymous preview without creating an email", async () => {
@@ -88,6 +106,53 @@ describe("Worker baseline pipeline", () => {
     expect(validated.unitId).toBeTruthy();
     expect(await prisma.listing.findFirst({ where: { propertyId: check.propertyId!, unitId: validated.unitId!, dataSource: { key: "development-demo" } } })).toMatchObject({ platform: "airbnb", sourceListingId: "713337408265816459", isDemo: true });
     expect(await prisma.collectionRun.findFirst({ where: { priceCheckId: check.id, jobId: job.id } })).toMatchObject({ status: "SUCCEEDED", isDemo: true });
+    await service.cancelAnalysis(request!.id);
+  });
+
+  it("continues an internal OTA request directly into rate collection after unique unit validation", async () => {
+    const request = await service.createFormalAnalysis({
+      input: `72 ${prefix.slice(-8)} Fixture Street, Christchurch 8011`,
+      email: `internal-on-demand-${prefix.slice(-8)}@tymra.test`,
+      serviceConsent: true,
+      idempotencyKey: `${prefix}:internal-on-demand-validation`,
+      locale: "en",
+      deviceId: `${prefix}:internal-on-demand-device`,
+      ipAddress: testIp(33),
+    });
+    const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! } });
+    await prisma.priceCheck.update({
+      where: { id: check.id },
+      data: {
+        requestOrigin: "INTERNAL_OPERATOR",
+        listingUrl: "https://www.airbnb.co.nz/rooms/713337408265816459",
+        listingValidationStatus: "PENDING",
+        listingValidationMessage: null,
+        listingValidatedAt: null,
+        unitId: null,
+        status: "VALIDATING",
+      },
+    });
+    const job = await prisma.job.create({
+      data: {
+        type: "PROPERTY_IDENTIFICATION",
+        payload: { priceCheckId: check.id },
+        idempotencyKey: `${prefix}:internal-on-demand-property-identification`,
+        priceCheckId: check.id,
+      },
+    });
+
+    await handleJob(job, environment);
+
+    expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: check.id } })).toMatchObject({
+      requestOrigin: "INTERNAL_OPERATOR",
+      listingValidationStatus: "VERIFIED",
+      status: "QUEUED",
+    });
+    expect(await prisma.job.findUnique({ where: { idempotencyKey: `${check.id}:internal-on-demand-rate` } })).toMatchObject({
+      type: "RATE_COLLECTION",
+      priceCheckId: check.id,
+      status: "PENDING",
+    });
     await service.cancelAnalysis(request!.id);
   });
 
@@ -253,7 +318,7 @@ describe("Worker baseline pipeline", () => {
         prisma.property.findUniqueOrThrow({ where: { id: request!.propertyId! } }),
         prisma.priceCheck.findUniqueOrThrow({ where: { id: request!.priceCheckId! } }),
       ]);
-      expect(property).toMatchObject({ city: "Greymouth", region: "West Coast", territorialAuthority: "Grey District", rto: "Development West Coast", supportStatus: "PILOT_AVAILABLE" });
+      expect(property).toMatchObject({ city: "Greymouth", region: "West Coast", territorialAuthority: "Grey District", rto: "Development West Coast", supportStatus: "PARTIAL_COVERAGE" });
       expect(check.marketKey).toBe("nz-region-west-coast");
       await service.cancelAnalysis(request!.id);
     } finally {
@@ -649,13 +714,21 @@ describe("Worker baseline pipeline", () => {
   });
 
   it("persists redacted short-lived public artifacts and removes expired payloads", async () => {
-    const before = new Date();
-    const collection = await service.collectSource("school_holidays_nz", "new-zealand");
-    expect(collection.records).toBeGreaterThan(0);
-    const artifact = await prisma.rawArtifact.findFirstOrThrow({ where: { createdAt: { gte: before } }, orderBy: { createdAt: "desc" } });
-    expect(artifact.payload).not.toBeNull();
+    const adapter: PublicDataAdapter = {
+      metadata: { sourceId: "school_holidays_nz", sourceName: "School holidays test", sourceType: "PUBLIC_DATA", supportedDomains: ["education.govt.nz"], adapterKey: "public:school-holidays:retention-test", accessMethod: "OFFICIAL_PUBLIC_HTML", concurrencyLimit: 1, dailyBudget: 1, collectorVersion: "test", parserVersion: "test" },
+      async discover() { return ["https://www.education.govt.nz/school/school-terms-and-holidays"]; },
+      async fetch() { return [{ sourceId: "school_holidays_nz", externalId: `${prefix}:retention`, payload: { title: "Public holiday", token: "must-redact" }, fetchedAt: new Date(), fixture: false }]; },
+      async normalise() { return []; },
+      async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "test transport", latencyMs: 0, mode: "fixture" }; },
+    };
+    const retentionService = new WorkerService(environment, { school_holidays_nz: adapter });
+    const collection = await retentionService.collectSource("school_holidays_nz", "new-zealand");
+    expect(collection.records).toBe(1);
+    const artifact = await prisma.rawArtifact.findFirstOrThrow({ where: { collectionRunId: collection.runId } });
+    expect(artifact.payload).toMatchObject({ title: "Public holiday" });
+    expect(artifact.payload).not.toHaveProperty("token");
     await prisma.rawArtifact.update({ where: { id: artifact.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
-    const cleanup = await service.retentionCleanup();
+    const cleanup = await retentionService.retentionCleanup();
     expect(cleanup.rawArtifactsDeleted).toBeGreaterThanOrEqual(1);
     expect(await prisma.rawArtifact.findUnique({ where: { id: artifact.id } })).toMatchObject({ storageRef: "DELETED", payload: null });
   });

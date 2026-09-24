@@ -69,7 +69,7 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
   const dates = useMemo(defaultStayDates, []);
   const idempotencyKey = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<null | "UNSUPPORTED" | "COMING_SOON" | "SOURCE_UNAVAILABLE" | "NO_MATCH">(null);
+  const [notice, setNotice] = useState<null | "UNSUPPORTED" | "INSUFFICIENT_DATA" | "SOURCE_UNAVAILABLE" | "NO_MATCH">(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -96,7 +96,7 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
 
     try {
       const searchResult = await requestJson<{
-        supportStatus: "SUPPORTED" | "UNSUPPORTED" | "SOURCE_UNAVAILABLE" | "COMING_SOON";
+        supportStatus: "SUPPORTED" | "UNSUPPORTED" | "INSUFFICIENT_DATA" | "SOURCE_UNAVAILABLE";
         matchStatus: string;
         candidates: PropertyCandidate[];
       }>("/api/v1/property-search", {
@@ -105,7 +105,7 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
         body: JSON.stringify({ input, locale }),
       });
 
-      if (searchResult.supportStatus === "UNSUPPORTED" || searchResult.supportStatus === "COMING_SOON") {
+      if (searchResult.supportStatus === "UNSUPPORTED" || searchResult.supportStatus === "INSUFFICIENT_DATA") {
         setNotice(searchResult.supportStatus);
         return;
       }

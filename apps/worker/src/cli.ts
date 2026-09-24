@@ -27,7 +27,7 @@ switch (command) {
   case "result": print(await service.getResult(requiredArg(args, 0))); break;
   case "confirm": print(await service.confirmAnalysis(requiredArg(args, 0), { sellableUnitId: requiredArg(args, 1) })); break;
   case "cancel": print(await service.cancelAnalysis(requiredArg(args, 0))); break;
-  case "resend-link": print(await service.resendLink(requiredArg(args, 0))); break;
+  case "resend-result-notification": print(await service.resendResultNotification(requiredArg(args, 0))); break;
   case "collect-source": print(await service.collectSource(requiredArg(args, 0), option(args, "--market") ?? "new-zealand", undefined, collectionOptions(args))); break;
   case "source-health":
   case "source:health": print(await service.sourceHealth(args[0])); break;

@@ -6,6 +6,7 @@ import {
   findStoredAddressIdentity,
   hashPersonalIdentifier,
   prisma,
+  recordIdentityEntityVersion,
 } from "@tymra/db";
 import {
   createPriceCheckSchema,
@@ -138,7 +139,7 @@ export async function searchProperties(inputValue: unknown) {
     return { supportStatus: "SOURCE_UNAVAILABLE" as const, matchStatus: "NONE" as const, candidates: [] };
   }
   if (environment.DEFAULT_MARKET !== "christchurch") {
-    return { supportStatus: "COMING_SOON" as const, matchStatus: "NONE" as const, candidates: [] };
+    return { supportStatus: "INSUFFICIENT_DATA" as const, matchStatus: "NONE" as const, candidates: [] };
   }
 
   return {
@@ -181,11 +182,11 @@ function looksLikeNzStreetAddress(value: string) {
 
 function addressSupportStatus(level: "FULL" | "REGIONAL" | "NATIONAL_ONLY" | undefined) {
   if (level === "FULL") return "SUPPORTED" as const;
-  if (level === "REGIONAL") return "PILOT_AVAILABLE" as const;
-  return "INSUFFICIENT_MARKET_DATA" as const;
+  if (level === "REGIONAL") return "PARTIAL_COVERAGE" as const;
+  return "INSUFFICIENT_DATA" as const;
 }
 
-export async function createPriceCheck(inputValue: unknown, options: { customerUserId?: string } = {}) {
+export async function createPriceCheck(inputValue: unknown, options: { customerUserId?: string; requestOrigin?: "CUSTOMER" | "INTERNAL_OPERATOR" } = {}) {
   const input = createPriceCheckSchema.parse(inputValue);
   const environment = getEnvironment();
   if (!environment.ACCEPT_NEW_CHECKS) return { accepted: false as const, reason: "CHECKS_PAUSED" as const };
@@ -248,7 +249,7 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
       const provisionalUnitId = `unit_ota_${stableAddressIdentityId(`${identity}:unconfirmed`)}`;
       property = await transaction.property.upsert({
         where: { id: propertyId },
-        create: { id: propertyId, canonicalName: `${directListingReference.sourceId} listing ${directListingReference.sourceListingId}`, address: "", city: "", countryCode: "NZ", accommodationType: "UNCONFIRMED_ACCOMMODATION", supportStatus: "INSUFFICIENT_MARKET_DATA", identityConfidence: 0, status: "PENDING_OTA_VERIFICATION", isDemo: false },
+        create: { id: propertyId, canonicalName: `${directListingReference.sourceId} listing ${directListingReference.sourceListingId}`, address: "", city: "", countryCode: "NZ", accommodationType: "UNCONFIRMED_ACCOMMODATION", supportStatus: "INSUFFICIENT_DATA", identityConfidence: 0, status: "PENDING_OTA_VERIFICATION", isDemo: false },
         update: { status: "PENDING_OTA_VERIFICATION" },
         include: { units: { where: { status: "ACTIVE" } } },
       });
@@ -263,6 +264,7 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
     return transaction.priceCheck.create({
       data: {
         analysisType: input.analysisType,
+        requestOrigin: options.requestOrigin ?? "CUSTOMER",
         rawInput: input.input,
         locale: input.locale,
         emailHash: customer?.emailHash ?? hashPersonalIdentifier(input.email, environment.ACCESS_KEY_SECRET),
@@ -401,6 +403,9 @@ async function promoteAddressIdentity(externalId: string, rawInput: string) {
       update: { propertyId, status: "ACTIVE" },
     }),
   ]);
+  const collectedAt = new Date();
+  await recordIdentityEntityVersion("PROPERTY", propertyId, { collectedAt, collectorVersion: "linz-address-identity-v1", parserVersion: "linz-nz-addresses@1.0.0", identityEvidence: { providerExternalId: candidate.providerExternalId, queryHash } });
+  await recordIdentityEntityVersion("SELLABLE_UNIT", unitId, { collectedAt, collectorVersion: "linz-address-identity-v1", parserVersion: "linz-nz-addresses@1.0.0", identityEvidence: { providerExternalId: candidate.providerExternalId, syntheticUnitRole: "SPATIAL_ANCHOR" } });
   return propertyId;
 }
 

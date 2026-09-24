@@ -25,7 +25,7 @@ app.post("/worker/analysis", async (request, reply) => reply.code(202).send(awai
 app.post("/worker/analysis/:id/confirm", async (request) => service.confirmAnalysis(pathId(request.params), z.object({ sellableUnitId: z.string().min(1) }).parse(request.body)));
 app.get("/worker/analysis/:id", async (request, reply) => sendFound(reply, await service.getAnalysis(pathId(request.params))));
 app.get("/worker/analysis/:id/result", async (request, reply) => sendFound(reply, await service.getResult(pathId(request.params))));
-app.post("/worker/analysis/:id/resend-link", async (request, reply) => reply.code(202).send(await service.resendLink(pathId(request.params))));
+app.post("/worker/analysis/:id/resend-result-notification", async (request, reply) => reply.code(202).send(await service.resendResultNotification(pathId(request.params))));
 app.post("/worker/analysis/:id/cancel", async (request) => service.cancelAnalysis(pathId(request.params)));
 
 app.get("/worker/sources", async () => prisma.dataSource.findMany({ orderBy: { key: "asc" }, select: { id: true, key: true, name: true, sourceType: true, lifecycle: true, operationalStatus: true, enabled: true, environments: true, lastSuccessAt: true, healthSummary: true } }));

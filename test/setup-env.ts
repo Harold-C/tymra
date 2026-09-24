@@ -20,6 +20,7 @@ process.env.PUBLIC_COLLECTION_MODE = "fixture";
 process.env.DEFAULT_MARKET = "christchurch";
 process.env.AUTO_PUBLISH_ENABLED = "true";
 process.env.ACCEPT_NEW_CHECKS = "true";
+process.env.INTERNAL_ON_DEMAND_ENABLED = "true";
 process.env.MEMBERSHIP_PRO_LAUNCH_ENABLED = "true";
 process.env.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED = "true";
 process.env.MEMBERSHIP_EXPORT_LAUNCH_ENABLED = "true";

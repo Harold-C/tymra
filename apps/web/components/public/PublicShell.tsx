@@ -1,12 +1,14 @@
 import { getTranslations } from "next-intl/server";
 import Image from "next/image";
 import Link from "next/link";
+import { getEnvironment } from "@tymra/config";
 import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 import { homeCopy } from "@/lib/home-content";
 import { LocaleSwitchLink } from "./LocaleSwitchLink";
 import { SiteHeader } from "./SiteHeader";
 
 export async function PublicShell({ locale, children }: { locale: "en" | "zh"; children: React.ReactNode }) {
+  const discoveryHidden = getEnvironment().CLIENT_DISCOVERY_MODE === "DEPLOYED_HIDDEN";
   const [nav, common, footer, customerSession] = await Promise.all([
     getTranslations("Nav"),
     getTranslations("Common"),
@@ -14,7 +16,7 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
     getCustomerSessionForPage(),
   ]);
   const footerGroups = [
-    { label: footer("product"), links: [{ label: common("runCheck"), href: `/${locale}/check` }, { label: nav("pricing"), href: `/${locale}/pricing` }, { label: nav("how"), href: `/${locale}#how-it-works` }, { label: nav("what"), href: `/${locale}#what-you-get` }] },
+    { label: footer("product"), links: [...(discoveryHidden ? [] : [{ label: common("runCheck"), href: `/${locale}/check` }, { label: nav("pricing"), href: `/${locale}/pricing` }]), { label: nav("how"), href: `/${locale}#how-it-works` }, { label: nav("what"), href: `/${locale}#what-you-get` }] },
     { label: footer("resources"), links: [{ label: nav("methodology"), href: `/${locale}/methodology` }, { label: nav("faq"), href: `/${locale}/faq` }, { label: nav("contact"), href: `/${locale}/contact` }] },
     { label: footer("legal"), links: [{ label: footer("privacy"), href: `/${locale}/privacy` }, { label: footer("terms"), href: `/${locale}/terms` }, { label: footer("cookies"), href: `/${locale}/cookies` }, { label: footer("disclaimer"), href: `/${locale}/disclaimer` }, { label: footer("deletion"), href: `/${locale}/delete-data` }] },
   ];
@@ -22,7 +24,7 @@ export async function PublicShell({ locale, children }: { locale: "en" | "zh"; c
   return (
     <div className="public-page">
       <a className="skip-link" href="#main-content">{nav("skipToContent")}</a>
-      <SiteHeader copy={homeCopy[locale].nav} locale={locale} signedIn={Boolean(customerSession)} />
+      <SiteHeader copy={homeCopy[locale].nav} locale={locale} signedIn={Boolean(customerSession)} discoveryHidden={discoveryHidden} />
       <main id="main-content">{children}</main>
       <footer className="public-footer">
         <div className="public-container footer-grid">

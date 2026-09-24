@@ -18,7 +18,7 @@ export default async function CollectionRunsPage({ searchParams }: { searchParam
   const incidentStatus = incidentStatuses.includes(searchParams.incident as ExceptionStatus) ? searchParams.incident as ExceptionStatus : undefined;
   const q = searchParams.q?.trim().slice(0, 100) ?? "";
   const { page, pageSize, skip } = adminListState(searchParams);
-  const sourceScope: Prisma.DataSourceWhereInput = { providerType: { in: ["PUBLIC", "MANUAL"] }, sourceType: { in: ["PUBLIC_DATA", "MANUAL_IMPORT"] }, isDemo: false };
+  const sourceScope: Prisma.DataSourceWhereInput = { isDemo: false };
   const sources = await prisma.dataSource.findMany({ where: sourceScope, orderBy: { name: "asc" }, select: { key: true, name: true } });
   const selectedSource = sources.find((source) => source.key === searchParams.source)?.key;
   const where: Prisma.CollectionRunWhereInput = {

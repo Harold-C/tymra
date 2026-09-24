@@ -66,7 +66,7 @@ const emailCopy: Record<Locale, Record<EmailType, { subject: string; heading: st
     PARTIAL_RESULT: { subject: "Your partial Tymra result is ready", heading: "A partial result is available" },
     INSUFFICIENT_DATA: { subject: "Tymra completed your check", heading: "There was not enough reliable data to advise" },
     CHECK_FAILED: { subject: "Tymra could not complete your check", heading: "Your Price Check could not be completed" },
-    LINK_REISSUED: { subject: "Your new Tymra result link", heading: "A new secure result link is ready" },
+    RESULT_REMINDER: { subject: "Your Tymra result is ready", heading: "Open your result in your secure account" },
   },
   zh: {
     VERIFY_AND_SIGN_IN: { subject: "验证邮箱并解锁 Tymra 正式报告", heading: "验证邮箱并打开你的安全报告" },
@@ -77,7 +77,7 @@ const emailCopy: Record<Locale, Record<EmailType, { subject: string; heading: st
     PARTIAL_RESULT: { subject: "你的 Tymra 部分结果已生成", heading: "已有部分可靠结果" },
     INSUFFICIENT_DATA: { subject: "Tymra 已完成检查", heading: "目前没有足够可靠的数据提供建议" },
     CHECK_FAILED: { subject: "Tymra 无法完成本次检查", heading: "本次价格检查未能完成" },
-    LINK_REISSUED: { subject: "新的 Tymra 结果链接", heading: "新的安全结果链接已生成" },
+    RESULT_REMINDER: { subject: "你的 Tymra 结果已生成", heading: "请在安全账户中打开结果" },
   },
 };
 

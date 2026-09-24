@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 
 import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
 import { StatusPill } from "@/components/admin/AdminTable";
-import { ReissueResultLinkButton } from "@/components/admin/ReissueResultLinkButton";
 import { adminDateLocale, adminLabel, adminText, type AdminLocale } from "@/lib/admin-i18n";
 import { getAdminLocale } from "@/lib/server/admin-locale";
 
@@ -17,10 +16,7 @@ export default async function CheckDetailPage({ params }: { params: { checkId: s
       stayQuery: true,
       jobs: { orderBy: { createdAt: "asc" } },
       collectionRuns: { include: { dataSource: true }, orderBy: { createdAt: "asc" } },
-      resultVersions: {
-        include: { insights: true, accessTokens: { select: { issuedAt: true, expiresAt: true, revokedAt: true } } },
-        orderBy: { version: "desc" },
-      },
+      resultVersions: { include: { insights: true }, orderBy: { version: "desc" } },
       exceptions: { orderBy: { createdAt: "desc" } },
       actions: { orderBy: { createdAt: "desc" } },
       emails: { orderBy: { createdAt: "desc" } },
@@ -31,14 +27,12 @@ export default async function CheckDetailPage({ params }: { params: { checkId: s
     where: { entityType: "PriceCheck", entityId: check.id },
     orderBy: { createdAt: "asc" },
   });
-  const canReissue = check.resultVersions.some((result) => result.status === "PUBLISHED");
-
   return (
     <section className="admin-page">
       <AdminPageHeader
         title={adminText(locale, "checkDetail")}
         description={check.id}
-        actions={<div className="header-pills"><StatusPill value={check.status} locale={locale} /><ReissueResultLinkButton locale={locale} checkId={check.id} enabled={canReissue} /></div>}
+        actions={<div className="header-pills"><StatusPill value={check.status} locale={locale} /></div>}
       />
       <div className="detail-sections">
         <section>
@@ -54,7 +48,7 @@ export default async function CheckDetailPage({ params }: { params: { checkId: s
         </section>
         <section><h2>{adminText(locale, "jobs")}</h2><CompactTable locale={locale} headings={["Type", "Status", "Attempts", "Run at"]} rows={check.jobs.map((job) => [job.type, <StatusPill key={`${job.id}:status`} value={job.status} locale={locale} />, job.attemptCount, date(job.runAt, locale)])} /></section>
         <section><h2>{adminText(locale, "navRuns")}</h2><CompactTable locale={locale} headings={["Source", "Status", "Success", "Failure"]} rows={check.collectionRuns.map((run) => [run.dataSource.name, <StatusPill key={`${run.id}:status`} value={run.status} locale={locale} />, run.successCount, run.failureCount])} /></section>
-        <section><h2>{adminText(locale, "resultVersions")}</h2><CompactTable locale={locale} headings={["Version", "Status", "Outcome", "Confidence", "Insights", "Links"]} rows={check.resultVersions.map((result) => [result.version, <StatusPill key={`${result.id}:status`} value={result.status} locale={locale} />, result.outcome, result.confidence, result.insights.length, result.accessTokens.length])} /></section>
+        <section><h2>{adminText(locale, "resultVersions")}</h2><CompactTable locale={locale} headings={["Version", "Status", "Outcome", "Confidence", "Insights"]} rows={check.resultVersions.map((result) => [result.version, <StatusPill key={`${result.id}:status`} value={result.status} locale={locale} />, result.outcome, result.confidence, result.insights.length])} /></section>
         <section><h2>{adminText(locale, "navExceptions")}</h2><CompactTable locale={locale} headings={["Type", "Priority", "Status", "Open"]} rows={check.exceptions.map((item) => [item.type, item.priority, <StatusPill key={`${item.id}:status`} value={item.status} locale={locale} />, <a key={`${item.id}:link`} href={`/admin/exceptions/${item.id}`}>{adminText(locale, "workspace")}</a>])} /></section>
         <section><h2>{adminText(locale, "emailDelivery")}</h2><CompactTable locale={locale} headings={["Type", "Status", "Provider", "Attempts"]} rows={check.emails.map((email) => [email.type, <StatusPill key={`${email.id}:status`} value={email.status} locale={locale} />, email.provider, email.attemptCount])} /></section>
         <section><h2>{adminText(locale, "auditTimeline")}</h2><CompactTable locale={locale} headings={["Event", "Created"]} rows={audit.map((event) => [event.eventType, date(event.createdAt, locale)])} /></section>

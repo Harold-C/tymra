@@ -1,0 +1,2 @@
+ALTER TABLE "PriceCheck"
+ADD COLUMN "requestOrigin" TEXT NOT NULL DEFAULT 'CUSTOMER';

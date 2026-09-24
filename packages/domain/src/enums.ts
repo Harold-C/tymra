@@ -31,10 +31,10 @@ export type PriceCheckStatus = z.infer<typeof priceCheckStatusSchema>;
 
 export const marketStatuses = [
   "SUPPORTED",
-  "PILOT_AVAILABLE",
-  "COMING_SOON",
-  "INSUFFICIENT_MARKET_DATA",
-  "DISABLED",
+  "PARTIAL_COVERAGE",
+  "PILOT",
+  "INSUFFICIENT_DATA",
+  "SOURCE_UNAVAILABLE",
 ] as const;
 export const marketStatusSchema = z.enum(marketStatuses);
 export type MarketStatus = z.infer<typeof marketStatusSchema>;
@@ -287,7 +287,7 @@ export const emailTypes = [
   "PARTIAL_RESULT",
   "INSUFFICIENT_DATA",
   "CHECK_FAILED",
-  "LINK_REISSUED",
+  "RESULT_REMINDER",
 ] as const;
 export const emailTypeSchema = z.enum(emailTypes);
 export type EmailType = z.infer<typeof emailTypeSchema>;

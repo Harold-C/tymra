@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { addressIdentityPersistentCache, hashOpaqueToken, hashPersonalIdentifier, issueResultLink, prisma } from "@tymra/db";
+import { addressIdentityPersistentCache, hashOpaqueToken, hashPersonalIdentifier, prisma } from "@tymra/db";
 import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentitySearchResult } from "@tymra/providers";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -9,7 +9,6 @@ import { apiError, apiException } from "@/lib/server/api";
 import { adminSessionCookie } from "@/lib/server/admin-auth";
 
 import { GET as getAdminChecks } from "./admin/checks/route";
-import { POST as reissueLink } from "./admin/checks/[checkId]/reissue-link/route";
 import { POST as adminSignIn } from "./admin/session/route";
 import { POST as submitContact } from "./contact/route";
 import { GET as getCheck } from "./price-checks/[checkId]/route";
@@ -19,8 +18,6 @@ import { POST as confirmQuery } from "./price-checks/[checkId]/confirm-query/rou
 import { POST as confirmUnit } from "./price-checks/[checkId]/confirm-unit/route";
 import { POST as createCheck } from "./price-checks/route";
 import { POST as searchProperties } from "./property-search/route";
-import { POST as submitFeedback } from "./results/[token]/feedback/route";
-import { GET as getResult } from "./results/[token]/route";
 import { POST as joinWaitlist } from "./waitlist/route";
 
 const baseUrl = "https://tymra.test";
@@ -31,12 +28,9 @@ const created = {
   stayQueryId: "",
   waitlistId: "",
   contactId: "",
-  accessTokenId: "",
-  reissueDeliveryId: "",
 };
 let adminCookie = "";
 let checkCookie = "";
-let resultToken = "";
 
 describe("Release 1 API contracts", () => {
   beforeAll(async () => {
@@ -52,10 +46,6 @@ describe("Release 1 API contracts", () => {
     created.adminSessionId = session.id;
     adminCookie = `${adminSessionCookie}=${token}`;
 
-    const result = await prisma.resultVersion.findFirstOrThrow({ where: { status: "PUBLISHED", isDemo: true } });
-    const issued = await issueResultLink(result.id, process.env.RESULT_TOKEN_SECRET!, 14);
-    created.accessTokenId = issued.access.id;
-    resultToken = issued.token;
   });
 
   afterAll(async () => {
@@ -68,13 +58,8 @@ describe("Release 1 API contracts", () => {
         if (created.stayQueryId) await prisma.stayQuery.deleteMany({ where: { id: created.stayQueryId } });
       }
     }
-    if (created.reissueDeliveryId) {
-      await prisma.job.deleteMany({ where: { payload: { path: ["deliveryId"], equals: created.reissueDeliveryId } } });
-      await prisma.emailDelivery.deleteMany({ where: { id: created.reissueDeliveryId } });
-    }
     if (created.waitlistId) await prisma.waitlistEntry.deleteMany({ where: { id: created.waitlistId } });
     if (created.contactId) await prisma.contactRequest.deleteMany({ where: { id: created.contactId } });
-    if (created.accessTokenId) await prisma.resultAccessToken.deleteMany({ where: { id: created.accessTokenId } });
     if (created.adminSessionId) await prisma.adminSession.deleteMany({ where: { id: created.adminSessionId } });
     await prisma.$disconnect();
   });
@@ -237,23 +222,6 @@ describe("Release 1 API contracts", () => {
     expect((await queued.json()).data.status).toBe("QUEUED");
   });
 
-  it("resolves a secure result and accepts idempotent feedback", async () => {
-    const response = await getResult(new Request(`${baseUrl}/api/v1/results/redacted`), { params: { token: resultToken } });
-    expect(response.status).toBe(200);
-    expect((await response.json()).data.state).toBe("VALID");
-
-    const feedback = await submitFeedback(jsonRequest("/api/v1/results/redacted/feedback", {
-      feedbackType: "INSIGHT_USEFUL",
-      idempotencyKey: `api-feedback:${randomUUID()}`,
-    }), { params: { token: resultToken } });
-    expect(feedback.status).toBe(201);
-    const invalid = await submitFeedback(jsonRequest("/api/v1/results/invalid/feedback", {
-      feedbackType: "INSIGHT_USEFUL",
-      idempotencyKey: `api-feedback:${randomUUID()}`,
-    }), { params: { token: "invalid" } });
-    expect(invalid.status).toBe(404);
-  });
-
   it("stores Waitlist and Contact requests without returning personal data", async () => {
     const waitlist = await joinWaitlist(jsonRequest("/api/v1/waitlist", {
       email: "waitlist-api@tymra.test",
@@ -287,14 +255,6 @@ describe("Release 1 API contracts", () => {
     const authorized = await getAdminChecks(request("/api/v1/admin/checks", { cookie: adminCookie }));
     expect(authorized.status).toBe(200);
 
-    const missing = await reissueLink(request("/api/v1/admin/checks/missing/reissue-link", { method: "POST", cookie: adminCookie, origin: adminBaseUrl, baseUrl: adminBaseUrl }), { params: { checkId: "missing" } });
-    expect(missing.status).toBe(404);
-    const noResult = await reissueLink(request("/api/v1/admin/checks/demo-check-property-confirmation/reissue-link", { method: "POST", cookie: adminCookie, origin: adminBaseUrl, baseUrl: adminBaseUrl }), { params: { checkId: "demo-check-property-confirmation" } });
-    expect(noResult.status).toBe(409);
-
-    const reissued = await reissueLink(request("/api/v1/admin/checks/demo-check-normal-high/reissue-link", { method: "POST", cookie: adminCookie, origin: adminBaseUrl, baseUrl: adminBaseUrl }), { params: { checkId: "demo-check-normal-high" } });
-    expect(reissued.status).toBe(202);
-    created.reissueDeliveryId = (await reissued.json()).data.deliveryId;
   });
 
   it("returns 400, 422, 429, 500 and 503 error contracts", async () => {

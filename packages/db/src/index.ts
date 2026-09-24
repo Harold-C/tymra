@@ -12,8 +12,8 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.tymraPrisma = prisma;
 
 export * from "@prisma/client";
 export * from "./collection-incidents";
+export * from "./data-assets";
 export * from "./address-identities";
 export * from "./funnel-analytics";
 export * from "./jobs";
-export * from "./result-links";
 export * from "./security";
