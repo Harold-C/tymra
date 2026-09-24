@@ -202,6 +202,7 @@ type ConfirmWorkerRequest = {
 type CollectSourceOptions = {
   jobId?: string;
   lincolnOnly?: boolean;
+  productionCanary?: boolean;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -1061,6 +1062,10 @@ export class WorkerService {
     const adapter = this.publicAdapters[sourceId];
     if (!adapter) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No public adapter exists for ${sourceId}`, 404);
     const localAcceptance = options.localAcceptance === true;
+    const productionCanary = options.productionCanary === true;
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || localAcceptance || options.dryRun || !options.limit || options.limit > 2)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Production canary requires a live production run with a one- or two-record limit", 422);
+    }
     const source = await prisma.dataSource.findUniqueOrThrow({
       where: { key: sourceId },
       select: {
@@ -1094,7 +1099,7 @@ export class WorkerService {
       timeoutMs: sourceId === "council_calendars" || argusPublicMarketSource(sourceId) ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
     } as const;
     const from = requestedFrom;
-    const to = localAcceptance
+    const to = localAcceptance || productionCanary
       ? new Date(Math.min(requestedTo.getTime(), from.getTime() + localBounds.maxWindowDays * 86_400_000))
       : requestedTo;
     const limit = localAcceptance
@@ -1109,20 +1114,22 @@ export class WorkerService {
       concurrency: Math.max(1, adapter.metadata.concurrencyLimit),
       timeoutMs: 120_000,
     } as const;
-    const effectiveBounds = localAcceptance ? localBounds : productionBounds;
+    const effectiveBounds = localAcceptance ? localBounds : productionCanary
+      ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : 1, maxRecords: 2, timeoutMs: 30_000 }
+      : productionBounds;
     const collectionState = sourceId === "metservice" ? await this.metServiceCollectionState(source.id) : undefined;
     const context: AdapterContext = {
       ...this.publicAdapterContext(),
       localAcceptance,
       collectionLimits: effectiveBounds,
       collectionRange: { from, to },
-      ...(localAcceptance ? { signal: AbortSignal.timeout(localBounds.timeoutMs) } : {}),
+      ...(localAcceptance || productionCanary ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
       ...(collectionState ? { collectionState } : {}),
     };
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
-      localAcceptance, sourceId, marketScope,
+      localAcceptance, productionCanary, sourceId, marketScope,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
       effective: { from: from.toISOString(), to: to.toISOString(), limit: effectiveBounds.maxRecords },
       limits: effectiveBounds,
@@ -1151,7 +1158,7 @@ export class WorkerService {
         counters.discovered = discovered.length;
         const uniqueReferences = [...new Set(discovered)];
         counters.duplicatesSkipped += discovered.length - uniqueReferences.length;
-        const references = localAcceptance ? uniqueReferences.slice(0, localBounds.maxRequests) : uniqueReferences;
+        const references = localAcceptance || productionCanary ? uniqueReferences.slice(0, effectiveBounds.maxRequests) : uniqueReferences;
         counters.references = references.length;
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {

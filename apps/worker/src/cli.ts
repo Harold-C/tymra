@@ -9,6 +9,7 @@ import { queueFailureReport } from "./operations/queue-governance";
 import { executeCanary, canaryPlan, productionPreflight } from "./operations/release-safety";
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
+import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary } from "./operations/production-public-canary";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -135,6 +136,11 @@ switch (command) {
     print({ source, mutationPerformed: true });
     break;
   }
+  case "release:bootstrap-public-canary": {
+    if (option(args, "--confirm") !== "BOOTSTRAP_PUBLIC_CANARY") throw new Error("Public canary bootstrap requires --confirm BOOTSTRAP_PUBLIC_CANARY");
+    print(await bootstrapProductionPublicCanary(requiredOption(args, "--source"), environment.NODE_ENV));
+    break;
+  }
   case "release:canary-plan": {
     const requested = csvOption(args, "--sources");
     if (!requested.length) throw new Error("Missing --sources");
@@ -149,21 +155,28 @@ switch (command) {
     const plan = canaryPlan(requested, { technicalValidation });
     const requestedLimit = integerOption(args, "--limit") ?? plan.maxRecordsPerPass;
     if (!technicalValidation && requestedLimit > plan.maxRecordsPerPass) throw new Error(`Production canary --limit must not exceed ${plan.maxRecordsPerPass}`);
+    if (!technicalValidation && requested.some((source) => !APPROVED_PUBLIC_CANARY_SOURCES.includes(source as typeof APPROVED_PUBLIC_CANARY_SOURCES[number]))) {
+      throw new Error("Production canary source is outside the approved public batch");
+    }
+    const from = dateOption(args, "--from") ?? nzStartOfDay(new Date());
+    const to = dateOption(args, "--to", true) ?? new Date(from.getTime() + 31 * 86_400_000);
+    if (to <= from || to.getTime() - from.getTime() > 31 * 86_400_000) throw new Error("Canary collection window must be positive and no longer than 31 days");
     const sourceRows = await prisma.dataSource.findMany({ where: { key: { in: requested } } });
     const otaHealth = (await service.otaHealth()).filter((source) => requested.includes(source.key));
     const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), technicalValidation, requestedSourceKeys: requested, sources: sourceRows, otaHealth });
     if (!preflight.ready) throw new Error(`Canary preflight failed: ${preflight.failures.join("; ")}`);
     print(await executeCanary(requested, async (sourceKey, pass) => {
       const source = sourceRows.find((item) => item.key === sourceKey)!;
-      const before = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
+      const before = await sourceBusinessCounts(source.id);
       try {
-        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { limit: requestedLimit, dryRun: false, localAcceptance: technicalValidation });
+        const result = await service.collectSource(sourceKey, option(args, "--market") ?? "new-zealand", undefined, { from, to, limit: requestedLimit, dryRun: false, localAcceptance: technicalValidation, productionCanary: !technicalValidation });
         const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: result.runId } });
+        if (run.status !== "SUCCEEDED" || run.successCount < 1) throw new Error(`Canary run ${run.id} did not persist a positive business result`);
         const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
-        const after = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id } });
+        const after = await sourceBusinessCounts(source.id);
         const parserFailures = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } });
         const remoteEvidenceRemaining = await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } });
-        return { sourceKey, pass, configurationUnchanged: scope.configurationUnchanged === true, schedulesUnchanged: scope.schedulesUnchanged === true, parserFailures, repeatRowGrowth: pass > 1 ? Math.max(0, after - before) : 0, remoteEvidenceRemaining };
+        return { sourceKey, pass, runId: run.id, successCount: run.successCount, before, after, configurationUnchanged: scope.configurationUnchanged === true, schedulesUnchanged: scope.schedulesUnchanged === true, parserFailures, repeatRowGrowth: pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0, remoteEvidenceRemaining };
       } catch (error) {
         return { sourceKey, pass, configurationUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.message : "unknown" };
       }
@@ -220,6 +233,16 @@ await closeRedis();
 await prisma.$disconnect();
 
 function print(value: unknown) { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
+async function sourceBusinessCounts(dataSourceId: string) {
+  return Promise.all([
+    prisma.sourceEvent.count({ where: { dataSourceId } }),
+    prisma.sourceEventOccurrence.count({ where: { dataSourceId } }),
+    prisma.sourceMarketSignal.count({ where: { dataSourceId } }),
+    prisma.eventSourceLink.count({ where: { sourceEvent: { dataSourceId } } }),
+    prisma.eventOccurrenceSourceLink.count({ where: { sourceEventOccurrence: { dataSourceId } } }),
+    prisma.marketSignalSourceLink.count({ where: { sourceMarketSignal: { dataSourceId } } }),
+  ]);
+}
 function requiredArg(args: string[], index: number) { const value = args[index]; if (!value || value.startsWith("--")) throw new Error(`Missing argument ${index + 1}`); return value; }
 function option(args: string[], name: string) { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; }
 function requiredOption(args: string[], name: string) { const value = option(args, name); if (!value) throw new Error(`Missing ${name}`); return value; }
