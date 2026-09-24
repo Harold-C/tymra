@@ -2,7 +2,7 @@
 
 set -uo pipefail
 
-readonly PROJECT_DIR="/Users/haroldchen/Documents/project/nbc-tymra"
+readonly PROJECT_DIR="${0:A:h:h}"
 readonly TRAEFIK_CONTAINER="host-traefik-1"
 readonly PUBLIC_URL="https://tymra.test/en"
 readonly ADMIN_URL="https://ops.tymra.test/admin/sign-in"

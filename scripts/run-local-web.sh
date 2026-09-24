@@ -2,7 +2,7 @@
 
 set -o pipefail
 
-readonly PROJECT_DIR="/Users/haroldchen/Documents/project/nbc-tymra"
+readonly PROJECT_DIR="${0:A:h:h}"
 readonly PNPM_BIN="/Users/haroldchen/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/pnpm"
 
 "${PNPM_BIN}" --dir "${PROJECT_DIR}" --filter @tymra/web dev 2>&1 | /usr/bin/perl -pe '

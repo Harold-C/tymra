@@ -12,7 +12,7 @@
     <string>start</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/haroldchen/Documents/project/nbc-tymra</string>
+  <string>/Users/haroldchen/Development/tymra/repo</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>

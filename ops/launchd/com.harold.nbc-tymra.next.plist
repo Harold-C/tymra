@@ -7,10 +7,10 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>/Users/haroldchen/Library/Application Support/Tymra/run-local-web.sh</string>
+    <string>/Users/haroldchen/Development/tymra/repo/scripts/run-local-web.sh</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/haroldchen/Documents/project/nbc-tymra</string>
+  <string>/Users/haroldchen/Development/tymra/repo</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
