@@ -21,9 +21,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://tymra:test-only-database-password@127.0.0.1:5432/tymra_test
+      REDIS_URL: redis://127.0.0.1:6379
       APP_BASE_URL: https://tymra.test
       SESSION_SECRET: test-only-session-secret-00000000000000000000000000000000
       ADMIN_EMAIL: admin@tymra.test
