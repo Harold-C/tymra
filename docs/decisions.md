@@ -926,3 +926,23 @@ accumulation.
 be audited against those clauses before the backend is called nationwide-production-ready.
 Customer-browser, membership and Stripe paths require production acceptance even while their entry
 points remain hidden.
+
+## D-051 Keep The Initial Production Ingress Admin-Only
+
+**Status:** Approved and verified on the initial production ingress on 2026-09-24.
+
+**Decision:** The first production ingress exposes only `ops.tymra.nz` for administrator sign-in,
+authenticated Admin pages and Admin APIs. `tymra.nz` and `www.tymra.nz` have no production Web routers.
+The Web application also denies non-Admin pages and APIs in production unless a later, explicit
+access-mode change is made. Admin responses carry `X-Robots-Tag: noindex, nofollow, noarchive`;
+access control is provided by ingress and application routing, not by search directives.
+This operational stage does not redefine `DEPLOYED_HIDDEN` or certify the client product.
+
+**Reason:** The first deployment is for private backend operation. A hidden navigation link alone
+still leaves direct customer URLs available to anyone who knows them.
+
+**Verification:** Before deployment, validate the rendered Compose routers, production route
+denials and Admin authentication. After deployment, check the public, www and Operations hosts
+from outside the stack and verify that only authenticated Admin functions are accessible.
+Opening the customer site requires the existing production acceptance gates and a separate ingress
+change. DNS or search-engine indexing status must be checked separately from code and HTTP behavior.

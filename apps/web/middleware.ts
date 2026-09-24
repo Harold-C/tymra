@@ -18,8 +18,17 @@ export default function middleware(request: NextRequest) {
   const publicOrigin = process.env.PUBLIC_ORIGIN ?? process.env.APP_BASE_URL ?? "https://tymra.test";
   const adminOrigin = process.env.ADMIN_ORIGIN ?? publicOrigin;
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const requestHost = (forwardedHost || request.headers.get("host") || request.nextUrl.host).toLowerCase();
+  const requestHost = (request.headers.get("host") || forwardedHost || request.nextUrl.host).toLowerCase();
   const isAdminHost = requestHost === new URL(adminOrigin).host.toLowerCase();
+  const adminOnly = process.env.NODE_ENV === "production" && process.env.ADMIN_ONLY_ACCESS !== "false";
+
+  if (adminOnly) {
+    const response = isAdminHost && (isAdminPage || isAdminApi)
+      ? NextResponse.next()
+      : new NextResponse(null, { status: 404 });
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    return response;
+  }
 
   if (isAdminApi) {
     if (!isAdminHost) {

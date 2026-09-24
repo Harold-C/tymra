@@ -41,7 +41,10 @@ x-app-environment: &app-environment
   DEFAULT_MARKET: ${PROD_DEFAULT_MARKET:-christchurch}
   AUTO_PUBLISH_ENABLED: ${PROD_AUTO_PUBLISH_ENABLED:-false}
   ACCEPT_NEW_CHECKS: ${PROD_ACCEPT_NEW_CHECKS:-false}
+  INTERNAL_ON_DEMAND_ENABLED: ${PROD_INTERNAL_ON_DEMAND_ENABLED:-false}
   CUSTOMER_FUNNEL_ENABLED: ${PROD_CUSTOMER_FUNNEL_ENABLED:-true}
+  CLIENT_DISCOVERY_MODE: ${PROD_CLIENT_DISCOVERY_MODE:-DEPLOYED_HIDDEN}
+  ADMIN_ONLY_ACCESS: ${PROD_ADMIN_ONLY_ACCESS:-true}
   BILLING_ENABLED: ${PROD_BILLING_ENABLED:-false}
   STRIPE_SECRET_KEY: ${PROD_STRIPE_SECRET_KEY:-}
   STRIPE_WEBHOOK_SECRET: ${PROD_STRIPE_WEBHOOK_SECRET:-}
@@ -58,10 +61,9 @@ x-app-environment: &app-environment
   ABUSE_CHALLENGE_VERIFY_URL: ${PROD_ABUSE_CHALLENGE_VERIFY_URL:-}
   ABUSE_CHALLENGE_SITE_KEY: ${PROD_ABUSE_CHALLENGE_SITE_KEY:-}
   ABUSE_CHALLENGE_SECRET: ${PROD_ABUSE_CHALLENGE_SECRET:-}
-  EMAIL_PROVIDER: smtp
+  EMAIL_PROVIDER: ${PROD_EMAIL_PROVIDER:-smtp}
   EMAIL_FROM: ${PROD_EMAIL_FROM:?Set PROD_EMAIL_FROM}
-  SMTP_URL: ${PROD_SMTP_URL:?Set PROD_SMTP_URL}
-  RESULT_LINK_TTL_DAYS: ${PROD_RESULT_LINK_TTL_DAYS:-14}
+  SMTP_URL: ${PROD_SMTP_URL:-}
   MAGIC_LINK_TTL_MINUTES: ${PROD_MAGIC_LINK_TTL_MINUTES:-15}
   CUSTOMER_SESSION_TTL_DAYS: ${PROD_CUSTOMER_SESSION_TTL_DAYS:-30}
   ROUGH_RESULT_CACHE_HOURS: ${PROD_ROUGH_RESULT_CACHE_HOURS:-6}
@@ -154,7 +156,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/en || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null --header='Host: ${HOST_OPS:?Set HOST_OPS}' http://127.0.0.1:3000/admin/sign-in || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -165,25 +167,17 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${TRAEFIK_DOCKER_NETWORK:-tymra_ingress}"
-      - "traefik.http.routers.tymra-public.rule=Host(`${HOST_PUBLIC:?Set HOST_PUBLIC}`)"
-      - "traefik.http.routers.tymra-public.entrypoints=websecure"
-      - "traefik.http.routers.tymra-public.tls=true"
-      - "traefik.http.routers.tymra-public.service=tymra-web"
       - "traefik.http.routers.tymra-ops.rule=Host(`${HOST_OPS:?Set HOST_OPS}`)"
       - "traefik.http.routers.tymra-ops.entrypoints=websecure"
       - "traefik.http.routers.tymra-ops.tls=true"
+      - "traefik.http.routers.tymra-ops.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.tymra-ops.middlewares=tymra-private-noindex"
       - "traefik.http.routers.tymra-ops.service=tymra-web"
-      - "traefik.http.routers.tymra-www.rule=Host(`${HOST_WWW:-www.tymra.nz}`)"
-      - "traefik.http.routers.tymra-www.entrypoints=websecure"
-      - "traefik.http.routers.tymra-www.tls=true"
-      - "traefik.http.routers.tymra-www.middlewares=tymra-www-redirect"
-      - "traefik.http.routers.tymra-www.service=tymra-web"
-      - "traefik.http.middlewares.tymra-www-redirect.redirectregex.regex=^https?://www\\.([^/]+)(/.*)?$"
-      - "traefik.http.middlewares.tymra-www-redirect.redirectregex.replacement=https://$${1}$${2}"
-      - "traefik.http.middlewares.tymra-www-redirect.redirectregex.permanent=true"
+      - "traefik.http.middlewares.tymra-private-noindex.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow, noarchive"
       - "traefik.http.services.tymra-web.loadbalancer.server.port=3000"
 
   worker:
+    profiles: ["collection"]
     <<: *app-image
     environment: *app-environment
     working_dir: /app/apps/worker
@@ -204,6 +198,7 @@ services:
       - ingress
 
   api:
+    profiles: ["collection"]
     <<: *app-image
     environment: *app-environment
     working_dir: /app/apps/worker
@@ -229,6 +224,7 @@ services:
       ingress: {}
 
   scheduler:
+    profiles: ["scheduler"]
     <<: *app-image
     environment: *app-environment
     working_dir: /app/apps/worker
