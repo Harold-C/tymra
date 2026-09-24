@@ -1,6 +1,19 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-24（后台与受限 Argus collection 已验收）
+Last updated: 2026-09-25（三条公开来源的手动有界生产验收完成）
+
+## 2026-09-25 首批公开来源验收完成
+
+`public_holidays_nz`、`rto_calendars` 和 `mbie` 各完成两次最多两条业务结果的生产
+Worker 手动采集，6 次运行均成功，复跑没有重复记录或来源关联增长。三条来源已启用供明确的
+人工调用，但未建立 Schedule；Scheduler、客户入口及其他业务开关继续关闭。官方公开 HTTP
+适配器不经过 Argus Job/ACK，不能把本次结果当作 Argus Connector 的新增验收。
+发布身份、备份、数据库结果及限制见
+[`evidence/public-canary-production-2026-09-25.md`](./evidence/public-canary-production-2026-09-25.md)。
+
+下一步先观察这三条来源的健康、数据新鲜度和异常，再分别评估持续采集的频率、预算、
+告警与回滚门槛；启用 Scheduler 仍需独立决定和验收。RBNZ 当前解析错误及其余渠道
+不在本批完成范围。
 
 ## 2026-09-24 受限生产采集验收完成
 

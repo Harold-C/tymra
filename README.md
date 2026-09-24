@@ -289,6 +289,17 @@ The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `pn
 the guarded `release:rollback --confirm DISABLE_COLLECTIONS` path before another attempt. Local
 development canary output is technical validation only and is not production evidence.
 
+For the first production public-source batch only, `release:bootstrap-public-canary` with `--source <key>`
+and `--confirm BOOTSTRAP_PUBLIC_CANARY` can create one disabled, non-demo source from the formal registry.
+The allowed keys are `public_holidays_nz`, `rto_calendars`, and `mbie`; the command refuses to overwrite
+an existing source or run with enabled schedules. After a successful source health check and explicit
+`source:activate <key>`, run the usual preflight and plan, then use `release:canary-run` with one
+`--sources <key>`, `--from YYYY-MM-DD`, `--to YYYY-MM-DD`, `--limit 2`, and
+`--confirm RUN_BOUNDED_CANARY`. In production this command
+limits the window to 31 days and the final business results to two per pass; it does not enqueue a Job
+or enable Scheduler. The 2026-09-25 production results and recovery material are recorded in
+[`docs/evidence/public-canary-production-2026-09-25.md`](./docs/evidence/public-canary-production-2026-09-25.md).
+
 An isolated full-stack smoke environment can run alongside the normal local stack. The command
 always removes its containers and test volumes on success, failure or interruption:
 

@@ -1,6 +1,19 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-24 (Admin-only production and restricted Argus collection accepted)
+Last updated: 2026-09-25 (three bounded public-source production canaries accepted)
+
+## 2026-09-25 first public-source production canary
+
+The production Worker/API now use image `tymra:public-canary-20260925-v2` from code commit
+`6d948dda4e76cb87416661e2ce4b4863341be52b`. Two manually triggered bounded passes
+each for `public_holidays_nz`, `rto_calendars`, and `mbie` succeeded through Tymra's real
+Worker persistence. Repeated passes added no duplicate business rows or source links. Twelve
+raw-artifact payload hashes matched, with no parser failure. No migration or generic seed ran.
+The Admin-only Web image is unchanged; Worker/API remain healthy, while Scheduler and all
+customer/business feature switches remain off. These direct public HTTP adapters did not create
+Argus Jobs or exercise ACK/PURGED; the prior Lincoln Argus acceptance remains separate.
+Release identity, six run IDs, backups, rollback and boundaries are in
+[`evidence/public-canary-production-2026-09-25.md`](./evidence/public-canary-production-2026-09-25.md).
 
 ## 2026-09-24 restricted production Argus acceptance
 
