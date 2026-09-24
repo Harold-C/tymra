@@ -9,7 +9,9 @@ failed before business persistence and ACK. `UNIVERSITY_CALENDAR` was missing fr
 signal enum/mapping, and the HTML evidence delivered through the production API did not match
 Argus's size/SHA-256 metadata. Worker/API and the candidate Web image were rolled back, the
 Argus environment values restored, and the acceptance source suspended. The local-only signal
-type fix and migration have not been deployed; the evidence-byte mismatch remains a release blocker.
+type fix and migration have not been deployed. Read-only origin/public comparison identified
+Cloudflare Email Address Obfuscation changing the HTML response after Argus served the original
+bytes; the production evidence route still needs a verified no-transform fix.
 Exact image, backup, Job, database and remote-result evidence is in
 [`evidence/tymra-argus-production-attempt-2026-09-24.md`](./evidence/tymra-argus-production-attempt-2026-09-24.md).
 The production service is still Admin-only; collection and Scheduler are off.

@@ -7,9 +7,10 @@ Last updated: 2026-09-24
 一次有界 Lincoln 2026 生产队列验收已到达 Argus 并完成抓取，但 Tymra 因
 `UNIVERSITY_CALENDAR` 持久化类型缺失而失败，随后 HTML 证据字节与 Argus 哈希不符，
 未 ACK。已回退新镜像及 Argus 配置、停止 Worker/API 并暂停该来源；后台继续正常运行。
-本地已准备类型映射及 migration，**尚未部署或迁移生产库**。下一步先定位 Argus 原站与
-公网交付之间的证据字节差异，保持哈希验证；再验证 Tymra 迁移、形成只处理既有 Argus
-结果且不再次访问 Lincoln 源站的恢复方案。未完成这些门槛前不重新启动 collection，
+本地已准备由 Prisma 枚举驱动的类型映射及 migration，测试通过，**尚未部署或迁移生产库**。
+只读对比已定位 Cloudflare 邮件地址混淆修改了 Argus 公网 HTML 证据。下一步对证据路由
+实施并验证不改写响应的修复，保持哈希验证；再发布 Tymra 类型修复，并形成只处理既有
+Argus 结果且不再次访问 Lincoln 源站的恢复方案。未完成这些门槛前不重新启动 collection，
 不启用 Scheduler。具体证据见
 [`evidence/tymra-argus-production-attempt-2026-09-24.md`](./evidence/tymra-argus-production-attempt-2026-09-24.md)。
 

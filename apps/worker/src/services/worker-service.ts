@@ -67,6 +67,7 @@ import {
   type PublicSignal,
   type ResolvedOtaListing,
 } from "@tymra/providers";
+import { mapSignalType } from "../collection/market-signal-type";
 import { enrichEventVenue } from "../collection/venue-reference";
 import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
@@ -4081,9 +4082,4 @@ function mapWorkerStatusToPriceCheck(status: string) {
     RECEIVED: "VALIDATING", RESOLVING_INPUT: "VALIDATING", NEEDS_CONFIRMATION: "NEEDS_CONFIRMATION", QUEUED: "QUEUED", CHECKING_CACHE: "COLLECTING", COLLECTING_TARGET: "COLLECTING", COLLECTING_COMPETITORS: "COLLECTING", COLLECTING_MARKET_SIGNALS: "COLLECTING", NORMALISING: "NORMALIZING", VALIDATING: "AUTO_VALIDATING", BUILDING_SNAPSHOT: "AUTO_VALIDATING", ANALYSING: "ANALYSING", PARTIAL: "PARTIAL", INSUFFICIENT_DATA: "INSUFFICIENT_DATA", SOURCE_UNAVAILABLE: "SOURCE_UNAVAILABLE", COMPLETED: "PUBLISHED", FAILED: "FAILED", CANCELLED: "CANCELLED",
   };
   return mapping[status];
-}
-
-function mapSignalType(type: string): "PUBLIC_HOLIDAY" | "ANNIVERSARY_DAY" | "SCHOOL_HOLIDAY" | "UNIVERSITY_CALENDAR" | "MAJOR_EVENT" | "WEEKEND_PATTERN" | "PRICE_RISING" | "AVAILABILITY_TIGHTENING" | "RESTRICTION_INCREASING" | "WEATHER_OR_ACCESS_DISRUPTION" | "TOURISM_DEMAND" | "TRANSPORT_FLOW" | "FX_RATE" {
-  if (["PUBLIC_HOLIDAY", "ANNIVERSARY_DAY", "SCHOOL_HOLIDAY", "UNIVERSITY_CALENDAR", "MAJOR_EVENT", "WEEKEND_PATTERN", "PRICE_RISING", "AVAILABILITY_TIGHTENING", "RESTRICTION_INCREASING", "WEATHER_OR_ACCESS_DISRUPTION", "TOURISM_DEMAND", "TRANSPORT_FLOW", "FX_RATE"].includes(type)) return type as ReturnType<typeof mapSignalType>;
-  throw new AdapterError("PARSING_ERROR", `Unsupported public signal type: ${type}`, false);
 }
