@@ -1,16 +1,32 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (five-channel first round completed; automatic collection paused)
+Last updated: 2026-09-25 (five bounded public schedules running; full market coverage unaccepted)
+
+## 2026-09-25 five-channel safety correction and recurring observation
+
+Production Worker/API/Scheduler now run `tymra:five-source-safety-20260925-v1` from commit
+`2d1e1925a2d6568f82a5b40f46c629093d8405a2`. All five exact bounded schedules are enabled.
+GeoNet's required earthquake and volcano requests both ran; MBIE's latest-month ADP collection
+now covers all 15 configured major markets without the former 20-result truncation. The two
+new production Jobs each succeeded on one attempt; all 37 retained parsed-payload hashes verify,
+there are no duplicate source external IDs, and the queue, readiness and Scheduler are healthy.
+A failed scheduled Job now disables its schedule before the next cycle. Only the Scheduler
+environment flag changed; the Admin-only Web and all customer/business launch boundaries remain
+closed. Precise Jobs, source counts, image, backups, recovery and incomplete coverage are in
+[`evidence/five-source-safety-2026-09-25.md`](./evidence/five-source-safety-2026-09-25.md).
+
+This is safe bounded observation, not acceptance of the complete nationwide product source plan.
+The two-UTC-day stability gate, GeoNet three-hour freshness, ChristchurchNZ pagination depth and
+full-year holiday horizon are still open.
 
 ## 2026-09-25 five-channel production first round
 
-Production Worker/API now run `tymra:first-five-public-20260925-v4` from code commit
+At that time Production Worker/API ran `tymra:first-five-public-20260925-v4` from code commit
 `c82690ad04699a36ae0b72ed233fcb3dca12b31f`. The five exact channels are
 `public_holidays_nz`, `mbie`, `rto_calendars` (ChristchurchNZ), `geonet`, and `stats_nz`.
 Each completed one bounded Scheduler-enqueued production Job with no collection failure or
-duplicate business ID. All five schedules are now disabled, the Scheduler runtime flag is false,
-and the Scheduler container is stopped pending Harold's review. Worker/API and Admin-only Web
-remain healthy. Across the five Jobs, 74 retained parsed-payload hashes verify. A GeoNet
+duplicate business ID. The schedules and Scheduler were then paused for review. Across the five
+Jobs, 74 retained parsed-payload hashes verified. A GeoNet
 JSONB floating-point hash mismatch was repaired only for its 15 affected artifacts after a
 verified snapshot, without re-fetching the source; the future write path now hashes the
 persisted JSON. No migration or general seed ran. Exact Job IDs, business counts, release

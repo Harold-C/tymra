@@ -1,12 +1,26 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（五渠道首轮完成，自动采集暂停待 review）
+Last updated: 2026-09-25（五项受限定期采集运行；完整全国覆盖未验收）
 
-## 2026-09-25 五渠道首轮后的 review 门槛
+## 2026-09-25 五项受限采集的下一道门槛
+
+GeoNet 双官方数据源及 MBIE 最新月份全部 15 个主要市场已通过真实生产 Worker
+验收。五条精确 Schedule 和 Scheduler 已恢复，失败作业会在下一轮前自动停用其计划；
+高频 Scheduler、客户入口、新 Check、内部按需、Stripe、SMTP 和会员继续关闭。
+精确版本、生产结果、备份、回退及限制见
+[`evidence/five-source-safety-2026-09-25.md`](./evidence/five-source-safety-2026-09-25.md)。
+
+下一步在不同 UTC 日期核对第二个自然周期：各来源请求量、实际覆盖、无重复写入、
+新鲜度、失败停采、队列和告警。ChristchurchNZ 的三页／30 条上限及多场次完整性、
+节假日 31 天窗口、Stats NZ 发布节奏和 GeoNet 三小时新鲜度仍须分别解决。
+不要把五项金丝雀描述成完整全国公开信号方案，也不要在这些缺口解决前开放客户使用
+或基于不完整覆盖给出价格建议。RBNZ 仍未通过解析验收。
+
+## 2026-09-25 五渠道首轮后的 review 门槛（历史）
 
 `public_holidays_nz`、`mbie`、`rto_calendars`、`geonet` 和 `stats_nz` 各完成一次真实、
 有限额的生产定期 Job。五条 Schedule 均已关闭，Scheduler 容器及运行开关也已关闭；
-在 Harold review 本轮结果和边界前，不恢复任何周期运行。生产 Scheduler 只接受这五条
+当时在 Harold review 本轮结果和边界前不恢复任何周期运行。生产 Scheduler 只接受这五条
 精确配置，不会运行通用 seed 中的其他计划。详细身份、业务结果、哈希修复和回滚见
 [`evidence/first-five-public-scheduled-collection-2026-09-25.md`](./evidence/first-five-public-scheduled-collection-2026-09-25.md)。
 
