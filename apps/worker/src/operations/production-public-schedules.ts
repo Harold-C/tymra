@@ -4,7 +4,7 @@ export const FIRST_PUBLIC_SCHEDULES = [
   { sourceId: "public_holidays_nz", key: "first-public-holidays-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 20, maxRequests: 1 },
   { sourceId: "mbie", key: "first-mbie-adp-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 20, maxRequests: 1 },
   { sourceId: "rto_calendars", key: "first-christchurchnz-daily", jobType: "EVENT_COLLECTION", queueName: "event-collection", cronExpression: "daily", marketScope: "christchurch", limit: 30, maxRequests: 3 },
-  { sourceId: "school_holidays_nz", key: "first-school-holidays-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 20, maxRequests: 1 },
+  { sourceId: "geonet", key: "first-geonet-daily", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "daily", marketScope: "new-zealand", limit: 20, maxRequests: 2 },
   { sourceId: "stats_nz", key: "first-stats-nz-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 2, maxRequests: 1 },
 ] as const;
 

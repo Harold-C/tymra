@@ -291,7 +291,7 @@ development canary output is technical validation only and is not production evi
 
 For the first production public-source batch only, `release:bootstrap-public-canary` with `--source <key>`
 and `--confirm BOOTSTRAP_PUBLIC_CANARY` can create one disabled, non-demo source from the formal registry.
-The allowed keys are `public_holidays_nz`, `rto_calendars`, `mbie`, `school_holidays_nz`, and `stats_nz`;
+The allowed keys are `public_holidays_nz`, `rto_calendars`, `mbie`, `geonet`, and `stats_nz`;
 the command refuses to overwrite an existing source or run with any schedule outside the exact first
 public batch. This lets the two existing weekly pilots continue while adding the next sources.
 For the initial three sources, after a successful source health check and explicit
@@ -301,7 +301,7 @@ For the initial three sources, after a successful source health check and explic
 limits the window to 31 days and the final business results to two per pass; it does not enqueue a Job
 or enable Scheduler. The 2026-09-25 production results and recovery material are recorded in
 [`docs/evidence/public-canary-production-2026-09-25.md`](./docs/evidence/public-canary-production-2026-09-25.md).
-For the subsequent school-holiday and Stats NZ sources, with approved schedules already running,
+For the subsequent GeoNet and Stats NZ sources, with approved schedules already running,
 activate each healthy source, prepare only its missing exact schedule, inspect `schedule:sources:plan`,
 and enable through the guarded schedule command. The scheduler and Worker enforce the per-source
 request, time-window, and result caps.

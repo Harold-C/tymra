@@ -4,7 +4,7 @@ import { publicDataAdapters } from "@tymra/providers";
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { isFirstPublicSchedule } from "./production-public-schedules";
 
-export const APPROVED_PUBLIC_CANARY_SOURCES = ["public_holidays_nz", "rto_calendars", "mbie", "school_holidays_nz", "stats_nz"] as const;
+export const APPROVED_PUBLIC_CANARY_SOURCES = ["public_holidays_nz", "rto_calendars", "mbie", "geonet", "stats_nz"] as const;
 const allowedSources = new Set<string>(APPROVED_PUBLIC_CANARY_SOURCES);
 
 export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv: string) {

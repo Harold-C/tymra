@@ -115,7 +115,6 @@ export function registrySourceSeedRecords() {
       const browserSource = argusPublicMarketSourceKeys.has(key) || ["fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key);
       const adapterKey = argusPublicMarketSourceKeys.has(key) ? `public:${key}:argus-v1`
         : key === "public_holidays_nz" ? "public:public_holidays_nz:calendar-v1"
-        : key === "school_holidays_nz" ? "public:school_holidays_nz:calendar-v1"
         : key === "ticketmaster" ? "public:ticketmaster:http-listing-argus-detail-v1"
         : key === "eventfinda" ? "public:eventfinda:http-v1"
           : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v1"

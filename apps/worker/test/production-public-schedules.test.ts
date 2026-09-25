@@ -6,7 +6,7 @@ import { boundFirstPublicResults, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePay
 
 describe("first production public schedules", () => {
   it("accepts only the five exact bounded source schedules", () => {
-    expect(FIRST_PUBLIC_SCHEDULES.map((schedule) => schedule.sourceId)).toEqual(["public_holidays_nz", "mbie", "rto_calendars", "school_holidays_nz", "stats_nz"]);
+    expect(FIRST_PUBLIC_SCHEDULES.map((schedule) => schedule.sourceId)).toEqual(["public_holidays_nz", "mbie", "rto_calendars", "geonet", "stats_nz"]);
     for (const schedule of FIRST_PUBLIC_SCHEDULES) {
       const candidate = { ...schedule, payload: firstPublicSchedulePayload(schedule.sourceId) };
       expect(isFirstPublicSchedule(candidate)).toBe(true);
