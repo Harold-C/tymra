@@ -1,11 +1,12 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (five bounded public schedules running; full market coverage unaccepted)
+Last updated: 2026-09-25 (four bounded schedules running; ChristchurchNZ paused)
 
 ## 2026-09-25 five-channel safety correction and recurring observation
 
-Production Worker/API/Scheduler now run `tymra:five-source-safety-20260925-v1` from commit
-`2d1e1925a2d6568f82a5b40f46c629093d8405a2`. All five exact bounded schedules are enabled.
+Production Worker/API/Scheduler now run `tymra:five-source-safety-20260925-v2` from commit
+`47f5d48b30f4461e4664a9957cc2891f3b023163`. Four bounded schedules are enabled;
+ChristchurchNZ was paused after its official listing showed 47 pages against a three-page cap.
 GeoNet's required earthquake and volcano requests both ran; MBIE's latest-month ADP collection
 now covers all 15 configured major markets without the former 20-result truncation. The two
 new production Jobs each succeeded on one attempt; all 37 retained parsed-payload hashes verify,
@@ -15,7 +16,12 @@ environment flag changed; the Admin-only Web and all customer/business launch bo
 closed. Precise Jobs, source counts, image, backups, recovery and incomplete coverage are in
 [`evidence/five-source-safety-2026-09-25.md`](./evidence/five-source-safety-2026-09-25.md).
 
-This is safe bounded observation, not acceptance of the complete nationwide product source plan.
+This is safe bounded observation for four channels, not acceptance of the complete nationwide
+product source plan. The v2 correction preserves future public ChristchurchNZ `event_sessions`
+while redacting credentials and contact fields. Its previous run's 28 contact-bearing raw
+artifacts were scrubbed after a verified backup, with 30/30 hashes valid; missing old sessions
+were not fabricated. The fifth schedule remains disabled until its pagination budget and
+complete-window acceptance are resolved.
 The two-UTC-day stability gate, GeoNet three-hour freshness, ChristchurchNZ pagination depth and
 full-year holiday horizon are still open.
 
