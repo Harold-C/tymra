@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { boundFirstPublicResults, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePayload, isFirstPublicSchedule } from "../src/operations/production-public-schedules";
 
 describe("first production public schedules", () => {
-  it("accepts only the three exact bounded source schedules", () => {
-    expect(FIRST_PUBLIC_SCHEDULES.map((schedule) => schedule.sourceId)).toEqual(["public_holidays_nz", "mbie", "rto_calendars"]);
+  it("accepts only the five exact bounded source schedules", () => {
+    expect(FIRST_PUBLIC_SCHEDULES.map((schedule) => schedule.sourceId)).toEqual(["public_holidays_nz", "mbie", "rto_calendars", "school_holidays_nz", "stats_nz"]);
     for (const schedule of FIRST_PUBLIC_SCHEDULES) {
       const candidate = { ...schedule, payload: firstPublicSchedulePayload(schedule.sourceId) };
       expect(isFirstPublicSchedule(candidate)).toBe(true);

@@ -2,8 +2,9 @@ import { prisma, type Prisma } from "@tymra/db";
 import { publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
+import { isFirstPublicSchedule } from "./production-public-schedules";
 
-export const APPROVED_PUBLIC_CANARY_SOURCES = ["public_holidays_nz", "rto_calendars", "mbie"] as const;
+export const APPROVED_PUBLIC_CANARY_SOURCES = ["public_holidays_nz", "rto_calendars", "mbie", "school_holidays_nz", "stats_nz"] as const;
 const allowedSources = new Set<string>(APPROVED_PUBLIC_CANARY_SOURCES);
 
 export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv: string) {
@@ -17,8 +18,9 @@ export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv
   }
 
   return prisma.$transaction(async (transaction) => {
-    if (await transaction.scheduleDefinition.count({ where: { enabled: true } }) !== 0) {
-      throw new Error("Public canary bootstrap requires zero enabled schedules");
+    const schedules = await transaction.scheduleDefinition.findMany();
+    if (schedules.some((schedule) => !isFirstPublicSchedule(schedule))) {
+      throw new Error("Public canary bootstrap found an unexpected schedule");
     }
     if (await transaction.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } })) {
       throw new Error("Source already exists; public canary bootstrap will not overwrite it");
