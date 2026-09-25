@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { publicDataAdapters } from "@tymra/providers";
+import { registrySourceSeedRecords } from "../../../packages/db/prisma/seed-sources";
 
 import { boundFirstPublicResults, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePayload, isFirstPublicSchedule } from "../src/operations/production-public-schedules";
 
@@ -18,5 +20,13 @@ describe("first production public schedules", () => {
   it("caps combined business results independently of raw record count", () => {
     expect(boundFirstPublicResults(["event-1", "event-2"], ["signal-1", "signal-2"], 3)).toEqual({ events: ["event-1", "event-2"], signals: ["signal-1"] });
     expect(() => boundFirstPublicResults([], [], 31)).toThrow("limit is invalid");
+  });
+
+  it("keeps the formal source registry aligned with all five deployed adapters", () => {
+    const records = registrySourceSeedRecords();
+    for (const schedule of FIRST_PUBLIC_SCHEDULES) {
+      const record = records.find((candidate) => candidate.key === schedule.sourceId);
+      expect(record?.adapterKey).toBe(publicDataAdapters[schedule.sourceId]?.metadata.adapterKey);
+    }
   });
 });
