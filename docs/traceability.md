@@ -1,18 +1,29 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (first two bounded weekly production schedules running)
+Last updated: 2026-09-25 (five-channel first round completed; automatic collection paused)
 
-## 2026-09-25 first public scheduled collection, phase one
+## 2026-09-25 five-channel production first round
 
-The production Worker/API and the new Scheduler run image `tymra:first-public-schedules-20260925`
-from commit `622a979dbdd96f5a981d094e80c57b4a1476a341`; the Admin-only Web image is unchanged.
-Only `public_holidays_nz` and `mbie` weekly schedules are enabled. Each completed its first real
-Scheduler-enqueued production Job successfully within the new 31-day window, request, result,
-timeout and one-attempt bounds. Queue depth, failed Jobs and alerts are zero. The prepared
-`rto_calendars` daily schedule stays disabled until both weekly sources complete a second distinct
-scheduled cycle and pass the production checks. No generic seed or migration ran. The high-frequency
-Scheduler, customer intake, billing and other launch switches remain off. Exact release identity,
-Job/run IDs, business writes, backups and rollback are in
+Production Worker/API now run `tymra:first-five-public-20260925-v4` from code commit
+`c82690ad04699a36ae0b72ed233fcb3dca12b31f`. The five exact channels are
+`public_holidays_nz`, `mbie`, `rto_calendars` (ChristchurchNZ), `geonet`, and `stats_nz`.
+Each completed one bounded Scheduler-enqueued production Job with no collection failure or
+duplicate business ID. All five schedules are now disabled, the Scheduler runtime flag is false,
+and the Scheduler container is stopped pending Harold's review. Worker/API and Admin-only Web
+remain healthy. Across the five Jobs, 74 retained parsed-payload hashes verify. A GeoNet
+JSONB floating-point hash mismatch was repaired only for its 15 affected artifacts after a
+verified snapshot, without re-fetching the source; the future write path now hashes the
+persisted JSON. No migration or general seed ran. Exact Job IDs, business counts, release
+identity, backup/rollback, limits, and the partial GeoNet coverage are in
+[`evidence/first-five-public-scheduled-collection-2026-09-25.md`](./evidence/first-five-public-scheduled-collection-2026-09-25.md).
+
+## 2026-09-25 initial two-schedule phase (historical)
+
+The first two weekly schedules were initially enabled on image `tymra:first-public-schedules-20260925`
+from commit `622a979dbdd96f5a981d094e80c57b4a1476a341`. Each completed its first bounded
+production Job. The former plan to wait for their second cycle before enabling ChristchurchNZ
+was superseded by Harold's explicit five-channel first-round instruction above. Historical
+release identity, Job/run IDs, business writes, backups and rollback are in
 [`evidence/first-public-scheduled-collection-2026-09-25.md`](./evidence/first-public-scheduled-collection-2026-09-25.md).
 
 ## 2026-09-25 Argus production recheck

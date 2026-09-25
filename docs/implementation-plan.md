@@ -1,19 +1,20 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（首批两条生产周更采集已启用）
+Last updated: 2026-09-25（五渠道首轮完成，自动采集暂停待 review）
 
-## 2026-09-25 首批定期采集第一阶段
+## 2026-09-25 五渠道首轮后的 review 门槛
 
-`public_holidays_nz` 与 `mbie` 已使用精确、有限额的生产调度各完成首次自动运行，下一周期在
-2026-10-02 UTC。`rto_calendars` 的每日调度已准备但保持关闭；按 Harold 确认的顺序，须先
-验证前两项各自第二个不同定期周期成功、无解析失败、重复记录、积压或告警，再单独启用
-ChristchurchNZ 并验收其首次作业。生产 Scheduler 仅接受这三条精确配置，不会运行通用 seed
-中的其他计划。详细身份、结果与回滚见
-[`evidence/first-public-scheduled-collection-2026-09-25.md`](./evidence/first-public-scheduled-collection-2026-09-25.md)。
+`public_holidays_nz`、`mbie`、`rto_calendars`、`geonet` 和 `stats_nz` 各完成一次真实、
+有限额的生产定期 Job。五条 Schedule 均已关闭，Scheduler 容器及运行开关也已关闭；
+在 Harold review 本轮结果和边界前，不恢复任何周期运行。生产 Scheduler 只接受这五条
+精确配置，不会运行通用 seed 中的其他计划。详细身份、业务结果、哈希修复和回滚见
+[`evidence/first-five-public-scheduled-collection-2026-09-25.md`](./evidence/first-five-public-scheduled-collection-2026-09-25.md)。
 
-本批 31 天窗口和结果上限是运行试点，不能据此宣称全国来源已完全覆盖。随后应按不同 UTC
-日期检查数据新鲜度和业务范围，再决定是否扩大单次记录上限或新增来源。Lincoln 的受限
-验收保护、RBNZ 已知解析失败及 OTA/客户业务均不在这次定期运行范围。
+Review 时先核对 GeoNet 只访问地震端点而未覆盖火山端点、MBIE 的 20 条结果上限、Stats NZ
+的月度发布节奏、ChristchurchNZ 的每日频率及 72 小时原始记录保留期。之后再按不同
+UTC 日期检查第二周期的新鲜度、重复记录、来源失败、队列和告警，分别决定哪些渠道持续运行
+及其频率/上限。教育部校历生产 Node 健康检查返回 307，未启用；RBNZ 已知解析失败未复测。
+Lincoln 的受限验收保护与 OTA/客户业务均不在这次定期采集范围。
 
 ## 2026-09-25 生产 Argus 接入复核
 
