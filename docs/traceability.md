@@ -1,11 +1,33 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (four bounded schedules running; ChristchurchNZ paused)
+Last updated: 2026-09-25 (five bounded schedules running; ChristchurchNZ incremental acceptance)
 
-## 2026-09-25 five-channel safety correction and recurring observation
+## 2026-09-25 ChristchurchNZ complete-window and incremental production acceptance
 
-Production Worker/API/Scheduler now run `tymra:five-source-safety-20260925-v2` from commit
-`47f5d48b30f4461e4664a9957cc2891f3b023163`. Four bounded schedules are enabled;
+Production Worker/API/Scheduler now run image
+`sha256:b5b125888ae27314ba98e4d60e71cf049107b8b65a09d32e652a5ee4b09663ca`
+from pushed code commit `496bc1155d3b10efd1b4cdcad48f831da0884647`.
+ChristchurchNZ's first production pass covered the full 31-day window in 38 serial list requests:
+435 source events, 736 unique sessions. A second pass used its persisted page cursor, requested
+15 pages and touched 406 unchanged sessions; database totals remained 435/736, with no duplicate
+business IDs. All 610 newly retained parsed-artifact hashes verify; no parser failure or contact
+fields remain. Both Jobs succeeded once through the real Worker. The exact fifth daily schedule
+is now enabled, with its next run due 2026-09-26 UTC. The other four schedules remain enabled;
+health/readiness are HTTP 200, queue and Scheduler healthy, 13 Jobs succeeded, no queued/failed
+Jobs or alerts. Production configuration, Admin-only Web and other launch boundaries are unchanged.
+The source-specific full/rotating scan, version, Jobs, backups and rollback are recorded in
+[`evidence/christchurchnz-incremental-2026-09-25.md`](./evidence/christchurchnz-incremental-2026-09-25.md).
+
+This is the first day's bounded observation, not the two-distinct-UTC-day stability gate or the
+complete nationwide signal plan. The next daily run must verify page rotation and freshness;
+deeper changed/withdrawn events can remain stale until revisited, and removal reconciliation is
+not established. GeoNet three-hour freshness, full-year holidays, Stats NZ cadence and RBNZ
+remain separate limitations. The customer surface stays closed.
+
+## 2026-09-25 five-channel safety correction and recurring observation (historical)
+
+At that time Production Worker/API/Scheduler ran `tymra:five-source-safety-20260925-v2` from commit
+`47f5d48b30f4461e4664a9957cc2891f3b023163`. Four bounded schedules were enabled;
 ChristchurchNZ was paused after its official listing showed 47 pages against a three-page cap.
 GeoNet's required earthquake and volcano requests both ran; MBIE's latest-month ADP collection
 now covers all 15 configured major markets without the former 20-result truncation. The two
@@ -20,10 +42,10 @@ This is safe bounded observation for four channels, not acceptance of the comple
 product source plan. The v2 correction preserves future public ChristchurchNZ `event_sessions`
 while redacting credentials and contact fields. Its previous run's 28 contact-bearing raw
 artifacts were scrubbed after a verified backup, with 30/30 hashes valid; missing old sessions
-were not fabricated. The fifth schedule remains disabled until its pagination budget and
-complete-window acceptance are resolved.
-The two-UTC-day stability gate, GeoNet three-hour freshness, ChristchurchNZ pagination depth and
-full-year holiday horizon are still open.
+were not fabricated. The fifth schedule remained disabled until its pagination budget and
+complete-window acceptance were resolved by the later release above.
+The two-UTC-day stability gate, GeoNet three-hour freshness and full-year holiday horizon
+remained open.
 
 ## 2026-09-25 five-channel production first round
 

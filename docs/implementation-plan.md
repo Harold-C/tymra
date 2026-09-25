@@ -1,22 +1,24 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（四项受限定期采集运行；ChristchurchNZ 暂停）
+Last updated: 2026-09-25（五项受限定期采集运行；ChristchurchNZ 增量验收通过）
 
 ## 2026-09-25 五项受限采集的下一道门槛
 
 GeoNet 双官方数据源及 MBIE 最新月份全部 15 个主要市场已通过真实生产 Worker
-验收。四条精确 Schedule 和 Scheduler 正在运行；ChristchurchNZ 官方列表有 47 页，旧三页
-上限静默遗漏未来窗口，故该计划已暂停。失败作业会在下一轮前自动停用其计划；
-高频 Scheduler、客户入口、新 Check、内部按需、Stripe、SMTP 和会员继续关闭。
-精确版本、生产结果、备份、回退及限制见
+验收。ChristchurchNZ 首轮读取 38 页、435 个来源事件及 736 个场次；第二轮增量只读
+15 页、触达 406 个未变化场次，数据库总数不增长。五条精确 Schedule 和 Scheduler
+现正运行；失败作业会在下一轮前自动停用其计划。高频 Scheduler、客户入口、新 Check、
+内部按需、Stripe、SMTP 和会员继续关闭。精确版本、Job、哈希、备份及回退见
+[`evidence/christchurchnz-incremental-2026-09-25.md`](./evidence/christchurchnz-incremental-2026-09-25.md)；
+前一轮安全修复见
 [`evidence/five-source-safety-2026-09-25.md`](./evidence/five-source-safety-2026-09-25.md)。
 
-先为 ChristchurchNZ 确定合适的请求预算、串行限速和完整窗口验收；超页数或记录预算时
-明确失败的保护及 `event_sessions` 证据保留修复已发布。通过真实生产验收后才能恢复第五条计划。
-随后在不同 UTC
-日期核对第二个自然周期：各来源请求量、实际覆盖、无重复写入、
-新鲜度、失败停采、队列和告警。ChristchurchNZ 的三页／30 条上限及多场次完整性、
-节假日 31 天窗口、Stats NZ 发布节奏和 GeoNet 三小时新鲜度仍须分别解决。
+下一步在不同 UTC 日期核对第二个自然周期：各来源请求量、实际覆盖、无重复写入、
+新鲜度、失败停采、队列和告警。特别核对 ChristchurchNZ 的轮换页游标是否从 15
+继续、实际请求不超过 15、业务 ID 总数仅在新增活动时增长；定期全窗口复核仍不得
+超过 40 次公开请求。更深页面的撤稿或变化在轮换到该页前可能暂时陈旧，来源消失
+后的自动撤销尚未验收，应保持客户入口关闭。节假日 31 天窗口、Stats NZ 发布节奏
+和 GeoNet 三小时新鲜度仍须分别解决。
 不要把五项金丝雀描述成完整全国公开信号方案，也不要在这些缺口解决前开放客户使用
 或基于不完整覆盖给出价格建议。RBNZ 仍未通过解析验收。
 
