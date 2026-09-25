@@ -1208,7 +1208,14 @@ export class WorkerService {
           for (const record of raw) {
             const payload = redactArtifact(record.payload);
             const id = stableId("raw-artifact", `${run.id}:${record.externalId}`);
-            await prisma.rawArtifact.upsert({ where: { id }, create: { id, collectionRunId: run.id, dataSourceId: source.id, artifactType: "NETWORK_RESPONSE", storageRef: `postgres:RawArtifact:${id}`, contentHash: stableHash(payload), payload, containsSensitiveData: false, parserFailure: false, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_TTL_HOURS * 3_600_000) }, update: {} });
+            await prisma.$transaction(async (transaction) => {
+              const artifact = await transaction.rawArtifact.upsert({ where: { id }, create: { id, collectionRunId: run.id, dataSourceId: source.id, artifactType: "NETWORK_RESPONSE", storageRef: `postgres:RawArtifact:${id}`, contentHash: stableHash(payload), payload, containsSensitiveData: false, parserFailure: false, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_TTL_HOURS * 3_600_000) }, update: {} });
+              // PostgreSQL JSONB can round floating-point values. Hash the stored payload that readers will receive.
+              const persistedHash = artifact.payload === null ? artifact.contentHash : stableHash(artifact.payload);
+              if (persistedHash !== artifact.contentHash) {
+                await transaction.rawArtifact.update({ where: { id }, data: { contentHash: persistedHash } });
+              }
+            });
             counters.rawArtifacts += 1;
           }
         }

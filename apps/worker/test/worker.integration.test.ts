@@ -717,7 +717,7 @@ describe("Worker baseline pipeline", () => {
     const adapter: PublicDataAdapter = {
       metadata: { sourceId: "school_holidays_nz", sourceName: "School holidays test", sourceType: "PUBLIC_DATA", supportedDomains: ["education.govt.nz"], adapterKey: "public:school-holidays:retention-test", accessMethod: "OFFICIAL_PUBLIC_HTML", concurrencyLimit: 1, dailyBudget: 1, collectorVersion: "test", parserVersion: "test" },
       async discover() { return ["https://www.education.govt.nz/school/school-terms-and-holidays"]; },
-      async fetch() { return [{ sourceId: "school_holidays_nz", externalId: `${prefix}:retention`, payload: { title: "Public holiday", token: "must-redact" }, fetchedAt: new Date(), fixture: false }]; },
+      async fetch() { return [{ sourceId: "school_holidays_nz", externalId: `${prefix}:retention`, payload: { title: "Public holiday", depth: 13.062444686889648, token: "must-redact" }, fetchedAt: new Date(), fixture: false }]; },
       async normalise() { return []; },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "test transport", latencyMs: 0, mode: "fixture" }; },
     };
@@ -727,6 +727,8 @@ describe("Worker baseline pipeline", () => {
     const artifact = await prisma.rawArtifact.findFirstOrThrow({ where: { collectionRunId: collection.runId } });
     expect(artifact.payload).toMatchObject({ title: "Public holiday" });
     expect(artifact.payload).not.toHaveProperty("token");
+    const storedPayload = artifact.payload as { depth: number; title: string };
+    expect(artifact.contentHash).toBe(createHash("sha256").update(JSON.stringify({ depth: storedPayload.depth, title: storedPayload.title })).digest("hex"));
     await prisma.rawArtifact.update({ where: { id: artifact.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
     const cleanup = await retentionService.retentionCleanup();
     expect(cleanup.rawArtifactsDeleted).toBeGreaterThanOrEqual(1);
