@@ -14,7 +14,7 @@ function snapshots() {
       key, schedulePresent: true, scheduleEnabled: true, sourceEnabled: true,
       sourceOperationalStatus: "HEALTHY", sourceHealthStatus: "HEALTHY",
       cron: key === "mbie" || key === "public_holidays_nz" || key === "stats_nz" ? "weekly" : "daily",
-      schedulePayload: { sourceId: key, boundedPublicSchedule: true },
+      schedulePayload: { sourceId: key, boundedPublicSchedule: true, limit: key === "rto_calendars" ? 1_000 : 30 },
       nextRunAt: "2026-09-26T04:00:00Z", lastEnqueuedAt: "2026-09-25T04:00:00Z", latestJobId: `${key}-before`,
       sourceEvents: key === "rto_calendars" ? 435 : 0,
       sourceOccurrences: key === "rto_calendars" ? 736 : 0,
@@ -29,7 +29,7 @@ function snapshots() {
     latestJobId: `${source.key}-after`, latestJobStatus: "SUCCEEDED", latestJobAttempts: 1,
     latestJobCreatedAt: "2026-09-26T04:00:00Z", latestRunId: `${source.key}-run`,
     latestRunStatus: "SUCCEEDED", latestRunFinishedAt: "2026-09-26T04:05:00Z",
-    latestSourceRunId: `${source.key}-run`, latestRunCounters: { requests: limits[source.key], rawArtifacts: 1, failures: 0 },
+    latestSourceRunId: `${source.key}-run`, latestRunCounters: { requests: limits[source.key], records: 1, events: 0, signals: 1, rawArtifacts: 1, failures: 0 },
     latestRunRetainedArtifacts: 1, latestRunParserFailures: 0, latestRunSensitiveArtifacts: 0,
     christchurchScan: source.key === "rto_calendars" ? { mode: "INCREMENTAL", pages: Array.from({ length: 15 }, (_, index) => index + 1) } : null,
   }));
@@ -68,4 +68,12 @@ test("rejects a same-day replay or unretained evidence", () => {
   assert.equal(verdict.status, "FAIL");
   assert.ok(verdict.failures.some((failure) => failure.includes("later UTC date")));
   assert.ok(verdict.failures.some((failure) => failure.includes("parsed-artifact count")));
+});
+
+test("holds a run at the old image's result ceiling for completeness review", () => {
+  const { baseline, current } = snapshots();
+  current.sources[3].latestRunCounters.records = 30;
+  const verdict = evaluateFirstFiveCycle(baseline, current);
+  assert.equal(verdict.status, "FAIL");
+  assert.ok(verdict.failures.some((failure) => failure.includes("completeness cannot be proven")));
 });

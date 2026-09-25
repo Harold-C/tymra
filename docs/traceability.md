@@ -9,7 +9,7 @@ The five-source second-cycle gate now has a separate immutable
 Its baseline query ran inside a read-only PostgreSQL transaction: exactly five enabled schedules,
 zero active/failed Jobs, 12 intentional ChristchurchNZ canonical merge groups with zero unlinked
 or divergent links, and 74/74 retained scheduled-run artifact hashes matched. The evaluator's
-four local scenarios pass and reports `WAITING` against the baseline itself. The next daily and
+five local scenarios pass and report `WAITING` against the baseline itself. The next daily and
 weekly Jobs have not yet occurred; this is preparation, not second-cycle acceptance.
 
 The isolated candidate based on `7e6b08fb74e39a12f9432a3b346da493e4775e17` passed

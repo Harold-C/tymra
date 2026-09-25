@@ -68,6 +68,11 @@ export function evaluateFirstFiveCycle(baseline, current, observedAt = new Date(
       failures.push(`${key}: request count exceeded or missed the approved bound`);
     }
     if (key === "geonet" && counters.requests !== 2) failures.push("geonet: both approved feeds must be read");
+    const recordLimit = next.schedulePayload?.limit;
+    if (key !== "geonet" && Number.isInteger(recordLimit)
+      && (counters.records >= recordLimit || (counters.events ?? 0) + (counters.signals ?? 0) >= recordLimit)) {
+      failures.push(`${key}: result reached its ceiling; completeness cannot be proven without source-specific review`);
+    }
     if (counters.failures !== 0 || next.latestRunParserFailures !== 0 || next.latestRunSensitiveArtifacts !== 0) {
       failures.push(`${key}: parser failure, retained sensitive artifact or run failure detected`);
     }

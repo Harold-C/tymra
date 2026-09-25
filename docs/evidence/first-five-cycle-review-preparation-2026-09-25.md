@@ -44,9 +44,10 @@ ChristchurchNZ complete/incremental run's 610 hashes have their separate dated p
 Use [the read-only snapshot query](../../scripts/review-first-five-public-cycle.sql) after the
 natural daily Jobs and again after the three weekly Jobs. Keep its JSON output local and compare
 it with the immutable baseline using
-`node scripts/evaluate-first-five-cycle.mjs BASELINE.json CURRENT.json`. The evaluator has four
+`node scripts/evaluate-first-five-cycle.mjs BASELINE.json CURRENT.json`. The evaluator has five
 synthetic regression scenarios covering waiting, success, missed due time, failed or partial
-collection, unsafe evidence and identity divergence; `pnpm test:cycle-review` passes.
+collection, unsafe evidence, identity divergence and ambiguous result ceilings;
+`pnpm test:cycle-review` passes.
 
 A `PASS` requires the exact five enabled schedules with no extras; no failed or active Jobs;
 for each source, a new scheduled Job on a later UTC date, successful on one attempt with a
@@ -57,6 +58,9 @@ links; and a retained parsed-artifact count matching the run. Separately rerun t
 stream/hash verifier for the new scheduled runs and recheck Worker/API/Scheduler image identity,
 health, readiness, queue and alerts. The evaluator deliberately does not start, retry or modify
 any Job. Exit status 2 means `WAITING`, 1 means `FAIL`, and 0 means `PASS` for its named checks.
+For non-GeoNet sources, a run that lands exactly on its configured record/result ceiling is
+held for source-specific completeness review; the currently deployed image can silently truncate
+some paths at that ceiling. GeoNet's 4-quake/16-volcano split is an intentional bounded sample.
 
 An unexpected failure is not a reason to re-hit the public source. Preserve the Job and run
 evidence, stop the affected source's next schedule under the existing guarded runbook, and
