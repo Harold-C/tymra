@@ -1,6 +1,19 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（生产 Argus 复核与一次 Lincoln 有界验收完成）
+Last updated: 2026-09-25（首批两条生产周更采集已启用）
+
+## 2026-09-25 首批定期采集第一阶段
+
+`public_holidays_nz` 与 `mbie` 已使用精确、有限额的生产调度各完成首次自动运行，下一周期在
+2026-10-02 UTC。`rto_calendars` 的每日调度已准备但保持关闭；按 Harold 确认的顺序，须先
+验证前两项各自第二个不同定期周期成功、无解析失败、重复记录、积压或告警，再单独启用
+ChristchurchNZ 并验收其首次作业。生产 Scheduler 仅接受这三条精确配置，不会运行通用 seed
+中的其他计划。详细身份、结果与回滚见
+[`evidence/first-public-scheduled-collection-2026-09-25.md`](./evidence/first-public-scheduled-collection-2026-09-25.md)。
+
+本批 31 天窗口和结果上限是运行试点，不能据此宣称全国来源已完全覆盖。随后应按不同 UTC
+日期检查数据新鲜度和业务范围，再决定是否扩大单次记录上限或新增来源。Lincoln 的受限
+验收保护、RBNZ 已知解析失败及 OTA/客户业务均不在这次定期运行范围。
 
 ## 2026-09-25 生产 Argus 接入复核
 

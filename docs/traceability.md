@@ -1,6 +1,19 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (Argus production recheck and bounded Lincoln job accepted)
+Last updated: 2026-09-25 (first two bounded weekly production schedules running)
+
+## 2026-09-25 first public scheduled collection, phase one
+
+The production Worker/API and the new Scheduler run image `tymra:first-public-schedules-20260925`
+from commit `622a979dbdd96f5a981d094e80c57b4a1476a341`; the Admin-only Web image is unchanged.
+Only `public_holidays_nz` and `mbie` weekly schedules are enabled. Each completed its first real
+Scheduler-enqueued production Job successfully within the new 31-day window, request, result,
+timeout and one-attempt bounds. Queue depth, failed Jobs and alerts are zero. The prepared
+`rto_calendars` daily schedule stays disabled until both weekly sources complete a second distinct
+scheduled cycle and pass the production checks. No generic seed or migration ran. The high-frequency
+Scheduler, customer intake, billing and other launch switches remain off. Exact release identity,
+Job/run IDs, business writes, backups and rollback are in
+[`evidence/first-public-scheduled-collection-2026-09-25.md`](./evidence/first-public-scheduled-collection-2026-09-25.md).
 
 ## 2026-09-25 Argus production recheck
 
