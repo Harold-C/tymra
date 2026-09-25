@@ -120,19 +120,22 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
 }
 export function parseEmploymentPublicHolidays(html: string): CalendarRecord[] {
   const { document } = parseHTML(html);
-  const heading = [...document.querySelectorAll("h2")].find((element) => /\b\d{4}\s+public holiday and anniversary dates/i.test(element.textContent));
-  const year = Number(heading?.textContent.match(/\b(20\d{2})\b/)?.[1]);
-  if (!heading || !Number.isInteger(year)) throw new Error("Employment NZ page has no current public-holiday heading");
-  const tables: Element[] = [];
-  for (let element = heading.nextElementSibling; element && tables.length < 2; element = element.nextElementSibling) {
-    if (element.tagName === "H2") break;
-    if (element.tagName === "TABLE") tables.push(element);
-  }
-  if (tables.length < 2) throw new Error("Employment NZ page has no public-holiday and anniversary tables");
-  return [
-    ...calendarTableRows(tables[0]!).map(([title, , observed]) => calendarRecord(year, title, "New Zealand", observed, "PUBLIC_HOLIDAY")),
-    ...calendarTableRows(tables[1]!).map(([region, , observed]) => calendarRecord(year, `${region} Anniversary Day`, region, observed, "ANNIVERSARY_DAY")),
-  ].filter((record): record is CalendarRecord => record !== null);
+  const headings = [...document.querySelectorAll("h2")].filter((element) => /\b\d{4}\s+public holiday and anniversary dates/i.test(element.textContent));
+  if (!headings.length) throw new Error("Employment NZ page has no public-holiday heading");
+  return headings.flatMap((heading) => {
+    const year = Number(heading.textContent.match(/\b(20\d{2})\b/)?.[1]);
+    if (!Number.isInteger(year)) throw new Error("Employment NZ public-holiday heading has no year");
+    const tables: Element[] = [];
+    for (let element = heading.nextElementSibling; element && tables.length < 2; element = element.nextElementSibling) {
+      if (element.tagName === "H2") break;
+      if (element.tagName === "TABLE") tables.push(element);
+    }
+    if (tables.length < 2) throw new Error("Employment NZ page has no public-holiday and anniversary tables");
+    return [
+      ...calendarTableRows(tables[0]!).map(([title, , observed]) => calendarRecord(year, title, "New Zealand", observed, "PUBLIC_HOLIDAY")),
+      ...calendarTableRows(tables[1]!).map(([region, , observed]) => calendarRecord(year, `${region} Anniversary Day`, region, observed, "ANNIVERSARY_DAY")),
+    ].filter((record): record is CalendarRecord => record !== null);
+  });
 }
 
 export function parseEducationSchoolHolidays(html: string): CalendarRecord[] {

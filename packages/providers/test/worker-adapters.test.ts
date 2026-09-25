@@ -61,6 +61,13 @@ describe("public data adapter contract", () => {
     expect(publicDataAdapters.public_holidays_nz.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_HTML");
   });
 
+  it("keeps the next year's official holidays when the page lists two years", () => {
+    const table = (observed: string) => `<table><tr><th>Holiday</th><th>Actual Date</th><th>Observed date</th></tr><tr><td>New Year's Day</td><td>1 January</td><td>${observed}</td></tr></table>`;
+    const anniversary = `<table><tr><th>Region</th><th>Actual Date</th><th>Observed date</th></tr><tr><td>Canterbury</td><td>16 December</td><td>Wednesday 16 December</td></tr></table>`;
+    const records = parseEmploymentPublicHolidays(`<h2>2026 public holiday and anniversary dates</h2>${table("Thursday 1 January")}${anniversary}<h2>2027 public holiday and anniversary dates</h2>${table("Friday 1 January")}${anniversary}`);
+    expect(records.filter((record) => record.type === "PUBLIC_HOLIDAY").map((record) => record.startsAt)).toEqual(["2026-01-01", "2027-01-01"]);
+  });
+
   it("normalises browser-delivered aviation depth into market pricing signals", async () => {
     const auckland = await publicDataAdapters.auckland_airport_monthly.normalise([{
       sourceId: "auckland_airport_monthly", externalId: "airport-passengers:2026-06",
