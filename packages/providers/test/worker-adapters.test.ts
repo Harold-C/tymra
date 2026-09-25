@@ -296,6 +296,19 @@ describe("public data adapter contract", () => {
     expect(signals[0]?.metadata).toMatchObject({ hazardKind: "VOLCANIC_ALERT_LEVEL", level: 2, aviationColourCode: "Yellow" });
   });
 
+  it("fails closed when GeoNet volcanic alerts exceed the bounded allocation", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ features: Array.from({ length: 17 }, (_, index) => ({ properties: { volcanoID: `volcano-${index}`, level: 0 } })) }), { status: 200 })));
+      await expect(publicDataAdapters.geonet.fetch("https://api.geonet.org.nz/volcano/val", {
+        ...fixtureContext,
+        collectionLimits: { maxRequests: 2, maxRecords: 16, timeoutMs: 30_000, maxBytes: 2_000_000 },
+      })).rejects.toMatchObject({ code: "PARSING_ERROR" });
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
   it("requires fresh independent signal layers before calling a market operationally stable", () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const evidence = Object.keys(publicDataAdapters).map((sourceId) => ({

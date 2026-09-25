@@ -1,7 +1,7 @@
 import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
-import { isFirstPublicSchedule } from "./operations/production-public-schedules";
+import { firstPublicPriorJobAction, isFirstPublicSchedule } from "./operations/production-public-schedules";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -24,6 +24,20 @@ async function enqueueDueSchedules(now = new Date()) {
   for (const schedule of schedules) {
     if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule)) {
       throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
+    }
+    if (environment.NODE_ENV === "production") {
+      const latestJob = await prisma.job.findFirst({
+        where: { idempotencyKey: { startsWith: `schedule:${schedule.key}:` } },
+        orderBy: { createdAt: "desc" },
+        select: { status: true },
+      });
+      const action = firstPublicPriorJobAction(latestJob?.status);
+      if (action === "PAUSE") {
+        await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: false, nextRunAt: null } });
+        process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "source_schedule_paused_after_job_failure", schedule: schedule.key })}\n`);
+        continue;
+      }
+      if (action === "WAIT") continue;
     }
     if (!environment.HIGH_FREQUENCY_SCHEDULER_ENABLED && schedule.key.includes("high-frequency")) continue;
     const payload = schedule.payload as Prisma.JsonObject;

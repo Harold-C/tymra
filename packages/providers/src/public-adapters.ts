@@ -175,10 +175,16 @@ class GeoNetAdapter implements PublicDataAdapter {
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
     const response = await fetch(reference, { headers: { accept: "application/vnd.geo+json;version=2" }, signal: context.signal });
     if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", `GeoNet returned HTTP ${response.status}`, response.status >= 500 || response.status === 429);
-    const payload = await response.json() as { features?: Array<{ properties?: Record<string, unknown> }> };
+    let payload: { features?: Array<{ properties?: Record<string, unknown> }> };
+    try { payload = JSON.parse(await readBoundedText(response, context.collectionLimits?.maxBytes ?? 2_000_000)); }
+    catch (error) {
+      if (error instanceof AdapterError) throw error;
+      throw new AdapterError("PARSING_ERROR", "GeoNet response is not valid GeoJSON", false);
+    }
     if (!Array.isArray(payload.features)) throw new AdapterError("PARSING_ERROR", "GeoNet response did not contain GeoJSON features", false);
     const maxRecords = context.collectionLimits?.maxRecords ?? 100;
     const volcanoLevels = reference.includes("/volcano/val");
+    if (volcanoLevels && payload.features.length > maxRecords) throw new AdapterError("PARSING_ERROR", "GeoNet volcanic alert list exceeds the approved record ceiling", false);
     return payload.features.slice(0, maxRecords).map((feature, index) => ({
       sourceId: "geonet",
       externalId: volcanoLevels ? `volcano-alert:${String(feature.properties?.volcanoID ?? index)}` : String(feature.properties?.publicID ?? `quake-${index}`),
@@ -355,6 +361,7 @@ class MbieAccommodationAdapter implements PublicDataAdapter {
     catch (error) { throw new AdapterError("PARSING_ERROR", error instanceof Error ? error.message : "MBIE ADP parsing failed", false); }
     const relevantRecords = records.filter((record) => record.areaType === "RTO" && record.property === "Total" && marketKeysForMbieArea(record.area).length > 0);
     const maxRecords = context.collectionLimits?.maxRecords ?? relevantRecords.length;
+    if (relevantRecords.length > maxRecords) throw new AdapterError("PARSING_ERROR", "MBIE ADP market records exceed the approved record ceiling", false);
     const fetchedAt = new Date();
     const contentRange = response.headers.get("content-range");
     return relevantRecords.slice(0, maxRecords).map((record) => ({

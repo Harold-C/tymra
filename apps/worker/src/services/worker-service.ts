@@ -76,7 +76,7 @@ import {
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
 import { boundProductionCanaryResults } from "../operations/release-safety";
-import { boundFirstPublicResults, firstPublicSchedule } from "../operations/production-public-schedules";
+import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicReferenceRecordLimit, firstPublicSchedule } from "../operations/production-public-schedules";
 import { enrichEventVenue } from "../collection/venue-reference";
 import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
@@ -1174,6 +1174,7 @@ export class WorkerService {
         const uniqueReferences = [...new Set(discovered)];
         counters.duplicatesSkipped += discovered.length - uniqueReferences.length;
         const references = localAcceptance || productionCanary || boundedPublicSchedule ? uniqueReferences.slice(0, effectiveBounds.maxRequests) : uniqueReferences;
+        if (boundedPublicSchedule && sourceId === "geonet") assertFirstPublicGeoNetReferences(references);
         counters.references = references.length;
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {
@@ -1192,7 +1193,9 @@ export class WorkerService {
                 ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : argusPublicMarketSource(sourceId)
                 ? await this.executePublicMarketArgusTask(sourceId, source.id, run.id, context, options.dryRun === true, options.jobId)
-              : await adapter.fetch(reference, context);
+              : await adapter.fetch(reference, boundedPublicSchedule && sourceId === "geonet"
+                ? { ...context, collectionLimits: { ...effectiveBounds, maxRecords: firstPublicReferenceRecordLimit(sourceId, reference, scheduleSpec!.limit) } }
+                : context);
           counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {
@@ -1200,7 +1203,7 @@ export class WorkerService {
             else rawById.set(record.externalId, record);
             if (limit && rawById.size >= limit) break;
           }
-          if (limit && rawById.size >= limit) break;
+          if (limit && rawById.size >= limit && !(boundedPublicSchedule && sourceId === "geonet")) break;
         }
         const raw = [...rawById.values()];
         counters.records = raw.length;
@@ -1226,6 +1229,9 @@ export class WorkerService {
           const normalisedEvents = adapter.normaliseEvents ? await adapter.normaliseEvents(raw, context) : [];
           const uniqueEvents = uniqueByExternalId(normalisedEvents, counters);
           const uniqueSignals = uniqueByExternalId(normalisedSignals, counters);
+          if (boundedPublicSchedule && sourceId === "mbie" && uniqueSignals.length > scheduleSpec!.limit) {
+            throw new AdapterError("PARSING_ERROR", "MBIE ADP signals exceed the approved result ceiling", false);
+          }
           const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!)
             : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit)
             : { events: uniqueEvents, signals: uniqueSignals };
