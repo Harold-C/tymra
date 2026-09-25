@@ -425,8 +425,9 @@ async function collectChristchurchNz(reference: string, context: AdapterContext)
     const url = new URL(reference);
     url.searchParams.set("page", String(page));
     const parsed = parseChristchurchNzPage(await fetchJson(url.href, context, "ChristchurchNZ events"));
+    if (parsed.currentPage !== page || parsed.totalPages > 60) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ pagination contract changed", false);
     requestCount += 1;
-    totalPages = Math.min(parsed.totalPages, 60);
+    totalPages = parsed.totalPages;
     for (const event of parsed.events) {
       if (!christchurchEventOverlaps(event, context)) continue;
       entries.push({ externalId: `christchurchnz:${stringValue(event.id)}`, payload: { provider: "ChristchurchNZ", event } });
@@ -434,6 +435,7 @@ async function collectChristchurchNz(reference: string, context: AdapterContext)
     }
     page += 1;
   }
+  if (page <= totalPages) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ listing exceeds the approved page or record budget", false);
   return rawRecords("rto_calendars", entries, requestCount);
 }
 

@@ -77,6 +77,7 @@ import {
 import { mapSignalType } from "../collection/market-signal-type";
 import { boundProductionCanaryResults } from "../operations/release-safety";
 import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicReferenceRecordLimit, firstPublicSchedule } from "../operations/production-public-schedules";
+import { redactPublicArtifact } from "../operations/public-artifact-redaction";
 import { enrichEventVenue } from "../collection/venue-reference";
 import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
@@ -1209,7 +1210,7 @@ export class WorkerService {
         counters.records = raw.length;
         if (!options.dryRun) {
           for (const record of raw) {
-            const payload = redactArtifact(record.payload);
+            const payload = redactPublicArtifact(record.payload, sourceId === "rto_calendars");
             const id = stableId("raw-artifact", `${run.id}:${record.externalId}`);
             await prisma.$transaction(async (transaction) => {
               const artifact = await transaction.rawArtifact.upsert({ where: { id }, create: { id, collectionRunId: run.id, dataSourceId: source.id, artifactType: "NETWORK_RESPONSE", storageRef: `postgres:RawArtifact:${id}`, contentHash: stableHash(payload), payload, containsSensitiveData: false, parserFailure: false, expiresAt: new Date(Date.now() + this.environment.RAW_ARTIFACT_TTL_HOURS * 3_600_000) }, update: {} });
@@ -4068,14 +4069,6 @@ function canonicalJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalJson);
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonicalJson(item)]));
   return value;
-}
-
-function redactArtifact(value: unknown): Prisma.InputJsonValue {
-  if (value === null || value === undefined) return {};
-  if (Array.isArray(value)) return value.map(redactArtifact);
-  if (typeof value !== "object") return value as string | number | boolean;
-  const blocked = /cookie|session|token|authorization|credential|password/i;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([key]) => !blocked.test(key)).map(([key, item]) => [key, redactArtifact(item)]));
 }
 
 function looksLikeUrl(value: string) {

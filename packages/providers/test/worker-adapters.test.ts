@@ -706,6 +706,19 @@ describe("public data adapter contract", () => {
     expect(events[0]).toMatchObject({ externalId: "christchurchnz:13786:664800", city: "Christchurch", region: "Canterbury", latitude: -43.5197, longitude: 172.6602, startsAt: new Date("2026-08-17T06:00:00.000Z"), metadata: { importedSource: "ccc", sourceEventId: "christchurchnz:13786" } });
   });
 
+  it("does not report a partial ChristchurchNZ page budget as successful collection", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [], pagination: { currentPage: 1, totalPages: 2 } }), { status: 200 })));
+      await expect(publicDataAdapters.rto_calendars.fetch("https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all", {
+        ...fixtureContext,
+        collectionLimits: { maxRequests: 1, maxRecords: 30, timeoutMs: 30_000, maxBytes: 2_000_000 },
+      })).rejects.toMatchObject({ code: "PARSING_ERROR" });
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
   it("parses Queenstown Airport flights into transport-flow facts", async () => {
     const flight = parseQueenstownAirportFlights([{ flightList: ["NZ659"], from: "Christchurch", destination: "Queenstown", schTime: "09:40:00", schDate: "2026-07-21", status: "On Time", orderByDate: "2026-07-21T09:40:00+12:00", isDomestic: true, flightType: "Arrival" }])[0];
     const signals = await publicDataAdapters.airport_data.normalise([{ sourceId: "airport_data", externalId: "queenstown-airport:arrival:NZ659:2026-07-21T09:40:00+12:00", payload: { provider: "Queenstown Airport", flight }, fetchedAt: new Date(), fixture: false }], fixtureContext);
