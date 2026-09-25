@@ -210,9 +210,10 @@ Production secrets and service settings use explicit `PROD_*` variables, such as
 
 The backend-only deployment uses `PROD_EMAIL_PROVIDER=log` and leaves SMTP unset.
 Collection Worker/API services require the `collection` Compose profile, and the Scheduler
-requires the `scheduler` profile. After the restricted Argus production acceptance on 2026-09-24,
-Worker/API remain running with production Argus credentials; Scheduler remains disabled. The
-initial deployment used a disabled loopback endpoint and non-working token until that acceptance.
+requires the `scheduler` profile. The current running profiles and exact images are recorded in
+`docs/traceability.md`; the five-source Scheduler was subsequently enabled for bounded observation.
+The initial deployment used a disabled loopback endpoint and non-working token until the
+restricted Argus production acceptance on 2026-09-24.
 Do not run the development seed for production: it creates demonstration scenarios. Bootstrap
 only the explicitly selected administrator into the fresh, migrated production database.
 
@@ -241,6 +242,8 @@ pnpm typecheck
 pnpm test
 pnpm test:integration
 pnpm test:e2e
+pnpm test:e2e:hidden
+pnpm test:cycle-review
 pnpm test:e2e:member-live
 pnpm test:stripe:readiness
 pnpm test:e2e:stripe
@@ -252,8 +255,18 @@ pnpm verify
 `pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
 builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
 behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
-[`docs/traceability.md`](docs/traceability.md#current-workspace-and-runtime-baseline-2026-09-13), not inferred
+[`docs/traceability.md`](docs/traceability.md), not inferred
 from an older successful run.
+
+`pnpm test:e2e:hidden` is a non-mutating browser check for an isolated local candidate already
+running with `CLIENT_DISCOVERY_MODE=DEPLOYED_HIDDEN` and customer routes available. Set
+`TYMRA_HIDDEN_BASE_URL` to that candidate's loopback origin. It checks hidden public links,
+mobile navigation, direct routes and unauthenticated access in both languages; it refuses a
+non-loopback origin and does not recreate the normal development Compose stack.
+
+`pnpm test:cycle-review` checks the read-only five-source second-cycle evaluator. Its baseline,
+snapshot SQL, artifact-hash stream and exact acceptance procedure are recorded in
+[`docs/evidence/first-five-cycle-review-preparation-2026-09-25.md`](docs/evidence/first-five-cycle-review-preparation-2026-09-25.md).
 
 `pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
 `MEMBER_LIVE_EMAIL`, `MEMBER_LIVE_PASSWORD` and `MEMBER_LIVE_INPUT`; use

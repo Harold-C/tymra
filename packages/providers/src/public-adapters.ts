@@ -80,10 +80,11 @@ class OfficialHtmlCalendarAdapter implements PublicDataAdapter {
     catch (error) { throw new AdapterError("PARSING_ERROR", error instanceof Error ? error.message : `${this.metadata.sourceName} calendar parsing failed`, false); }
     const from = context.collectionRange?.from.getTime() ?? Number.NEGATIVE_INFINITY;
     const to = context.collectionRange?.to.getTime() ?? Number.POSITIVE_INFINITY;
-    return records
-      .filter((record) => nzStartOfDay(record.endsAt).getTime() >= from && nzStartOfDay(record.startsAt).getTime() <= to)
-      .slice(0, context.collectionLimits?.maxRecords ?? records.length)
-      .map((record) => ({ sourceId: this.metadata.sourceId, externalId: record.id, payload: record, fetchedAt: new Date(), fixture: false }));
+    const matching = records.filter((record) => nzStartOfDay(record.endsAt).getTime() >= from && nzStartOfDay(record.startsAt).getTime() <= to);
+    if (matching.length > (context.collectionLimits?.maxRecords ?? matching.length)) {
+      throw new AdapterError("PARSING_ERROR", `${this.metadata.sourceName} calendar exceeds the approved record budget`, false);
+    }
+    return matching.map((record) => ({ sourceId: this.metadata.sourceId, externalId: record.id, payload: record, fetchedAt: new Date(), fixture: false }));
   }
 
   async normalise(records: PublicRawRecord[], _context: AdapterContext): Promise<PublicSignal[]> {

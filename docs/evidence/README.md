@@ -6,6 +6,8 @@ revision, environment and run; current implementation status belongs in
 
 ## Platform and release acceptance
 
+- [Full production gates: isolated preparation and read-only baseline — 2026-09-25](./full-production-gates-preparation-2026-09-25.md)
+- [Five public sources: second-cycle review preparation — 2026-09-25](./first-five-cycle-review-preparation-2026-09-25.md)
 - [Release 1.5 hardening — 2026-08-05](./release-1-5-hardening-2026-08-05.md)
 - [Operational hardening — 2026-08-06](./operational-hardening-acceptance-2026-08-06.md)
 - [Production-readiness tooling — 2026-08-06](./production-readiness-tooling-2026-08-06.md)

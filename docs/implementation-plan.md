@@ -1,6 +1,40 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（五项受限定期采集运行；ChristchurchNZ 增量验收通过）
+Last updated: 2026-09-25（五项受限定期采集运行；隔离候选完成当前可做的基础验证）
+
+## 2026-09-25 完整生产门槛的并行准备
+
+在独立 worktree 中，当前候选已通过完整 `pnpm verify`、中英文桌面/移动隐藏入口
+及直接路由的本地浏览器验收、隔离数据库备份恢复。原先追踪表中的六个 Web 类型
+错误在当前候选未复现。日历和首批计划结果超过预算时改为显式失败，避免将截断
+数据误报为完整；此修复只在隔离候选，尚未部署。生产只读复核确认五条计划仍启用、
+13 个 Job 均成功、健康/就绪/告警端点为 200，且生产身份目录和 MarketCoverage
+尚无业务记录。精确证据见
+[`evidence/full-production-gates-preparation-2026-09-25.md`](./evidence/full-production-gates-preparation-2026-09-25.md)。
+
+下一步按依赖分开：先保持已部署五渠道版本不变，核验下一个不同 UTC 日的真实周期；
+再对 ChristchurchNZ 撤稿、GeoNet 三小时新鲜度、节假日全年窗口、Stats NZ 发布节奏
+设计并验收各自的新候选。全国门槛还需分散 Region 的非 demo 身份与公共信号采集、
+代表性 OTA 面板及双模式按需验收。客户端同版本门槛需要真实 provider、会员、
+Stripe、SMTP、管理式挑战、完整浏览器/无障碍、容量和生产恢复证据；现行
+Admin-only 入口及业务开关保持关闭，不能把本地隐藏入口验收当作已上线。
+
+后续验收按以下可核对的证据推进，不能用配置存在或开发 seed 代替业务结果：
+
+五渠道第二自然周期已保存[只读基线和可重复核对流程](./evidence/first-five-cycle-review-preparation-2026-09-25.md)。
+脚本不会启动作业；截至基线时其结果为 `WAITING`，需要 9 月 26 日的两条每日计划及
+10 月 2 日的三条每周计划自然完成后分别复核，不能提前称为通过。
+
+| 门槛 | 需要记录的生产证据 | 当前边界 |
+| --- | --- | --- |
+| 五渠道第二周期 | 不同 UTC 日的五条精确计划、实际 Job ID/终态/尝试次数、各来源请求量与预算、来源业务 ID 前后集合、重复计数、Freshness、队列/告警及失败后停采 | 首日通过；下一自然周期未发生 |
+| 全国覆盖 `DATA-CORE-001/002/006/008` | 从实际启用 Registry 汇总来源；逐一核对 17 Region 的非 demo 身份数、公共信号、最近成功/健康时间、24/72 小时覆盖率、成功/失败率和明确缺口；在 Christchurch 以外取分散真实样本 | 生产身份与 MarketCoverage 目前为空，不可声称全国通过 |
+| 面板与按需 `DATA-CORE-003/004/021` | 基于真实去重身份核对分层面板及价格/可售样本；分别对已批准地址与支持的 OTA Listing URL 做有界执行，验证归属、时间、证据、lineage、失败不伪造结果 | 不启用内部按需或 OTA 采集来填补空表；先准备并审核生产样本与来源预算 |
+| 同版本客户端 `DATA-CORE-022/PRD-AT-010` | 同一镜像的 EN/ZH 桌面/手机、直接路由、账户归属与权益、真实 provider、Stripe/邮件/挑战、容量、备份恢复和支持流程；隐藏入口时仍应保护直接访问 | 目前只通过隔离候选的隐藏发现与未认证边界；生产仍为后台独占 |
+
+ChristchurchNZ 撤稿、GeoNet 新鲜度、节假日年度范围和 Stats NZ 发布感知分别形成来源候选与
+回归；任一门槛失败即保持该来源原有受限状态，不以提高频率、抬高预算或重复访问源站
+替代原因定位。RBNZ 保持未验收，单独修复解析后再纳入任何定期计划。
 
 ## 2026-09-25 五项受限采集的下一道门槛
 
@@ -146,19 +180,19 @@ Web 类型检查另有六项既有错误：旧 token-result、feedback 和 reiss
 - 2026-08-12 当时的工作树通过 lint、全仓 TypeScript、212 个 Web/domain/provider/db 单元测试
   （5 个外部 fixture 跳过）、127 个 Worker 测试及 104 个隔离 PostgreSQL 集成测试。
   112 页生产构建、生产 Compose 配置解析、开发镜像重建及 Web/Worker/Argus 运行健康检查通过；
-  这是历史候选的验证结果；2026-09-13 基线已发现 Web 六项类型错误及 readiness 503，
-  当前候选不能沿用旧通过结论。精确证据与未验证边界见追踪表。
+  这是历史候选的验证结果；2026-09-13 基线发现的 Web 六项类型错误及 readiness 503
+  已被后续独立候选和生产复核取代。精确证据与未验证边界见追踪表。
 
 ## 当前优先级
 
 | 优先级 | 工作 | 完成条件 | 当前状态 |
 | --- | --- | --- | --- |
 | P0 | National Data Core v1.3 差距审计 | 对 `DATA-CORE-001..022` 逐项映射代码、Schema、任务、后台页面和测试，列出缺失项并更新追踪表 | 2026-08-21 已完成；逐项证据、状态和优先级见 `traceability.md` |
-| P0 | 数据正确性 Schema | 增加显式 Source capability、精确 coverage taxonomy、全部 17 Region 身份、版本化 Property/Unit/Listing 映射与 Listing 变化、完整时间字段、TransformationRun/lineage edge；MarketSnapshot 支持两种模式并允许地址模式没有目标 Listing；删除 ResultAccessToken | 已实现；32 个迁移从零应用、seed、Schema drift 和追加历史/lineage 集成测试通过 |
+| P0 | 数据正确性 Schema | 增加显式 Source capability、精确 coverage taxonomy、全部 17 Region 身份、版本化 Property/Unit/Listing 映射与 Listing 变化、完整时间字段、TransformationRun/lineage edge；MarketSnapshot 支持两种模式并允许地址模式没有目标 Listing；删除 ResultAccessToken | 已实现；当前隔离候选 33 个迁移从零应用、开发 seed 和追加历史/lineage 集成测试通过；此结果不代表生产全国数据已填充 |
 | P0 | 全国目录与 OTA 面板执行器 | Catalog Job 实际执行分层发现、去重和持久化；Panel Builder 建立 1,000–1,500 个分层唯一 Unit，Anchor/Rotating Job 对批准日期篮子发起有界六 OTA 采集并更新覆盖事实 | 已实现 17×6 durable frontier、分层 840 Anchor/360 Rotating 选择及每任务最多三成员采集；真实全国填充仍属于运行验收 |
 | P0 | Capability-gated 编排 | 每个 Source 注册版本化 capability；Job 在网络访问前校验 capability、启用、环境、健康、预算和并发，缺失能力返回机器错误码 | 已实现并由缺失 capability 的零网络集成测试验证；既有来源预算和并发门保持生效 |
 | P0 | 地址快照与历史 lineage | `LOCATION_BENCHMARK` 以稳定 Property／空间锚点创建快照，不伪造 Listing；全部正常化、快照、分析和结果写入可查询 lineage，Listing 更新追加变化版本 | 已实现 Property/Unit/Listing 追加版本、关系版本、原始→事实→快照→结果/Insight lineage 和地址空间锚点；数据库契约验证通过 |
-| P0 | 统一部署与隐藏入口 | 同一构建部署后台、Price Check、登录、四档会员、Pricing、Stripe、结果和监测；`DEPLOYED_HIDDEN` 只隐藏首页、公共导航、Footer 和营销 CTA，直接路由继续执行认证、归属、权益与支付检查；删除 bearer 结果 API、邮件 URL 和 Admin reissue | 尚未完成当前源码验收：2026-09-13 仍有旧 token-result、feedback 和 reissue 路由引用已删除符号，产生六项 Web 类型错误。先完成残留入口清理及认证回归，再执行发布级浏览器矩阵；不沿用历史“全部删除”结论 |
+| P0 | 统一部署与隐藏入口 | 同一构建部署后台、Price Check、登录、四档会员、Pricing、Stripe、结果和监测；`DEPLOYED_HIDDEN` 只隐藏首页、公共导航、Footer 和营销 CTA，直接路由继续执行认证、归属、权益与支付检查；删除 bearer 结果 API、邮件 URL 和 Admin reissue | 当前隔离候选 Web 类型、隐藏导航及未认证直接路由验收通过；付费归属、真实 provider、Stripe、邮件、管理式挑战、完整浏览器矩阵和生产同版本部署仍未验收 |
 | P0 | 全国生产候选验收 | 干净数据库迁移/seed、17 Region coverage、六 OTA registry、两种 target mode、历史/lineage 不可变、单价格返回、证据 ACK/purge、隐藏入口/直接路由安全、回滚与生产构建全部通过 | 本地数据库/代码候选已通过；非 demo 全国真实采集、证据 ACK/purge、发布级浏览器矩阵与生产运行仍未执行 |
 | P1 | 全国运营深度 | 补齐 listing/样本/地域/Freshness/gap 等 coverage facts、类型化 Freshness/Confidence、其余 Region 公共信号深度、内部地址/Listing 有界采集 UI 和真实会员计划监测 | Schema、17 Region coverage facts、类型化质量对象和 Admin 有界按需入口已实现并集成验证；连续全国信号深度与全部会员方案真实调度仍需运行验收 |
 | P2 | 规模与效率优化 | 自适应面板轮换/权重、按波动和成本调频、lineage Explorer、覆盖缺口优先级和长期运行调优 | 已实现波动/成本评分、自适应 12–168 小时 cadence、轮换、lineage Explorer 和 gap priority；阈值仍需真实长期数据校准 |
@@ -170,7 +204,7 @@ Web 类型检查另有六项既有错误：旧 token-result、feedback 和 reiss
 | P1 | 生产可观测性 | 无 PII 的会员、Billing、队列、CAPTCHA、成本和方案经济性指标 | Worker health 与 `/worker/alerts` 输出机器错误码、等级、聚合值和阈值；开发历史失败已审计式重试/归档并恢复为零告警，生产通知路由、dashboard 与注入演练仍是部署工作 |
 | P1 | Live 会员 E2E | live provider 完成会员登录、地址或 OTA URL、真实 Argus 价格及非 demo 报告 | 2026-08-12 OTA URL 与 LINZ 地址两条真实链路均通过；分别发布 NZD 591 与 NZD 250 的两晚公开价，`priceResultStatus=COMPLETED`、推荐因仅一条证据为 `NOT_AVAILABLE` |
 | P2 | 大文件分解 | 分离 CSS surface、会员运营逻辑、公共事件 adapter family、seed source registry 和 OTA 定价编排 | 地址型 OTA 搜索、身份解析、可比关系及价格写入已迁移到独立 orchestrator；`WorkerService` 保留稳定调用入口 |
-| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 生产 canary 强制单来源、两轮且每轮最多 2 条；`public_holidays_nz` 开发技术金丝雀 2/2 通过且无重复增长、parser failure 或远端证据残留；Scheduler 默认关闭，真实生产 canary 尚未获配置和执行授权 |
+| P2 | 生产采集启用 | 来源 canary、容量、监控、回滚、安全和长期稳定性通过后再启用 Scheduler | 生产已对五条精确计划开启受限定期观察，首日均成功；第二个不同 UTC 日周期、来源特有缺口、容量及全国持续运行门槛尚未通过；其他计划保持关闭 |
 
 ## 交付顺序
 

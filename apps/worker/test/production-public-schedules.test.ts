@@ -36,7 +36,8 @@ describe("first production public schedules", () => {
   });
 
   it("caps combined business results independently of raw record count", () => {
-    expect(boundFirstPublicResults(["event-1", "event-2"], ["signal-1", "signal-2"], 3)).toEqual({ events: ["event-1", "event-2"], signals: ["signal-1"] });
+    expect(boundFirstPublicResults(["event-1", "event-2"], ["signal-1"], 3)).toEqual({ events: ["event-1", "event-2"], signals: ["signal-1"] });
+    expect(() => boundFirstPublicResults(["event-1", "event-2"], ["signal-1", "signal-2"], 3)).toThrow("approved result budget");
     expect(() => boundFirstPublicResults([], [], 31)).toThrow("limit is invalid");
   });
 

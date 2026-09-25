@@ -51,9 +51,8 @@ export function isPreviousChristchurchPublicSchedule(schedule: Parameters<typeof
 
 export function boundFirstPublicResults<Event, Signal>(events: Event[], signals: Signal[], limit: number, sourceId?: string) {
   if (!Number.isInteger(limit) || limit < 1 || limit > (sourceId === "rto_calendars" ? 1_000 : 30)) throw new Error("First public schedule result limit is invalid");
-  if (sourceId === "rto_calendars" && events.length + signals.length > limit) throw new Error("ChristchurchNZ results exceed the approved result budget");
-  const boundedEvents = events.slice(0, limit);
-  return { events: boundedEvents, signals: signals.slice(0, limit - boundedEvents.length) };
+  if (events.length + signals.length > limit) throw new Error(`${sourceId ?? "Public source"} results exceed the approved result budget`);
+  return { events, signals };
 }
 
 export function firstPublicReferenceRecordLimit(sourceId: string, reference: string, limit: number) {

@@ -68,6 +68,19 @@ describe("public data adapter contract", () => {
     expect(records.filter((record) => record.type === "PUBLIC_HOLIDAY").map((record) => record.startsAt)).toEqual(["2026-01-01", "2027-01-01"]);
   });
 
+  it("fails closed when an official calendar has more in-window records than its budget", async () => {
+    const html = `<h2>2026 public holiday and anniversary dates</h2><table><tr><th>Holiday</th><th>Actual Date</th><th>Observed date</th></tr><tr><td>Waitangi Day</td><td>6 February</td><td>Friday 6 February</td></tr></table><table><tr><th>Region</th><th>Actual Date</th><th>Observed date</th></tr><tr><td>Canterbury</td><td>16 December</td><td>Friday 13 November</td></tr></table>`;
+    const fetchMock = vi.fn().mockResolvedValue(new Response(html, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const context = { ...fixtureContext, collectionRange: { from: new Date("2026-01-01"), to: new Date("2027-01-01") }, collectionLimits: { maxRequests: 1, maxRecords: 1, timeoutMs: 10_000, maxBytes: 100_000 } };
+      await expect(publicDataAdapters.public_holidays_nz.fetch("https://www.employment.govt.nz/leave-and-holidays/public-holidays/public-holidays-and-anniversary-dates", context)).rejects.toMatchObject({ code: "PARSING_ERROR", retryable: false });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("normalises browser-delivered aviation depth into market pricing signals", async () => {
     const auckland = await publicDataAdapters.auckland_airport_monthly.normalise([{
       sourceId: "auckland_airport_monthly", externalId: "airport-passengers:2026-06",

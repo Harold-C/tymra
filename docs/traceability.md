@@ -1,6 +1,34 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (five bounded schedules running; ChristchurchNZ incremental acceptance)
+Last updated: 2026-09-25 (five bounded schedules running; isolated full-gate preparation)
+
+## 2026-09-25 isolated full-gate preparation; no production release
+
+The five-source second-cycle gate now has a separate immutable
+[read-only baseline and review procedure](./evidence/first-five-cycle-review-preparation-2026-09-25.md).
+Its baseline query ran inside a read-only PostgreSQL transaction: exactly five enabled schedules,
+zero active/failed Jobs, 12 intentional ChristchurchNZ canonical merge groups with zero unlinked
+or divergent links, and 74/74 retained scheduled-run artifact hashes matched. The evaluator's
+four local scenarios pass and reports `WAITING` against the baseline itself. The next daily and
+weekly Jobs have not yet occurred; this is preparation, not second-cycle acceptance.
+
+The isolated candidate based on `7e6b08fb74e39a12f9432a3b346da493e4775e17` passed
+`pnpm verify`: lint and all package type checks, 232 Web/domain/provider unit tests plus five
+skips, 153 Worker unit tests, 110 isolated PostgreSQL integration tests and both builds.
+The previously recorded six Web type errors no longer reproduce. An isolated candidate Web
+server passed the new hidden-discovery browser check in English and Chinese on desktop and
+mobile: public customer links were absent, direct client routes returned 200, an invalid
+session redirected to sign-in and the unauthenticated membership API returned 401. A local
+database backup restored with matching migration/source/schedule/coverage counts. These
+checks do not establish the full production client, Stripe or nationwide operating gates.
+
+The candidate also makes official calendar and first-batch result ceilings fail closed rather
+than silently truncate. It has not been deployed or live-source accepted. At the read-only
+production baseline, five schedules remained enabled, all 13 Jobs were `SUCCEEDED`, the
+Worker API health/readiness/alerts endpoints returned 200, and the Worker/API/Scheduler
+retained the same exact image with zero restarts. Production still had no Property,
+SellableUnit, Listing or MarketCoverage rows. Details and limitations are in
+[`evidence/full-production-gates-preparation-2026-09-25.md`](./evidence/full-production-gates-preparation-2026-09-25.md).
 
 ## 2026-09-25 ChristchurchNZ complete-window and incremental production acceptance
 
@@ -303,7 +331,7 @@ non-demo run or production acceptance.
 | Requirement | Current repository evidence | Concrete gap | Priority | Status |
 | --- | --- | --- | --- | --- |
 | `DATA-CORE-001` nationwide identity directory | 17 Region × six OTA durable crawl frontier; bounded discovery persists explicit Property/Unit/Listing identities and versions | Nationwide non-demo population depth has not yet been run or measured | P0 | `implemented_database_verified` |
-| `DATA-CORE-002` nationwide public signals | National aggregators, 15 major-market mappings, regional official adapters and canonical event/signal persistence exist | Continuous enabled operation is unproved; Chatham Islands, Gisborne, Marlborough and West Coast depth is not represented by the 15-market operating set; production schedules remain disabled | P1 | `partially_implemented_not_verified` |
+| `DATA-CORE-002` nationwide public signals | National aggregators, 15 major-market mappings, regional official adapters and canonical event/signal persistence exist; five bounded production public schedules are enabled | The five-source first-day result is not nationwide continuity or the two-UTC-day gate; Chatham Islands, Gisborne, Marlborough and West Coast depth is not represented by the 15-market operating set | P1 | `five_source_canary_running_nationwide_not_accepted` |
 | `DATA-CORE-003` representative OTA panel | Region-stratified 840 Anchor + 360 Rotating selector, approved date basket, bounded Argus rate collection and coverage update | Real nationwide inventory must fill and calibrate the target panel | P0 | `implemented_database_verified` |
 | `DATA-CORE-004` nationwide bounded on-demand collection | Admin `/admin/on-demand` accepts one unique NZ address or supported OTA URL and starts the existing auditable Price Check/Argus path with 30-night/365-day/occupancy bounds | Live address and all-six-OTA operator acceptance remains | P1 | `implemented_database_verified` |
 | `DATA-CORE-005` member-property monitoring | Host/Pro/Portfolio scheduler, plan cadence, quota and NZ business-date query plans exist | Unified-production and real-provider scheduled monitoring have no fresh all-plan acceptance; scheduler reuses the latest check and does not yet prove full target-mode/context preservation | P1 | `implemented_not_verified` |
@@ -322,8 +350,8 @@ non-demo run or production acceptance.
 | `DATA-CORE-018` Data Lineage | `TransformationRun` and `LineageEdge` connect raw artifacts, normalized rates, snapshots, analyses, results and insights; Admin explorer queries the graph | Production-scale query tuning remains | P0 | `implemented_database_verified` |
 | `DATA-CORE-019` snapshot target modes | `MarketSnapshot.analysisType` is required; address mode uses nullable Listing/Unit and a spatial anchor without fabricated target Listing | Fresh live two-mode acceptance remains | P0 | `implemented_database_verified` |
 | `DATA-CORE-020` price/recommendation separation | Separate result statuses, one-valid-price delivery behavior and dedicated integration tests exist | Preserve through the schema migration and rerun both target modes; no new product behavior is required | Regression only | `verified_for_prior_development_candidate` |
-| `DATA-CORE-021` unified nationwide backend gate | Required code/schema paths now exist with clean migration/seed, drift-free schema and integration coverage | Non-demo nationwide execution, capacity, evidence ACK/purge and production readiness remain release gates | P0 dependency gate | `implemented_not_live_accepted` |
-| `DATA-CORE-022` client same-version deployment and hidden discovery | Approved target is hidden discovery with owner-authenticated results; the 2026-09-13 source baseline still contains token-result, feedback and reissue routes referencing deleted symbols | Remove/reconcile residual routes, pass Web type checks and authentication regression, then rerun hidden/direct-route browser acceptance | P0 | `partially_implemented_not_verified` |
+| `DATA-CORE-021` unified nationwide backend gate | Required code/schema paths pass fresh isolated migration/seed, 110 integration tests and build; five bounded public schedules run in production | Production has no Property/Unit/Listing/MarketCoverage rows; non-demo nationwide execution, representative OTA panel, capacity and full readiness remain release gates | P0 dependency gate | `implemented_not_live_accepted` |
+| `DATA-CORE-022` client same-version deployment and hidden discovery | Fresh Web types pass; isolated desktop/mobile, English/Chinese hidden-home and direct-route browser check passes with unauthenticated/invalid-session rejection | Production remains Admin-only; paid entitlement, real provider, Stripe, mail, managed challenge, full browser/accessibility, capacity and customer ingress are unaccepted | P0 | `local_hidden_gate_verified_production_not_accepted` |
 
 ### Approved implementation order from the audit
 
@@ -342,27 +370,28 @@ non-demo run or production acceptance.
 
 ## Historical Development Candidate Verification And Documentation Delta (2026-08-21)
 
-The following candidate and requirement matrices retain their dated evidence. They were not rerun
-for the migrated checkout. In particular, previous bearer-route removal claims are superseded by
-the six Web errors and residual routes in the 2026-09-13 baseline and `DATA-CORE-022` row above.
+The following candidate and requirement matrices retain dated evidence. The 2026-09-13
+six-Web-error and residual-route observation is historical: this isolated candidate passes
+fresh Web type checks, and a targeted source search found no residual bearer-result route.
+Only the named gates below were rerun; older browser/provider evidence is not current acceptance.
 
-The current working candidate now includes the National Data Core v1.3 P0 schema/execution paths,
+The isolated candidate includes the National Data Core v1.3 P0 schema/execution paths,
 P1 operating surfaces and P2 optimisation controls described above, together with the complete
 development membership surface, anti-abuse controls, New Zealand business-date policy and the prior
-OTA soak waiver. Clean isolated PostgreSQL migration/seed/schema-drift and 110 integration tests pass;
-the push-time browser/release matrix and non-demo nationwide operating acceptance are still pending. Git state is not used
+OTA soak waiver. Clean isolated PostgreSQL migration/seed and 110 integration tests pass;
+the full browser/release matrix and non-demo nationwide operating acceptance are still pending. Git state is not used
 as verification evidence.
 
 | Gate | Fresh evidence from current worktree | Status |
 | --- | --- | --- |
 | Web lint | `apps/web/scripts/lint.mjs` completed with zero errors or warnings | verified |
 | TypeScript | Web, Worker, config, db, domain, providers and queue passed `tsc --noEmit` | verified |
-| Web/domain/provider/database unit suite | Latest development-candidate evidence: 222 tests passed; 5 external provider fixtures intentionally skipped | verified_for_prior_development_candidate |
-| Worker unit suite | Latest development-candidate evidence: 141 tests passed, including release canary、privacy-safe alerts、member scheduling、Argus boundary and New Zealand date policy | verified_for_prior_development_candidate |
-| Database/API/Worker integration | 105 tests passed against a clean, migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified |
+| Web/domain/provider/database unit suite | 232 tests passed; 5 external provider fixtures intentionally skipped | verified_for_isolated_candidate |
+| Worker unit suite | 153 tests passed, including first-batch fail-closed limits, release safety, Argus boundary and member scheduling | verified_for_isolated_candidate |
+| Database/API/Worker integration | 110 tests passed against a freshly migrated and seeded isolated PostgreSQL database; Stripe lifecycle, membership identity, quotas, concurrency, plan retention and Worker metrics were included | verified_for_isolated_candidate |
 | Membership/risk focused regression | Membership integration file passed all 19 scenarios, including Pricing Unit collection/detail GET and confirmed-check POST; configuration/security suites passed the managed-provider and feature-gate contracts | verified |
-| Production build and runtime | Latest development-candidate evidence: Worker entrypoints built, Next.js generated 114 pages, isolated Compose smoke passed, Argus health/readiness and Tymra Worker readiness returned HTTP 200 | verified_for_prior_development_candidate |
-| Member browser QA | Free、Host、Pro and Portfolio fixture contracts passed named desktop and mobile paths; the new `DEPLOYED_HIDDEN` discovery behaviour has not been implemented or rerun | implemented_not_verified |
+| Production build and runtime | Both candidate builds pass with synthetic config and the optional `linkedom/canvas` warning; production Worker/API/Scheduler and Admin-only Web image identities are separately read back, with API health/readiness 200 | candidate_build_verified_production_release_pending |
+| Member browser QA | Local `DEPLOYED_HIDDEN` discovery, direct client pages, invalid-session rejection and unauthenticated API checks passed in both languages on desktop/mobile; prior Free/Host/Pro/Portfolio fixture contracts remain historical | local_hidden_gate_verified_paid_flows_pending |
 | Playwright/accessibility matrix | Latest development-candidate evidence: five-browser canary 36 passed with 4 intentional skips; Chromium desktop 19 passed with 2 skips; mobile 17 passed with 4 skips; Compose smoke passed through canonical `https://tymra.test` | verified_for_prior_development_candidate |
 | Payment/challenge/monitoring | Stripe Sandbox configuration readiness passed. A fresh hosted-Checkout browser revalidation reached Stripe Sandbox with an active test-card submission but did not return to Tymra before the external timeout, so it is not recorded as a fresh lifecycle pass. Managed challenge readiness remains blocked by absent provider URL/site key/secret. Privacy-safe `/worker/alerts` and the single-source 2×2 canary gate are implemented; Stripe live、production challenge/provider、dashboard、notification routing、capacity and SLA remain external | test_mode_readiness_verified_external_lifecycle_not_verified |
 
@@ -376,16 +405,16 @@ availability or production readiness.
 | --- | --- | --- | --- |
 | PRD-PRODUCT, PRD-OVERVIEW, PRD-USERS | Public copy, locale messages, legal/methodology content | Public page and copy tests | verified |
 | PRD-GOALS, PRD-PRINCIPLES, PRD-AUTOMATION | Domain decisions, worker pipeline, publication policy | Decision and worker integration tests | verified |
-| PRD-SCOPE unified production deployment | Existing Admin/client routes, APIs, Worker and database; nationwide scope and `DEPLOYED_HIDDEN` navigation/CTA behaviour require a fresh gap audit | Prior route inventory and E2E suites do not prove the new deployment contract | implemented_not_verified |
+| PRD-SCOPE unified production deployment | Existing Admin/client routes, APIs, Worker and database; isolated `DEPLOYED_HIDDEN` discovery and direct-route check now pass | Nationwide non-demo execution and client same-version production release remain unaccepted | implemented_not_live_accepted |
 | PRD-DATA 6.1–6.7 | Prisma market models, append-only services, provider metadata and collection modes | Database integration tests | verified |
 | DATA-CORE-001..022 / D-049 / D-050 | Capability registry, 17-Region frontier/coverage, representative panel, versioned identity/history, generic lineage, address-mode snapshot, hidden client discovery and bounded Admin on-demand workflow are implemented | Clean migration/seed/drift and isolated integration pass; push-time browser matrix plus non-demo nationwide operating acceptance remain | implemented_not_live_accepted |
-| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Prior ownership tests remain historical evidence; the 2026-09-13 checkout still has residual bearer-related routes and six Web type errors | partially_implemented_not_verified |
+| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Current isolated Web types pass and no bearer-result route was found by targeted source search; local invalid-session/API rejection passed, but full result-ownership browser and production acceptance remain | implemented_not_live_accepted |
 | PRD-OPS | Exception Inbox and operational views | Admin API and Playwright tests | verified |
 | PRD-MARKET | Market records, NZ eligibility and locale behaviour | Domain and bilingual flow tests | verified |
-| PRD-COMMERCIAL, PRD-ROLES | Single-admin and customer/member surfaces exist; client discovery must be hidden without disabling deployed routes or security | Fresh production-config, direct-route, navigation and Stripe evidence required | implemented_not_verified |
+| PRD-COMMERCIAL, PRD-ROLES | Single-admin and customer/member surfaces exist; isolated hidden navigation and direct routes pass | Paid plans, real provider, Stripe, production authentication and customer ingress remain unaccepted | local_hidden_gate_verified_production_not_accepted |
 | PRD-METRICS | Event contracts and operational aggregates | Event payload and metrics tests | verified |
 | PRD-NFR, PRD-COMPLIANCE | Config guards, audit, redaction, Docker and docs | Security, production-start and Compose checks | verified |
-| PRD-AT-001..010 | End-to-end development-candidate acceptance | Existing Playwright project predates PRD-AT-010 unified deployment and hidden-entry contract | implemented_not_verified |
+| PRD-AT-001..010 | End-to-end development-candidate acceptance | Local hidden-entry subset of PRD-AT-010 passed; nationwide and commercial production flows remain pending | partially_verified_not_live_accepted |
 | PRD-CODEX | Workspace, commands, docs, CI and verification | `pnpm verify`, Compose and CI | verified |
 
 Grouped identifiers retain the exact requirement-family names from the baseline documents. The
@@ -405,7 +434,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | BR-CONF, BR-RISK, BR-DEC | Confidence, risk and publication decisions | Decision table tests | verified |
 | BR-EXC | Exception model, actions, priority and workspace | Admin API/E2E tests | verified |
 | BR-DATA | Append-only records and identity merge history | Database integration tests | verified |
-| BR-RES | Immutable results, authenticated ownership and notifications | Earlier immutable-result, email and owner-session integration passed; residual bearer-related routes still need removal/reconciliation and fresh regression under the 2026-09-13 baseline | partially_implemented_not_verified |
+| BR-RES | Immutable results, authenticated ownership and notifications | 当前隔离候选 Web 类型通过，定向源码搜索未发现旧 bearer 结果路由；未认证会话/API 被拒绝。完整结果归属、邮件和生产客户流程仍需新验收 | implemented_not_live_accepted |
 | BR-API | `/api/v1` response and error contracts | Rough/customer APIs exist; current two-mode input, authenticated result route inventory and obsolete endpoint removal need fresh audit | implemented_not_verified |
 | BR-FB | Feedback and learning boundaries | Feedback integration tests | verified |
 | BR-LIMIT | Idempotency, free-check reuse and rate limits | Abuse/idempotency tests | verified |
@@ -423,7 +452,7 @@ automated evidence below is supplemented by the final runtime evidence in `imple
 | PG-CHECK | `/{locale}/check`, `/{locale}/address-check` and `/{locale}/rough/{checkId}` | Routes exist; current two-mode, pre-email rough-value and no-formal-provider-before-verification contract needs fresh E2E | implemented_not_verified |
 | PG-PROPERTY, PG-UNIT, PG-QUERY | Confirmation routes and APIs | Candidate/unit/query E2E | verified |
 | PG-STATUS, PG-BIZSTATE | Persisted task status and terminal states | Existing status matrix predates authenticated formal-status and separate rough access contract | implemented_not_verified |
-| PG-RESULT | Authenticated owner-only account result route and feedback | Owner-only delivery is the approved target; residual token-result/feedback/reissue routes and Web type errors remain in the 2026-09-13 checkout | partially_implemented_not_verified |
+| PG-RESULT | Authenticated owner-only account result route and feedback | 当前隔离候选 Web 类型通过且未发现旧 bearer 结果路由；未认证账户和 API 被拒绝。完整客户结果浏览器和生产归属验收仍未执行 | implemented_not_live_accepted |
 | PG-PUBLIC | Methodology, FAQ, contact and legal routes | Public route/copy tests | verified |
 | PG-ADMIN | Protected admin shell and sign-in | Auth and 403 tests | verified |
 | PG-EXC, PG-EXC-DETAIL | Inbox and single-screen workspace | Admin E2E tests | verified |
@@ -487,7 +516,7 @@ Authoritative source: [Customer funnel requirements](product/customer-funnel.md)
 | D-016 Customer/Admin separation | R15-ID-001, R15-ID-003, R15-SEC-003 | Separate models/cookies and authorization tests | verified |
 | D-017 Verify before account activation | R15-ID-001, R15-ID-002, R15-SEC-001 | Pending state plus replay/expiry/concurrent activation integration and valid-link E2E | verified |
 | D-018 Verify before provider cost | R15-COST-001, R15-QUOTA-001 | Zero pre-verification `PriceCheck` plus pre-enqueue quota boundary | verified |
-| D-019 Authenticated formal reports | R15-OWN-001 | Earlier cross-account denial and authenticated-result tests passed; the 2026-09-13 source baseline still requires bearer-route cleanup and fresh regression | partially_implemented_not_verified |
+| D-019 Authenticated formal reports | R15-OWN-001 | 当前隔离候选通过 Web 类型及未认证边界检查；先前跨账户与结果测试属于历史候选，当前完整归属浏览器和生产验收未执行 | implemented_not_live_accepted |
 | D-020 Minimal conditional email | R15-EMAIL-001, R15-EMAIL-002, R15-CONSENT-001 | Single-message Mailpit and acknowledgement E2E | verified |
 | D-021 Layered abuse and quota | R15-ABUSE-001, R15-ABUSE-002, R15-QUOTA-001 | Cache, challenge handshake, email cooldown, device 429 and formal quota tests | verified |
 | D-022 No exclusive property claim | R15-OWN-001 | Independent anonymous records and customer ownership guard | verified |
@@ -511,8 +540,8 @@ The statuses below describe the current implementation, not the target specifica
 | `MEM-RISK-002` | Unique Free/promotion claims, serializable retries, concurrent collection/noVNC limits and independent export/API quotas | Three-way concurrent Free claim, idempotent NZ-month export and payment-promotion uniqueness integration | `verified` |
 | `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence, payment reuse/refund, customer appeal and Admin review tests pass; production Radar delivery remains external | `implemented_not_verified` |
 | `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API plus privacy-safe aggregate metrics and controlled retention lifecycle pass; production operating exercise remains external | `implemented_not_verified` |
-| `MEM-NAV-001` | Session-aware customer navigation plus `DEPLOYED_HIDDEN` public-header/footer/CTA suppression | Existing visible-navigation EN/ZH browser evidence predates the hidden-entry requirement; direct-route and security behaviour also need fresh evidence | `implemented_not_verified` |
-| `MEM-PUBLIC-001` | Bilingual membership/pricing and OTA-link/address entry routes deploy but are omitted from public discovery while hidden | Existing page/accessibility evidence passes; hidden homepage/navigation/CTA behaviour needs fresh browser acceptance | `implemented_not_verified` |
+| `MEM-NAV-001` | Session-aware customer navigation plus `DEPLOYED_HIDDEN` public-header/footer/CTA suppression | 当前隔离候选 EN/ZH 桌面/手机主页及移动导航隐藏客户链接；直接路由和未认证边界通过。已登录状态与生产入口仍需验收 | `local_hidden_gate_verified_production_not_accepted` |
+| `MEM-PUBLIC-001` | Bilingual membership/pricing and OTA-link/address entry routes deploy but are omitted from public discovery while hidden | 当前隔离候选 EN/ZH 桌面/手机隐藏发现入口、直接页面 HTTP 200；完整可访问性与客户业务流程仍需验收 | `local_hidden_gate_verified_production_not_accepted` |
 | `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
 | `MEM-UNIT-001` | Pricing-unit list/detail GET, confirmed-owned-Price-Check POST, activation, deactivation, reactivation and downgrade selection | API integration verifies list/detail/add, stable Property identity, unit limits and transactional cancellation; the current desktop/mobile browser flow creates the confirmed unit, opens it from the slot list and verifies its detail | `verified` |
 | `MEM-CHECK-001` | Owner-only filterable history and result detail with mode-aware target or neighbourhood observations and observed-price/recommendation separation | Cross-account, pagination/filter, retention, one-valid-price acceptance and `LISTING_PRICING`/`LOCATION_BENCHMARK` separation pass in integration; the current desktop/mobile browser flow filters the owner history and reopens the authenticated formal detail | `verified` |
