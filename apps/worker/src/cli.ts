@@ -10,6 +10,7 @@ import { executeCanary, canaryPlan, productionPreflight } from "./operations/rel
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary } from "./operations/production-public-canary";
+import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -40,6 +41,11 @@ switch (command) {
   case "schedule:ticketmaster:enable": print(await guardedSourceScheduleChange(["ticketmaster"], true)); break;
   case "schedule:ticketmaster:disable": print(await guardedSourceScheduleChange(["ticketmaster"], false)); break;
   case "schedule:sources:plan": print(await service.sourceSchedulePlan(requiredCsvOption(args, "--sources"))); break;
+  case "schedule:first-public:prepare": {
+    if (option(args, "--confirm") !== "PREPARE_FIRST_PUBLIC_SCHEDULES") throw new Error("Preparing first public schedules requires --confirm PREPARE_FIRST_PUBLIC_SCHEDULES");
+    print(await prepareFirstPublicSchedules(environment.NODE_ENV));
+    break;
+  }
   case "schedule:sources:enable": {
     if (option(args, "--confirm") !== "ENABLE_SOURCE_SCHEDULES") throw new Error("Enabling source schedules requires --confirm ENABLE_SOURCE_SCHEDULES");
     print(await service.configureSourceSchedules(requiredCsvOption(args, "--sources"), { enabled: true, reason: requiredOption(args, "--reason") }));
@@ -225,7 +231,7 @@ switch (command) {
     break;
   }
   default:
-    process.stderr.write("Usage: cli <argus:health|ota:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|release:bootstrap-lincoln|release:preflight|release:canary-plan|release:canary-run|release:rollback|enqueue-source|run-job> ...\n");
+    process.stderr.write("Usage: cli <argus:health|ota:health|collect:listing|collect:market|collect:anchor-panel|collect:rotating-panel|collect:events|collect:disruptions|analyse:listing|source:health|source:activate|source:suspend|schedule:first-public:prepare|schedule:sources:plan|schedule:sources:enable|schedule:sources:disable|release:bootstrap-lincoln|release:preflight|release:canary-plan|release:canary-run|release:rollback|enqueue-source|run-job> ...\n");
     process.exitCode = 2;
 }
 

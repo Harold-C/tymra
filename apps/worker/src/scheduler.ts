@@ -1,6 +1,7 @@
 import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
+import { isFirstPublicSchedule } from "./operations/production-public-schedules";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -21,6 +22,9 @@ await prisma.$disconnect();
 async function enqueueDueSchedules(now = new Date()) {
   const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
   for (const schedule of schedules) {
+    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule)) {
+      throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
+    }
     if (!environment.HIGH_FREQUENCY_SCHEDULER_ENABLED && schedule.key.includes("high-frequency")) continue;
     const payload = schedule.payload as Prisma.JsonObject;
     if (typeof payload.sourceId === "string") {
@@ -29,7 +33,7 @@ async function enqueueDueSchedules(now = new Date()) {
     }
     const intervalMs = intervalMsFor(schedule.cronExpression);
     const bucket = Math.floor(now.getTime() / intervalMs);
-    await enqueueJob({ type: schedule.jobType, queueName: schedule.queueName, payload: schedule.payload as Prisma.InputJsonValue, idempotencyKey: `schedule:${schedule.key}:${bucket}`, runAt: now, sourceId: typeof payload.sourceId === "string" ? payload.sourceId : undefined });
+    await enqueueJob({ type: schedule.jobType, queueName: schedule.queueName, payload: schedule.payload as Prisma.InputJsonValue, idempotencyKey: `schedule:${schedule.key}:${bucket}`, runAt: now, sourceId: typeof payload.sourceId === "string" ? payload.sourceId : undefined, maxAttempts: environment.NODE_ENV === "production" ? 1 : undefined });
     await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { lastEnqueuedAt: now, nextRunAt: new Date(now.getTime() + intervalMs) } });
   }
 }

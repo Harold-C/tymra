@@ -76,6 +76,7 @@ import {
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
 import { boundProductionCanaryResults } from "../operations/release-safety";
+import { boundFirstPublicResults, firstPublicSchedule } from "../operations/production-public-schedules";
 import { enrichEventVenue } from "../collection/venue-reference";
 import { cleanupMembershipRetention, membershipOperationalMetrics } from "../membership/operations";
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
@@ -204,6 +205,7 @@ type CollectSourceOptions = {
   jobId?: string;
   lincolnOnly?: boolean;
   productionCanary?: boolean;
+  boundedPublicSchedule?: boolean;
   from?: Date;
   to?: Date;
   limit?: number;
@@ -1064,6 +1066,13 @@ export class WorkerService {
     if (!adapter) throw new WorkerRequestError("SOURCE_NOT_FOUND", `No public adapter exists for ${sourceId}`, 404);
     const localAcceptance = options.localAcceptance === true;
     const productionCanary = options.productionCanary === true;
+    const boundedPublicSchedule = options.boundedPublicSchedule === true;
+    const scheduleSpec = boundedPublicSchedule ? firstPublicSchedule(sourceId) : undefined;
+    if (boundedPublicSchedule && (this.environment.NODE_ENV !== "production" || !options.jobId || !scheduleSpec
+      || marketScope !== scheduleSpec.marketScope
+      || options.from || options.to || options.dryRun || localAcceptance || productionCanary || options.limit !== scheduleSpec.limit)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "First public schedule must use its approved production bounds", 422);
+    }
     if (productionCanary && (this.environment.NODE_ENV !== "production" || localAcceptance || options.dryRun || !options.limit || options.limit > 2)) {
       throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Production canary requires a live production run with a one- or two-record limit", 422);
     }
@@ -1078,9 +1087,12 @@ export class WorkerService {
     if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly) {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Lincoln acceptance source requires the bounded Lincoln-only job", 409);
     }
+    if (boundedPublicSchedule && jsonRecord(source.metadata).boundedProductionCanary !== true) {
+      throw new WorkerRequestError("SOURCE_UNAVAILABLE", "First public schedule source is not approved", 409);
+    }
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
     const requestedFrom = options.from ?? new Date();
-    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + 90 * 86_400_000);
+    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + (boundedPublicSchedule ? 31 : 90) * 86_400_000);
     const localBounds = {
       maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
       maxRecords: argusPublicMarketSource(sourceId)?.kind === "venue" ? 200
@@ -1100,7 +1112,7 @@ export class WorkerService {
       timeoutMs: sourceId === "council_calendars" || argusPublicMarketSource(sourceId) ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
     } as const;
     const from = requestedFrom;
-    const to = localAcceptance || productionCanary
+    const to = localAcceptance || productionCanary || boundedPublicSchedule
       ? new Date(Math.min(requestedTo.getTime(), from.getTime() + localBounds.maxWindowDays * 86_400_000))
       : requestedTo;
     const limit = localAcceptance
@@ -1117,6 +1129,8 @@ export class WorkerService {
     } as const;
     const effectiveBounds = localAcceptance ? localBounds : productionCanary
       ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : 1, maxRecords: 2, timeoutMs: 30_000 }
+      : boundedPublicSchedule && scheduleSpec
+        ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: 30_000, concurrency: 1 }
       : productionBounds;
     const collectionState = sourceId === "metservice" ? await this.metServiceCollectionState(source.id) : undefined;
     const context: AdapterContext = {
@@ -1124,13 +1138,13 @@ export class WorkerService {
       localAcceptance,
       collectionLimits: effectiveBounds,
       collectionRange: { from, to },
-      ...(localAcceptance || productionCanary ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
+      ...(localAcceptance || productionCanary || boundedPublicSchedule ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
       ...(collectionState ? { collectionState } : {}),
     };
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
-      localAcceptance, productionCanary, sourceId, marketScope,
+      localAcceptance, productionCanary, boundedPublicSchedule, sourceId, marketScope,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
       effective: { from: from.toISOString(), to: to.toISOString(), limit: effectiveBounds.maxRecords },
       limits: effectiveBounds,
@@ -1159,7 +1173,7 @@ export class WorkerService {
         counters.discovered = discovered.length;
         const uniqueReferences = [...new Set(discovered)];
         counters.duplicatesSkipped += discovered.length - uniqueReferences.length;
-        const references = localAcceptance || productionCanary ? uniqueReferences.slice(0, effectiveBounds.maxRequests) : uniqueReferences;
+        const references = localAcceptance || productionCanary || boundedPublicSchedule ? uniqueReferences.slice(0, effectiveBounds.maxRequests) : uniqueReferences;
         counters.references = references.length;
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {
@@ -1205,7 +1219,9 @@ export class WorkerService {
           const normalisedEvents = adapter.normaliseEvents ? await adapter.normaliseEvents(raw, context) : [];
           const uniqueEvents = uniqueByExternalId(normalisedEvents, counters);
           const uniqueSignals = uniqueByExternalId(normalisedSignals, counters);
-          const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!) : { events: uniqueEvents, signals: uniqueSignals };
+          const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!)
+            : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit)
+            : { events: uniqueEvents, signals: uniqueSignals };
           events = bounded.events;
           signals = bounded.signals;
         } catch (error) {
