@@ -36,6 +36,10 @@ export type AdapterContext = {
   collectionState?: {
     knownReferenceVersions: Readonly<Record<string, string>>;
   };
+  christchurchScan?: {
+    previous?: { nextPage: number; firstWindowPage: number; boundaryPage: number; fullScanAt: string };
+    progress?: { version: 1; mode: "FULL" | "INCREMENTAL"; pages: number[]; nextPage: number; firstWindowPage: number; boundaryPage: number; fullScanAt: string; windowComplete: boolean };
+  };
 };
 
 export type AdapterHealth = {

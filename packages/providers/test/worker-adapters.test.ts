@@ -726,6 +726,87 @@ describe("public data adapter contract", () => {
     }
   });
 
+  it("bootstraps the complete ChristchurchNZ window, then rotates a smaller overlapping page slice", async () => {
+    const originalFetch = globalThis.fetch;
+    const visited: number[] = [];
+    try {
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+        const page = Number(new URL(String(input)).searchParams.get("page"));
+        visited.push(page);
+        const start = new Date(Date.UTC(2026, 8, page));
+        const date = start.toISOString().slice(0, 19);
+        const event = { id: page, title: `Event ${page}`, earliest_start_date: date, event_sessions: [{ id: page * 10, start_date: date, end_date: date }], data: {} };
+        return new Response(JSON.stringify({ data: [event], pagination: { currentPage: page, totalPages: 47 } }), { status: 200 });
+      }));
+      const reference = "https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all";
+      const limits = { maxRequests: 40, maxRecords: 1_000, timeoutMs: 180_000, maxBytes: 2_000_000 };
+      const range = { from: new Date("2026-09-25T00:00:00Z"), to: new Date("2026-10-07T23:59:59Z") };
+      const firstScan: NonNullable<import("../src/adapter-types").AdapterContext["christchurchScan"]> = {};
+      const first = await publicDataAdapters.rto_calendars.fetch(reference, { ...fixtureContext, collectionLimits: limits, collectionRange: range, christchurchScan: firstScan });
+      expect(firstScan.progress).toMatchObject({ mode: "FULL", firstWindowPage: 25, boundaryPage: 38, nextPage: 27, windowComplete: true });
+      expect(visited).toEqual(Array.from({ length: 38 }, (_, index) => index + 1));
+      expect(first.map((item) => item.externalId)).toEqual(Array.from({ length: 13 }, (_, index) => `christchurchnz:${index + 25}`));
+
+      visited.length = 0;
+      const prior = firstScan.progress!;
+      const nextScan: NonNullable<import("../src/adapter-types").AdapterContext["christchurchScan"]> = { previous: prior };
+      const next = await publicDataAdapters.rto_calendars.fetch(reference, { ...fixtureContext, collectionLimits: limits, collectionRange: range, christchurchScan: nextScan });
+      expect(nextScan.progress).toMatchObject({ mode: "INCREMENTAL", firstWindowPage: 25, boundaryPage: 38, nextPage: 27, windowComplete: true });
+      expect(visited).toEqual(Array.from({ length: 15 }, (_, index) => index + 24));
+      expect(new Set(next.map((item) => item.externalId)).size).toBe(next.length);
+      expect(next.map((item) => item.externalId)).toEqual(first.map((item) => item.externalId));
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
+  it("rotates ChristchurchNZ deep pages without returning to page one after each successful run", async () => {
+    const originalFetch = globalThis.fetch;
+    const visited: number[] = [];
+    try {
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+        const page = Number(new URL(String(input)).searchParams.get("page"));
+        visited.push(page);
+        const date = new Date(Date.UTC(2026, 8, 25 + Math.floor((page - 1) / 2))).toISOString().slice(0, 19);
+        return new Response(JSON.stringify({ data: [{ id: page, title: `Event ${page}`, earliest_start_date: date, event_sessions: [{ id: page, start_date: date, end_date: date }], data: {} }], pagination: { currentPage: page, totalPages: 47 } }), { status: 200 });
+      }));
+      const context = { ...fixtureContext, collectionRange: { from: new Date("2026-09-25"), to: new Date("2026-10-26") }, collectionLimits: { maxRequests: 40, maxRecords: 1_000, timeoutMs: 180_000, maxBytes: 2_000_000 } };
+      const first: NonNullable<import("../src/adapter-types").AdapterContext["christchurchScan"]> = { previous: { nextPage: 4, firstWindowPage: 1, boundaryPage: 38, fullScanAt: new Date().toISOString() } };
+      await publicDataAdapters.rto_calendars.fetch("https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all", { ...context, christchurchScan: first });
+      expect(visited).toEqual(Array.from({ length: 15 }, (_, index) => index + 1));
+      expect(first.progress).toMatchObject({ mode: "INCREMENTAL", nextPage: 15, windowComplete: false });
+      visited.length = 0;
+      const second: NonNullable<import("../src/adapter-types").AdapterContext["christchurchScan"]> = { previous: first.progress! };
+      await publicDataAdapters.rto_calendars.fetch("https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all", { ...context, christchurchScan: second });
+      expect(visited).toEqual([1, 2, 3, ...Array.from({ length: 12 }, (_, index) => index + 15)]);
+      expect(second.progress).toMatchObject({ mode: "INCREMENTAL", nextPage: 26, windowComplete: false });
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
+  it("uses the official ordered listing date while retaining older recurring sessions", async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+        const page = Number(new URL(String(input)).searchParams.get("page"));
+        const event = page === 1
+          ? { id: 1, title: "Recurring event", earliest_start_date: "2026-09-25T00:00:00", event_sessions: [{ id: 10, start_date: "2026-08-01T00:00:00", end_date: "2026-08-01T01:00:00" }, { id: 11, start_date: "2026-09-25T00:00:00", end_date: "2026-09-25T01:00:00" }], data: {} }
+          : { id: 2, title: "Later event", earliest_start_date: "2026-11-01T00:00:00", event_sessions: [{ id: 20, start_date: "2026-11-01T00:00:00", end_date: "2026-11-01T01:00:00" }], data: {} };
+        return new Response(JSON.stringify({ data: [event], pagination: { currentPage: page, totalPages: 2 } }), { status: 200 });
+      }));
+      const scan: NonNullable<import("../src/adapter-types").AdapterContext["christchurchScan"]> = {};
+      const records = await publicDataAdapters.rto_calendars.fetch("https://www.christchurchnz.com/api/db/events/all.json?page=1&date=all&category=all&location=all", {
+        ...fixtureContext, collectionRange: { from: new Date("2026-09-25"), to: new Date("2026-10-26") },
+        collectionLimits: { maxRequests: 2, maxRecords: 1_000, timeoutMs: 180_000, maxBytes: 2_000_000 }, christchurchScan: scan,
+      });
+      expect(records.map((record) => record.externalId)).toEqual(["christchurchnz:1"]);
+      expect(scan.progress).toMatchObject({ mode: "FULL", boundaryPage: 2, windowComplete: true });
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
   it("parses Queenstown Airport flights into transport-flow facts", async () => {
     const flight = parseQueenstownAirportFlights([{ flightList: ["NZ659"], from: "Christchurch", destination: "Queenstown", schTime: "09:40:00", schDate: "2026-07-21", status: "On Time", orderByDate: "2026-07-21T09:40:00+12:00", isDomestic: true, flightType: "Arrival" }])[0];
     const signals = await publicDataAdapters.airport_data.normalise([{ sourceId: "airport_data", externalId: "queenstown-airport:arrival:NZ659:2026-07-21T09:40:00+12:00", payload: { provider: "Queenstown Airport", flight }, fetchedAt: new Date(), fixture: false }], fixtureContext);

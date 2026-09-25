@@ -28,7 +28,7 @@ not followed by a detail request when it already contains the fields needed by t
 | University of Auckland | One JSON event list | The list record is authoritative |
 | Auckland Live | Paginated JSON event search | Performances and dates are expanded from each list record; no show detail page |
 | OurAuckland | One read-only Argus browser listing Job plus selected details | Explicit occurrences and field provenance are persisted from the fixed connector contract |
-| ChristchurchNZ | Paginated JSON event list | All sessions are expanded from each list record; no event detail page |
+| ChristchurchNZ | Paginated JSON event list | The first bounded run covers the 31-day window; later daily runs revisit three leading pages and rotate twelve deeper pages with one-page overlap. A full window scan recurs after seven days. All sessions are expanded from each list record; no event detail page |
 | Queenstown Airport | Arrivals and departures JSON feeds plus public Power BI monthly passengers | No flight detail pages; monthly domestic/international/total series stays separate |
 | Wellington Airport | Server-rendered flight board plus monthly XLSX workbook | No flight detail pages; monthly totals remain a distinct lagged demand series |
 | Port of Auckland cruise schedule | One CSV request | No vessel detail pages |
@@ -55,6 +55,14 @@ The Worker applies four bounded deduplication stages:
 3. Normalised signals and occurrences with the same source external ID are persisted once per run.
 4. An unchanged stored signal or occurrence only updates its collection run and `lastSeenAt`; it does
    not rebuild the canonical signal/event, venue and lineage links.
+
+ChristchurchNZ stores its successful page cursor in `CollectionRun.scope`. A failed run does not
+advance that cursor, so a retry revisits the same pages. Its first and weekly full scans stop only
+after the official date-ordered list has passed the requested window, within forty serial requests.
+Routine runs use at most fifteen requests and finish a rotating deep-page review over successive
+days. Pagination drift, changed ordering, a missing date, or an exceeded page/record ceiling fails
+the Job instead of claiming complete coverage. Stable source event and session IDs, content hashes,
+and the unchanged-record touch path prevent repeated business records when pages overlap.
 
 The effective date range, record ceiling and Adapter request ceiling are passed to every collection
 mode, not only local acceptance. Paginated list/API collectors therefore filter against the requested

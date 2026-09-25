@@ -408,35 +408,97 @@ function normaliseOurAucklandDetail(event: JsonRecord): PublicEvent[] {
 export function parseChristchurchNzPage(payload: unknown): { events: JsonRecord[]; currentPage: number; totalPages: number } {
   if (!isRecord(payload) || !Array.isArray(payload.data)) throw new Error("ChristchurchNZ response has no data array");
   const pagination = jsonRecord(payload.pagination);
+  const currentPage = positiveInteger(pagination.currentPage);
+  const totalPages = positiveInteger(pagination.totalPages);
+  if (!currentPage || !totalPages || payload.data.some((event) => !isRecord(event))) throw new Error("ChristchurchNZ response has invalid pagination or events");
   return {
-    events: payload.data.filter(isRecord),
-    currentPage: positiveInteger(pagination.currentPage) ?? 1,
-    totalPages: positiveInteger(pagination.totalPages) ?? 1,
+    events: payload.data as JsonRecord[],
+    currentPage,
+    totalPages,
   };
 }
 
 async function collectChristchurchNz(reference: string, context: AdapterContext) {
   const entries: RawEntry[] = [];
-  let page = 1;
   let requestCount = 0;
   let totalPages = 1;
-  const requestLimit = maxRequests(context, 60);
-  while (page <= totalPages && requestCount < requestLimit && entries.length < maxRecords(context)) {
+  const requestLimit = Math.min(40, maxRequests(context, 40));
+  const previous = context.christchurchScan?.previous;
+  const fullScan = !previous || !Number.isInteger(previous.nextPage) || !Number.isInteger(previous.firstWindowPage) || !Number.isInteger(previous.boundaryPage)
+    || previous.nextPage < 1 || previous.firstWindowPage < 1 || previous.firstWindowPage > 60 || previous.boundaryPage < 1 || previous.boundaryPage > 61
+    || !Number.isFinite(Date.parse(previous.fullScanAt))
+    || Date.parse(previous.fullScanAt) > Date.now()
+    || Date.now() - Date.parse(previous.fullScanAt) >= 7 * 86_400_000;
+  const headStart = fullScan ? 1 : Math.max(1, previous.firstWindowPage - 1);
+  const firstDeepPage = fullScan ? 1 : previous.nextPage > previous.boundaryPage ? headStart + 3 : Math.max(headStart + 3, previous.nextPage);
+  const plannedPages = fullScan
+    ? Array.from({ length: requestLimit }, (_, index) => index + 1)
+    : [...Array.from({ length: 3 }, (_, index) => headStart + index), ...Array.from({ length: 12 }, (_, index) => firstDeepPage + index)];
+  let boundaryPage = previous?.boundaryPage ?? 61;
+  let firstWindowPage = fullScan ? 0 : previous.firstWindowPage;
+  let lastConsecutiveDate: number | null = null;
+  let lastPage = 0;
+  const pages: number[] = [];
+  let windowComplete = false;
+  for (const page of plannedPages) {
+    if (requestCount >= requestLimit || page > totalPages && requestCount > 0) break;
+    if (requestCount && context.mode === "live") await new Promise((resolve) => setTimeout(resolve, 750));
     const url = new URL(reference);
     url.searchParams.set("page", String(page));
     const parsed = parseChristchurchNzPage(await fetchJson(url.href, context, "ChristchurchNZ events"));
-    if (parsed.currentPage !== page || parsed.totalPages > 60) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ pagination contract changed", false);
+    if (parsed.currentPage !== page || parsed.totalPages < page || parsed.totalPages > 60 || (requestCount && parsed.totalPages !== totalPages)) {
+      throw new AdapterError("PARSING_ERROR", "ChristchurchNZ pagination contract changed during collection", false);
+    }
     requestCount += 1;
+    pages.push(page);
     totalPages = parsed.totalPages;
+    const starts = parsed.events.map((event) => christchurchEarliestStart(event));
+    if (starts.some((start) => start === null)) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ event has no usable start date", false);
+    const timestamps = starts.map((start) => start!.getTime());
+    if (timestamps.some((start, index) => index > 0 && start < timestamps[index - 1]!)) {
+      throw new AdapterError("PARSING_ERROR", `ChristchurchNZ listing is no longer date ordered on page ${page}`, false);
+    }
+    if (page === lastPage + 1 && lastConsecutiveDate !== null && timestamps.length && timestamps[0]! < lastConsecutiveDate) {
+      throw new AdapterError("PARSING_ERROR", `ChristchurchNZ pagination order changed before page ${page}`, false);
+    }
+    lastConsecutiveDate = timestamps.at(-1) ?? null;
+    lastPage = page;
     for (const event of parsed.events) {
       if (!christchurchEventOverlaps(event, context)) continue;
+      if (!firstWindowPage || page < firstWindowPage) firstWindowPage = page;
       entries.push({ externalId: `christchurchnz:${stringValue(event.id)}`, payload: { provider: "ChristchurchNZ", event } });
-      if (entries.length >= maxRecords(context)) break;
+      if (entries.length > maxRecords(context)) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ records exceed the approved result budget", false);
     }
-    page += 1;
+    const pastWindow = timestamps.length > 0 && timestamps.every((start) => start > (context.collectionRange?.to.getTime() ?? Infinity));
+    if (pastWindow && parsed.events.some((event) => christchurchEventOverlaps(event, context))) {
+      throw new AdapterError("PARSING_ERROR", "ChristchurchNZ listed date conflicts with an in-window session", false);
+    }
+    if (page === totalPages || pastWindow) {
+      boundaryPage = page;
+      windowComplete = true;
+      break;
+    }
   }
-  if (page <= totalPages) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ listing exceeds the approved page or record budget", false);
+  if (fullScan && !windowComplete) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ 31-day window exceeds the approved page budget", false);
+  if (context.christchurchScan) {
+    const lastDeepPage = pages.filter((page) => page >= 4).at(-1) ?? 3;
+    context.christchurchScan.progress = {
+      version: 1,
+      mode: fullScan ? "FULL" : "INCREMENTAL",
+      pages,
+      nextPage: fullScan || windowComplete ? Math.max(1, firstWindowPage - 1) + 3 : Math.max(headStart + 3, lastDeepPage),
+      firstWindowPage: firstWindowPage || 1,
+      boundaryPage,
+      fullScanAt: fullScan ? new Date().toISOString() : previous!.fullScanAt,
+      windowComplete: fullScan || windowComplete,
+    };
+  }
   return rawRecords("rto_calendars", entries, requestCount);
+}
+
+function christchurchEarliestStart(event: JsonRecord): Date | null {
+  // The official list is ordered by this field; event_sessions may also contain older dates.
+  return parseUtcNaive(stringValue(event.earliest_start_date));
 }
 
 function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: AdapterContext) {
@@ -492,7 +554,7 @@ function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: Adap
           extractionVersion: "christchurchnz-events-db-v1",
         },
       }));
-      if (events.length >= maxRecords(context)) return events;
+      if (events.length > maxRecords(context)) throw new AdapterError("PARSING_ERROR", "ChristchurchNZ sessions exceed the approved result budget", false);
     }
   }
   return events;
@@ -886,7 +948,7 @@ function christchurchEventOverlaps(event: JsonRecord, context: AdapterContext) {
     const end = parseUtcNaive(stringValue(session.end_date)) ?? start;
     return start && overlaps(start, end ?? start, context);
   })) return true;
-  const start = parseIsoDateTime(stringValue(event.earliest_start_date)) ?? parseIsoDateTime(stringValue(event.start_date));
+  const start = parseUtcNaive(stringValue(event.earliest_start_date)) ?? parseUtcNaive(stringValue(event.start_date));
   return start ? overlaps(start, start, context) : false;
 }
 

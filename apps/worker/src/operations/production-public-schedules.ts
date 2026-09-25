@@ -3,7 +3,7 @@ import { prisma } from "@tymra/db";
 export const FIRST_PUBLIC_SCHEDULES = [
   { sourceId: "public_holidays_nz", key: "first-public-holidays-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 20, maxRequests: 1 },
   { sourceId: "mbie", key: "first-mbie-adp-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 30, maxRequests: 1 },
-  { sourceId: "rto_calendars", key: "first-christchurchnz-daily", jobType: "EVENT_COLLECTION", queueName: "event-collection", cronExpression: "daily", marketScope: "christchurch", limit: 30, maxRequests: 3 },
+  { sourceId: "rto_calendars", key: "first-christchurchnz-daily", jobType: "EVENT_COLLECTION", queueName: "event-collection", cronExpression: "daily", marketScope: "christchurch", limit: 1_000, maxRequests: 40 },
   { sourceId: "geonet", key: "first-geonet-daily", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "daily", marketScope: "new-zealand", limit: 20, maxRequests: 2 },
   { sourceId: "stats_nz", key: "first-stats-nz-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 2, maxRequests: 1 },
 ] as const;
@@ -41,8 +41,17 @@ export function isPreviousMbiePublicSchedule(schedule: Parameters<typeof isFirst
     && isFirstPublicSchedule({ ...schedule, payload: { ...payload, limit: 30 } });
 }
 
-export function boundFirstPublicResults<Event, Signal>(events: Event[], signals: Signal[], limit: number) {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 30) throw new Error("First public schedule result limit is invalid");
+export function isPreviousChristchurchPublicSchedule(schedule: Parameters<typeof isFirstPublicSchedule>[0] & { enabled: boolean }) {
+  const payload = schedule.payload;
+  return !schedule.enabled && schedule.key === "first-christchurchnz-daily"
+    && typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    && isFirstPublicSchedule({ ...schedule, payload: { ...payload, limit: 1_000 } })
+    && (payload as Record<string, unknown>).limit === 30;
+}
+
+export function boundFirstPublicResults<Event, Signal>(events: Event[], signals: Signal[], limit: number, sourceId?: string) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > (sourceId === "rto_calendars" ? 1_000 : 30)) throw new Error("First public schedule result limit is invalid");
+  if (sourceId === "rto_calendars" && events.length + signals.length > limit) throw new Error("ChristchurchNZ results exceed the approved result budget");
   const boundedEvents = events.slice(0, limit);
   return { events: boundedEvents, signals: signals.slice(0, limit - boundedEvents.length) };
 }
@@ -85,16 +94,20 @@ export async function prepareFirstPublicSchedules(nodeEnv: string) {
         throw new Error(`First public schedule source is not approved and healthy: ${spec.sourceId}`);
       }
     }
-    if (existing.some((schedule) => !isFirstPublicSchedule(schedule) && !isPreviousMbiePublicSchedule(schedule))) {
+    if (existing.some((schedule) => !isFirstPublicSchedule(schedule) && !isPreviousMbiePublicSchedule(schedule) && !isPreviousChristchurchPublicSchedule(schedule))) {
       throw new Error("Existing schedules differ from the approved first public batch");
     }
     const previousMbie = existing.find(isPreviousMbiePublicSchedule);
     if (previousMbie) {
       await transaction.scheduleDefinition.update({ where: { id: previousMbie.id }, data: { payload: firstPublicSchedulePayload("mbie") } });
     }
+    const previousChristchurch = existing.find(isPreviousChristchurchPublicSchedule);
+    if (previousChristchurch) {
+      await transaction.scheduleDefinition.update({ where: { id: previousChristchurch.id }, data: { payload: firstPublicSchedulePayload("rto_calendars") } });
+    }
     const existingKeys = new Set(existing.map((schedule) => schedule.key));
     const missing = FIRST_PUBLIC_SCHEDULES.filter((schedule) => !existingKeys.has(schedule.key));
-    if (!missing.length) return { schedules: existing.map((schedule) => ({ key: schedule.key, enabled: schedule.enabled })), mutationPerformed: Boolean(previousMbie) };
+    if (!missing.length) return { schedules: existing.map((schedule) => ({ key: schedule.key, enabled: schedule.enabled })), mutationPerformed: Boolean(previousMbie || previousChristchurch) };
     await transaction.scheduleDefinition.createMany({
       data: missing.map((spec) => ({
         key: spec.key,

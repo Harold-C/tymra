@@ -1131,9 +1131,10 @@ export class WorkerService {
     const effectiveBounds = localAcceptance ? localBounds : productionCanary
       ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : 1, maxRecords: 2, timeoutMs: 30_000 }
       : boundedPublicSchedule && scheduleSpec
-        ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: 30_000, concurrency: 1 }
+        ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: sourceId === "rto_calendars" ? 180_000 : 30_000, concurrency: 1 }
       : productionBounds;
     const collectionState = sourceId === "metservice" ? await this.metServiceCollectionState(source.id) : undefined;
+    const christchurchScan = boundedPublicSchedule && sourceId === "rto_calendars" ? await this.previousChristchurchScan(source.id) : undefined;
     const context: AdapterContext = {
       ...this.publicAdapterContext(),
       localAcceptance,
@@ -1141,6 +1142,7 @@ export class WorkerService {
       collectionRange: { from, to },
       ...(localAcceptance || productionCanary || boundedPublicSchedule ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
       ...(collectionState ? { collectionState } : {}),
+      ...(christchurchScan ? { christchurchScan } : {}),
     };
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
@@ -1166,7 +1168,7 @@ export class WorkerService {
     const counters = emptyPublicCollectionCounters();
     try {
       if (!localAcceptance) this.assertSourceCollectionAllowed(source);
-      const result = await withRedisLock(`source:${sourceId}`, 60_000, async () => {
+        const result = await withRedisLock(`source:${sourceId}`, sourceId === "rto_calendars" && boundedPublicSchedule ? 600_000 : 60_000, async () => {
         const adapterReferences = options.lincolnOnly ? [] : await adapter.discover({ marketScope, from, to, limit }, context);
         const discovered = sourceId === "christchurch_university_dates"
           ? [LINCOLN_KEY_DATES_URL, ...adapterReferences]
@@ -1197,7 +1199,9 @@ export class WorkerService {
               : await adapter.fetch(reference, boundedPublicSchedule && sourceId === "geonet"
                 ? { ...context, collectionLimits: { ...effectiveBounds, maxRecords: firstPublicReferenceRecordLimit(sourceId, reference, scheduleSpec!.limit) } }
                 : context);
-          counters.requests += Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
+          counters.requests += sourceId === "rto_calendars" && boundedPublicSchedule && context.christchurchScan?.progress
+            ? context.christchurchScan.progress.pages.length
+            : Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {
             if (rawById.has(record.externalId)) counters.duplicatesSkipped += 1;
@@ -1234,7 +1238,7 @@ export class WorkerService {
             throw new AdapterError("PARSING_ERROR", "MBIE ADP signals exceed the approved result ceiling", false);
           }
           const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!)
-            : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit)
+            : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit, sourceId)
             : { events: uniqueEvents, signals: uniqueSignals };
           events = bounded.events;
           signals = bounded.signals;
@@ -1265,7 +1269,7 @@ export class WorkerService {
       });
       const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot(sourceId);
-      const scope = { ...initialScope, counters, configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
+      const scope = { ...initialScope, counters, ...(christchurchScan?.progress ? { christchurchScan: christchurchScan.progress } : {}), configurationAfter, configurationUnchanged: stableHash(configurationBefore) === stableHash(configurationAfter), schedulesAfter, schedulesUnchanged: stableHash(schedulesBefore) === stableHash(schedulesAfter) };
       const successCount = result.events + result.signals;
       await prisma.$transaction([
         prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount, scope, finishedAt: new Date() } }),
@@ -1322,6 +1326,18 @@ export class WorkerService {
       if (reference && (guid || pubDate)) knownReferenceVersions[reference] = `${guid}|${pubDate}`;
     }
     return { knownReferenceVersions };
+  }
+
+  private async previousChristchurchScan(dataSourceId: string): Promise<NonNullable<AdapterContext["christchurchScan"]>> {
+    const previous = await prisma.collectionRun.findFirst({
+      where: { dataSourceId, status: "SUCCEEDED", isDemo: false, scope: { path: ["christchurchScan", "version"], equals: 1 } },
+      orderBy: { finishedAt: "desc" },
+      select: { scope: true },
+    });
+    const saved = jsonRecord(jsonRecord(previous?.scope).christchurchScan);
+    if (saved.version !== 1 || typeof saved.fullScanAt !== "string"
+      || typeof saved.nextPage !== "number" || typeof saved.firstWindowPage !== "number" || typeof saved.boundaryPage !== "number") return {};
+    return { previous: { nextPage: saved.nextPage, firstWindowPage: saved.firstWindowPage, boundaryPage: saved.boundaryPage, fullScanAt: saved.fullScanAt } };
   }
 
   private async persistNormalisedSignal(

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { publicDataAdapters } from "@tymra/providers";
 import { registrySourceSeedRecords } from "../../../packages/db/prisma/seed-sources";
 
-import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicPriorJobAction, firstPublicReferenceRecordLimit, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePayload, isFirstPublicSchedule, isPreviousMbiePublicSchedule } from "../src/operations/production-public-schedules";
+import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicPriorJobAction, firstPublicReferenceRecordLimit, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePayload, isFirstPublicSchedule, isPreviousChristchurchPublicSchedule, isPreviousMbiePublicSchedule } from "../src/operations/production-public-schedules";
 
 describe("first production public schedules", () => {
   it("accepts only the five exact bounded source schedules", () => {
@@ -23,6 +23,16 @@ describe("first production public schedules", () => {
     expect(isPreviousMbiePublicSchedule(previous)).toBe(true);
     expect(isPreviousMbiePublicSchedule({ ...previous, enabled: true })).toBe(false);
     expect(isPreviousMbiePublicSchedule({ ...previous, payload: { ...previous.payload, from: "2026-01-01" } })).toBe(false);
+  });
+
+  it("upgrades only the paused ChristchurchNZ schedule to the incremental window budget", () => {
+    const current = FIRST_PUBLIC_SCHEDULES.find((schedule) => schedule.sourceId === "rto_calendars")!;
+    const previous = { ...current, enabled: false, payload: { ...firstPublicSchedulePayload("rto_calendars"), limit: 30 } };
+    expect(isPreviousChristchurchPublicSchedule(previous)).toBe(true);
+    expect(isPreviousChristchurchPublicSchedule({ ...previous, enabled: true })).toBe(false);
+    expect(isPreviousChristchurchPublicSchedule({ ...previous, payload: { ...previous.payload, marketScope: "other" } })).toBe(false);
+    expect(boundFirstPublicResults(Array.from({ length: 100 }, (_, index) => index), [], 1_000, "rto_calendars").events).toHaveLength(100);
+    expect(() => boundFirstPublicResults(Array.from({ length: 1_001 }, (_, index) => index), [], 1_000, "rto_calendars")).toThrow("approved result budget");
   });
 
   it("caps combined business results independently of raw record count", () => {
