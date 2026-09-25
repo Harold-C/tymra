@@ -1,6 +1,18 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-25（三条公开来源的手动有界生产验收完成）
+Last updated: 2026-09-25（生产 Argus 复核与一次 Lincoln 有界验收完成）
+
+## 2026-09-25 生产 Argus 接入复核
+
+当前 Worker/API 已读取受保护的正式配置，并与 Mac mini 交接文件一致；Argus 正式 revision、
+health、readiness、OpenAPI 和 `tymra-prod` 最小权限边界已核对。使用现有生产镜像完成一项
+Lincoln University 2026 公开只读 Job：Tymra 保存 105 条日期所形成的两条既有信号、复制并
+核对两份证据后由正式流程 ACK，Argus 的结果与证据随后进入 PURGED。无需修改代码、环境、
+migration 或重建容器。详见
+[`evidence/tymra-argus-production-recheck-2026-09-25.md`](./evidence/tymra-argus-production-recheck-2026-09-25.md)。
+
+下一步仍按来源逐个评估持续采集、数据新鲜度、告警和回滚；本次一次性验收不授权
+Scheduler、客户入口、OTA Profile、RBNZ 或其他 Connector。RBNZ 已知解析失败未在本次重测。
 
 ## 2026-09-25 首批公开来源验收完成
 

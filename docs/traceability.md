@@ -1,6 +1,21 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (three bounded public-source production canaries accepted)
+Last updated: 2026-09-25 (Argus production recheck and bounded Lincoln job accepted)
+
+## 2026-09-25 Argus production recheck
+
+Production Worker/API still run the verified public-canary v2 image; no rebuild, migration, seed,
+configuration edit, or service recreation was needed. The protected production Argus origin and
+token match the Mac mini handoff without exposing the token. The live Argus image identifies
+revision `7df378fda31453dc6da724fb9fd7892cdfe99abf`. Production Node clients passed
+health, readiness, OpenAPI, authorized missing-Job 404, and forbidden account/runtime 403 checks.
+A single bounded Lincoln University 2026 Job completed through Tymra's real Worker, persisted
+105 extracted dates into the two existing non-demo source signals without duplication, copied
+and hash-verified both evidence files, and ACKed after persistence. Argus subsequently reported
+delivery `PURGED`, result HTTP 410, and both evidence reads HTTP 404. Worker/API remain healthy;
+Scheduler and the customer/business launch switches remain off. Exact identities, hashes,
+backups, rollback and untested scope are in
+[`evidence/tymra-argus-production-recheck-2026-09-25.md`](./evidence/tymra-argus-production-recheck-2026-09-25.md).
 
 ## 2026-09-25 first public-source production canary
 
