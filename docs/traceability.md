@@ -1,6 +1,39 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-26 (second-cycle ChristchurchNZ identity defect; schedule paused)
+Last updated: 2026-09-27 (bounded public-source production rollout)
+
+## 2026-09-27 public-source production rollout — current state
+
+Production Worker/API/Scheduler run pushed commit `5011694516ac49ba8384d05cf143190635ff8ad7`,
+release `/srv/apps/tymra/releases/public-final-two-20260927-v4/`, image
+`tymra:public-final-two-20260927-v4` at
+`sha256:f15af42b4365fcdd4c7d596a41f98aa61b73de5f22d251eba4f57b5cdabd30f3`.
+The Admin-only Web remains on its previous image. All 33 migrations are complete; this rollout
+needed no migration or seed. Worker health/readiness are HTTP 200. The alerts endpoint is HTTP
+200 with `FAILED_JOBS_PRESENT` from the intentionally retained failed trials; the Job queue has
+no pending or running work.
+
+All 78 registered, non-demo, production PUBLIC sources were considered through a bounded first
+round. 52 source schedules are enabled: the five existing schedules and 47 weekly pilot schedules.
+Another enabled source is the restricted Lincoln acceptance source, which has no schedule. The
+other 25 sources are suspended with no enabled schedule after failing their source-specific gate.
+This is limited pilot collection, not proof of full-year, complete-page or nationwide coverage.
+The Argus-backed accepted sources have persisted business rows and copied evidence. The two
+completed Waikato/AUT Argus results left by premature source suspension were recovered using
+their original Tymra Jobs and persisted Argus executions, without new Argus submission or source
+visit. Each wrote two business events; their four evidence bytes/hashes matched Argus metadata.
+Tymra ACKed both; the results return 410 and all four remote evidence URLs return 404. Waikato
+and AUT remain suspended, since this recovery is not a two-pass pilot acceptance. Across all
+61 Argus executions, 59 results had already returned 410 before recovery and the remaining two
+now return 410. Tymra retains 128 local evidence artifact references and no live remote evidence
+references.
+
+Scheduler is enabled only for the 52 bounded schedules. The high-frequency scheduler, new
+Checks, internal on-demand, customer/public registration, Stripe, SMTP and membership launch
+remain disabled; `ops.tymra.nz` stays Admin-only. The precise source outcomes, retained failures,
+backup checksums and recovery path are in
+[`evidence/public-source-production-rollout-2026-09-27.md`](./evidence/public-source-production-rollout-2026-09-27.md).
+The 2026-09-26 sections below are dated history, not the current runtime state.
 
 ## 2026-09-26 production SSH recovery and second-cycle safety stop
 

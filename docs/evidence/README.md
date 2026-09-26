@@ -24,6 +24,7 @@ revision, environment and run; current implementation status belongs in
 
 ## Public market signals
 
+- [Bounded public-source production rollout — 2026-09-27](./public-source-production-rollout-2026-09-27.md)
 - [Collection baseline — 2026-07-21](./collection-acceptance-2026-07-21.md)
 - [All configured public sources — 2026-07-30](./public-source-acceptance-2026-07-30.md)
 - [Lincoln key dates — 2026-08-04](./lincoln-key-dates-acceptance-2026-08-04.md)
