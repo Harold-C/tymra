@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { parse } from "csv-parse/sync";
 import { parseHTML } from "linkedom";
 import { addNzCalendarDays, nzDateKey, nzDateTime } from "@tymra/domain";
@@ -509,7 +511,7 @@ function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: Adap
     const sourceEventId = `christchurchnz:${stringValue(item.id)}`;
     const sessions = arrayRecords(item.event_sessions);
     const occurrences = sessions.length ? sessions : [{ id: "event", start_date: item.earliest_start_date ?? item.start_date, end_date: item.earliest_start_date ?? item.start_date }];
-    const occurrenceIds = new Set<string>();
+    const occurrenceSessions = new Map<string, JsonRecord>();
     for (const session of occurrences) {
       const startsAt = parseUtcNaive(stringValue(session.start_date));
       if (!startsAt) continue;
@@ -519,8 +521,18 @@ function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: Adap
       // The upstream session.id changes between daily listings for the same
       // event and start time. Keep the source identity stable across scans.
       const occurrenceId = `${sourceEventId}:at:${startsAt.toISOString()}`;
-      if (occurrenceIds.has(occurrenceId)) throw new AdapterError("PARSING_ERROR", `ChristchurchNZ event ${sourceEventId} has ambiguous sessions at one start time`, false);
-      occurrenceIds.add(occurrenceId);
+      const previousSession = occurrenceSessions.get(occurrenceId);
+      if (previousSession) {
+        // The public feed can repeat one session under two changing IDs. Only
+        // collapse copies whose business fields agree; differing sessions at
+        // the same start time remain an explicit parsing failure.
+        const businessFields = (value: JsonRecord) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== "id" && key !== "created_at"));
+        if (!isDeepStrictEqual(businessFields(previousSession), businessFields(session))) {
+          throw new AdapterError("PARSING_ERROR", `ChristchurchNZ event ${sourceEventId} has ambiguous sessions at one start time`, false);
+        }
+        continue;
+      }
+      occurrenceSessions.set(occurrenceId, session);
       const venue = jsonRecord(data.Venues);
       const sourceUrl = christchurchEventUrl(item, data);
       const coordinates = parseCoordinates(data.Coordinates ?? venue.Coordinates ?? jsonRecord(data.point));

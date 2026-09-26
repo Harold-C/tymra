@@ -727,6 +727,11 @@ describe("public data adapter contract", () => {
     const renumbered = await publicDataAdapters.rto_calendars.normaliseEvents!([{ sourceId: "rto_calendars", externalId: "christchurchnz:13786", payload: { provider: "ChristchurchNZ", event: { ...item, event_sessions: [{ ...item.event_sessions[0], id: 804310 }] } }, fetchedAt: new Date(), fixture: false }], fixtureContext);
     expect(renumbered[0].externalId).toBe(events[0].externalId);
     expect(renumbered[0].metadata).toEqual(events[0].metadata);
+    const duplicateSession = { ...item.event_sessions[0], id: 804311, created_at: "2026-09-26T00:00:00Z" };
+    const duplicated = await publicDataAdapters.rto_calendars.normaliseEvents!([{ sourceId: "rto_calendars", externalId: "christchurchnz:13786", payload: { provider: "ChristchurchNZ", event: { ...item, event_sessions: [item.event_sessions[0], duplicateSession] } }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(duplicated).toHaveLength(1);
+    expect(duplicated[0].externalId).toBe(events[0].externalId);
+    await expect(publicDataAdapters.rto_calendars.normaliseEvents!([{ sourceId: "rto_calendars", externalId: "christchurchnz:13786", payload: { provider: "ChristchurchNZ", event: { ...item, event_sessions: [item.event_sessions[0], { ...duplicateSession, end_date: "2026-08-17T10:00:00" }] } }, fetchedAt: new Date(), fixture: false }], fixtureContext)).rejects.toMatchObject({ code: "PARSING_ERROR" });
   });
 
   it("does not report a partial ChristchurchNZ page budget as successful collection", async () => {
