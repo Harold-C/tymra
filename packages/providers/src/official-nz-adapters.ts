@@ -509,18 +509,24 @@ function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: Adap
     const sourceEventId = `christchurchnz:${stringValue(item.id)}`;
     const sessions = arrayRecords(item.event_sessions);
     const occurrences = sessions.length ? sessions : [{ id: "event", start_date: item.earliest_start_date ?? item.start_date, end_date: item.earliest_start_date ?? item.start_date }];
+    const occurrenceIds = new Set<string>();
     for (const session of occurrences) {
       const startsAt = parseUtcNaive(stringValue(session.start_date));
       if (!startsAt) continue;
       const parsedEnd = parseUtcNaive(stringValue(session.end_date));
       const endsAt = parsedEnd && parsedEnd >= startsAt ? parsedEnd : startsAt;
       if (!overlaps(startsAt, endsAt, context)) continue;
+      // The upstream session.id changes between daily listings for the same
+      // event and start time. Keep the source identity stable across scans.
+      const occurrenceId = `${sourceEventId}:at:${startsAt.toISOString()}`;
+      if (occurrenceIds.has(occurrenceId)) throw new AdapterError("PARSING_ERROR", `ChristchurchNZ event ${sourceEventId} has ambiguous sessions at one start time`, false);
+      occurrenceIds.add(occurrenceId);
       const venue = jsonRecord(data.Venues);
       const sourceUrl = christchurchEventUrl(item, data);
       const coordinates = parseCoordinates(data.Coordinates ?? venue.Coordinates ?? jsonRecord(data.point));
       events.push(baseEvent({
         sourceId: "rto_calendars",
-        externalId: `${sourceEventId}:${stringValue(session.id) || startsAt.toISOString()}`,
+        externalId: occurrenceId,
         sourceEventId,
         title: stringValue(item.title) || stringValue(data.Title),
         category: firstString(Array.isArray(item.categories) ? item.categories : [data.CategoryTitles]),
@@ -548,7 +554,6 @@ function normaliseChristchurchNzEvents(records: PublicRawRecord[], context: Adap
           ticketPriceMax: data.TicketPriceMax ?? null,
           bookingRequired: data.BookingRequired ?? null,
           services: Array.isArray(data.EventServices) ? data.EventServices : [],
-          session,
           sourceEventId,
           seriesUrl: sourceUrl,
           extractionVersion: "christchurchnz-events-db-v1",

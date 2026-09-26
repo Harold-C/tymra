@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { getEnvironment } from "@tymra/config";
 import { prisma, Prisma } from "@tymra/db";
 import { emptyEventImpactEvidence } from "@tymra/domain";
-import { AdapterError, linzAddressIdentityProvider, otaAdapters, type PublicDataAdapter } from "@tymra/providers";
+import { AdapterError, linzAddressIdentityProvider, otaAdapters, publicDataAdapters, type PublicDataAdapter } from "@tymra/providers";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";
@@ -22,6 +22,49 @@ const testIp = (offset: number) => `2001:db8:${ipSeed.slice(0, 4)}:${ipSeed.slic
 
 describe("Worker baseline pipeline", () => {
   afterAll(async () => prisma.$disconnect());
+
+  it("adopts a ChristchurchNZ legacy session row without growing source occurrences", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "rto_calendars" } });
+    const suffix = prefix.replace(/[^a-z0-9]/giu, "").slice(-10);
+    const sourceEventId = `christchurchnz:${suffix}`;
+    const raw = {
+      id: suffix, title: `Integration Session ${suffix}`, slug: `integration-session-${suffix}`,
+      earliest_start_date: "2026-10-01T06:00:00",
+      event_sessions: [{ id: 101, start_date: "2026-10-01T06:00:00", end_date: "2026-10-01T08:00:00" }],
+      data: { BuildingName: `Integration Venue ${suffix}` },
+    };
+    const [normalised] = await publicDataAdapters.rto_calendars.normaliseEvents!([
+      { sourceId: source.key, externalId: sourceEventId, payload: { provider: "ChristchurchNZ", event: raw }, fetchedAt: new Date(), fixture: false },
+    ], { mode: "fixture", correlationId: prefix, locale: "en", currency: "NZD" });
+    expect(normalised).toBeDefined();
+    const run = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "RUNNING", scope: { integration: true }, startedAt: new Date(), attemptCount: 1, isDemo: true } });
+    try {
+      const legacy = await service.persistNormalisedEvent({ ...normalised!, externalId: `${sourceEventId}:101` }, source.id, run.id);
+      const secondLegacy = await service.persistNormalisedEvent({ ...normalised!, externalId: `${sourceEventId}:202` }, source.id, run.id);
+      expect(secondLegacy.eventOccurrence.id).toBe(legacy.eventOccurrence.id);
+      const before = await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, sourceEvent: { externalId: sourceEventId } } });
+      expect(before).toBe(2);
+
+      const adopted = await service.persistNormalisedEvent(normalised!, source.id, run.id);
+      expect(adopted.sourceOccurrence.id).toBe(legacy.sourceOccurrence.id);
+      expect(adopted.eventOccurrence.id).toBe(legacy.eventOccurrence.id);
+      expect(adopted.sourceOccurrence.externalId).toBe(normalised!.externalId);
+      const repeated = await service.persistNormalisedEvent(normalised!, source.id, run.id);
+      expect(repeated.unchanged).toBe(true);
+      expect(await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, sourceEvent: { externalId: sourceEventId } } })).toBe(before);
+    } finally {
+      const sourceEvent = await prisma.sourceEvent.findUnique({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId: sourceEventId } }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
+      const canonicalEventIds = sourceEvent?.canonicalLinks.map((link) => link.canonicalEventId) ?? [];
+      const occurrenceIds = [...new Set(sourceEvent?.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)) ?? [])];
+      const venues = await prisma.eventOccurrence.findMany({ where: { id: { in: occurrenceIds } }, select: { venueId: true } });
+      if (sourceEvent) await prisma.sourceEvent.delete({ where: { id: sourceEvent.id } });
+      await prisma.eventOccurrence.deleteMany({ where: { id: { in: occurrenceIds } } });
+      await prisma.canonicalEvent.deleteMany({ where: { id: { in: canonicalEventIds } } });
+      for (const venueId of venues.flatMap((venue) => venue.venueId ? [venue.venueId] : [])) {
+        if (await prisma.eventOccurrence.count({ where: { venueId } }) === 0) await prisma.canonicalVenue.deleteMany({ where: { id: venueId } });
+      }
+    }
+  });
 
   it("recovers a durable Argus result after a database reconnect without resubmission", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "fx_rates" } });

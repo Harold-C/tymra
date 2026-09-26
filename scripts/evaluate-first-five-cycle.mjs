@@ -11,12 +11,19 @@ const SOURCE_LIMITS = new Map([
 ]);
 const GRACE_MS = 60 * 60_000;
 
+function parseSnapshotTime(value) {
+  if (typeof value !== "string") return NaN;
+  // PostgreSQL timestamps in the read-only snapshot are stored in UTC but
+  // jsonb_build_object emits them without a time-zone suffix.
+  return Date.parse(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value) ? `${value}Z` : value);
+}
+
 export function evaluateFirstFiveCycle(baseline, current, observedAt = new Date()) {
   const failures = [];
   const waiting = [];
   const completed = [];
-  const baselineAt = Date.parse(baseline.capturedAtUtc);
-  const currentAt = Date.parse(current.capturedAtUtc);
+  const baselineAt = parseSnapshotTime(baseline.capturedAtUtc);
+  const currentAt = parseSnapshotTime(current.capturedAtUtc);
   if (!Number.isFinite(baselineAt) || !Number.isFinite(currentAt) || currentAt < baselineAt) {
     return { status: "FAIL", completed, waiting, failures: ["Snapshot times are missing or out of order"] };
   }
@@ -41,17 +48,17 @@ export function evaluateFirstFiveCycle(baseline, current, observedAt = new Date(
       failures.push(`${key}: approved schedule frequency or payload changed`);
     }
     if (next.latestJobId === old.latestJobId) {
-      const due = Date.parse(old.nextRunAt);
+      const due = parseSnapshotTime(old.nextRunAt);
       if (!Number.isFinite(due)) failures.push(`${key}: baseline has no valid next run time`);
       else if (observedAt.getTime() > due + GRACE_MS) failures.push(`${key}: no new scheduled Job after its due time and one-hour grace`);
       else waiting.push(`${key}: next scheduled Job has not completed`);
       continue;
     }
     const counters = next.latestRunCounters ?? {};
-    const jobAt = Date.parse(next.latestJobCreatedAt);
-    const runAt = Date.parse(next.latestRunFinishedAt);
-    if (Date.parse(next.nextRunAt) <= Date.parse(old.nextRunAt)
-      || Date.parse(next.lastEnqueuedAt) <= Date.parse(old.lastEnqueuedAt ?? baseline.capturedAtUtc)) {
+    const jobAt = parseSnapshotTime(next.latestJobCreatedAt);
+    const runAt = parseSnapshotTime(next.latestRunFinishedAt);
+    if (parseSnapshotTime(next.nextRunAt) <= parseSnapshotTime(old.nextRunAt)
+      || parseSnapshotTime(next.lastEnqueuedAt) <= parseSnapshotTime(old.lastEnqueuedAt ?? baseline.capturedAtUtc)) {
       failures.push(`${key}: schedule did not advance after enqueue`);
     }
     if (!Number.isFinite(jobAt) || jobAt <= baselineAt || !Number.isFinite(runAt) || runAt <= baselineAt) {

@@ -48,6 +48,18 @@ test("passes five later-UTC-date successful bounded runs", () => {
   assert.deepEqual(evaluateFirstFiveCycle(baseline, current).status, "PASS");
 });
 
+test("treats PostgreSQL snapshot timestamps without offsets as UTC", () => {
+  const { baseline, current } = snapshots();
+  for (const snapshot of [baseline, current]) {
+    for (const source of snapshot.sources) {
+      for (const field of ["nextRunAt", "lastEnqueuedAt", "latestJobCreatedAt", "latestRunFinishedAt"]) {
+        if (source[field]) source[field] = source[field].replace(/Z$/, "");
+      }
+    }
+  }
+  assert.deepEqual(evaluateFirstFiveCycle(baseline, current).status, "PASS");
+});
+
 test("rejects missed due time, failed collection, missing second feed and identity divergence", () => {
   const { baseline, current } = snapshots();
   assert.equal(evaluateFirstFiveCycle(baseline, baseline, new Date("2026-09-26T06:00:01Z")).status, "FAIL");

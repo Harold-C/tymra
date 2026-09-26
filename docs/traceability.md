@@ -1,6 +1,43 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-26 (Argus delivery hardening on main; no production deployment)
+Last updated: 2026-09-26 (second-cycle ChristchurchNZ identity defect; schedule paused)
+
+## 2026-09-26 production SSH recovery and second-cycle safety stop
+
+SSH to `spm-prod-01` as `spmadmin` is working again. The production Worker, API and Scheduler
+still run `tymra:christchurchnz-incremental-20260925-v1` at image digest
+`sha256:b5b125888ae27314ba98e4d60e71cf049107b8b65a09d32e652a5ee4b09663ca`;
+all three and PostgreSQL/Redis are healthy. The queue has no pending or failed work, and all
+15 Jobs are `SUCCEEDED`. Production Argus health/readiness returned 200. No image or credential
+was changed in this review.
+
+The 2026-09-26 UTC scheduled GeoNet and ChristchurchNZ Jobs both succeeded within their request
+budgets. ChristchurchNZ Job `cmuhzfrx80002mu07b3xvsyqz` made 15 requests and retained 175
+parsed artifacts; GeoNet Job `cmuhwo1ij0001mu07rzk6800c` made two requests and retained 16.
+The latest scheduled-run artifact byte hashes verified 215/215 across all five sources. The
+second-cycle review remains incomplete because the other three sources next run on 2026-10-02.
+The read-only snapshot evaluator's handling of PostgreSQL UTC timestamps without offsets was
+corrected; its result is `WAITING`, not the earlier false same-day failure.
+
+ChristchurchNZ's official `event_sessions[].id` changed for the same event and start time on
+the next day. The existing Worker treated these as new source occurrences: 272 groups now share
+one source event and canonical occurrence key, versus 12 in the prior baseline. Canonical links
+remain present and consistent, but source history grew incorrectly. After a verified full
+PostgreSQL dump at
+`/srv/apps/tymra/backups/christchurchnz-identity-20260926-57LGE4/` (SHA-256
+`96a291f30595eab31013757081502a05ad794abb7560db3232ddb2557214856e`), only
+`first-christchurchnz-daily` was disabled with an audit reason. Its next run is unset; the other
+four exact schedules remain enabled. Scheduler stays running for those four. No source-site
+request or new Job was made to investigate or pause this source.
+
+The local candidate derives ChristchurchNZ occurrence IDs from event identity and exact start
+time, excludes the volatile session object from normalized metadata, and adopts a matching
+legacy row on the first upgraded pass. It prevents another new source row; it does not erase the
+existing 272 historical duplicates. Provider tests, a real PostgreSQL integration regression,
+the second-cycle evaluator tests, and full `pnpm verify` passed against a separate disposable
+database (112 integration tests). This candidate has not been deployed. Before restoring the
+paused schedule, verify a bounded production pass leaves source occurrence and canonical counts
+stable, then decide whether to repair historical duplicates in a separately guarded operation.
 
 ## 2026-09-26 Argus delivery hardening candidate on main
 

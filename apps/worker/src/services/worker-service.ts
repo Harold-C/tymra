@@ -3774,7 +3774,7 @@ export class WorkerService {
       metadata: seriesEvent.metadata,
     });
 
-    const existingOccurrence = await prisma.sourceEventOccurrence.findUnique({
+    const existingById = await prisma.sourceEventOccurrence.findUnique({
       where: { dataSourceId_externalId: { dataSourceId, externalId: event.externalId } },
       include: {
         sourceEvent: true,
@@ -3784,10 +3784,32 @@ export class WorkerService {
         },
       },
     });
+    // ChristchurchNZ reissues session IDs for the same event and start time.
+    // Adopt one exact legacy occurrence before writing the stable adapter ID;
+    // this avoids adding another source row during the first upgraded run.
+    const existingOccurrence = existingById ?? (event.sourceId === "rto_calendars"
+      && event.externalId === `${sourceIdentity.externalId}:at:${event.startsAt.toISOString()}`
+      ? await prisma.sourceEventOccurrence.findFirst({
+          where: {
+            dataSourceId,
+            sourceEvent: { externalId: sourceIdentity.externalId },
+            startsAt: event.startsAt,
+            canonicalKey: occurrenceCanonicalKey,
+          },
+          include: {
+            sourceEvent: true,
+            canonicalLinks: {
+              include: { eventOccurrence: { include: { canonicalEvent: true } } },
+              take: 1,
+            },
+          },
+          orderBy: [{ firstSeenAt: "asc" }, { id: "asc" }],
+        })
+      : null);
     const existingCanonicalLink = existingOccurrence?.canonicalLinks[0];
     if (existingOccurrence?.contentHash === contentHash && existingOccurrence.sourceEvent.contentHash === sourceContentHash && existingCanonicalLink) {
       const [sourceOccurrence, sourceEvent, eventOccurrence, canonicalEvent] = await prisma.$transaction([
-        prisma.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt, observedAt: event.observedAt ?? seenAt, evidenceRef: event.evidenceRef ?? event.sourceUrl, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue } }),
+        prisma.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { externalId: event.externalId, lastCollectionRunId: collectionRunId, lastSeenAt: seenAt, observedAt: event.observedAt ?? seenAt, evidenceRef: event.evidenceRef ?? event.sourceUrl, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue } }),
         prisma.sourceEvent.update({ where: { id: existingOccurrence.sourceEventId }, data: { lastSeenAt: seenAt } }),
         prisma.eventOccurrence.update({
           where: { id: existingCanonicalLink.eventOccurrenceId },
@@ -3867,11 +3889,13 @@ export class WorkerService {
           : null;
       if (venueCanonicalKey && venue) cache.venues.set(venueCanonicalKey, venue.id);
 
-      const sourceOccurrence = await tx.sourceEventOccurrence.upsert({
-        where: { dataSourceId_externalId: { dataSourceId, externalId: event.externalId } },
-        create: { sourceEventId: sourceEvent.id, dataSourceId, externalId: event.externalId, ...sourceOccurrenceData },
-        update: { sourceEventId: sourceEvent.id, ...sourceOccurrenceData },
-      });
+      const sourceOccurrence = existingOccurrence
+        ? await tx.sourceEventOccurrence.update({ where: { id: existingOccurrence.id }, data: { sourceEventId: sourceEvent.id, externalId: event.externalId, ...sourceOccurrenceData } })
+        : await tx.sourceEventOccurrence.upsert({
+            where: { dataSourceId_externalId: { dataSourceId, externalId: event.externalId } },
+            create: { sourceEventId: sourceEvent.id, dataSourceId, externalId: event.externalId, ...sourceOccurrenceData },
+            update: { sourceEventId: sourceEvent.id, ...sourceOccurrenceData },
+          });
 
       const existingOccurrenceLink = await tx.eventOccurrenceSourceLink.findUnique({ where: { sourceEventOccurrenceId: sourceOccurrence.id }, select: { eventOccurrenceId: true } });
       const occurrenceData = { canonicalEventId: canonicalEvent.id, venueId: venue?.id ?? null, timezone: event.timezone, timePrecision: event.timePrecision ?? inferredTimePrecision(event), startsAt: event.startsAt, endsAt: event.endsAt, status: event.status, ticketStatus: event.ticketStatus, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-occurrence-exact-v1", evidenceRef: event.evidenceRef ?? event.sourceUrl, observedAt: (event.observedAt ?? seenAt).toISOString() }, isDemo };

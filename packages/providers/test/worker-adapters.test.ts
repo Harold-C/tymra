@@ -723,7 +723,10 @@ describe("public data adapter contract", () => {
     const item = { id: 13786, slug: "monthly-spoon-club-13786", title: "Monthly Spoon Club", summary: "Crafting", content: "Full description", image: "https://example.com/image.jpg", categories: ["Arts and Crafts"], source: "ccc", created_at: "2026-07-20T14:07:16.113259+00:00", earliest_start_date: "2026-08-17T06:00:00", event_sessions: [{ id: 664800, start_date: "2026-08-17T06:00:00", end_date: "2026-08-17T09:00:00" }], data: { URLValue: "https://ccc.govt.nz/news-and-events/whats-on/event/monthly-spoon-club", PriceType: "Paid event", TicketPriceMin: "$10", BookingRequired: 1, BuildingName: "Avebury House", StreetAddress: "9 Evelyn Couzins Avenue", Coordinates: "[172.6602,-43.5197]" } };
     expect(parseChristchurchNzPage({ data: [item], pagination: { currentPage: 1, totalPages: 30 } })).toMatchObject({ currentPage: 1, totalPages: 30, events: [item] });
     const events = await publicDataAdapters.rto_calendars.normaliseEvents!([{ sourceId: "rto_calendars", externalId: "christchurchnz:13786", payload: { provider: "ChristchurchNZ", event: item }, fetchedAt: new Date(), fixture: false }], fixtureContext);
-    expect(events[0]).toMatchObject({ externalId: "christchurchnz:13786:664800", city: "Christchurch", region: "Canterbury", latitude: -43.5197, longitude: 172.6602, startsAt: new Date("2026-08-17T06:00:00.000Z"), metadata: { importedSource: "ccc", sourceEventId: "christchurchnz:13786" } });
+    expect(events[0]).toMatchObject({ externalId: "christchurchnz:13786:at:2026-08-17T06:00:00.000Z", city: "Christchurch", region: "Canterbury", latitude: -43.5197, longitude: 172.6602, startsAt: new Date("2026-08-17T06:00:00.000Z"), metadata: { importedSource: "ccc", sourceEventId: "christchurchnz:13786" } });
+    const renumbered = await publicDataAdapters.rto_calendars.normaliseEvents!([{ sourceId: "rto_calendars", externalId: "christchurchnz:13786", payload: { provider: "ChristchurchNZ", event: { ...item, event_sessions: [{ ...item.event_sessions[0], id: 804310 }] } }, fetchedAt: new Date(), fixture: false }], fixtureContext);
+    expect(renumbered[0].externalId).toBe(events[0].externalId);
+    expect(renumbered[0].metadata).toEqual(events[0].metadata);
   });
 
   it("does not report a partial ChristchurchNZ page budget as successful collection", async () => {
