@@ -1,6 +1,29 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-25 (five bounded schedules running; isolated full-gate preparation)
+Last updated: 2026-09-26 (Argus delivery hardening on main; no production deployment)
+
+## 2026-09-26 Argus delivery hardening candidate on main
+
+The retained `argus-compatibility` source snapshot was compared with the current `main` tree. Its
+useful, previously missing guards were adapted to the current Argus client and orchestration path:
+verify the received Job result SHA-256 and identity before JSONB persistence; reject a mismatched
+or cancelled capture instead of mapping the first item; verify and sync actual local evidence bytes
+before database reference changes and ACK, including on retry. Current production source scheduling,
+manual handoff origin restrictions and newer schema are unchanged.
+
+In an isolated disposable PostgreSQL 17/Redis test environment, all 33 migrations and test seed
+completed. `pnpm verify` passed lint, workspace type checks, 232 root unit tests with five skips,
+246 Worker unit tests, 111 PostgreSQL integration tests and Web/Worker builds. The targeted Worker
+suites covered tampered/wrong-identity results, strict OTA data markers, filesystem sync and rename
+faults, missing/corrupt retry evidence, and database disconnect/recovery without Argus resubmission.
+The Web build emitted its existing optional `canvas` warning and missing production-config messages
+while exiting successfully; this is not a configured production image build.
+
+No new Argus Job, source-site request, migration or production deployment was performed. A future
+release must verify the exact candidate against the current Argus wire result and target evidence
+volume, including directory-sync behavior and restart recovery. `retentionCleanup` still soft-deletes
+expired `RawArtifact` records without removing copied files or trimming persisted
+`ArgusExecution.result`; physical raw-data expiry remains a separate open gate.
 
 ## 2026-09-25 isolated full-gate preparation; no production release
 

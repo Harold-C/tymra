@@ -410,7 +410,19 @@ export async function getArgusJobResult(
       signal: AbortSignal.timeout(environment.ARGUS_TIMEOUT_MS),
     });
     const job = await jsonResponse<ArgusJobResult>(response);
-    return response.ok ? { ok: true, job } : failedResponse(response.status, job);
+    if (!response.ok) return failedResponse(response.status, job);
+    // Verify the received object before JSONB can change its key order.
+    if (!job || typeof job !== "object" || Array.isArray(job)) {
+      return { ok: false, httpStatus: 502, message: "Argus returned an invalid Job result" };
+    }
+    const { result_sha256: suppliedHash, ...payload } = job;
+    const actualHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    if (job.job_id !== jobId || Reflect.get(job, "contract_version") !== "1.0"
+      || !isTerminalArgusJobStatus(job.status) || !Array.isArray(job.items)
+      || !/^[a-f0-9]{64}$/u.test(suppliedHash) || actualHash !== suppliedHash) {
+      return { ok: false, httpStatus: 502, message: "Argus result identity or SHA-256 integrity check failed" };
+    }
+    return { ok: true, job };
   } catch (error) {
     return requestFailure(error);
   }
@@ -488,16 +500,7 @@ export async function captureBrowserTaskWithArgus(
 
     const resultResponse = await getArgusJobResult(environment, created.job_id);
     if (!resultResponse.ok) return resultResponse;
-    const job = resultResponse.job;
-    const item = job.items?.find((candidate) => candidate.trace_id === input.traceId) ?? job.items?.[0];
-    if (!item?.result) {
-      return {
-        ok: false,
-        httpStatus: job.status === "CANCELLED" ? 409 : 502,
-        message: job.error?.message ?? item?.error_category ?? `Argus job ended with ${job.status}`,
-      };
-    }
-    return mapArgusJobResult(job, input, environment);
+    return mapArgusJobResult(resultResponse.job, input, environment);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const timeout = error instanceof DOMException && error.name === "TimeoutError" || /timed? ?out|timeout|aborted/i.test(message);
@@ -564,11 +567,18 @@ export function mapArgusJobResult(
   input: Pick<ArgusCaptureInput, "traceId" | "connectorId" | "workflowId">,
   environment: Environment,
 ): CaptureResponse {
-  const item = job.items?.find((candidate) => candidate.trace_id === input.traceId) ?? job.items?.[0];
+  if (job.status === "CANCELLED") {
+    return { ok: false, httpStatus: 409, message: "Argus job was cancelled",
+      delivery: { jobId: job.job_id, resultSha256: job.result_sha256, job } };
+  }
+  const item = job.items?.find((candidate) => candidate.trace_id === input.traceId);
+  if (item?.result && item.result.trace_id !== input.traceId) {
+    return { ok: false, httpStatus: 502, message: "Argus returned a mismatched capture trace ID" };
+  }
   if (!item?.result) {
     return {
       ok: false,
-      httpStatus: job.status === "CANCELLED" ? 409 : 502,
+      httpStatus: 502,
       message: job.error?.message ?? item?.error_category ?? `Argus job ended with ${job.status}`,
     };
   }

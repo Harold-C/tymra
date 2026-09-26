@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, rename } from "node:fs/promises";
 import path from "node:path";
 
 import type { Environment } from "@tymra/config";
@@ -320,15 +320,36 @@ async function retainArgusEvidence(environment: Environment, collectionRunIds: s
     if (localArtifacts.length + remoteArtifacts.length === 0) {
       throw new Error(`Argus evidence ${pointer.storageRef} was not persisted with its verified hash`);
     }
-    if (remoteArtifacts.length > 0) {
-      if (localArtifacts.length === 0) {
-        const content = await downloadArgusEvidence(environment, pointer);
-        const target = resolveRetainedEvidencePath(environment.ARGUS_EVIDENCE_ROOT, relativePath);
-        await mkdir(path.dirname(target), { recursive: true });
-        const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-        await writeFile(temporary, content, { mode: 0o600 });
-        await rename(temporary, target);
+    const target = resolveRetainedEvidencePath(environment.ARGUS_EVIDENCE_ROOT, relativePath);
+    // A prior attempt may have renamed the file before its directory or DB update completed.
+    const existing = await open(target, "r+").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT" && localArtifacts.length === 0) return null;
+      throw error;
+    });
+    if (existing) {
+      try {
+        verifyRetainedEvidence(await existing.readFile(), pointer);
+        await existing.sync();
+      } finally {
+        await existing.close();
       }
+    } else {
+      const content = await downloadArgusEvidence(environment, pointer);
+      verifyRetainedEvidence(content, pointer);
+      await mkdir(path.dirname(target), { recursive: true });
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      const file = await open(temporary, "wx", 0o600);
+      try {
+        await file.writeFile(content);
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      // Leave the temporary or renamed bytes available for recovery if a sync fails.
+      await rename(temporary, target);
+    }
+    await syncEvidenceDirectories(path.dirname(target));
+    if (remoteArtifacts.length > 0) {
       const remoteArtifactIds = remoteArtifacts.map((artifact) => artifact.id);
       const updated = await prisma.rawArtifact.updateMany({
         where: { id: { in: remoteArtifactIds }, storageRef: pointer.storageRef, contentHash: pointer.sha256 },
@@ -338,6 +359,28 @@ async function retainArgusEvidence(environment: Environment, collectionRunIds: s
         throw new Error(`Argus evidence artifacts changed before they could be retained`);
       }
     }
+  }
+}
+
+function verifyRetainedEvidence(content: Buffer, pointer: ArgusEvidencePointer) {
+  if (content.byteLength !== pointer.sizeBytes
+    || createHash("sha256").update(content).digest("hex") !== pointer.sha256) {
+    throw new Error(`Retained Argus evidence integrity check failed for ${pointer.traceId}/${pointer.kind}`);
+  }
+}
+
+async function syncEvidenceDirectories(directory: string) {
+  // mkdir(recursive) can create parent entries; sync each directory before changing DB refs or ACKing.
+  for (;;) {
+    const handle = await open(directory, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) return;
+    directory = parent;
   }
 }
 

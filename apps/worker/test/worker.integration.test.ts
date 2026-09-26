@@ -9,7 +9,8 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";
 import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
-import { durableArgusTraceId } from "../src/services/argus-orchestrator";
+import { captureBrowserTaskWithDurableArgus, durableArgusTraceId, pollArgusExecution } from "../src/services/argus-orchestrator";
+import { DeferredJobError } from "../src/jobs/deferred-job";
 import { WorkerRequestError, WorkerService } from "../src/services/worker-service";
 import { membershipOperationalMetrics } from "../src/membership/operations";
 
@@ -21,6 +22,45 @@ const testIp = (offset: number) => `2001:db8:${ipSeed.slice(0, 4)}:${ipSeed.slic
 
 describe("Worker baseline pipeline", () => {
   afterAll(async () => prisma.$disconnect());
+
+  it("recovers a durable Argus result after a database reconnect without resubmission", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "fx_rates" } });
+    let submissions = 0;
+    const argusServer = createArgusServer((capture) => {
+      submissions += 1;
+      return argusSuccess(capture, { data_schema: "rbnz-fx.collect_exchange_rates", schema_version: "1.0.0", rates: [] }, "RBNZ fixture", "c");
+    });
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Argus fixture did not bind");
+    const localEnvironment = { ...environment, ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters" };
+    const parent = await prisma.job.create({ data: { type: "PUBLIC_DATA_COLLECTION", payload: {}, idempotencyKey: `${prefix}:durable`, lastErrorCode: "WAITING_EXTERNAL" } });
+    const run = await prisma.collectionRun.create({ data: { jobId: parent.id, dataSourceId: source.id, mode: "ON_DEMAND", scope: {}, status: "RUNNING" } });
+    const input = { traceId: `${prefix.replaceAll(":", "-")}-durable`, connectorId: "rbnz-fx" as const, workflowId: "collect_exchange_rates" as const, url: "https://www.rbnz.govt.nz/statistics/series/exchange-and-interest-rates/exchange-rates" };
+    const context = { parentJobId: parent.id, collectionRunId: run.id, dataSourceId: source.id };
+    try {
+      await expect(captureBrowserTaskWithDurableArgus(localEnvironment, input, context)).rejects.toBeInstanceOf(DeferredJobError);
+      const execution = await prisma.argusExecution.findUniqueOrThrow({ where: { orchestrationKey: `${parent.id}:${input.traceId}` } });
+      await prisma.$disconnect();
+      await expect(captureBrowserTaskWithDurableArgus(localEnvironment, input, context)).rejects.toBeInstanceOf(DeferredJobError);
+      expect(submissions).toBe(1);
+      await pollArgusExecution(localEnvironment, execution.id);
+      await prisma.$disconnect();
+      const first = await captureBrowserTaskWithDurableArgus(localEnvironment, input, context);
+      const second = await captureBrowserTaskWithDurableArgus(localEnvironment, input, context);
+      expect(first.ok).toBe(true);
+      expect(second).toEqual(first);
+      expect(submissions).toBe(1);
+      expect(await prisma.argusExecution.count({ where: { parentJobId: parent.id } })).toBe(1);
+      expect(await prisma.job.count({ where: { idempotencyKey: `argus-poll:${execution.id}` } })).toBe(1);
+      await prisma.job.update({ where: { id: parent.id }, data: { status: "CANCELLED", completedAt: new Date() } });
+      await expect(captureBrowserTaskWithDurableArgus(localEnvironment, input, context)).rejects.toBeInstanceOf(DeferredJobError);
+      expect((await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } })).status).toBe("CANCELLED");
+      expect(submissions).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => argusServer.close(() => resolve()));
+    }
+  });
 
   it("does not require Argus readiness in fixture collection mode", async () => {
     await expect(new WorkerService({ ...environment, PUBLIC_COLLECTION_MODE: "fixture" }).argusHealth()).resolves.toEqual({
@@ -1403,6 +1443,10 @@ function evidenceContent(kind: string, expectedSha256: string): Buffer {
 }
 
 function sendJson(response: import("node:http").ServerResponse, status: number, body: unknown) {
+  if (status === 200 && body && typeof body === "object" && "items" in body && "result_sha256" in body) {
+    const { result_sha256: _placeholder, ...payload } = body;
+    body = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+  }
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 }

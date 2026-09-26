@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-09-13 (responsibility and evidence-date clarification; no runtime change)
+Last updated: 2026-09-26 (result integrity and local evidence durability)
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
 Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
@@ -33,6 +33,25 @@ stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
   persisted.
 - Argus is required in development and production. Tymra has no in-process or private Browser Worker
   fallback.
+
+## Delivery integrity and retention
+
+Tymra checks the received Job result SHA-256, Job ID, contract version and terminal status before
+saving the response to PostgreSQL. The hash covers the result object without `result_sha256` in its
+received key order; JSONB may reorder keys, so a persisted result must not be rehashed as wire data.
+Business mapping requires the requested capture trace, connector and workflow identity.
+
+Before ACK, Tymra verifies downloaded evidence bytes, writes a temporary file, syncs the file,
+renames it, and syncs the containing and newly relevant parent directories before changing database
+references. A retry with an existing `tymra-evidence:` reference checks the actual local file's size
+and SHA-256 and syncs it again. Missing, corrupt or unsynced files block ACK, even if the database
+already holds a local reference. These guards require a release-time check on the target evidence
+volume; local tests do not prove the production filesystem's durability after power loss.
+
+Copy-before-ACK does not extend raw-data retention. Current `retentionCleanup` soft-deletes expired
+`RawArtifact` payloads and references, but does not yet remove copied evidence files or trim retained
+`ArgusExecution.result` data. Physical cleanup needs a separate bounded implementation and recovery
+plan; do not treat a soft-deleted row as proof that raw bytes have expired.
 
 ## Local configuration
 

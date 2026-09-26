@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import type { Environment } from "@tymra/config";
 
 const mocks = vi.hoisted(() => ({
+  diskFault: "",
+  diskEvents: [] as string[],
   enqueueJob: vi.fn(),
   executionFind: vi.fn(),
   executionFindMany: vi.fn(),
@@ -26,6 +29,29 @@ const mocks = vi.hoisted(() => ({
   acknowledge: vi.fn(),
   downloadEvidence: vi.fn(),
 }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      const handle = await fs.open(...args);
+      const phase = args[1] === "r" ? "directory-sync" : "file-sync";
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        mocks.diskEvents.push(phase);
+        if (mocks.diskFault === phase) throw new Error(`injected ${phase}`);
+        await sync();
+      };
+      return handle;
+    },
+    rename: async (...args: Parameters<typeof fs.rename>) => {
+      mocks.diskEvents.push("rename");
+      if (mocks.diskFault === "rename") throw new Error("injected rename");
+      await fs.rename(...args);
+    },
+  };
+});
 
 vi.mock("@tymra/db", () => ({
   Prisma: { DbNull: "DbNull" },
@@ -94,6 +120,8 @@ const input = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.diskFault = "";
+  mocks.diskEvents = [];
   mocks.rawArtifactFindMany.mockResolvedValue([]);
   mocks.rawArtifactCount.mockResolvedValue(0);
   mocks.collectionRunFindMany.mockResolvedValue([]);
@@ -301,7 +329,7 @@ describe("durable Argus orchestration", () => {
   it("downloads and verifies retained evidence before acknowledging Argus", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "tymra-argus-evidence-"));
     const content = Buffer.from("verified evidence", "utf8");
-    const sha256 = "d".repeat(64);
+    const sha256 = createHash("sha256").update(content).digest("hex");
     const pointer = {
       kind: "download" as const,
       evidenceId: "report",
@@ -332,13 +360,59 @@ describe("durable Argus orchestration", () => {
     await rm(root, { recursive: true, force: true });
   });
 
+  it.each(["file-sync", "rename", "directory-sync"])("keeps evidence and blocks DB/ACK after %s failure, then recovers", async (phase) => {
+    const content = Buffer.from("evidence");
+    const pointer = {
+      kind: "html" as const, traceId: input.traceId, relativePath: "page.html",
+      storageRef: `argus-evidence:${input.traceId}/page.html`,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      sizeBytes: content.length, containsSensitiveData: false, createdAt: "2026-09-15T00:00:00.000Z",
+    };
+    const result = completedJob();
+    result.items[0]!.result.evidence = [pointer];
+    mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result }]);
+    mocks.rawArtifactFindMany.mockResolvedValue([{ id: "artifact-1", storageRef: pointer.storageRef, contentHash: pointer.sha256 }]);
+    mocks.downloadEvidence.mockResolvedValue(content);
+    mocks.rawArtifactUpdateMany.mockImplementation(async () => {
+      mocks.diskEvents.push("database");
+      return { count: 1 };
+    });
+    mocks.acknowledge.mockImplementation(async () => {
+      mocks.diskEvents.push("ack");
+      return { ok: true };
+    });
+
+    mocks.diskFault = phase;
+    await assert.rejects(acknowledgePersistedArgusResults(environment, "parent-1"), /injected/u);
+    assert.equal(mocks.rawArtifactUpdateMany.mock.calls.length, 0);
+    assert.equal(mocks.acknowledge.mock.calls.length, 0);
+    const directory = path.join(environment.ARGUS_EVIDENCE_ROOT, input.traceId);
+    const files = await readdir(directory);
+    assert.equal(files.length, 1);
+    assert.deepEqual(await readFile(path.join(directory, files[0]!)), content);
+
+    mocks.diskFault = "";
+    mocks.diskEvents = [];
+    await acknowledgePersistedArgusResults(environment, "parent-1");
+    assert.deepEqual(await readFile(path.join(directory, "page.html")), content);
+    assert.ok(mocks.diskEvents.indexOf("directory-sync") < mocks.diskEvents.indexOf("database"));
+    assert.ok(mocks.diskEvents.lastIndexOf("directory-sync") < mocks.diskEvents.indexOf("ack"));
+    if (phase === "directory-sync") {
+      assert.equal(mocks.downloadEvidence.mock.calls.length, 1);
+      assert.equal(mocks.diskEvents.includes("rename"), false);
+    } else {
+      assert.ok(mocks.diskEvents.indexOf("file-sync") < mocks.diskEvents.indexOf("rename"));
+      assert.ok(mocks.diskEvents.indexOf("rename") < mocks.diskEvents.indexOf("directory-sync"));
+    }
+  });
+
   it("resumes evidence acknowledgement across retry collection runs", async () => {
     const pointer = {
       kind: "html" as const,
       traceId: input.traceId,
       relativePath: `results/argus/${input.traceId}/page.html`,
       storageRef: `argus-evidence:results/argus/${input.traceId}/page.html`,
-      sha256: "e".repeat(64),
+      sha256: createHash("sha256").update("evidence").digest("hex"),
       sizeBytes: 8,
       containsSensitiveData: false,
       createdAt: "2026-08-02T00:00:00.000Z",
@@ -356,11 +430,35 @@ describe("durable Argus orchestration", () => {
     mocks.rawArtifactUpdateMany.mockResolvedValue({ count: 1 });
     mocks.acknowledge.mockResolvedValue({ ok: true });
 
+    await mkdir(path.join(environment.ARGUS_EVIDENCE_ROOT, input.traceId), { recursive: true });
+    await writeFile(path.join(environment.ARGUS_EVIDENCE_ROOT, input.traceId, "page.html"), "evidence");
+
     await acknowledgePersistedArgusResults(environment, "parent-1");
 
     assert.equal(mocks.downloadEvidence.mock.calls.length, 0);
     assert.deepEqual(mocks.rawArtifactUpdateMany.mock.calls[0]?.[0].where.id.in, ["artifact-2"]);
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
+  });
+
+  it.each(["missing", "corrupted"])("does not ACK a %s local evidence file on retry", async (state) => {
+    const pointer = {
+      kind: "html", traceId: input.traceId, relativePath: "page.html",
+      storageRef: `argus-evidence:${input.traceId}/page.html`,
+      sha256: createHash("sha256").update("evidence").digest("hex"),
+      sizeBytes: 8, containsSensitiveData: false, createdAt: "2026-09-15T00:00:00.000Z",
+    };
+    const result = completedJob();
+    result.items[0]!.result.evidence = [pointer];
+    mocks.executionFindMany.mockResolvedValue([{ argusJobId: "argus-1", collectionRunId: "run-1", result }]);
+    mocks.rawArtifactFindMany.mockResolvedValue([{
+      id: "artifact-1", storageRef: `tymra-evidence:${input.traceId}/page.html`, contentHash: pointer.sha256,
+    }]);
+    if (state === "corrupted") {
+      await mkdir(path.join(environment.ARGUS_EVIDENCE_ROOT, input.traceId), { recursive: true });
+      await writeFile(path.join(environment.ARGUS_EVIDENCE_ROOT, input.traceId, "page.html"), "tampered");
+    }
+    await assert.rejects(acknowledgePersistedArgusResults(environment, "parent-1"), state === "missing" ? /ENOENT/u : /integrity check failed/u);
+    assert.equal(mocks.acknowledge.mock.calls.length, 0);
   });
 
   it("retains each execution's evidence independently before acknowledging a multi-capture run", async () => {
@@ -372,7 +470,7 @@ describe("durable Argus orchestration", () => {
       traceId: "listing-trace",
       relativePath: "listing-trace/page.html",
       storageRef: "argus-evidence:listing-trace/page.html",
-      sha256: "1".repeat(64),
+      sha256: createHash("sha256").update("listing").digest("hex"),
       sizeBytes: 7,
       containsSensitiveData: false,
       createdAt: "2026-08-02T00:00:00.000Z",
@@ -382,7 +480,7 @@ describe("durable Argus orchestration", () => {
       traceId: "detail-trace",
       relativePath: "detail-trace/page.html",
       storageRef: "argus-evidence:detail-trace/page.html",
-      sha256: "2".repeat(64),
+      sha256: createHash("sha256").update("detail!").digest("hex"),
     };
     listing.items[0]!.result.evidence = [listingPointer];
     detail.items[0]!.result.evidence = [detailPointer];

@@ -10,6 +10,7 @@ import {
   captureTicketmasterListingWithArgus,
   downloadArgusEvidence,
   getArgusJobResult,
+  mapArgusJobResult,
 } from "../src/clients/argus-client";
 
 let server: http.Server | undefined;
@@ -21,6 +22,57 @@ afterEach(async () => {
 });
 
 describe("Argus async Job client", () => {
+  it.each(["tampered", "wrong-job", "wrong-version", "non-terminal"])("rejects a %s result before persistence", async (scenario) => {
+    const payload = {
+      contract_version: scenario === "wrong-version" ? "2.0" : "1.0",
+      job_id: scenario === "wrong-job" ? "another-job" : jobId,
+      status: scenario === "non-terminal" ? "RUNNING" : "COMPLETED",
+      items: [], error: null,
+    };
+    const hash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+    server = http.createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ...payload, ...(scenario === "tampered" ? { status: "FAILED" } : {}), result_sha256: hash }));
+    });
+
+    const response = await getArgusJobResult(await listenEnvironment(), jobId);
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.equal(response.httpStatus, 502);
+  });
+
+  it.each(["wrong-item", "wrong-inner-trace", "cancelled"])("rejects a %s capture", (scenario) => {
+    const result = { ...listingResult(), ...(scenario === "wrong-inner-trace" ? { trace_id: "another-trace" } : {}) };
+    const job = {
+      job_id: jobId, status: scenario === "cancelled" ? "CANCELLED" : "COMPLETED",
+      result_sha256: "a".repeat(64), error: null,
+      items: [{ trace_id: scenario === "wrong-item" ? "another-trace" : "ticketmaster-test", status: "COMPLETED", error_category: null, result }],
+    };
+    const response = mapArgusJobResult(job as Parameters<typeof mapArgusJobResult>[0], {
+      traceId: "ticketmaster-test", connectorId: "ticketmaster-public", workflowId: "collect_listing",
+    }, {} as Environment);
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.equal(response.httpStatus, scenario === "cancelled" ? 409 : 502);
+  });
+
+  for (const connectorId of ["booking-public", "airbnb-public", "expedia-public", "wotif-public", "hotels-public", "bookabach-public", "vrbo-public", "agoda-public", "trip-public"] as const) {
+    for (const workflowId of ["resolve_listing", "discover_listings", "collect_rates"] as const) {
+      it.each(["missing", "unknown-version", "private-schema"])(`rejects a %s data marker for ${connectorId}/${workflowId}`, (scenario) => {
+        const result = { ...listingResult(), connector_id: connectorId, workflow_id: workflowId,
+          data: scenario === "missing" ? {} : {
+            data_schema: scenario === "private-schema" ? "private-booking.collect_reservations" : `ota-public.${workflowId}`,
+            schema_version: scenario === "unknown-version" ? "1.0.1" : "1.0.0",
+          } };
+        const job = { job_id: jobId, status: "COMPLETED", result_sha256: "a".repeat(64), error: null,
+          items: [{ trace_id: result.trace_id, status: "COMPLETED", error_category: null, result }] };
+        const response = mapArgusJobResult(job as Parameters<typeof mapArgusJobResult>[0], {
+          traceId: String(result.trace_id), connectorId, workflowId,
+        }, {} as Environment);
+        assert.equal(response.ok, false);
+        if (!response.ok) assert.match(response.message, /unexpected data contract/u);
+      });
+    }
+  }
+
   it("submits, polls and maps a read-only Ticketmaster listing", async () => {
     let requestBody: Record<string, unknown> | undefined;
     server = jobServer(async (request) => {
@@ -621,7 +673,7 @@ describe("Argus async Job client", () => {
     assert.equal(response.httpStatus, 504);
     assert.equal(response.message, "Argus job polling timed out");
     assert.equal(response.delivery?.jobId, jobId);
-    assert.equal(response.delivery?.resultSha256, "c".repeat(64));
+    assert.match(response.delivery?.resultSha256 ?? "", /^[a-f0-9]{64}$/u);
     assert.equal(cancelled, true);
   });
 
@@ -1086,6 +1138,10 @@ function baseResult(traceId: string, workflowId: string, connectorId = "ticketma
 }
 
 function json(response: http.ServerResponse, status: number, value: unknown): void {
+  if (status === 200 && value && typeof value === "object" && "items" in value && "result_sha256" in value) {
+    const { result_sha256: _placeholder, ...payload } = value;
+    value = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+  }
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(value));
 }
