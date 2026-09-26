@@ -41,7 +41,8 @@ describe("production release safety", () => {
   it("caps the combined business records after one source record expands", () => {
     expect(boundProductionCanaryResults(["event-1", "event-2", "event-3"], ["signal-1"], 2)).toEqual({ events: ["event-1", "event-2"], signals: [] });
     expect(boundProductionCanaryResults([], ["signal-1", "signal-2", "signal-3"], 2)).toEqual({ events: [], signals: ["signal-1", "signal-2"] });
-    expect(() => boundProductionCanaryResults([], [], 3)).toThrow("one or two");
+    expect(boundProductionCanaryResults([], ["one", "two", "three"], 3).signals).toEqual(["one", "two", "three"]);
+    expect(() => boundProductionCanaryResults([], [], 101)).toThrow("between one and 100");
   });
 
   it("executes passes in order and stops at the first failed gate", async () => {

@@ -69,3 +69,45 @@ export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv
     return { source, schedulesEnabled: schedules.filter((schedule) => schedule.enabled).length, mutationPerformed: true };
   });
 }
+
+export async function validateSuspendedProductionPublicCanary(sourceKey: string, nodeEnv: string) {
+  return prisma.$transaction((transaction) => validateSuspendedProductionPublicCanaryTransaction(transaction, sourceKey, nodeEnv));
+}
+
+export async function validateSuspendedProductionPublicCanaryTransaction(transaction: Prisma.TransactionClient, sourceKey: string, nodeEnv: string) {
+  if (nodeEnv !== "production" || !PUBLIC_PILOT_SOURCE_KEYS.includes(sourceKey)) throw new Error("Direct public retest requires one approved production source");
+  const record = registrySourceSeedRecords().find((candidate) => candidate.key === sourceKey);
+  const adapter = publicDataAdapters[sourceKey];
+  const source = await transaction.dataSource.findUnique({ where: { key: sourceKey } });
+  const metadata = source?.metadata;
+  const legacyCruiseContract = sourceKey === "christchurch_cruise" && source?.adapterKey === "public:christchurch_cruise:powerbi-v1"
+    && source.accessMethod === "OFFICIAL_PUBLIC_HTML_DISCOVERED_JSON"
+    && JSON.stringify(source.supportedDomains) === JSON.stringify(["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"]);
+  if (!record || !adapter || !source || source.providerType !== "PUBLIC" || source.isDemo
+    || (!legacyCruiseContract && (source.adapterKey !== record.adapterKey || source.accessMethod !== record.accessMethod))
+    || adapter.metadata.adapterKey !== record.adapterKey || source.enabled || source.lifecycle !== "SUSPENDED"
+    || source.operationalStatus === "BLOCKED"
+    || !source.environments.includes("PRODUCTION")
+    || typeof metadata !== "object" || metadata === null || Array.isArray(metadata)
+    || (metadata as Record<string, unknown>).boundedProductionCanary !== true) {
+    throw new Error("Suspended direct public source does not match the approved registry and pilot state");
+  }
+  if (await transaction.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })) throw new Error("Retest source already has a schedule");
+  if (await transaction.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Direct public retest requires an idle Tymra queue");
+  if (legacyCruiseContract) {
+    const [successfulRuns, events, signals] = await Promise.all([
+      transaction.collectionRun.count({ where: { dataSourceId: source.id, status: "SUCCEEDED" } }),
+      transaction.sourceEvent.count({ where: { dataSourceId: source.id } }),
+      transaction.sourceMarketSignal.count({ where: { dataSourceId: source.id } }),
+    ]);
+    if (successfulRuns || events || signals) throw new Error("Legacy cruise source has accepted business history; automatic contract replacement is forbidden");
+    const updated = await transaction.dataSource.updateMany({
+      where: { id: source.id, enabled: false, lifecycle: "SUSPENDED", adapterKey: "public:christchurch_cruise:powerbi-v1", accessMethod: "OFFICIAL_PUBLIC_HTML_DISCOVERED_JSON" },
+      data: { adapterKey: record.adapterKey, accessMethod: record.accessMethod, acquisitionMethod: record.accessMethod,
+        supportedDomains: [...record.supportedDomains], dailyBudget: adapter.metadata.dailyBudget },
+    });
+    if (updated.count !== 1) throw new Error("Legacy cruise source changed during guarded contract replacement");
+    return { sourceId: source.id, key: sourceKey, mutationPerformed: true };
+  }
+  return { sourceId: source.id, key: sourceKey, mutationPerformed: false };
+}

@@ -293,6 +293,31 @@ describe("durable Argus orchestration", () => {
     });
   });
 
+  it("retains the matching failed item's safe Argus error category", async () => {
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), traceId: input.traceId });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "FAILED" } });
+    const failedJob = {
+      job_id: "argus-1", status: "FAILED", result_sha256: "b".repeat(64), error: null,
+      items: [{ trace_id: input.traceId, status: "FAILED", error_category: "INTERNAL_ERROR", result: {
+        error: { category: "INTERNAL_ERROR", message: "Source details stay in the protected result", retryable: true },
+      } }],
+    };
+    mocks.getResult.mockResolvedValue({ ok: true, job: failedJob });
+
+    await pollArgusExecution(environment, "execution-1");
+
+    assert.deepEqual(mocks.executionUpdate.mock.calls[0]?.[0].data, {
+      status: "FAILED",
+      result: failedJob,
+      errorCategory: "INTERNAL_ERROR",
+      errorMessage: null,
+      retryable: true,
+      lastPolledAt: mocks.executionUpdate.mock.calls[0]?.[0].data.lastPolledAt,
+      completedAt: mocks.executionUpdate.mock.calls[0]?.[0].data.completedAt,
+    });
+  });
+
   it("acknowledges completed results only after their hash is persisted locally", async () => {
     mocks.executionFindMany.mockResolvedValue([{
       argusJobId: "argus-1",

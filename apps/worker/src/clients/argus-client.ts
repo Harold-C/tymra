@@ -16,6 +16,7 @@ import {
   publicUniversityKeyDatesExtractionSchema,
 } from "../collection/public-market-argus";
 import { aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionSchema } from "../collection/aviation-argus-signals";
+import { publicSkiSeasonExtractionSchema } from "../collection/ski-season-argus";
 import { otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaResolveListingExtractionSchema } from "@tymra/providers";
 
 export type ArgusEvidenceKind = "html" | "screenshot" | "download";
@@ -41,8 +42,8 @@ export type ArgusEvidencePointer = ArgusEvidencePointerBase & (
     }
 );
 
-export type ArgusConnectorId = "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public" | "eden-park-public" | "nzicc-public" | "sky-stadium-public" | "forsyth-barr-stadium-public" | "takina-public" | "claudelands-public" | "port-tauranga-cruise-public" | "centreport-cruise-public" | "port-otago-cruise-public" | "dunedin-airport-public" | "rotorua-airport-public" | "hamilton-airport-public" | "hawkes-bay-airport-public" | "new-plymouth-airport-public" | "palmerston-north-airport-public" | "otago-university-key-dates-public" | "victoria-university-key-dates-public" | "waikato-university-key-dates-public" | "massey-university-key-dates-public" | "aut-university-key-dates-public";
-export type ArgusWorkflowId = "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates" | "resolve_venue" | "collect_cruise_schedule" | "collect_flights";
+export type ArgusConnectorId = "nz-ski-season-public" | "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public" | "eden-park-public" | "nzicc-public" | "sky-stadium-public" | "forsyth-barr-stadium-public" | "takina-public" | "claudelands-public" | "port-tauranga-cruise-public" | "centreport-cruise-public" | "port-otago-cruise-public" | "dunedin-airport-public" | "rotorua-airport-public" | "hamilton-airport-public" | "hawkes-bay-airport-public" | "new-plymouth-airport-public" | "palmerston-north-airport-public" | "otago-university-key-dates-public" | "victoria-university-key-dates-public" | "waikato-university-key-dates-public" | "massey-university-key-dates-public" | "aut-university-key-dates-public";
+export type ArgusWorkflowId = "collect_season" | "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates" | "resolve_venue" | "collect_cruise_schedule" | "collect_flights";
 
 type ArgusDataContract = {
   dataSchema: string;
@@ -50,6 +51,10 @@ type ArgusDataContract = {
 };
 
 const argusDataContracts = {
+  "nz-ski-season-public:collect_season": {
+    dataSchema: "public-ski-season.collect_season",
+    schemaVersion: "1.0.0",
+  },
   "ticketmaster-public:collect_listing": {
     dataSchema: "ticketmaster-public.collect_listing",
     schemaVersion: "1.0.0",
@@ -262,6 +267,7 @@ export type ArgusCaptureInput = {
   from?: string;
   to?: string;
   academicYear?: number;
+  seasonYear?: number;
   maxRecords?: number;
   searchQuery?: string;
   checkIn?: string;
@@ -759,8 +765,10 @@ function assertArgusDataContract(
       throw new Error(`Argus returned invalid Lincoln key-dates data: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`);
     }
   }
-  const sourceSchema = connectorId === "sporty-school-sport-public" && workflowId === "collect_events"
-    ? sportySchoolSportExtractionSchema
+  const sourceSchema = connectorId === "nz-ski-season-public" && workflowId === "collect_season"
+    ? publicSkiSeasonExtractionSchema
+    : connectorId === "sporty-school-sport-public" && workflowId === "collect_events"
+      ? sportySchoolSportExtractionSchema
     : connectorId === "ticketek-public" && workflowId === "collect_listing"
       ? ticketekListingExtractionSchema
       : connectorId === "ticketek-public" && workflowId === "collect_detail"
@@ -845,6 +853,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.from === undefined ? {} : { from: input.from }),
       ...(input.to === undefined ? {} : { to: input.to }),
       ...(input.academicYear === undefined ? {} : { academic_year: input.academicYear }),
+      ...(input.seasonYear === undefined ? {} : { season_year: input.seasonYear }),
       ...(input.searchQuery === undefined ? {} : { search_query: input.searchQuery }),
       ...(input.checkIn === undefined ? {} : { check_in: input.checkIn }),
       ...(input.checkOut === undefined ? {} : { check_out: input.checkOut }),

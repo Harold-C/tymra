@@ -206,14 +206,18 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     : job.status === "COMPLETED" || job.status === "COMPLETED_WITH_WARNINGS"
       ? "COMPLETED"
       : "FAILED";
+  const matchingItem = job.items?.find((item) => item.trace_id === execution.traceId);
+  const itemCategory = matchingItem?.error_category ?? matchingItem?.result?.error?.category;
+  const safeItemCategory = typeof itemCategory === "string" && /^[A-Z][A-Z0-9_]{0,63}$/u.test(itemCategory)
+    ? itemCategory : null;
   await prisma.argusExecution.update({
     where: { id: execution.id },
     data: {
       status: terminalStatus,
       result: job as unknown as Prisma.InputJsonValue,
-      errorCategory: job.error?.category ?? null,
+      errorCategory: job.error?.category ?? safeItemCategory,
       errorMessage: job.error?.message ?? null,
-      retryable: job.error?.retryable ?? null,
+      retryable: job.error?.retryable ?? matchingItem?.result?.error?.retryable ?? null,
       lastPolledAt: new Date(),
       completedAt: new Date(),
     },

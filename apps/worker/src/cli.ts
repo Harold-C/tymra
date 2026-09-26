@@ -9,9 +9,9 @@ import { queueFailureReport } from "./operations/queue-governance";
 import { executeCanary, canaryPlan, productionPreflight } from "./operations/release-safety";
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
-import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary } from "./operations/production-public-canary";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "./operations/production-public-pilot";
-import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
+import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary, validateSuspendedProductionPublicCanary } from "./operations/production-public-canary";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
+import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
 
@@ -154,23 +154,31 @@ switch (command) {
     const sourceKey = requiredOption(args, "--source");
     if (environment.NODE_ENV !== "production" || option(args, "--confirm") !== "RUN_ONE_PUBLIC_PILOT"
       || !PUBLIC_PILOT_SOURCE_KEYS.includes(sourceKey)) throw new Error("Pilot run requires one approved direct-public production source");
-    if (await prisma.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } })) {
-      throw new Error("Pilot source already exists; inspect its state before any repeat");
+    const existing = await prisma.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } });
+    if (existing) {
+      if (option(args, "--retest") !== "EXISTING_SUSPENDED_SOURCE") throw new Error("Existing pilot source requires --retest EXISTING_SUSPENDED_SOURCE");
+      await validateSuspendedProductionPublicCanary(sourceKey, environment.NODE_ENV);
+    } else {
+      if (args.includes("--retest")) throw new Error("Retest requires an existing suspended source");
+      await bootstrapProductionPublicCanary(sourceKey, environment.NODE_ENV);
     }
-    await bootstrapProductionPublicCanary(sourceKey, environment.NODE_ENV);
     let result: Awaited<ReturnType<typeof executeCanary>> | undefined;
     try {
       await service.activateSource(sourceKey);
       const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
-      const from = nzStartOfDay(new Date());
-      const to = new Date(from.getTime() + 31 * 86_400_000);
+      const { from, to } = publicPilotRange(sourceKey, new Date());
       result = await executeCanary([sourceKey], async (_key, pass) => {
         const before = await sourceBusinessCounts(source.id);
         try {
-          const collected = await service.collectSource(sourceKey, "new-zealand", undefined, { from, to, limit: 2, dryRun: false, productionCanary: true });
+          const collected = await service.collectSource(sourceKey, publicPilotSchedulePayload(sourceKey).marketScope, undefined, { from, to, limit: publicPilotSchedulePayload(sourceKey).limit, dryRun: false, productionCanary: true });
           const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: collected.runId } });
           const after = await sourceBusinessCounts(source.id);
           const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
+          const zeroBusinessArtifacts = run.successCount === 0 ? await prisma.rawArtifact.findMany({
+            where: { collectionRunId: run.id, artifactType: "NETWORK_RESPONSE", deletedAt: null, parserFailure: false },
+            select: { contentHash: true, payload: true },
+          }) : [];
+          const acceptedZeroBusiness = run.successCount === 0 && zeroBusinessPublicPilotPassAccepted(sourceKey, zeroBusinessArtifacts, scope, after[0]! + after[2]!);
           return {
             sourceKey, pass, runId: run.id,
             configurationUnchanged: scope.configurationUnchanged === true,
@@ -178,7 +186,7 @@ switch (command) {
             parserFailures: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } }),
             repeatRowGrowth: pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0,
             remoteEvidenceRemaining: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } }),
-            ...(run.status === "SUCCEEDED" && run.successCount > 0 && after.some((count) => count > 0)
+            ...(run.status === "SUCCEEDED" && ((run.successCount > 0 && after.some((count) => count > 0)) || acceptedZeroBusiness)
               ? {} : { error: `RUN_${run.status}_NO_BUSINESS_RESULT` }),
           };
         } catch (error) {
@@ -198,7 +206,15 @@ switch (command) {
     const sourceKey = requiredOption(args, "--source");
     if (option(args, "--confirm") !== "BOOTSTRAP_ONE_ARGUS_MARKET_PILOT") throw new Error("Argus market bootstrap requires explicit one-source confirmation");
     const health = await getArgusHealth(environment);
-    print(await bootstrapProductionArgusMarketPilot(sourceKey, environment.NODE_ENV, health.healthy && health.ready));
+    const ready = health.healthy && health.ready;
+    const existing = await prisma.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } });
+    if (existing) {
+      if (option(args, "--retest") !== "EXISTING_SUSPENDED_SOURCE") throw new Error("Existing Argus market pilot requires --retest EXISTING_SUSPENDED_SOURCE");
+      print(await rearmSuspendedProductionArgusMarketPilot(sourceKey, environment.NODE_ENV, ready));
+    } else {
+      if (args.includes("--retest")) throw new Error("Retest requires an existing suspended source");
+      print(await bootstrapProductionArgusMarketPilot(sourceKey, environment.NODE_ENV, ready));
+    }
     break;
   }
   case "release:argus-market-pilot-enqueue": {
@@ -212,14 +228,26 @@ switch (command) {
       || metadata.browserPilot !== true || metadata.boundedProductionCanary !== true) throw new Error("Argus market source is not approved for a bounded trial");
     if (await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })) throw new Error("Argus market pilot already has a schedule");
     if (await prisma.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Argus market pilot requires an idle Tymra queue");
-    const prior = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false }, select: { status: true, successCount: true, scope: true, jobId: true } });
-    if (prior.some((run) => run.status !== "SUCCEEDED" || run.successCount < 1 || !run.jobId
-      || typeof run.scope !== "object" || run.scope === null || Array.isArray(run.scope)
-      || run.scope.productionCanary !== true) || prior.length >= 2) throw new Error("Argus market pilot has failed, incomplete or excess prior runs");
-    const pass = prior.length + 1;
+    const prior = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false },
+      orderBy: { createdAt: "desc" }, take: 2,
+      select: { id: true, status: true, successCount: true, scope: true, job: { select: { status: true, attemptCount: true, maxAttempts: true } } },
+    });
+    const schoolZeroRuns = sourceKey === "school_sport_canterbury" ? prior.filter((run) => run.successCount === 0) : [];
+    const zeroExecutions = schoolZeroRuns.length ? await prisma.argusExecution.findMany({
+      where: { collectionRunId: { in: schoolZeroRuns.map((run) => run.id) }, dataSourceId: source.id, status: "COMPLETED" },
+      select: { collectionRunId: true, result: true },
+    }) : [];
+    const businessRecords = schoolZeroRuns.length
+      ? await prisma.sourceEvent.count({ where: { dataSourceId: source.id } }) + await prisma.sourceMarketSignal.count({ where: { dataSourceId: source.id } })
+      : 0;
+    const pass = nextArgusMarketPilotPass(prior.map((run) => ({ ...run,
+      zeroBusinessVerified: run.successCount === 0 && verifiedSchoolSportCanterburyZeroPass(sourceKey, run.scope,
+        zeroExecutions.find((execution) => execution.collectionRunId === run.id)?.result, businessRecords),
+    })));
+    const attemptOrdinal = await prisma.job.count({ where: { sourceId: sourceKey } }) + 1;
     const job = await enqueueJob({ type: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection",
       payload: publicPilotSchedulePayload(sourceKey), sourceId: sourceKey, maxAttempts: 1,
-      idempotencyKey: `argus-market-pilot:${sourceKey}:pass-${pass}` });
+      idempotencyKey: `argus-market-pilot:${sourceKey}:trial-${attemptOrdinal}` });
     print({ sourceKey, pass, jobId: job.id, status: job.status, maxAttempts: job.maxAttempts, mutationPerformed: true });
     break;
   }

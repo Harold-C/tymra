@@ -141,18 +141,21 @@ export function parseEmploymentPublicHolidays(html: string): CalendarRecord[] {
 
 export function parseEducationSchoolHolidays(html: string): CalendarRecord[] {
   const { document } = parseHTML(html);
-  const heading = [...document.querySelectorAll("h2")].find((element) => /\b20\d{2}\s+school holidays/i.test(element.textContent));
-  const year = Number(heading?.textContent.match(/\b(20\d{2})\b/)?.[1]);
-  if (!heading || !Number.isInteger(year)) throw new Error("Ministry of Education page has no current school-holiday heading");
+  const headings = [...document.querySelectorAll("h2")].filter((element) => /\b20\d{2}\s+school holidays/i.test(element.textContent));
+  if (!headings.length) throw new Error("Ministry of Education page has no school-holiday heading");
   const records: CalendarRecord[] = [];
-  for (let element = heading.nextElementSibling; element; element = element.nextElementSibling) {
-    if (element.tagName === "H2") break;
-    if (element.tagName !== "H3") continue;
-    const label = cleanText(element.textContent.replace("#", ""));
-    const description = cleanText(element.nextElementSibling?.tagName === "P" ? element.nextElementSibling.textContent : "");
-    const range = parseDateRange(description, year);
-    if (!range) continue;
-    records.push({ id: `school-holiday:${year}:${slug(label)}`, title: `New Zealand school holiday after ${label}`, region: "New Zealand", startsAt: isoDate(range.start), endsAt: isoDate(addUtcDays(range.end, 1)), type: "SCHOOL_HOLIDAY" });
+  for (const heading of headings) {
+    const year = Number(heading.textContent.match(/\b(20\d{2})\b/)?.[1]);
+    if (!Number.isInteger(year)) continue;
+    for (let element = heading.nextElementSibling; element; element = element.nextElementSibling) {
+      if (element.tagName === "H2") break;
+      if (element.tagName !== "H3") continue;
+      const label = cleanText(element.textContent.replace("#", ""));
+      const description = cleanText(element.nextElementSibling?.tagName === "P" ? element.nextElementSibling.textContent : "");
+      const range = parseDateRange(description, year);
+      if (!range) continue;
+      records.push({ id: `school-holiday:${year}:${slug(label)}`, title: `New Zealand school holiday after ${label}`, region: "New Zealand", startsAt: isoDate(range.start), endsAt: isoDate(addUtcDays(range.end, 1)), type: "SCHOOL_HOLIDAY" });
+    }
   }
   if (!records.length) throw new Error("Ministry of Education page has no exact school-holiday ranges");
   return records;
@@ -946,7 +949,7 @@ class MetServiceCapAdapter implements PublicDataAdapter {
 
 export const publicDataAdapters: Record<string, PublicDataAdapter> = {
   public_holidays_nz: new OfficialHtmlCalendarAdapter("public_holidays_nz", "Employment New Zealand public holidays", "https://www.employment.govt.nz/leave-and-holidays/public-holidays/public-holidays-and-anniversary-dates", parseEmploymentPublicHolidays),
-  school_holidays_nz: new OfficialHtmlCalendarAdapter("school_holidays_nz", "Ministry of Education school holidays", "https://www.education.govt.nz/school/school-terms-and-holidays", parseEducationSchoolHolidays),
+  school_holidays_nz: new OfficialHtmlCalendarAdapter("school_holidays_nz", "Ministry of Education school holidays", "https://www.education.govt.nz/school-terms-and-holidays-dates", parseEducationSchoolHolidays),
   geonet: new GeoNetAdapter(),
   mbie: new MbieAccommodationAdapter(),
   stats_nz: new StatsNzInternationalTravelAdapter(),

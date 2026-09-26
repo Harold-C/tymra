@@ -8,7 +8,7 @@ import { publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { getArgusJobResult } from "../clients/argus-client";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS } from "./production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, verifiedSchoolSportCanterburyZeroPass } from "./production-public-pilot";
 import { FIRST_PUBLIC_SCHEDULES, isFirstPublicSchedule } from "./production-public-schedules";
 
 const browserKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
@@ -26,7 +26,8 @@ export async function bootstrapProductionArgusMarketPilot(sourceKey: string, nod
   const record = registrySourceSeedRecords().find((source) => source.key === sourceKey);
   const adapter = publicDataAdapters[sourceKey];
   if (!record || record.providerType !== "PUBLIC" || record.isDemo
-    || record.accessMethod !== (sourceKey === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
+    || record.accessMethod !== (sourceKey === "council_calendars" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
+      : sourceKey === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
       : sourceKey === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL" : "PUBLIC_WEB_ARGUS_READ_ONLY")
     || adapter?.metadata.adapterKey !== record.adapterKey) {
     throw new Error("Argus market source registry and deployed adapter do not match");
@@ -64,19 +65,115 @@ export async function bootstrapProductionArgusMarketPilot(sourceKey: string, nod
   });
 }
 
+export async function rearmSuspendedProductionArgusMarketPilot(sourceKey: string, nodeEnv: string, argusReady: boolean) {
+  if (nodeEnv !== "production" || !argusReady || !browserKeys.has(sourceKey)) throw new Error("Argus market retest requires one approved public source and a ready production Argus");
+  const record = registrySourceSeedRecords().find((candidate) => candidate.key === sourceKey);
+  const adapter = publicDataAdapters[sourceKey];
+  return prisma.$transaction(async (transaction) => {
+    const source = await transaction.dataSource.findUnique({ where: { key: sourceKey } });
+    const metadata = source?.metadata;
+    const legacyCouncilPilot = isLegacyCouncilDirectPilot(sourceKey, metadata);
+    const legacySkiPilot = isLegacySkiDirectPilot(sourceKey, source, metadata);
+    const legacyDirectPilot = legacyCouncilPilot || legacySkiPilot;
+    if (!record || !adapter || !source || source.providerType !== "PUBLIC" || source.isDemo
+      || (!legacySkiPilot && source.adapterKey !== record.adapterKey)
+      || adapter.metadata.adapterKey !== record.adapterKey
+      || (!legacySkiPilot && source.accessMethod !== record.accessMethod)
+      || source.enabled || source.lifecycle !== "SUSPENDED"
+      || source.operationalStatus === "BLOCKED" || !source.environments.includes("PRODUCTION")
+      || typeof metadata !== "object" || metadata === null || Array.isArray(metadata)
+      || (metadata.browserPilot !== true && !legacyDirectPilot) || metadata.boundedProductionCanary !== true) {
+      throw new Error("Suspended Argus market source does not match the approved registry and pilot state");
+    }
+    if (legacyDirectPilot && await transaction.collectionRun.count({ where: { dataSourceId: source.id } })) {
+      throw new Error("Legacy direct source already has a collection run; browser conversion requires review");
+    }
+    const schedules = await transaction.scheduleDefinition.findMany();
+    if (schedules.some((schedule) => !isFirstPublicSchedule(schedule) && !isProductionPublicPilotSchedule(schedule))
+      || schedules.some((schedule) => schedule.key === `pilot-public-${sourceKey}-weekly`)) throw new Error("Argus market retest found an unexpected or existing source schedule");
+    if (await transaction.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Argus market retest requires an idle Tymra queue");
+    const updated = await transaction.dataSource.update({ where: { id: source.id }, data: {
+      enabled: true, lifecycle: "RESEARCH", operationalStatus: "DEGRADED", healthStatus: "DEGRADED", lastReviewedAt: new Date(),
+      ...(legacyDirectPilot ? {
+        metadata: { boundedProductionCanary: true, browserPilot: true },
+        ...(legacySkiPilot ? {
+          adapterKey: record.adapterKey,
+          accessMethod: record.accessMethod,
+          acquisitionMethod: record.accessMethod,
+          supportedDomains: [...record.supportedDomains],
+          dailyBudget: adapter.metadata.dailyBudget,
+        } : {}),
+      } : {}),
+    }, select: { id: true, key: true, enabled: true, operationalStatus: true } });
+    return { source: updated, scheduleEnabled: false, mutationPerformed: true };
+  });
+}
+
+export function isLegacyCouncilDirectPilot(sourceKey: string, metadata: unknown) {
+  return sourceKey === "council_calendars" && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
+    && Object.keys(metadata).length === 1 && (metadata as Record<string, unknown>).boundedProductionCanary === true;
+}
+
+export function isLegacySkiDirectPilot(
+  sourceKey: string,
+  source: { adapterKey: string | null; accessMethod: string | null } | null,
+  metadata: unknown,
+) {
+  return sourceKey === "ski_seasons_nz" && source?.adapterKey === "public:nz-ski-seasons:official-html-v1"
+    && source.accessMethod === "OFFICIAL_PUBLIC_HTML"
+    && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
+    && Object.keys(metadata).length === 1
+    && (metadata as Record<string, unknown>).boundedProductionCanary === true;
+}
+
+export function nextArgusMarketPilotPass(runsNewestFirst: readonly {
+  status: string;
+  successCount: number;
+  scope: unknown;
+  zeroBusinessVerified?: boolean;
+  job: { status: string; attemptCount: number; maxAttempts: number } | null;
+}[]) {
+  let passed = 0;
+  for (const run of runsNewestFirst) {
+    const scope = run.scope;
+    if (run.status !== "SUCCEEDED" || (run.successCount < 1 && !run.zeroBusinessVerified) || !run.job
+      || run.job.status !== "SUCCEEDED" || run.job.attemptCount !== 1 || run.job.maxAttempts !== 1
+      || typeof scope !== "object" || scope === null || Array.isArray(scope)
+      || (scope as Record<string, unknown>).productionCanary !== true) break;
+    passed += 1;
+  }
+  if (passed >= 2) throw new Error("Argus market pilot already has two eligible recent passes");
+  return passed + 1;
+}
+
 export async function enableProductionArgusMarketPilot(sourceKey: string, environment: Environment) {
   if (environment.NODE_ENV !== "production" || !browserKeys.has(sourceKey)) throw new Error("Argus market pilot requires one approved production source");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
-  const runs = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, status: "SUCCEEDED", isDemo: false }, orderBy: { finishedAt: "desc" }, take: 2, select: { id: true } });
-  if (runs.length !== 2) throw new Error("Argus market pilot has not completed two positive passes");
+  const runs = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false }, orderBy: { finishedAt: "desc" }, take: 2, select: { id: true, status: true, successCount: true, scope: true } });
+  if (runs.length !== 2 || runs.some((run) => run.status !== "SUCCEEDED")) throw new Error("Argus market pilot has not completed two successful passes");
   const runIds = runs.map((run) => run.id);
-  const executions = await prisma.argusExecution.findMany({ where: { collectionRunId: { in: runIds } }, select: { argusJobId: true, collectionRunId: true, status: true } });
+  const executions = await prisma.argusExecution.findMany({ where: { collectionRunId: { in: runIds } }, select: { argusJobId: true, collectionRunId: true, traceId: true, status: true, result: true } });
   if (executions.length < 2 || runIds.some((id) => !executions.some((execution) => execution.collectionRunId === id))
     || executions.some((execution) => execution.status !== "COMPLETED")) throw new Error("Argus market pilot Jobs are incomplete");
+  if (sourceKey === "ski_seasons_nz" && runIds.some((id) => executions.filter((execution) => execution.collectionRunId === id).length !== 3)) {
+    throw new Error("Each ski pilot pass requires three completed fixed-page Argus Jobs");
+  }
+  const businessRecords = await prisma.sourceEvent.count({ where: { dataSourceId: source.id } })
+    + await prisma.sourceMarketSignal.count({ where: { dataSourceId: source.id } });
+  if (runs.some((run) => run.successCount < 1 && (run.successCount !== 0
+    || !verifiedSchoolSportCanterburyZeroPass(sourceKey, run.scope,
+      executions.find((execution) => execution.collectionRunId === run.id)?.result, businessRecords)))) {
+    throw new Error("Argus market pilot has no verified business or source-specific zero result");
+  }
   const artifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: { in: runIds }, deletedAt: null }, select: { collectionRunId: true, storageRef: true, contentHash: true } });
   if (artifacts.some((artifact) => artifact.storageRef.startsWith("argus-evidence:"))
     || runIds.some((id) => !artifacts.some((artifact) => artifact.collectionRunId === id && artifact.storageRef.startsWith("tymra-evidence:")))) {
     throw new Error("Argus market pilot evidence has not been fully copied");
+  }
+  if (sourceKey === "ski_seasons_nz" && executions.some((execution) =>
+    !artifacts.some((artifact) => artifact.collectionRunId === execution.collectionRunId
+      && artifact.storageRef.startsWith(`tymra-evidence:${execution.traceId}/`)))) {
+    throw new Error("Each ski resort capture must retain its own copied evidence");
   }
   let verifiedEvidence = 0;
   for (const artifact of artifacts) {

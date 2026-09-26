@@ -5,18 +5,19 @@ import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter,
 import { AdapterError } from "./adapter-types";
 import type { NzMajorMarketKey } from "./nz-market-coverage";
 
-type SkiSeasonSource = { resort: string; marketKey: NzMajorMarketKey; region: string; url: string; datePattern: RegExp; yearPattern?: RegExp };
+type SkiSeasonSource = { resortId: "the-remarkables" | "mt-hutt" | "whakapapa"; resort: string; marketKey: NzMajorMarketKey; region: string; url: string; datePattern: RegExp; yearPattern?: RegExp };
 type SkiSeasonRecord = { resort: string; marketKey: NzMajorMarketKey; region: string; opensAt: string; closesAt: string; sourceUrl: string };
 
-const SOURCES: readonly SkiSeasonSource[] = [
-  { resort: "The Remarkables", marketKey: "queenstown-wanaka", region: "Queenstown Lakes", url: "https://www.theremarkables.co.nz/plan", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i },
-  { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i },
-  { resort: "Whakapapa", marketKey: "taupo", region: "Central North Island", url: "https://www.whakapapa.com/winter", datePattern: /\((\d{1,2}\s+[A-Za-z]+)\)\s+through to[^()]{0,80}\((\d{1,2}\s+[A-Za-z]+)\)/i, yearPattern: /Our\s+(20\d{2})\s+winter season/i },
+export const SKI_SEASON_SOURCES: readonly SkiSeasonSource[] = [
+  { resortId: "the-remarkables", resort: "The Remarkables", marketKey: "queenstown-wanaka", region: "Queenstown Lakes", url: "https://www.theremarkables.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i },
+  { resortId: "mt-hutt", resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i },
+  { resortId: "whakapapa", resort: "Whakapapa", marketKey: "taupo", region: "Central North Island", url: "https://www.whakapapa.com/winter", datePattern: /\((\d{1,2}\s+[A-Za-z]+)\)\s+through to[^()]{0,80}\((\d{1,2}\s+[A-Za-z]+)\)/i, yearPattern: /Our\s+(20\d{2})\s+winter season/i },
 ] as const;
 
 export function parseSkiSeasonHtml(html: string, source: SkiSeasonSource): SkiSeasonRecord {
   const { document } = parseHTML(html);
-  const text = (document.documentElement.textContent ?? document.body.textContent ?? "").replace(/\s+/g, " ").trim();
+  const text = (document.body?.innerText || document.documentElement.innerText || document.documentElement.textContent || "")
+    .replace(/\s+/g, " ").trim();
   const match = text.match(source.datePattern);
   if (!match) throw new Error(`${source.resort} page has no supported season date range`);
   const year = Number(match[3] ?? (source.yearPattern ? text.match(source.yearPattern)?.[1] : undefined));
@@ -29,15 +30,15 @@ export function parseSkiSeasonHtml(html: string, source: SkiSeasonSource): SkiSe
 class SkiSeasonAdapter implements PublicDataAdapter {
   readonly metadata: AdapterMetadata = {
     sourceId: "ski_seasons_nz", sourceName: "Official New Zealand ski season dates", sourceType: "PUBLIC_DATA",
-    supportedDomains: ["www.theremarkables.co.nz", "www.mthutt.co.nz", "www.whakapapa.com"], adapterKey: "public:nz-ski-seasons:official-html-v1",
-    accessMethod: "OFFICIAL_PUBLIC_HTML", concurrencyLimit: 1, dailyBudget: SOURCES.length,
+    supportedDomains: ["www.theremarkables.co.nz", "www.mthutt.co.nz", "www.whakapapa.com"], adapterKey: "public:nz-ski-seasons:argus-v1",
+    accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1, dailyBudget: SKI_SEASON_SOURCES.length * 2,
     collectorVersion: "nz-ski-season-fetch-v1", parserVersion: "nz-ski-season-date-range-v1",
   };
 
-  async discover(): Promise<string[]> { return SOURCES.map((source) => source.url); }
+  async discover(): Promise<string[]> { return SKI_SEASON_SOURCES.map((source) => source.url); }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
-    const source = SOURCES.find((candidate) => candidate.url === reference);
+    const source = SKI_SEASON_SOURCES.find((candidate) => candidate.url === reference);
     if (!source) throw new AdapterError("INVALID_INPUT", "Ski season reference is not configured", false);
     const response = await fetch(reference, { headers: { accept: "text/html,application/xhtml+xml", "accept-language": "en-NZ,en;q=0.9", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" }, signal: context.signal ?? AbortSignal.timeout(30_000) });
     if (!response.ok) throw new AdapterError("SOURCE_UNAVAILABLE", `${source.resort} returned HTTP ${response.status}`, response.status >= 500 || response.status === 429);
@@ -70,7 +71,7 @@ class SkiSeasonAdapter implements PublicDataAdapter {
   async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
     const started = Date.now();
     try {
-      const response = await fetch(SOURCES[0]!.url, { method: "HEAD", signal: context.signal ?? AbortSignal.timeout(10_000) });
+      const response = await fetch(SKI_SEASON_SOURCES[0]!.url, { method: "HEAD", signal: context.signal ?? AbortSignal.timeout(10_000) });
       return { status: response.ok ? "HEALTHY" : "DEGRADED", checkedAt: new Date(), message: `Official ski-season page returned HTTP ${response.status}`, latencyMs: Date.now() - started, mode: context.mode };
     } catch (error) {
       return { status: "DOWN", checkedAt: new Date(), message: error instanceof Error ? error.message : "Ski-season health check failed", latencyMs: Date.now() - started, mode: context.mode };

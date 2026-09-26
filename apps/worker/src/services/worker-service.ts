@@ -62,6 +62,7 @@ import {
   otaAdapters,
   parseOtaListingReference,
   publicDataAdapters,
+  SKI_SEASON_SOURCES,
   publicSignalCollectionPlanForAddress,
   resolveNzAddressSignalCoverage,
   resolveNzMarketKey,
@@ -149,7 +150,7 @@ import {
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
 import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "../operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays } from "../operations/production-public-pilot";
 import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import {
   isRegionalArgusEventSourceId,
@@ -163,6 +164,7 @@ import {
   motAirlinePerformanceExtractionRecords,
   motAirlinePerformanceExtractionSchema,
 } from "../collection/aviation-argus-signals";
+import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../collection/ski-season-argus";
 import {
   normaliseArgusPublicMarketRecords,
   officialVenueEventsExtractionSchema,
@@ -1051,7 +1053,7 @@ export class WorkerService {
   async collectSource(sourceId: string, marketScope = "new-zealand", analysisRequestId?: string, options: CollectSourceOptions = {}) {
     if (this.environment.NODE_ENV === "production" && !options.jobId
       && (argusPublicMarketSource(sourceId) || isArgusEventSourceId(sourceId)
-        || ["council_calendars", "fx_rates", "ticketmaster", "auckland_airport_monthly", "mot_airline_performance", "christchurch_university_dates"].includes(sourceId))) {
+        || ["council_calendars", "fx_rates", "ticketmaster", "auckland_airport_monthly", "mot_airline_performance", "christchurch_university_dates", "ski_seasons_nz"].includes(sourceId))) {
       throw new WorkerRequestError("DURABLE_JOB_REQUIRED", "Production Argus collection requires a queued Tymra Job before evidence ACK", 409);
     }
     if (options.lincolnOnly && (sourceId !== "christchurch_university_dates" || !options.jobId
@@ -1080,8 +1082,10 @@ export class WorkerService {
       || options.from || options.to || options.dryRun || localAcceptance || productionCanary || options.limit !== scheduleSpec.limit)) {
       throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "First public schedule must use its approved production bounds", 422);
     }
-    if (productionCanary && (this.environment.NODE_ENV !== "production" || localAcceptance || options.dryRun || !options.limit || options.limit > 2)) {
-      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Production canary requires a live production run with a one- or two-record limit", 422);
+    const pilotLimit = sourceId === "christchurch_cruise" ? 100 : sourceId === "ski_seasons_nz" ? 3 : null;
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || localAcceptance || options.dryRun
+      || !options.limit || (pilotLimit === null ? options.limit > 2 : options.limit !== pilotLimit))) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Production canary requires the source-specific approved result limit", 422);
     }
     const source = await prisma.dataSource.findUniqueOrThrow({
       where: { key: sourceId },
@@ -1104,10 +1108,11 @@ export class WorkerService {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "First public schedule source is not approved", 409);
     }
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
-    const requestedFrom = options.from ?? new Date();
-    const requestedTo = options.to ?? new Date(requestedFrom.getTime() + (boundedPublicSchedule ? 31 : 90) * 86_400_000);
+    const pilotRange = productionCanary ? publicPilotRange(sourceId, new Date()) : null;
+    const requestedFrom = options.from ?? pilotRange?.from ?? new Date();
+    const requestedTo = options.to ?? pilotRange?.to ?? new Date(requestedFrom.getTime() + (boundedPublicSchedule ? 31 : 90) * 86_400_000);
     const localBounds = {
-      maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "canterbury_major_annual_events"].includes(sourceId) ? 2 : 1,
+      maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "canterbury_major_annual_events", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "christchurch_cruise"].includes(sourceId) ? 2 : 1,
       maxRecords: argusPublicMarketSource(sourceId)?.kind === "venue" ? 200
         : argusPublicMarketSource(sourceId) ? 500
         : sourceId === "mbie_tourism_flows" ? 250
@@ -1116,11 +1121,12 @@ export class WorkerService {
             : sourceId === "university_calendars" ? 50
               : sourceId === "doc_alerts" ? 300
                 : sourceId === "interislander_alerts" ? 20
-                  : sourceId === "ski_seasons_nz" ? 3
+                  : sourceId === "christchurch_cruise" ? 100
+                    : sourceId === "ski_seasons_nz" ? 3
                     : ["queenstown_airport_monthly", "auckland_airport_monthly"].includes(sourceId) ? 13
                       : sourceId === "mot_airline_performance" ? 100 : 2,
-      maxWindowDays: ["cruise", "university"].includes(argusPublicMarketSource(sourceId)?.kind ?? "") ? 366 : 31,
-      maxBytes: 2_000_000,
+      maxWindowDays: ["cruise", "university"].includes(argusPublicMarketSource(sourceId)?.kind ?? "") ? 366 : publicPilotWindowDays(sourceId),
+      maxBytes: sourceId === "venue_calendars" ? 6_000_000 : 2_000_000,
       concurrency: 1,
       timeoutMs: sourceId === "council_calendars" || argusPublicMarketSource(sourceId) ? 120_000 : ["university_calendars", "doc_alerts"].includes(sourceId) ? 30_000 : 10_000,
     } as const;
@@ -1141,7 +1147,7 @@ export class WorkerService {
       timeoutMs: 120_000,
     } as const;
     const effectiveBounds = localAcceptance ? localBounds : productionCanary
-      ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : argusPublicMarketSource(sourceId)?.kind === "venue" ? 2 : 1, maxRecords: 2, timeoutMs: 30_000 }
+      ? { ...localBounds, maxRequests: publicPilotRequestLimit(sourceId), maxRecords: publicPilotSchedulePayload(sourceId).limit, timeoutMs: sourceId === "council_calendars" ? 120_000 : 30_000 }
       : boundedPublicSchedule && scheduleSpec
         ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: sourceId === "rto_calendars" ? 180_000 : 30_000, concurrency: 1 }
       : productionBounds;
@@ -1180,7 +1186,9 @@ export class WorkerService {
     const counters = emptyPublicCollectionCounters();
     try {
       if (!localAcceptance) this.assertSourceCollectionAllowed(source, browserPilot);
-        const result = await withRedisLock(`source:${sourceId}`, sourceId === "rto_calendars" && boundedPublicSchedule ? 600_000 : 60_000, async () => {
+        const result = await withRedisLock(`source:${sourceId}`, sourceId === "ski_seasons_nz" && productionCanary ? 600_000
+          : sourceId === "rto_calendars" && boundedPublicSchedule ? 600_000
+          : sourceId === "council_calendars" && productionCanary ? 180_000 : 60_000, async () => {
         const adapterReferences = options.lincolnOnly ? [] : await adapter.discover({ marketScope, from, to, limit }, context);
         const discovered = sourceId === "christchurch_university_dates"
           ? [LINCOLN_KEY_DATES_URL, ...adapterReferences]
@@ -1193,6 +1201,8 @@ export class WorkerService {
         counters.references = references.length;
         const rawById = new Map<string, Awaited<ReturnType<PublicDataAdapter["fetch"]>>[number]>();
         for (const reference of references) {
+          if (productionCanary && counters.requests >= effectiveBounds.maxRequests) break;
+          counters.visitedReferences += 1;
           const records = sourceId === "council_calendars"
             ? await this.executeOurAucklandBrowserTask(
                 source.id,
@@ -1204,16 +1214,23 @@ export class WorkerService {
               )
             : sourceId === "christchurch_university_dates" && reference === LINCOLN_KEY_DATES_URL
               ? await this.executeLincolnKeyDatesBrowserTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+              : sourceId === "ski_seasons_nz"
+                ? await this.executeSkiSeasonArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : sourceId === "auckland_airport_monthly" || sourceId === "mot_airline_performance"
                 ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : argusPublicMarketSource(sourceId)
                 ? await this.executePublicMarketArgusTask(sourceId, source.id, run.id, context, options.dryRun === true, options.jobId)
               : await adapter.fetch(reference, boundedPublicSchedule && sourceId === "geonet"
                 ? { ...context, collectionLimits: { ...effectiveBounds, maxRecords: firstPublicReferenceRecordLimit(sourceId, reference, scheduleSpec!.limit) } }
-                : context);
+                : productionCanary
+                  ? { ...context, collectionLimits: { ...effectiveBounds, maxRequests: effectiveBounds.maxRequests - counters.requests } }
+                  : context);
           counters.requests += sourceId === "rto_calendars" && boundedPublicSchedule && context.christchurchScan?.progress
             ? context.christchurchScan.progress.pages.length
             : Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
+          if (productionCanary && counters.requests > effectiveBounds.maxRequests) {
+            throw new AdapterError("PARSING_ERROR", `${sourceId} exceeded the bounded public-pilot request limit`, false);
+          }
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {
             if (rawById.has(record.externalId)) counters.duplicatesSkipped += 1;
@@ -2500,6 +2517,50 @@ export class WorkerService {
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "RBNZ presented an access challenge; collection stopped without bypassing it", true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "RBNZ Argus capture failed", result.error?.retryable ?? true);
     return result;
+  }
+
+  private async executeSkiSeasonArgusTask(
+    dataSourceId: string,
+    collectionRunId: string,
+    url: string,
+    context: AdapterContext,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    if (!SKI_SEASON_SOURCES.some((source) => source.url === url)) {
+      throw new AdapterError("INVALID_INPUT", "Ski season reference is outside the three approved official pages", false);
+    }
+    const connectorId = "nz-ski-season-public" as const;
+    const workflowId = "collect_season" as const;
+    const seasonYear = Number(nzDateKey(context.collectionRange?.from ?? new Date()).slice(0, 4));
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `nz-ski-season-${randomUUID()}`;
+    const input: ArgusCaptureInput = { traceId, url, connectorId, workflowId, seasonYear, maxAttempts: 1 };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) {
+      throw new AdapterError("PARSING_ERROR", "Argus ski capture violated the read-only result contract", false);
+    }
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, connectorId, url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
+    if (result.status === "manual_required") {
+      throw new AdapterError("RATE_LIMITED", "An official ski page presented an access challenge; collection stopped", true);
+    }
+    if (result.status !== "success") {
+      throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE",
+        result.error?.message ?? "Argus ski season capture failed", result.error?.retryable ?? true);
+    }
+    const parsed = publicSkiSeasonExtractionSchema.safeParse(result.extracted);
+    if (!parsed.success || parsed.data.sourceUrl !== url || parsed.data.seasonYear !== seasonYear) {
+      if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, result.traceId);
+      throw new AdapterError("PARSING_ERROR", "Argus ski season result failed its fixed source and year contract", false);
+    }
+    return [skiSeasonArgusRawRecord(parsed.data)];
   }
 
   private async executeAviationArgusTask(
@@ -4011,7 +4072,7 @@ export class WorkerRequestError extends Error {
 }
 
 function emptyPublicCollectionCounters() {
-  return { requests: 0, requestsAvoided: 0, discovered: 0, references: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, duplicatesSkipped: 0, unchangedSkipped: 0, failures: 0 };
+  return { requests: 0, requestsAvoided: 0, discovered: 0, references: 0, visitedReferences: 0, records: 0, rawArtifacts: 0, signals: 0, events: 0, persisted: 0, duplicatesSkipped: 0, unchangedSkipped: 0, failures: 0 };
 }
 
 export function canonicalReferenceIdentityMatches(

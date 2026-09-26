@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 
-import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, parseCruiseDashboard, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "../src";
+import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, findNzCruiseScheduleCsvUrl, parseNzCruiseScheduleCsv, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "../src";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };
@@ -58,6 +58,11 @@ describe("public data adapter contract", () => {
 
     const education = parseEducationSchoolHolidays(`<h2>2026 school holidays<a>#</a></h2><h3>Term 1<a>#</a></h3><p>Friday 3 April to Sunday 19 April 2026.</p><h3>Summer holidays<a>#</a></h3><p>Start no later than Saturday 19 December 2026 and run for 5 or 6 weeks.</p><h2>2027 school terms</h2>`);
     expect(education).toEqual([expect.objectContaining({ title: "New Zealand school holiday after Term 1", startsAt: "2026-04-03", endsAt: "2026-04-20" })]);
+    const multipleYears = parseEducationSchoolHolidays(`<h2>2026 school holidays</h2><h3>Term 3</h3><p>Saturday 26 September to Sunday 11 October 2026.</p><h2>2027 school terms</h2><h2>2027 school holidays</h2><h3>Term 1</h3><p>Saturday 10 April to Monday 26 April 2027.</p>`);
+    expect(multipleYears.map((record) => [record.id, record.startsAt, record.endsAt])).toEqual([
+      ["school-holiday:2026:term-3", "2026-09-26", "2026-10-12"],
+      ["school-holiday:2027:term-1", "2027-04-10", "2027-04-27"],
+    ]);
     expect(publicDataAdapters.public_holidays_nz.metadata.accessMethod).toBe("OFFICIAL_PUBLIC_HTML");
   });
 
@@ -148,6 +153,11 @@ describe("public data adapter contract", () => {
     await expect(publicDataAdapters.eventbrite_events.discover(request, fixtureContext)).resolves.toEqual(["https://www.eventbrite.co.nz/d/new-zealand--christchurch/events/"]);
     await expect(publicDataAdapters.humanitix_events.discover(request, fixtureContext)).resolves.toEqual(["https://humanitix.com/nz/events/nz--canterbury-region--christchurch"]);
     expect(publicDataAdapters.eventbrite_events.metadata).toMatchObject({ adapterKey: "public:eventbrite:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED" });
+  });
+
+  it("discovers the current Manawatū official event listing path", async () => {
+    const references = await publicDataAdapters.manawatunz_events.discover({ marketScope: "manawatu", from: new Date("2026-09-27"), to: new Date("2026-10-28") }, fixtureContext);
+    expect(references).toEqual(["https://manawatunz.co.nz/explore/events/"]);
   });
 
   it("parses official Wellington and Waikato regional event listings", () => {
@@ -258,6 +268,11 @@ describe("public data adapter contract", () => {
   });
 
   it("parses official ski-season windows as date-specific demand context", async () => {
+    expect(await publicDataAdapters.ski_seasons_nz.discover()).toEqual([
+      "https://www.theremarkables.co.nz/mountain-info",
+      "https://www.mthutt.co.nz/mountain-info",
+      "https://www.whakapapa.com/winter",
+    ]);
     expect(parseSkiSeasonHtml("<main><h4>27 June - 11 October 2026</h4></main>", { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", url: "https://www.mthutt.co.nz/mountain-info", datePattern: /(\d{1,2}\s+[A-Za-z]+)\s*[-–]\s*(\d{1,2}\s+[A-Za-z]+)\s+(20\d{2})/i })).toMatchObject({ opensAt: "2026-06-26T12:00:00.000Z", closesAt: "2026-10-10T11:00:00.000Z" });
     const signals = await publicDataAdapters.ski_seasons_nz.normalise([{ sourceId: "ski_seasons_nz", externalId: "ski-season:mt-hutt:2026", payload: { resort: "Mt Hutt", marketKey: "christchurch", region: "Canterbury", opensAt: "2026-06-26T12:00:00.000Z", closesAt: "2026-10-10T11:00:00.000Z", sourceUrl: "https://www.mthutt.co.nz/mountain-info" }, fetchedAt: new Date(), fixture: false }], fixtureContext);
     expect(signals[0]).toMatchObject({ marketKey: "christchurch", type: "TOURISM_DEMAND", direction: "POSITIVE", confidence: 0.8 });
@@ -409,11 +424,40 @@ describe("public data adapter contract", () => {
     expect(riccarton.events?.map((event) => event.externalId)).toEqual(["riccarton-cup-week:2026-7", "riccarton-cup-week:2026-11", "riccarton-cup-week:2026-14"]);
   });
 
-  it("tracks the official cruise dashboard boundary and airport monthly passenger trends", () => {
-    const cruise = parseCruiseDashboard(`<iframe title="Christchurch Cruise schedule 2025_26" src="https://app.powerbi.com/view?r=public-token"></iframe>`, "https://www.christchurchnz.com/visit/plan-your-visit/cruise/christchurch-cruise-schedule");
-    expect(cruise.metadata).toMatchObject({ publisher: "ChristchurchNZ", underlyingSource: "New Zealand Cruise Association", extractionBoundary: "DIRECT_PUBLIC_POWERBI_JSON" });
+  it("parses the current NZCA season without inventing missing Akaroa times", () => {
+    const listing = `<script>const yearUrls={'2025-26':'https://docs.google.com/spreadsheets/d/e/2PACX-old/pubhtml/sheet?gid=1','2026-27':'https://docs.google.com/spreadsheets/d/e/2PACX-current/pubhtml/sheet?headers=false&gid=502006066'}</script>`;
+    expect(findNzCruiseScheduleCsvUrl(listing, "2026-27")).toBe("https://docs.google.com/spreadsheets/d/e/2PACX-current/pub?gid=502006066&single=true&output=csv");
+    expect(() => findNzCruiseScheduleCsvUrl(listing, "2027-28")).toThrow("no published 2027-28");
+    const csv = `Ship,Port,Arrival,Arrival time,Departure,Departure time,Guests,Crew\nCelebrity Edge,Christchurch,Thu 22 Oct 26,08:00,Thu 22 Oct 26,18:00,"2,934","1,377"\nHeritage Adventurer,Akaroa,Wed 18 Nov 26,,Wed 18 Nov 26,,140,40\nCelebrity Edge,Auckland,Fri 23 Oct 26,08:00,Fri 23 Oct 26,18:00,"2,934","1,377"`;
+    const events = parseNzCruiseScheduleCsv(csv, "https://newzealandcruiseassociation.com/schedules/");
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ externalId: "cruise:lyttelton:celebrity-edge:2026-10-22", city: "Lyttelton", timePrecision: "DATETIME", metadata: { sourcePortLabel: "Christchurch", guestCapacity: 2934, timingIndicative: true } });
+    expect(events[1]).toMatchObject({ externalId: "cruise:akaroa:heritage-adventurer:2026-11-18", city: "Akaroa", timePrecision: "DATE", metadata: { sourcePortLabel: "Akaroa", guestCapacity: 140, timingIndicative: true } });
+    expect(events[1]!.startsAt.toISOString()).toBe("2026-11-17T11:00:00.000Z");
+    expect(events[1]!.endsAt.toISOString()).toBe("2026-11-18T10:59:59.999Z");
+    expect(() => parseNzCruiseScheduleCsv(csv.replace("Wed 18 Nov 26", "Wed 32 Nov 26"), "https://newzealandcruiseassociation.com/schedules/")).toThrow("invalid ship or date");
+    expect(() => parseNzCruiseScheduleCsv(csv.replace("Guests,Crew", "Passengers,Crew"), "https://newzealandcruiseassociation.com/schedules/")).toThrow("columns changed");
+  });
+
+  it("parses Christchurch Airport monthly passenger trends", () => {
     const airport = parseAirportMonthlyPassengers(`<h4>2025</h4><table><tr><td>June</td><td>300,000</td><td>100,000</td><td>400,000</td></tr></table><h4>2026</h4><table><tr><td>June</td><td>361,510</td><td>108,278</td><td>469,788</td></tr></table>`, "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/");
     expect(airport.signals?.[1]).toMatchObject({ type: "TOURISM_DEMAND", direction: "POSITIVE", startsAt: new Date("2026-05-31T12:00:00.000Z"), metadata: { contextSeriesKey: "airport-monthly-passengers", domesticPassengers: 361510, internationalPassengers: 108278, totalPassengers: 469788, annualChangePercent: 17.447 } });
+    const december = parseAirportMonthlyPassengers(`<h4>2025</h4><table><tr><td>December</td><td>300,000</td><td>100,000</td><td>400,000</td></tr></table>`, "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/");
+    expect(december.signals?.[0]).toMatchObject({ externalId: "airport-passengers:2025-12", endsAt: new Date("2025-12-31T11:00:00.000Z") });
+  });
+
+  it("takes the latest published Christchurch Airport months within a bounded historical window", async () => {
+    const html = `<h4>2026</h4><table><tr><td>January</td><td>300,000</td><td>100,000</td><td>400,000</td></tr><tr><td>February</td><td>310,000</td><td>110,000</td><td>420,000</td></tr><tr><td>August</td><td>350,000</td><td>130,000</td><td>480,000</td></tr></table>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(html, { status: 200 })));
+    try {
+      const adapter = publicDataAdapters.christchurch_airport_monthly;
+      const context = { ...fixtureContext, collectionRange: { from: new Date("2025-09-27"), to: new Date("2026-09-28") }, collectionLimits: { maxRequests: 1, maxRecords: 2, maxBytes: 100_000, timeoutMs: 10_000 } };
+      const [reference] = await adapter.discover({ marketScope: "christchurch", from: context.collectionRange.from, to: context.collectionRange.to }, context);
+      const raw = await adapter.fetch(reference, context);
+      expect(raw.map((record) => record.externalId)).toEqual(["airport-passengers:2026-08", "airport-passengers:2026-02"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("discovers and parses Wellington Airport monthly passenger workbook", async () => {
@@ -652,6 +696,13 @@ describe("public data adapter contract", () => {
       impactEvidence: { schemaVersion: "event-impact-evidence-v1", items: [expect.objectContaining({ evidenceType: "EXPECTED_ATTENDANCE", value: 70_000, unit: "people" })] },
       metadata: { tradeSites: 400, showEventsAndCompetitions: 5_000 },
     });
+    const [showFromTerms] = parseCanterburyMajorAnnualEvent(`<main>3.1 The Show will be open to the public on Wednesday 11th, Thursday 12th and Friday 13th November 2026 (the opening days).</main>`, "https://www.theshow.co.nz/terms-conditions/");
+    expect(showFromTerms).toMatchObject({ externalId: "canterbury-ap-show:2026", impactStatus: "PENDING_EVIDENCE", sourceUrl: "https://www.theshow.co.nz/terms-conditions/" });
+    const [combined] = parseCanterburyMajorAnnualEvent(`<main>Wednesday 11 - Friday 13 November. Over 70,000 people attending over the 3 days.</main>`, "https://www.theshow.co.nz/", {
+      html: `<main>The Show will be open to the public on Wednesday 11th, Thursday 12th and Friday 13th November 2026.</main>`,
+      url: "https://www.theshow.co.nz/terms-conditions/",
+    });
+    expect(combined).toMatchObject({ externalId: "canterbury-ap-show:2026", impactStatus: "PROMOTED", impactEvidence: { items: [expect.objectContaining({ value: 70_000, sourceUrl: "https://www.theshow.co.nz/" })] }, metadata: { dateEvidenceUrl: "https://www.theshow.co.nz/terms-conditions/" } });
     const [marathon] = parseCanterburyMajorAnnualEvent(`<main>ASICS Christchurch Marathon 18 April 2027</main>`, "https://www.christchurchmarathon.co.nz/");
     expect(marathon).toMatchObject({ externalId: "christchurch-marathon:2027", impactStatus: "PENDING_EVIDENCE", venueName: "Hagley Park" });
   });
@@ -924,9 +975,15 @@ describe.skipIf(process.env.LIVE_SOURCE_PROBE !== "1")("Christchurch live source
       expect(records.every((record) => record.fixture === false)).toBe(true);
     }
     const cruise = publicDataAdapters.christchurch_cruise;
-    const [reference] = await cruise.discover({ marketScope: "christchurch", from, to }, context);
-    const [record] = await cruise.fetch(reference, context);
-    expect(record.payload).toMatchObject({ kind: "event", value: { category: "Cruise ship", city: "Christchurch" } });
+    const cruiseFrom = new Date("2026-09-27T00:00:00.000Z");
+    const cruiseTo = new Date("2027-06-30T00:00:00.000Z");
+    const cruiseContext = { ...context, collectionRange: { from: cruiseFrom, to: cruiseTo } };
+    const [reference] = await cruise.discover({ marketScope: "christchurch", from: cruiseFrom, to: cruiseTo }, cruiseContext);
+    const records = await cruise.fetch(reference, cruiseContext);
+    const events = await cruise.normaliseEvents!(records, cruiseContext);
+    expect(records[0]?.networkRequestCount).toBe(2);
+    expect(new Set(events.map((event) => event.city))).toEqual(new Set(["Lyttelton", "Akaroa"]));
+    expect(events.every((event) => event.category === "Cruise ship" && event.metadata.scheduleSource === "New Zealand Cruise Association")).toBe(true);
   }, 60_000);
 
   it("collects bounded Wellington Airport transport flow through direct HTTP", async () => {

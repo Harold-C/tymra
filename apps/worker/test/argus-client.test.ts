@@ -4,6 +4,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, it } from "vitest";
 import type { Environment } from "@tymra/config";
+import { publicSkiSeasonExtractionSchema } from "../src/collection/ski-season-argus";
 import {
   acknowledgeArgusJobResult,
   captureBrowserTaskWithArgus,
@@ -269,6 +270,53 @@ describe("Argus async Job client", () => {
     assert.equal(response.ok, true);
     if (!response.ok) return;
     assert.equal((response.payload.extracted as { records: unknown[] }).records.length, 1);
+  });
+
+  it("submits and validates the fixed ski year and resort result", async () => {
+    const sourceUrl = "https://www.mthutt.co.nz/mountain-info";
+    let submitted: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      submitted = JSON.parse(await body(request)) as Record<string, unknown>;
+      return {
+        ...baseResult("nz-ski-season-test", "collect_season", "nz-ski-season-public"),
+        data: {
+          data_schema: "public-ski-season.collect_season", schema_version: "1.0.0",
+          resortId: "mt-hutt", resortName: "Mt Hutt", sourceUrl, seasonYear: 2026,
+          opensOn: "2026-06-27", closesOn: "2026-10-11", timezone: "Pacific/Auckland",
+          observedAt: "2026-09-27T00:00:00.000Z", quality: "complete", warnings: [],
+        },
+      };
+    });
+    const environment = await listenEnvironment();
+    const input = {
+      traceId: "nz-ski-season-test", connectorId: "nz-ski-season-public" as const,
+      workflowId: "collect_season" as const, url: sourceUrl, seasonYear: 2026,
+    };
+    const response = await captureBrowserTaskWithArgus(environment, input);
+    assert.equal(response.ok, true);
+    assert.deepEqual((submitted?.captures as Array<Record<string, unknown>>)?.[0]?.season_year, 2026);
+    if (!response.ok) return;
+    assert.equal((response.payload.extracted as { resortId: string }).resortId, "mt-hutt");
+    assert.equal(publicSkiSeasonExtractionSchema.safeParse(response.payload.extracted).success, true);
+  });
+
+  it("rejects a ski result attributed to a different official resort", async () => {
+    server = jobServer(async () => ({
+      ...baseResult("nz-ski-season-test", "collect_season", "nz-ski-season-public"),
+      data: {
+        data_schema: "public-ski-season.collect_season", schema_version: "1.0.0",
+        resortId: "mt-hutt", resortName: "Mt Hutt", sourceUrl: "https://www.whakapapa.com/winter",
+        seasonYear: 2026, opensOn: "2026-06-27", closesOn: "2026-10-11",
+        timezone: "Pacific/Auckland", observedAt: "2026-09-27T00:00:00.000Z",
+        quality: "complete", warnings: [],
+      },
+    }));
+    const response = await captureBrowserTaskWithArgus(await listenEnvironment(), {
+      traceId: "nz-ski-season-test", connectorId: "nz-ski-season-public",
+      workflowId: "collect_season", url: "https://www.mthutt.co.nz/mountain-info", seasonYear: 2026,
+    });
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /invalid public-ski-season\.collect_season data/u);
   });
 
   it("preserves the voluntary-coverage caveat in the Ministry of Transport contract", async () => {

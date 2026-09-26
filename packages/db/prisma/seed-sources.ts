@@ -92,7 +92,7 @@ export function registrySourceSeedRecords() {
     ["christchurch_sports", "Christchurch Official Sports Fixtures", ["www.crusaders.co.nz", "www.tactixnetball.co.nz", "www.canterburycricket.org.nz"]],
     ["christchurch_university_dates", "Christchurch University Demand Dates", ["www.canterbury.ac.nz", "www.lincoln.ac.nz"]],
     ["christchurch_racing", "Christchurch Racing and Cup Week", ["www.addington.co.nz", "racing.riccartonpark.nz"]],
-    ["christchurch_cruise", "Christchurch Cruise Schedule", ["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"]],
+    ["christchurch_cruise", "Christchurch Cruise Schedule", ["newzealandcruiseassociation.com", "docs.google.com"]],
     ["christchurch_airport_monthly", "Christchurch Airport Monthly Passengers", ["www.christchurchairport.co.nz"]],
     ["port_and_cruise", "Port and Cruise Schedules", ["poal.co.nz"]],
     ["fx_rates", "Reserve Bank of New Zealand Exchange Rates", ["rbnz.govt.nz"]],
@@ -126,7 +126,7 @@ export function registrySourceSeedRecords() {
                       : key === "geonet" ? "public:geonet:hazards-v3"
                         : key === "doc_alerts" ? "public:doc:regional-alerts-json-v1"
                           : key === "interislander_alerts" ? "public:interislander:service-alerts-json-v1"
-                            : key === "ski_seasons_nz" ? "public:nz-ski-seasons:official-html-v1"
+                            : key === "ski_seasons_nz" ? "public:nz-ski-seasons:argus-v1"
                         : key === "mbie" ? "public:mbie:adp-csv-v2"
               : key === "mbie_tourism_flows" ? "public:mbie_tourism_flows:xlsx-v1"
                 : key === "mbie_mrte" ? "public:mbie_mrte:xlsx-v1"
@@ -164,7 +164,7 @@ export function registrySourceSeedRecords() {
                                   : key === "christchurch_sports" ? "public:christchurch_sports:events-v1"
                                     : key === "christchurch_university_dates" ? "public:christchurch_university_dates:key-dates-v2"
                                       : key === "christchurch_racing" ? "public:christchurch_racing:racing-v1"
-                                        : key === "christchurch_cruise" ? "public:christchurch_cruise:powerbi-v1"
+                                        : key === "christchurch_cruise" ? "public:christchurch_cruise:nzca-published-csv-v1"
                                           : key === "christchurch_airport_monthly" ? "public:christchurch_airport_monthly:passenger-table-v1"
                               : key === "airport_data" ? "public:airport-data:queenstown-flights-v2"
                                 : key === "queenstown_airport_monthly" ? "public:queenstown-airport:monthly-passengers-powerbi-v1"
@@ -199,7 +199,7 @@ export function registrySourceSeedRecords() {
                       : key === "venues_otautahi_events" ? "PUBLIC_HTML_DISCOVERED_JSON"
                         : key === "christchurch_council_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
                         : key === "christchurch_airport" ? "PUBLIC_JSON"
-                          : key === "christchurch_cruise" ? "OFFICIAL_PUBLIC_HTML_DISCOVERED_JSON"
+                          : key === "christchurch_cruise" ? "OFFICIAL_PUBLIC_CSV"
                             : key === "christchurch_university_dates" ? "OFFICIAL_PUBLIC_HTML_AND_ARGUS"
                             : ["christchurch_sports", "christchurch_racing", "christchurch_airport_monthly"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
                         : ["te_pae_events", "isaac_theatre_royal_events", "ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? "OFFICIAL_PUBLIC_HTML"
@@ -207,7 +207,7 @@ export function registrySourceSeedRecords() {
                         : key === "wellington_airport_monthly" ? "OFFICIAL_PUBLIC_HTML_XLSX"
                       : key === "queenstown_airport_monthly" ? "OFFICIAL_PUBLIC_HTML_POWERBI_JSON"
                         : ["doc_alerts", "interislander_alerts"].includes(key) ? "OFFICIAL_PUBLIC_JSON"
-                          : key === "ski_seasons_nz" ? "OFFICIAL_PUBLIC_HTML"
+                          : key === "ski_seasons_nz" ? "PUBLIC_WEB_ARGUS_READ_ONLY"
                       : key === "university_calendars" || key === "airport_data" ? "OFFICIAL_PUBLIC_JSON"
                         : key === "port_and_cruise" ? "OFFICIAL_PUBLIC_CSV"
           : browserSource ? "PUBLIC_WEB_BROWSER_READ_ONLY"
@@ -249,7 +249,7 @@ export function registrySourceSeedRecords() {
                           : key === "ticketek_events" ? 20
                         : key === "doc_alerts" ? 14
                           : key === "interislander_alerts" ? 48
-                            : key === "ski_seasons_nz" ? 3
+                            : key === "ski_seasons_nz" ? 6
                         : ["university_calendars", "te_pae_events", "port_and_cruise"].includes(key) ? 24
                       : ["mbie", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "fx_rates"].includes(key) ? 4
                         : key === "stats_nz" ? 8 : 2_000,

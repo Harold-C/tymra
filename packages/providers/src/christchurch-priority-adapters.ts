@@ -16,6 +16,7 @@ import { AdapterError } from "./adapter-types";
 const CCC_EVENTS_URL = "https://www.ccc.govt.nz/news-and-events/whats-on";
 const ARA_CALENDAR_URL = "https://www.ara.ac.nz/about-us/academic-calendar/";
 const CANTERBURY_SHOW_URL = "https://www.theshow.co.nz/";
+const CANTERBURY_SHOW_TERMS_URL = "https://www.theshow.co.nz/terms-conditions/";
 const CHRISTCHURCH_MARATHON_URL = "https://www.christchurchmarathon.co.nz/";
 
 type CccPage = { events: PublicEvent[]; nextUrl: string | null };
@@ -92,10 +93,16 @@ class CanterburyMajorAnnualEventsAdapter implements PublicDataAdapter {
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
     assertAllowed(reference, this.metadata.supportedDomains);
     const page = await fetchHtml(reference, context, this.metadata.sourceName);
-    const parsed = parseCanterburyMajorAnnualEvent(page.text, page.url);
+    let parsed = parseCanterburyMajorAnnualEvent(page.text, page.url);
+    let requests = 1;
+    if (!parsed.length && reference === CANTERBURY_SHOW_URL && maxRequests(context, 30) >= 2) {
+      const terms = await fetchHtml(CANTERBURY_SHOW_TERMS_URL, context, this.metadata.sourceName);
+      parsed = parseCanterburyMajorAnnualEvent(page.text, page.url, { html: terms.text, url: terms.url });
+      requests += 1;
+    }
     if (!parsed.length) throw new AdapterError("PARSING_ERROR", `${new URL(reference).hostname} returned no supported annual event`, false);
     const events = parsed.filter((event) => overlaps(event.startsAt, event.endsAt, context)).slice(0, maxRecords(context, 20));
-    return eventRawRecords(this.metadata.sourceId, events, 1);
+    return eventRawRecords(this.metadata.sourceId, events, requests);
   }
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> { return rawEvents(records); }
@@ -174,21 +181,26 @@ export function parseAraAcademicCalendar(html: string, finalUrl = ARA_CALENDAR_U
   return signals;
 }
 
-export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string): PublicEvent[] {
+export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string, dateEvidence?: { html: string; url: string }): PublicEvent[] {
   const { document } = parseHTML(html);
   const text = clean(document.documentElement?.textContent || document.textContent || html);
   const host = new URL(finalUrl).hostname.toLowerCase();
   if (host === "www.theshow.co.nz") {
     const match = text.match(/(?:Wed(?:nesday)?\s+)?(\d{1,2})\s*-\s*(?:Fri(?:day)?\s+)?(\d{1,2})\s+([A-Za-z]+)\s+(20\d{2})/i);
-    if (!match) return [];
-    const start = namedDate(Number(match[4]), match[3]!, Number(match[1]));
-    const end = namedDate(Number(match[4]), match[3]!, Number(match[2]));
+    const { document: dateDocument } = dateEvidence ? parseHTML(dateEvidence.html) : { document };
+    const dateText = clean(dateDocument.documentElement?.textContent || dateDocument.textContent || dateEvidence?.html || html);
+    const publicDays = dateText.match(/The Show will be open to the public on Wednesday\s+(\d{1,2})(?:st|nd|rd|th)?,\s+Thursday\s+\d{1,2}(?:st|nd|rd|th)?\s+and\s+Friday\s+(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(20\d{2})/i);
+    const advertised = match ?? publicDays;
+    if (!advertised) return [];
+    const start = namedDate(Number(advertised[4]), advertised[3]!, Number(advertised[1]));
+    const end = namedDate(Number(advertised[4]), advertised[3]!, Number(advertised[2]));
     if (!start || !end) return [];
-    const attendance = numberNearLabel(text, /([\d,]+)\s*Annual\s*Visitors/i);
+    const attendance = numberNearLabel(text, /([\d,]+)\s*Annual\s*Visitors/i)
+      ?? numberNearLabel(text, /over\s+([\d,]+)\s+people attending over the 3 days/i);
     const observedAt = new Date();
     return [event({
       sourceId: "canterbury_major_annual_events",
-      externalId: `canterbury-ap-show:${match[4]}`,
+      externalId: `canterbury-ap-show:${advertised[4]}`,
       seriesId: "canterbury-ap-show",
       title: "Ravensdown Canterbury A&P Show",
       sourceUrl: finalUrl,
@@ -206,7 +218,7 @@ export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string):
           sourceUrl: finalUrl,
           observedAt: observedAt.toISOString(),
           confidence: 0.96,
-          notes: "Official annual visitors published for the three-day show",
+          notes: "Official homepage attendance estimate for the three-day show",
         }],
       } : emptyEventImpactEvidence(["ATTENDANCE_REQUIRED"]),
       impactScore: attendance && attendance >= 50_000 ? 0.95 : null,
@@ -215,7 +227,8 @@ export function parseCanterburyMajorAnnualEvent(html: string, finalUrl: string):
         annualVisitors: attendance,
         tradeSites: numberNearLabel(text, /([\d,]+)\s*Trade\s*Sites/i),
         showEventsAndCompetitions: numberNearLabel(text, /([\d,]+)\s*Show\s*Events/i),
-        advertisedDate: match[0],
+        advertisedDate: advertised[0],
+        ...(dateEvidence ? { dateEvidenceUrl: dateEvidence.url } : {}),
         extractionVersion: "canterbury-ap-show-page-v1",
       },
     })];

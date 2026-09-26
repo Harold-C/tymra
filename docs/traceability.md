@@ -2,6 +2,152 @@
 
 Last updated: 2026-09-27 (bounded public-source production rollout)
 
+## 2026-09-27 suspended-source repair candidate — local only
+
+The production rollout below is unchanged. A local candidate now repairs the moved Ministry of
+Education school-holiday route and multi-year parser; the Christchurch Airport December rollover
+and latest-month pilot range; the Manawatū events route; the Auckland Live response-size limit;
+and the short first-round windows or request ceilings for Ara, Christchurch Council events,
+Christchurch sports, Taranaki events, Venues Ōtautahi and MetService. Canterbury A&P Show now
+uses the organiser's explicit 2026 public-opening days from its terms alongside the homepage's
+published attendance estimate, with two requests and separate date provenance. LINZ reference
+results and a verified quiet or unchanged MetService feed have source-specific zero-business gates
+instead of invented demand rows.
+The Christchurch Council pilot now passes its three-page ceiling through to the paginated adapter
+instead of overriding it to one request; a bounded local check returned two in-window events on
+the first page. Taranaki's 90-day, one-request check also returned two in-window events. The Worker
+now fails a production canary before persistence if an adapter reports more requests than its
+source-specific ceiling. Targeted pilot tests and Worker typecheck passed; production is unchanged.
+The Canterbury annual-events candidate needs three requests when the Show homepage requires its
+terms page for dates: Show homepage, Show terms, and Christchurch Marathon. Its local pilot now
+counts visited references and refuses schedule activation unless both official event pages were
+visited within that three-request ceiling in each of two new passes. A targeted unit test and a
+transactional integration test on a freshly migrated disposable database passed; the database
+was removed. A one-request local read of the official Marathon page parsed successfully and
+returned no event inside the current 90-day window; that is different from a source failure.
+This gate has not been exercised in production.
+
+Guarded retest paths now support already-suspended direct and Argus pilot sources. The previously
+failed Waikato/AUT recovery attempts cannot count as two independent one-attempt passes. The
+existing `council_calendars` row can move from its untouched direct-pilot metadata to the browser
+pilot only when it has no CollectionRun; its listing plus at most two details use a three-request
+cap. All candidates require new production passes and the existing evidence, ACK, hash, duplicate
+and schedule gates before enablement. The local provider adapter suite passed 73 tests with five
+skips, the Worker suite passed 253 tests, the pilot activation suite passed four tests against a
+freshly migrated and seeded disposable PostgreSQL database, provider and Worker type checks passed, and a
+two-request live read-only Show probe returned one 2026 event with official date and attendance
+provenance. No candidate has been built or deployed.
+
+A further bounded local read-only check of the candidate adapters returned one in-window
+Auckland Live event from a 4,463,675-byte page under its source-specific 6 MB cap, one Ministry
+school-holiday signal, two Manawatū events, one Ara academic signal, and two Christchurch Airport
+monthly signals. The cruise adapter, after its weekday/date validation change, fetched its official
+schedule in two requests and returned 17 in-window calls: 14 Lyttelton and three Akaroa. These
+checks did not create production Jobs or records and do not count toward either required production
+pass.
+
+`ski_seasons_nz` remains paused: the current The Remarkables and Mt Hutt pages return HTTP 403 to
+the Tymra direct client, so visiting only Whakapapa would understate the three-resort source.
+The local candidate now points The Remarkables to its current official
+[mountain information page](https://www.theremarkables.co.nz/mountain-info), whose 2026 season
+dates are explicit; its former `/plan` target was stale. The official
+[Mt Hutt mountain page](https://www.mthutt.co.nz/mountain-info) currently states 27 June–11 October
+2026, while the earlier [NZSki media kit](https://www.nzski.com/media/6823/2026-winter-media-kit-mt-hutt.pdf)
+labels 12 June a *targeted* opening. The media kit is not a safe substitute for the current
+page. This URL correction passed the targeted provider test and typecheck locally, but the 403
+and complete three-resort production acceptance remain unresolved. The local candidate now uses
+Argus browser-only jobs against three fixed official pages, one per resort, with a versioned
+season-date result contract. The Tymra worker requires three distinct hashed business artifacts,
+three persisted season signals, copied local evidence and ACK/PURGED for all three jobs in each
+of two independent production passes before it may create a weekly schedule. Targeted synthetic
+extractor, pilot-gate and client-contract tests, all 235 root unit tests, all 257 Worker unit
+tests, and 119 integration tests on a freshly migrated and seeded disposable PostgreSQL 17
+database pass. Lint, workspace typechecks and Web/Worker local builds pass. The Web build still
+prints existing optional LinkeDOM canvas and missing build-time environment warnings while
+exiting successfully. No new production image or source pass exists yet.
+`christchurch_cruise` remains paused because the ChristchurchNZ Power BI page still exposes the
+2025/26 report. The local candidate now discovers the current published Google CSV from the
+[New Zealand Cruise Association schedule page](https://newzealandcruiseassociation.com/schedules/)
+instead. That official page warns that arrival and departure times are indicative. A bounded
+two-request local read of the 2026/27 season parsed 66 unique calls: 58 labelled `Christchurch`
+and eight `Akaroa`; the first 90-day production-pilot window contains 14 and three respectively.
+The source-specific mapping treats `Christchurch` as Lyttelton, consistent with the
+[ChristchurchNZ two-port description](https://www.christchurchnz.com/visit/plan-your-visit/cruise)
+and the separate [Lyttelton Port public schedule](https://portcontrol.lpc.co.nz/), which displayed
+58 calls. Two full-season rows have no published time and are retained with date-only precision,
+not invented 08:00 arrivals. The candidate uses a 90-day, two-request, 100-record cap and fails
+on malformed rows or overflow. A guarded retest updates only the suspended legacy Power BI source
+with no accepted business history; activation requires persisted calls from both ports and hashed
+local artifacts for both ports in each of two bounded passes. Targeted parser/provider and Worker tests,
+both typechecks, and two transactional guard tests in a migrated disposable PostgreSQL database
+passed. The new source has not yet been deployed or accepted through Tymra production. The earlier
+Lyttelton Port `GetDataX` route remains unimplemented; no browser session stamp was copied into
+code. `school_sport_canterbury`
+remains paused because the sampled public Teamup calendar's 13 items contain no published locations,
+so Canterbury hosting cannot be inferred. The earlier local cross-service acceptance explicitly
+retained 13 raw records while promoting zero unresolved events. The local release gate now recognises
+only two independent, one-attempt Argus passes whose strict School Sport Canterbury schema contains
+in-window raw occurrences with no published location and no business rows; copied evidence hashes
+and ACK/PURGED checks remain mandatory. It has not been retested or enabled in production.
+The first-round RBNZ and MOT `PARSING_ERROR` cases now have exact local reproductions from the
+production-retained evidence. The RBNZ HTML (1,105,569 bytes; SHA-256 verified against its
+`RawArtifact`) uses `Sept` in the dated table headers; the old Argus parser accepted only
+three-letter month names. Its local candidate extracts all seven rates for 2026-09-25 from the
+same page. The MOT download (29,194 bytes; SHA-256 verified) is a valid July 2026 workbook,
+not an HTML/challenge response. The old parser rejected five real port names missing from its
+fixed IATA map: Chatham Islands (Tuuta), Paraparaumu, Picton, Whanganui and Whitianga. After
+checking the [published airport-code list](https://smartpay.gsa.gov/files/master-contract/SP3_Attachment_18_International_Airport_Codes.pdf)
+and [Whanganui code in an NZ airport movement report](https://www.whakatane.govt.nz/sites/www.whakatane.govt.nz/files/2024-12/appendix_2-20230411_whk_schedule_movements_final_report_apr_2023_updated_11apr.pdf),
+adding only those mappings makes the local candidate extract 164 route aggregates from the
+same workbook. Synthetic regression fixtures, 29 targeted Argus tests and typecheck passed.
+No RBNZ or MOT candidate has been released or revalidated through Tymra production. The current
+[MOT page](https://www.transport.govt.nz/area-of-interest/air-transport/airline-on-time-performance)
+labels older data XLS, but its March and July 2026 download links actually end in `.xlsx`;
+the `.xlsx` selector was not the failure. The
+[Tākina listing](https://www.takina.co.nz/visit/whats-on) links to detail pages without listing
+dates. A bounded local Argus candidate now captures at most two same-origin details as evidence,
+parses their explicit cross-month date ranges and excludes the Wellington-wide Bee trail from the
+fixed Tākina venue. A local live three-page read-only probe returned one hosted LEGO exhibition
+with 2026-06-27–2026-10-26 dates; targeted tests and typecheck passed. This has not been released
+to Argus production or retested through Tymra production.
+Palmerston North Airport's embedded public feed responded locally with HTTP 200 and 14,697 bytes;
+the current Argus parser produced 24 flights with complete quality in a bounded 72-hour local
+window. A single read-only fetch from the running Argus production container also returned HTTP
+200 and 14,697 bytes. The stored production Argus Job reports only `INTERNAL_ERROR`, with no
+retained parser artifact or current matching container log, so the exact runtime cause remains
+unknown; neither feed availability nor the current parser reproduces the failure. A fresh local
+Patchright page-plus-embedded-feed probe also returned HTTP 200 for both requests, 14,113 feed
+bytes and 23 complete-quality flights in a 48-hour window. This narrows the failure to the
+production execution path or a transient condition but does not prove which; no repeat
+production source visit was made for this diagnosis.
+A single full local Argus Connector execution in an isolated container, with disposable Profile
+and evidence tmpfs, then succeeded for Palmerston North: 21 flights, `complete` quality, no
+Connector error. The same bounded isolation succeeded for Auckland Airport monthly with 24
+records and no Connector error. The temporary container data was discarded on exit and the
+running development and production services were unchanged. The relevant Argus capture and
+extractor files have no committed diff between production revision
+`7df378fda31453dc6da724fb9fd7892cdfe99abf` and current `HEAD`; the local image is an
+earlier development build, so these successes narrow but do not establish the production failure
+cause. Each source still needs a new one-attempt production pass through Tymra after release;
+do not retry either source repeatedly or mark it healthy from this local result alone.
+Read-only production inspection through the host's dedicated SSH key confirmed that Tymra still
+runs `tymra:public-final-two-20260927-v4` for Worker/API/Scheduler. The saved Palmerston North and
+second Auckland Airport `ArgusExecution` rows are `FAILED`; Tymra's parent Jobs and CollectionRuns
+record only `SOURCE_UNAVAILABLE`, without a retained detailed Argus error. Authenticated Argus
+GETs for both Job summaries return `FAILED`, while both result GETs return 410. Tymra's protected
+saved result retains an item-level `INTERNAL_ERROR` and a generic message, without a detailed
+cause; the remote result is unavailable. No source request or production mutation was made during
+this inspection. A fresh one-attempt Tymra production trial is needed
+after the unified release, with failure telemetry retained before result cleanup.
+Tymra's local orchestrator candidate now records the matching Argus item error category when a
+failed Job has no top-level error, which is the shape retained for both airport failures. It accepts
+only a bounded uppercase category code and does not copy the item's free-text message into the
+indexed execution error field. The focused orchestrator suite passed 22 tests and Worker typecheck
+passed; this telemetry correction has not been deployed.
+Auckland Airport
+monthly needs two fresh one-attempt Argus passes after its first successful and second failed passes.
+Eventfinda and Ticketmaster are outside this repair candidate.
+
 ## 2026-09-27 public-source production rollout — current state
 
 Production Worker/API/Scheduler run pushed commit `5011694516ac49ba8384d05cf143190635ff8ad7`,

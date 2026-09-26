@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { parse } from "csv-parse/sync";
 import { parseHTML } from "linkedom";
 import { nzDateKey, nzDateTime as newZealandDateTime, nzEndOfDay } from "@tymra/domain";
 
@@ -12,12 +12,12 @@ const CANTERBURY_CRICKET_URL = "https://www.canterburycricket.org.nz/teams/cante
 const UC_DATES_URL = "https://www.canterbury.ac.nz/study/study-support-info/dates-and-timetables/key-university-dates";
 const ADDINGTON_URL = "https://www.addington.co.nz/racing/";
 const RICCARTON_URL = "https://racing.riccartonpark.nz/";
-const CRUISE_URL = "https://www.christchurchnz.com/visit/plan-your-visit/cruise/christchurch-cruise-schedule";
+const CRUISE_URL = "https://newzealandcruiseassociation.com/schedules/";
 const AIRPORT_MONTHLY_URL = "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/";
 
 type HtmlResult = { events?: PublicEvent[]; signals?: PublicSignal[]; metadata?: Record<string, unknown> };
 type HtmlParser = (html: string, finalUrl: string) => HtmlResult;
-type CruiseRow = { port: string; arrivalDate: unknown; arrivalTime: unknown; departureDate: unknown; departureTime: unknown; ship: string; guests: number | null };
+type NzCruiseRow = { Ship: string; Port: string; Arrival: string; "Arrival time": string; Departure: string; "Departure time": string; Guests: string; Crew: string };
 
 class ChristchurchDemandAdapter implements PublicDataAdapter {
   constructor(readonly metadata: AdapterMetadata, private readonly references: string[], private readonly parser: HtmlParser) {}
@@ -36,7 +36,9 @@ class ChristchurchDemandAdapter implements PublicDataAdapter {
     const values = [
       ...(parsed.events ?? []).filter((event) => overlaps(event.startsAt, event.endsAt, context)).map((event) => ({ kind: "event", value: event })),
       ...(parsed.signals ?? []).filter((signal) => overlaps(signal.startsAt, signal.endsAt, context)).map((signal) => ({ kind: "signal", value: signal })),
-    ].slice(0, context.collectionLimits?.maxRecords ?? 500);
+    ];
+    if (this.metadata.sourceId === "christchurch_airport_monthly") values.sort((a, b) => b.value.startsAt.getTime() - a.value.startsAt.getTime());
+    values.splice(context.collectionLimits?.maxRecords ?? 500);
     if (!values.length && parsed.metadata) values.push({ kind: "metadata", value: parsed.metadata } as never);
     return values.map((entry, index) => ({
       sourceId: this.metadata.sourceId,
@@ -56,32 +58,34 @@ class ChristchurchDemandAdapter implements PublicDataAdapter {
 }
 
 class ChristchurchCruiseAdapter implements PublicDataAdapter {
-  readonly metadata = metadata("christchurch_cruise", "Christchurch cruise schedule", ["www.christchurchnz.com", "app.powerbi.com", "wabi-south-east-asia-api.analysis.windows.net"], "powerbi-v1", 4);
+  readonly metadata: AdapterMetadata = {
+    ...metadata("christchurch_cruise", "Christchurch cruise schedule", ["newzealandcruiseassociation.com", "docs.google.com"], "nzca-published-csv-v1", 4),
+    accessMethod: "OFFICIAL_PUBLIC_CSV", collectorVersion: "christchurch-cruise-nzca-csv-v1",
+  };
 
   async discover(): Promise<string[]> { return [CRUISE_URL]; }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
-    assertAllowed(reference, ["www.christchurchnz.com"]);
+    if (reference !== CRUISE_URL) throw new AdapterError("INVALID_INPUT", "Cruise schedule reference is not approved", false);
+    if ((context.collectionLimits?.maxRequests ?? 2) < 2) throw new AdapterError("INVALID_INPUT", "Cruise schedule needs a two-request budget", false);
     const page = await fetchHtml(reference, context);
-    const dashboard = parseCruiseDashboard(page.text, page.url).metadata!;
-    const dashboardUrl = String(dashboard.dashboardUrl);
-    assertAllowed(dashboardUrl, ["app.powerbi.com"]);
-    const embed = await fetchHtml(dashboardUrl, context);
-    const bootstrap = parsePowerBiBootstrap(embed.text);
-    const headers = powerBiHeaders(bootstrap.resourceKey);
-    const modelResponse = await fetch(`${bootstrap.apiOrigin}/public/reports/${bootstrap.resourceKey}/modelsAndExploration?preferReadOnlySession=true`, { headers, signal: context.signal ?? AbortSignal.timeout(30_000) });
-    if (!modelResponse.ok) throw sourceError(this.metadata.sourceName, modelResponse.status);
-    const modelPayload: unknown = JSON.parse(await boundedText(modelResponse, context.collectionLimits?.maxBytes ?? 5_000_000));
-    const query = powerBiCruiseQuery(modelPayload);
-    const queryResponse = await fetch(`${bootstrap.apiOrigin}/public/reports/querydata?synchronous=true`, {
-      method: "POST", headers: { ...powerBiHeaders(bootstrap.resourceKey), "content-type": "application/json" },
-      body: JSON.stringify({ version: "1.0.0", queries: [{ Query: query.query }], cancelQueries: [], modelId: query.modelId }),
+    const from = context.collectionRange?.from ?? new Date();
+    const [year, month] = nzDateKey(from).split("-").map(Number);
+    const seasonStart = month >= 7 ? year! : year! - 1;
+    const scheduleUrl = findNzCruiseScheduleCsvUrl(page.text, `${seasonStart}-${String((seasonStart + 1) % 100).padStart(2, "0")}`);
+    const scheduleResponse = await fetch(scheduleUrl, {
+      headers: { accept: "text/csv", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" },
       signal: context.signal ?? AbortSignal.timeout(30_000),
     });
-    if (!queryResponse.ok) throw sourceError(this.metadata.sourceName, queryResponse.status);
-    const rows = decodePowerBiCruiseRows(JSON.parse(await boundedText(queryResponse, context.collectionLimits?.maxBytes ?? 5_000_000)));
-    const events = rows.flatMap((row) => cruiseEvent(row, reference)).filter((event) => overlaps(event.startsAt, event.endsAt, context)).slice(0, context.collectionLimits?.maxRecords ?? 500);
-    return events.map((event, index) => ({ sourceId: this.metadata.sourceId, externalId: event.externalId, payload: { kind: "event", value: event, dashboard }, fetchedAt: new Date(), fixture: false, networkRequestCount: index === 0 ? 4 : 0 }));
+    if (!scheduleResponse.ok) throw sourceError(this.metadata.sourceName, scheduleResponse.status);
+    const events = parseNzCruiseScheduleCsv(await boundedText(scheduleResponse, context.collectionLimits?.maxBytes ?? 2_000_000), page.url)
+      .filter((event) => overlaps(event.startsAt, event.endsAt, context));
+    if (events.length > (context.collectionLimits?.maxRecords ?? 500)) {
+      throw new AdapterError("PARSING_ERROR", "NZCA Christchurch and Akaroa schedule exceeds the bounded record limit", false);
+    }
+    return events.map((event, index) => ({ sourceId: this.metadata.sourceId, externalId: event.externalId,
+      payload: { kind: "event", value: event, scheduleUrl: page.url, publishedCsvUrl: scheduleUrl },
+      fetchedAt: new Date(), fixture: false, networkRequestCount: index === 0 ? 2 : 0 }));
   }
 
   async normalise(): Promise<PublicSignal[]> { return []; }
@@ -157,12 +161,18 @@ export function parseChristchurchRacing(html: string, finalUrl: string): HtmlRes
   }) };
 }
 
-export function parseCruiseDashboard(html: string, finalUrl: string): HtmlResult {
-  const { document } = parseHTML(html);
-  const iframe = [...document.querySelectorAll("iframe[src]")].find((node) => node.getAttribute("src")?.includes("app.powerbi.com/view"));
-  const dashboardUrl = safeUrl(iframe?.getAttribute("src") ?? null, finalUrl);
-  if (!dashboardUrl) throw new AdapterError("PARSING_ERROR", "Christchurch cruise page has no public schedule dashboard", false);
-  return { metadata: { dashboardUrl, dashboardTitle: iframe?.getAttribute("title") ?? null, publisher: "ChristchurchNZ", underlyingSource: "New Zealand Cruise Association", extractionBoundary: "DIRECT_PUBLIC_POWERBI_JSON" } };
+export function findNzCruiseScheduleCsvUrl(html: string, season: string): string {
+  if (!/^20\d{2}-\d{2}$/.test(season)) throw new AdapterError("INVALID_INPUT", "Cruise season is invalid", false);
+  const urls = [...html.matchAll(/'(20\d{2}-\d{2})'\s*:\s*'(https:\/\/docs\.google\.com\/spreadsheets\/d\/e\/[^']+)'/g)];
+  const published = urls.find((match) => match[1] === season)?.[2];
+  if (!published) throw new AdapterError("PARSING_ERROR", `NZCA has no published ${season} cruise schedule`, false);
+  const url = new URL(published.replaceAll("&amp;", "&"));
+  const documentId = url.pathname.match(/^\/spreadsheets\/d\/e\/(2PACX-[A-Za-z0-9_-]+)\/pubhtml\/sheet$/)?.[1];
+  const gid = url.searchParams.get("gid");
+  if (url.protocol !== "https:" || url.hostname !== "docs.google.com" || !documentId || !gid || !/^\d+$/.test(gid)) {
+    throw new AdapterError("PARSING_ERROR", "NZCA published schedule link has an unsupported format", false);
+  }
+  return `https://docs.google.com/spreadsheets/d/e/${documentId}/pub?gid=${gid}&single=true&output=csv`;
 }
 
 export function parsePowerBiBootstrap(html: string) {
@@ -176,34 +186,78 @@ export function parsePowerBiBootstrap(html: string) {
   return { resourceKey, apiOrigin: `${url.protocol}//${labels.join(".")}` };
 }
 
-export function decodePowerBiCruiseRows(payload: unknown): CruiseRow[] {
-  const root = recordValue(payload);
-  const result = recordValue(arrayValue(root.results)[0]);
-  const data = recordValue(recordValue(result.result).data);
-  const dataset = recordValue(arrayValue(recordValue(data.dsr).DS)[0]);
-  const rows = arrayValue(recordValue(arrayValue(dataset.PH)[0]).DM0).filter(isRecord);
-  const dictionaries = recordValue(dataset.ValueDicts);
-  const schema = arrayValue(recordValue(rows[0]).S).filter(isRecord);
-  if (schema.length < 7) throw new AdapterError("PARSING_ERROR", "Power BI cruise response has an unsupported schema", false);
-  let previous: unknown[] = [];
-  return rows.flatMap((row) => {
-    const compressed = arrayValue(row.C);
-    const repeated = Number(row.R ?? 0);
-    const nulls = Number(row["Ø"] ?? 0);
-    let cursor = 0;
-    const values = schema.map((column, index) => {
-      if ((nulls & (1 << index)) !== 0) return null;
-      if ((repeated & (1 << index)) !== 0) return previous[index];
-      const raw = compressed[cursor++];
-      const dictionaryName = stringValue(column.DN);
-      return dictionaryName && typeof raw === "number" ? arrayValue(dictionaries[dictionaryName])[raw] : raw;
-    });
-    previous = values;
-    const port = stringValue(values[0]);
-    const ship = stringValue(values[5]);
-    if (!port || !ship || !/^(Lyttelton|Akaroa)$/i.test(port)) return [];
-    return [{ port, arrivalDate: values[1], arrivalTime: values[2], departureDate: values[3], departureTime: values[4], ship, guests: finiteNumber(values[6]) }];
+export function parseNzCruiseScheduleCsv(csv: string, sourceUrl: string): PublicEvent[] {
+  let rows: NzCruiseRow[];
+  try {
+    rows = parse(csv, { columns: true, bom: true, skip_empty_lines: true, trim: true }) as NzCruiseRow[];
+  } catch {
+    throw new AdapterError("PARSING_ERROR", "NZCA published cruise schedule is not valid CSV", false);
+  }
+  const header = csv.split(/\r?\n/, 1)[0]?.replace(/^\uFEFF/, "") ?? "";
+  if (header !== "Ship,Port,Arrival,Arrival time,Departure,Departure time,Guests,Crew") {
+    throw new AdapterError("PARSING_ERROR", "NZCA published cruise schedule columns changed", false);
+  }
+  const events = rows.flatMap((row) => {
+    const port = row.Port === "Christchurch" ? "Lyttelton" : row.Port === "Akaroa" ? "Akaroa" : null;
+    if (!port) return [];
+    const ship = clean(row.Ship);
+    const arrival = nzcaCruiseDate(row.Arrival);
+    const departure = nzcaCruiseDate(row.Departure);
+    const arrivalTime = nzcaCruiseTime(row["Arrival time"]);
+    const departureTime = nzcaCruiseTime(row["Departure time"]);
+    if (!ship || !arrival || !departure || arrivalTime === undefined || departureTime === undefined) {
+      throw new AdapterError("PARSING_ERROR", "NZCA Christchurch or Akaroa call has an invalid ship or date", false);
+    }
+    const dateOnly = arrivalTime === null || departureTime === null;
+    const startsAt = dateOnly ? nzDate(arrival.year, arrival.month, arrival.day, 0, 0)
+      : nzDate(arrival.year, arrival.month, arrival.day, arrivalTime.hour, arrivalTime.minute);
+    const endsAt = dateOnly ? nzEndOfDay(nzDateKey(nzDate(departure.year, departure.month, departure.day, 0, 0)))
+      : nzDate(departure.year, departure.month, departure.day, departureTime.hour, departureTime.minute);
+    if (endsAt <= startsAt) throw new AdapterError("PARSING_ERROR", "NZCA cruise call has an invalid date range", false);
+    const localDay = nzDateKey(startsAt);
+    const guests = nzcaCruiseCount(row.Guests);
+    const crew = nzcaCruiseCount(row.Crew);
+    const event = eventRecord("christchurch_cruise", `cruise:${slug(port)}:${slug(ship)}:${localDay}`,
+      `${ship} at ${port}`, sourceUrl, startsAt,
+      port === "Lyttelton" ? "Lyttelton Cruise Berth" : "Akaroa Harbour anchorage", "Cruise ship",
+      { port, sourcePortLabel: row.Port, ship, guestCapacity: guests, crewCapacity: crew,
+        scheduleSource: "New Zealand Cruise Association", timingIndicative: true, timePrecision: dateOnly ? "DATE" : "DATETIME" });
+    event.endsAt = endsAt;
+    event.city = port;
+    event.timePrecision = dateOnly ? "DATE" : "DATETIME";
+    event.impactEvidence = { reason: guests !== null ? "PUBLISHED_GUEST_CAPACITY" : "GUEST_CAPACITY_NOT_PUBLISHED", guestCapacity: guests };
+    return [event];
   });
+  if (!events.length) throw new AdapterError("PARSING_ERROR", "NZCA schedule contains no Christchurch or Akaroa calls", false);
+  const ids = events.map((event) => event.externalId);
+  if (new Set(ids).size !== ids.length) throw new AdapterError("PARSING_ERROR", "NZCA schedule contains ambiguous duplicate cruise calls", false);
+  return events;
+}
+
+function nzcaCruiseDate(value: string) {
+  const match = value.match(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2})$/);
+  if (!match) return null;
+  const month = monthIndex(match[3]!);
+  const day = Number(match[2]);
+  const year = 2000 + Number(match[4]);
+  if (month < 0 || day < 1 || day > 31) return null;
+  const actual = nzDate(year, month, day, 0, 0);
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(Date.UTC(year, month, day)).getUTCDay()];
+  return nzDateKey(actual) === `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    && weekday === match[1] ? { year, month, day } : null;
+}
+
+function nzcaCruiseTime(value: string): { hour: number; minute: number } | null | undefined {
+  if (!value.trim()) return null;
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return undefined;
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
+function nzcaCruiseCount(value: string): number | null {
+  if (!value.trim()) return null;
+  if (!/^\d{1,3}(?:,\d{3})*$|^\d+$/.test(value)) throw new AdapterError("PARSING_ERROR", "NZCA cruise capacity is malformed", false);
+  return Number(value.replaceAll(",", ""));
 }
 
 export function parseAirportMonthlyPassengers(html: string, finalUrl: string): HtmlResult {
@@ -228,7 +282,9 @@ export function parseAirportMonthlyPassengers(html: string, finalUrl: string): H
     const previous = byPeriod.get(`${record.year - 1}-${record.month}`);
     const annualChangePercent = previous?.total ? (record.total - previous.total) / previous.total * 100 : null;
     const startsAt = nzDate(record.year, record.month, 1, 0, 0);
-    const endsAt = nzDate(record.year, record.month + 1, 1, 0, 0);
+    const endsAt = record.month === 11
+      ? nzDate(record.year + 1, 0, 1, 0, 0)
+      : nzDate(record.year, record.month + 1, 1, 0, 0);
     const signal = signalRecord("christchurch_airport_monthly", `airport-passengers:${record.year}-${String(record.month + 1).padStart(2, "0")}`, `Christchurch Airport passengers - ${record.monthName} ${record.year}`, finalUrl, startsAt, endsAt, "TOURISM_DEMAND", 0.9, { contextSeriesKey: "airport-monthly-passengers", domesticPassengers: record.domestic, internationalPassengers: record.international, totalPassengers: record.total, annualChangePercent });
     signal.direction = annualChangePercent === null ? "UNKNOWN" : annualChangePercent > 2 ? "POSITIVE" : annualChangePercent < -2 ? "NEGATIVE" : "MIXED";
     return signal;
@@ -247,10 +303,6 @@ export const christchurchDemandAdapters: Record<string, PublicDataAdapter> = {
 function metadata(sourceId: string, sourceName: string, supportedDomains: string[], suffix: string, dailyBudget: number): AdapterMetadata { return { sourceId, sourceName, sourceType: "PUBLIC_DATA", supportedDomains, adapterKey: `public:${sourceId}:${suffix}`, accessMethod: "OFFICIAL_PUBLIC_HTML", concurrencyLimit: 1, dailyBudget, collectorVersion: `${sourceId}-http-v1`, parserVersion: suffix }; }
 function eventRecord(sourceId: string, externalId: string, title: string, sourceUrl: string, startsAt: Date, venueName: string, category: string, metadataValue: Record<string, unknown>): PublicEvent { return { sourceId, externalId, title, category, subcategory: null, sourceUrl, venueName, address: null, city: "Christchurch", region: "Canterbury", territorialAuthority: "Christchurch City", postcode: null, countryCode: "NZ", latitude: null, longitude: null, timezone: "Pacific/Auckland", startsAt, endsAt: new Date(startsAt.getTime() + 3 * 3_600_000), status: "SCHEDULED", ticketStatus: null, impactStatus: "PENDING_EVIDENCE", impactScore: null, impactConfidence: null, impactEvidence: { reason: "ATTENDANCE_OR_CAPACITY_REQUIRED" }, sourceUpdatedAt: null, metadata: metadataValue, fixture: false }; }
 function signalRecord(sourceId: string, externalId: string, title: string, evidenceRef: string, startsAt: Date, endsAt: Date, type: string, confidence: number, metadataValue: Record<string, unknown>): PublicSignal { return { sourceId, externalId, marketKey: "christchurch", type, title, region: "Canterbury", startsAt, endsAt, direction: "POSITIVE", confidence, evidenceRef, metadata: metadataValue, fixture: false }; }
-function cruiseEvent(row: CruiseRow, sourceUrl: string): PublicEvent[] { const startsAt = powerBiDateTime(row.arrivalDate, row.arrivalTime); const endsAt = powerBiDateTime(row.departureDate, row.departureTime) ?? (startsAt ? new Date(startsAt.getTime() + 10 * 3_600_000) : null); if (!startsAt || !endsAt) return []; const event = eventRecord("christchurch_cruise", `cruise:${slug(row.port)}:${slug(row.ship)}:${startsAt.toISOString()}`, `${row.ship} at ${row.port}`, sourceUrl, startsAt, `${row.port} Cruise Berth`, "Cruise ship", { port: row.port, ship: row.ship, guestCapacity: row.guests, scheduleSource: "New Zealand Cruise Association" }); event.endsAt = endsAt >= startsAt ? endsAt : startsAt; event.impactEvidence = { reason: row.guests ? "PUBLISHED_GUEST_CAPACITY" : "GUEST_CAPACITY_NOT_PUBLISHED", guestCapacity: row.guests }; return [event]; }
-function powerBiDateTime(dateValue: unknown, timeValue: unknown) { const date = typeof dateValue === "number" ? new Date(dateValue) : new Date(String(dateValue)); if (Number.isNaN(date.getTime())) return null; const time = String(timeValue ?? "1899-12-30T08:00:00").match(/T(\d{2}):(\d{2})/); return nzDate(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), Number(time?.[1] ?? 8), Number(time?.[2] ?? 0)); }
-function powerBiCruiseQuery(payload: unknown) { const root = recordValue(payload); const models = arrayValue(root.models).filter(isRecord); const exploration = recordValue(root.exploration); const sections = arrayValue(exploration.sections).filter(isRecord); const visuals = sections.flatMap((section) => arrayValue(section.visualContainers).filter(isRecord)); const queryText = visuals.map((visual) => stringValue(visual.query)).find((value) => value?.includes("Sheet1.Port") && value.includes("Sheet1.Guests")); const modelId = finiteNumber(models[0]?.id); if (!queryText || modelId === null) throw new AdapterError("PARSING_ERROR", "Power BI model has no cruise schedule query", false); return { modelId, query: JSON.parse(queryText) as unknown }; }
-function powerBiHeaders(resourceKey: string) { return { accept: "application/json", activityid: randomUUID(), requestid: randomUUID(), "x-powerbi-resourcekey": resourceKey }; }
 async function fetchHtml(url: string, context: AdapterContext) { const response = await fetch(url, { headers: { accept: "text/html,application/xhtml+xml", "accept-language": "en-NZ,en;q=0.9", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" }, signal: context.signal ?? AbortSignal.timeout(30_000) }); if (!response.ok) throw sourceError("Christchurch cruise schedule", response.status); return { text: await boundedText(response, context.collectionLimits?.maxBytes ?? 5_000_000), url: response.url }; }
 function isChristchurchEvent(event: PublicEvent) { return /christchurch|hagley oval/i.test([event.city, event.address, event.venueName].filter(Boolean).join(" ")); }
 function isDemandRelevantUniversityDate(title: string) { return /graduation|open day|lectures (?:start|resume|end)|examination period|mid-year break|mid-semester lecture break|summer break/i.test(title); }

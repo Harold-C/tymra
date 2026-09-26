@@ -14,7 +14,7 @@ const HAWKES_BAY_EVENTS_URL = "https://www.hawkesbaynz.com/events/whats-on?event
 const TARANAKI_EVENTS_URL = "https://listings.venture.org.nz/api";
 const NELSON_TASMAN_EVENTS_URL = "https://www.nelsontasman.nz/explore/events/";
 const TAURANGA_EVENTS_URL = "https://www.whatsontauranga.co.nz/";
-const MANAWATU_EVENTS_URL = "https://manawatunz.co.nz/events/";
+const MANAWATU_EVENTS_URL = "https://manawatunz.co.nz/explore/events/";
 const NORTHLAND_EVENTS_URL = "https://www.wdc.govt.nz/Events/Whats-On";
 const ROTORUA_EVENTS_URL = "https://www.rotoruanz.com/whats-on";
 
