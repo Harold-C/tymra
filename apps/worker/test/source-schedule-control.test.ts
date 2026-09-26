@@ -24,6 +24,9 @@ describe("source schedule control", () => {
     expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "BLOCKED" }, "development", validation)).toEqual(["source is not operationally available"]);
     expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "development")).toEqual(["source is not operationally available"]);
     expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "production")).toEqual(["source is not operationally available"]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DEGRADED" }, "production", { allowDegradedInProduction: true })).toEqual([]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "DOWN" }, "production", { allowDegradedInProduction: true })).toEqual(["source is not operationally available"]);
+    expect(sourceCollectionBlockers({ ...readySource, operationalStatus: "BLOCKED" }, "production", { allowDegradedInProduction: true })).toEqual(["source is not operationally available"]);
   });
 
   it("allows only an enabled, healthy public source", () => {

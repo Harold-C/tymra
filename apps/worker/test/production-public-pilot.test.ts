@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "../src/operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "../src/operations/production-public-pilot";
 
 describe("direct-public production pilot", () => {
   it("admits only registered direct public sources with exact weekly bounds", () => {
@@ -19,5 +19,10 @@ describe("direct-public production pilot", () => {
     expect(isProductionPublicPilotSchedule({ ...valid, payload: { ...valid.payload, extra: true } })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, cronExpression: "daily" })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, key: "pilot-public-booking-weekly" })).toBe(false);
+    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toHaveLength(20);
+    expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("venue_eden_park");
+    const browserPilot = { ...valid, key: "pilot-public-venue_eden_park-weekly", payload: publicPilotSchedulePayload("venue_eden_park") };
+    expect(isProductionPublicPilotSchedule(browserPilot)).toBe(true);
+    expect(isProductionPublicPilotSchedule({ ...browserPilot, payload: { ...browserPilot.payload, limit: 20 } })).toBe(false);
   });
 });

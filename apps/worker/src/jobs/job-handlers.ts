@@ -28,6 +28,7 @@ import {
   pollArgusExecution,
 } from "../services/argus-orchestrator";
 import { DeferredJobError } from "./deferred-job";
+import { isProductionPublicPilotSchedule } from "../operations/production-public-pilot";
 
 type JsonObject = Record<string, unknown>;
 
@@ -174,6 +175,17 @@ async function handlePublicCollection(
       await acknowledgePersistedArgusResults(environment, job.id);
     } catch (retentionError) {
       process.stderr.write(`${JSON.stringify({ service: "tymra-worker", event: "argus_failure_evidence_retention_failed", jobId: job.id, message: retentionError instanceof Error ? retentionError.message : "Unknown evidence retention failure" })}\n`);
+    }
+    const sourceId = optionalString(payload, "sourceId");
+    const pilotScheduleKey = sourceId ? `pilot-public-${sourceId}-weekly` : "";
+    if (environment.NODE_ENV === "production" && sourceId && isProductionPublicPilotSchedule({
+      key: pilotScheduleKey, jobType: job.type, queueName: job.queueName,
+      cronExpression: "weekly", payload: job.payload,
+    })) {
+      await prisma.$transaction([
+        prisma.scheduleDefinition.updateMany({ where: { key: pilotScheduleKey }, data: { enabled: false, nextRunAt: null } }),
+        prisma.dataSource.updateMany({ where: { key: sourceId }, data: { lifecycle: "SUSPENDED", enabled: false, lastReviewedAt: new Date() } }),
+      ]);
     }
     throw error;
   }

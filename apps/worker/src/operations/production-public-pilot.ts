@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tymra/db";
-import { publicDataAdapters } from "@tymra/providers";
+import { ARGUS_PUBLIC_MARKET_SOURCES, publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { FIRST_PUBLIC_SCHEDULES } from "./production-public-schedules";
@@ -15,10 +15,12 @@ export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()
     && publicDataAdapters[source.key]?.metadata.adapterKey === source.adapterKey)
   .map((source) => source.key);
 
-const pilotKeys = new Set(PUBLIC_PILOT_SOURCE_KEYS);
+export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId);
+const browserPilotKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
+const pilotKeys = new Set([...PUBLIC_PILOT_SOURCE_KEYS, ...ARGUS_MARKET_PILOT_SOURCE_KEYS]);
 
 export function publicPilotSchedulePayload(sourceId: string) {
-  if (!pilotKeys.has(sourceId)) throw new Error(`Source is outside the direct-public pilot: ${sourceId}`);
+  if (!pilotKeys.has(sourceId)) throw new Error(`Source is outside the approved public pilot: ${sourceId}`);
   return { sourceId, marketScope: "new-zealand", limit: 2, productionCanary: true };
 }
 
@@ -46,7 +48,7 @@ export async function enableProductionPublicPilot(sourceId: string, nodeEnv: str
 }
 
 export async function enableProductionPublicPilotTransaction(transaction: Prisma.TransactionClient, sourceId: string, nodeEnv: string) {
-  if (nodeEnv !== "production" || !pilotKeys.has(sourceId)) throw new Error("Direct-public pilot requires an approved production source");
+  if (nodeEnv !== "production" || !pilotKeys.has(sourceId)) throw new Error("Public pilot requires an approved production source");
   const source = await transaction.dataSource.findUnique({ where: { key: sourceId } });
   const metadata = source?.metadata;
   if (!source || !source.enabled || source.operationalStatus !== "HEALTHY" || source.isDemo
@@ -58,7 +60,7 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
   const runs = await transaction.collectionRun.findMany({
     where: { dataSourceId: source.id, status: "SUCCEEDED", isDemo: false },
     orderBy: { finishedAt: "desc" }, take: 2,
-    select: { id: true, successCount: true, scope: true },
+    select: { id: true, jobId: true, successCount: true, scope: true },
   });
   if (runs.length !== 2 || runs.some((run) => {
     const scope = run.scope;
@@ -69,6 +71,24 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
   })) throw new Error("Two successful bounded production passes are required");
   if (await transaction.rawArtifact.count({ where: { collectionRunId: { in: runs.map((run) => run.id) }, parserFailure: true } })) {
     throw new Error("Pilot passes contain parser failures");
+  }
+  if (browserPilotKeys.has(sourceId)) {
+    const jobIds = runs.map((run) => run.jobId).filter((id): id is string => Boolean(id));
+    if (jobIds.length !== 2 || (metadata as Record<string, unknown>).browserPilot !== true) throw new Error("Argus pilot requires two queued passes");
+    const jobs = await transaction.job.findMany({ where: { id: { in: jobIds } }, select: { status: true, attemptCount: true, maxAttempts: true } });
+    if (jobs.length !== 2 || jobs.some((job) => job.status !== "SUCCEEDED" || job.attemptCount !== 1 || job.maxAttempts !== 1)) {
+      throw new Error("Argus pilot Jobs did not finish safely in one attempt");
+    }
+    const executions = await transaction.argusExecution.findMany({ where: { parentJobId: { in: jobIds } }, select: { parentJobId: true, status: true, result: true } });
+    if (executions.length < 2 || jobIds.some((id) => !executions.some((execution) => execution.parentJobId === id))
+      || executions.some((execution) => execution.status !== "COMPLETED" || execution.result === null)) {
+      throw new Error("Argus pilot result delivery is incomplete");
+    }
+    const artifacts = await transaction.rawArtifact.findMany({ where: { collectionRunId: { in: runs.map((run) => run.id) }, deletedAt: null }, select: { collectionRunId: true, storageRef: true } });
+    if (runs.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id && artifact.storageRef.startsWith("tymra-evidence:")))
+      || artifacts.some((artifact) => artifact.storageRef.startsWith("argus-evidence:"))) {
+      throw new Error("Argus pilot evidence has not been retained locally");
+    }
   }
   const key = `pilot-public-${sourceId}-weekly`;
   if (await transaction.scheduleDefinition.findUnique({ where: { key } })) throw new Error("Pilot schedule already exists");

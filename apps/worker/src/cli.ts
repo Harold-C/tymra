@@ -10,7 +10,9 @@ import { executeCanary, canaryPlan, productionPreflight } from "./operations/rel
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary } from "./operations/production-public-canary";
-import { enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS } from "./operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "./operations/production-public-pilot";
+import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
+import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
 
 const environment = getEnvironment();
@@ -189,6 +191,40 @@ switch (command) {
       await service.suspendSource(sourceKey);
       print({ sourceKey, passed: false, stoppedBy: result?.stoppedBy ?? (error instanceof Error ? error.name : "UNKNOWN"), executedPasses: result?.executedPasses ?? 0, scheduleEnabled: false, mutationPerformed: true });
     }
+    break;
+  }
+  case "release:argus-market-pilot-bootstrap": {
+    const sourceKey = requiredOption(args, "--source");
+    if (option(args, "--confirm") !== "BOOTSTRAP_ONE_ARGUS_MARKET_PILOT") throw new Error("Argus market bootstrap requires explicit one-source confirmation");
+    const health = await getArgusHealth(environment);
+    print(await bootstrapProductionArgusMarketPilot(sourceKey, environment.NODE_ENV, health.healthy && health.ready));
+    break;
+  }
+  case "release:argus-market-pilot-enqueue": {
+    const sourceKey = requiredOption(args, "--source");
+    if (environment.NODE_ENV !== "production" || option(args, "--confirm") !== "QUEUE_ONE_ARGUS_MARKET_PILOT"
+      || !ARGUS_MARKET_PILOT_SOURCE_KEYS.includes(sourceKey)) throw new Error("Argus market queue requires one approved production source");
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
+    const metadata = source.metadata;
+    if (!source.enabled || !["DEGRADED", "HEALTHY"].includes(source.operationalStatus)
+      || typeof metadata !== "object" || metadata === null || Array.isArray(metadata)
+      || metadata.browserPilot !== true || metadata.boundedProductionCanary !== true) throw new Error("Argus market source is not approved for a bounded trial");
+    if (await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })) throw new Error("Argus market pilot already has a schedule");
+    if (await prisma.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Argus market pilot requires an idle Tymra queue");
+    const prior = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false }, select: { status: true, successCount: true, scope: true, jobId: true } });
+    if (prior.some((run) => run.status !== "SUCCEEDED" || run.successCount < 1 || !run.jobId
+      || typeof run.scope !== "object" || run.scope === null || Array.isArray(run.scope)
+      || run.scope.productionCanary !== true) || prior.length >= 2) throw new Error("Argus market pilot has failed, incomplete or excess prior runs");
+    const pass = prior.length + 1;
+    const job = await enqueueJob({ type: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection",
+      payload: publicPilotSchedulePayload(sourceKey), sourceId: sourceKey, maxAttempts: 1,
+      idempotencyKey: `argus-market-pilot:${sourceKey}:pass-${pass}` });
+    print({ sourceKey, pass, jobId: job.id, status: job.status, maxAttempts: job.maxAttempts, mutationPerformed: true });
+    break;
+  }
+  case "release:argus-market-pilot-enable": {
+    if (option(args, "--confirm") !== "ENABLE_ONE_ARGUS_MARKET_PILOT") throw new Error("Argus market schedule requires explicit one-source confirmation");
+    print(await enableProductionArgusMarketPilot(requiredOption(args, "--source"), environment));
     break;
   }
   case "release:canary-plan": {

@@ -16,7 +16,8 @@ export function sourceCollectionBlockers(
   const blockers = [...(!source.enabled ? ["source is not enabled"] : [])];
   const developmentValidation = nodeEnv === "development" && options.allowDevelopmentValidation === true;
   const developmentStatusAllowed = developmentValidation && source.operationalStatus !== "BLOCKED";
-  if (source.operationalStatus !== "HEALTHY" && !developmentStatusAllowed) blockers.push("source is not operationally available");
+  const boundedProductionTrial = nodeEnv === "production" && options.allowDegradedInProduction === true && source.operationalStatus === "DEGRADED";
+  if (source.operationalStatus !== "HEALTHY" && !developmentStatusAllowed && !boundedProductionTrial) blockers.push("source is not operationally available");
   return blockers;
 }
 

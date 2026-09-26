@@ -1048,6 +1048,11 @@ export class WorkerService {
   }
 
   async collectSource(sourceId: string, marketScope = "new-zealand", analysisRequestId?: string, options: CollectSourceOptions = {}) {
+    if (this.environment.NODE_ENV === "production" && !options.jobId
+      && (argusPublicMarketSource(sourceId) || isArgusEventSourceId(sourceId)
+        || ["council_calendars", "fx_rates", "ticketmaster", "auckland_airport_monthly", "mot_airline_performance", "christchurch_university_dates"].includes(sourceId))) {
+      throw new WorkerRequestError("DURABLE_JOB_REQUIRED", "Production Argus collection requires a queued Tymra Job before evidence ACK", 409);
+    }
     if (options.lincolnOnly && (sourceId !== "christchurch_university_dates" || !options.jobId
       || options.from?.getTime() !== nzStartOfDay("2026-01-01").getTime()
       || options.to?.getTime() !== nzStartOfDay("2027-01-01").getTime()
@@ -1085,6 +1090,12 @@ export class WorkerService {
         metadata: true,
       },
     });
+    const browserPilot = productionCanary && Boolean(argusPublicMarketSource(sourceId))
+      && options.jobId !== undefined && jsonRecord(source.metadata).browserPilot === true
+      && jsonRecord(source.metadata).boundedProductionCanary === true;
+    if (productionCanary && argusPublicMarketSource(sourceId) && !browserPilot) {
+      throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Argus market canary requires an approved queued production pilot", 409);
+    }
     if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly) {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Lincoln acceptance source requires the bounded Lincoln-only job", 409);
     }
@@ -1129,7 +1140,7 @@ export class WorkerService {
       timeoutMs: 120_000,
     } as const;
     const effectiveBounds = localAcceptance ? localBounds : productionCanary
-      ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : 1, maxRecords: 2, timeoutMs: 30_000 }
+      ? { ...localBounds, maxRequests: sourceId === "rto_calendars" ? 3 : argusPublicMarketSource(sourceId)?.kind === "venue" ? 2 : 1, maxRecords: 2, timeoutMs: 30_000 }
       : boundedPublicSchedule && scheduleSpec
         ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: sourceId === "rto_calendars" ? 180_000 : 30_000, concurrency: 1 }
       : productionBounds;
@@ -1167,7 +1178,7 @@ export class WorkerService {
     );
     const counters = emptyPublicCollectionCounters();
     try {
-      if (!localAcceptance) this.assertSourceCollectionAllowed(source);
+      if (!localAcceptance) this.assertSourceCollectionAllowed(source, browserPilot);
         const result = await withRedisLock(`source:${sourceId}`, sourceId === "rto_calendars" && boundedPublicSchedule ? 600_000 : 60_000, async () => {
         const adapterReferences = options.lincolnOnly ? [] : await adapter.discover({ marketScope, from, to, limit }, context);
         const discovered = sourceId === "christchurch_university_dates"
