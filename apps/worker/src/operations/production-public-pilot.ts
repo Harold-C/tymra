@@ -15,13 +15,20 @@ export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()
     && publicDataAdapters[source.key]?.metadata.adapterKey === source.adapterKey)
   .map((source) => source.key);
 
-export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId);
+export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = [
+  ...ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId),
+  "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events",
+  "auckland_airport_monthly", "mot_airline_performance", "fx_rates",
+];
 const browserPilotKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
 const pilotKeys = new Set([...PUBLIC_PILOT_SOURCE_KEYS, ...ARGUS_MARKET_PILOT_SOURCE_KEYS]);
 
 export function publicPilotSchedulePayload(sourceId: string) {
   if (!pilotKeys.has(sourceId)) throw new Error(`Source is outside the approved public pilot: ${sourceId}`);
-  return { sourceId, marketScope: "new-zealand", limit: 2, productionCanary: true };
+  const marketScope = sourceId === "dunedinnz_events" ? "dunedin"
+    : sourceId === "school_sport_nz" || sourceId === "school_sport_canterbury" ? "christchurch"
+      : "new-zealand";
+  return { sourceId, marketScope, limit: 2, productionCanary: true };
 }
 
 export function isProductionPublicPilotSchedule(schedule: {

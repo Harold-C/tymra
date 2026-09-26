@@ -149,6 +149,7 @@ import {
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
 import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "../operations/production-public-pilot";
 import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import {
   isRegionalArgusEventSourceId,
@@ -1090,10 +1091,10 @@ export class WorkerService {
         metadata: true,
       },
     });
-    const browserPilot = productionCanary && Boolean(argusPublicMarketSource(sourceId))
+    const browserPilot = productionCanary && ARGUS_MARKET_PILOT_SOURCE_KEYS.includes(sourceId)
       && options.jobId !== undefined && jsonRecord(source.metadata).browserPilot === true
       && jsonRecord(source.metadata).boundedProductionCanary === true;
-    if (productionCanary && argusPublicMarketSource(sourceId) && !browserPilot) {
+    if (productionCanary && ARGUS_MARKET_PILOT_SOURCE_KEYS.includes(sourceId) && !browserPilot) {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Argus market canary requires an approved queued production pilot", 409);
     }
     if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly) {
@@ -1463,8 +1464,16 @@ export class WorkerService {
     }
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
     const localAcceptance = options.localAcceptance === true;
+    const productionCanary = options.productionCanary === true;
+    const metadata = jsonRecord(source.metadata);
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || !options.jobId || localAcceptance
+      || options.dryRun || options.from || options.to || options.phase || options.maxDetails
+      || options.limit !== 2 || marketScope !== publicPilotSchedulePayload(sourceId).marketScope
+      || metadata.browserPilot !== true || metadata.boundedProductionCanary !== true)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Argus event canary requires the approved queued two-record production pilot", 422);
+    }
     if (localAcceptance) this.assertLocalAcceptanceAllowed(source, true);
-    else this.assertSourceCollectionAllowed(source, true);
+    else this.assertSourceCollectionAllowed(source, productionCanary);
 
     const now = new Date();
     const requestedFrom = options.from ?? now;
@@ -1476,7 +1485,7 @@ export class WorkerService {
     const maxRecords = localAcceptance
       ? Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 10 : 20), sourceId === TICKETEK_SOURCE_ID ? 10 : 20)
       : Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 20 : 100), sourceId === TICKETEK_SOURCE_ID ? 20 : 100);
-    const maxDetails = sourceId === TICKETEK_SOURCE_ID
+    const maxDetails = productionCanary ? 0 : sourceId === TICKETEK_SOURCE_ID
       ? Math.min(options.maxDetails ?? (localAcceptance ? 1 : 3), localAcceptance ? 1 : 10)
       : 0;
     const phase = options.phase ?? "full";
@@ -1487,6 +1496,7 @@ export class WorkerService {
       marketScope,
       phase,
       localAcceptance,
+      productionCanary,
       dryRun: options.dryRun === true,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
       effective: { from: requestedFrom.toISOString(), to: to.toISOString(), maxRecords, maxDetails },
@@ -1679,8 +1689,15 @@ export class WorkerService {
     if (marketScope !== "new-zealand") throw new WorkerRequestError("INVALID_MARKET_SCOPE", "RBNZ B1 collection supports New Zealand only", 422);
     const localAcceptance = options.localAcceptance === true;
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "fx_rates" } });
+    const productionCanary = options.productionCanary === true;
+    const metadata = jsonRecord(source.metadata);
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || !options.jobId || localAcceptance
+      || options.dryRun || options.from || options.to || options.limit !== 2
+      || metadata.browserPilot !== true || metadata.boundedProductionCanary !== true)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "RBNZ FX canary requires the approved queued two-record production pilot", 422);
+    }
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
-    if (!localAcceptance) this.assertSourceCollectionAllowed(source);
+    if (!localAcceptance) this.assertSourceCollectionAllowed(source, productionCanary);
     const now = new Date();
     const requestedFrom = options.from ?? new Date(now.getTime() - 86_400_000);
     const requestedTo = options.to ?? new Date(now.getTime() + 31 * 86_400_000);
@@ -1690,7 +1707,7 @@ export class WorkerService {
     const limits = { maxRequests: 1, maxPages: 1, maxRecords: localAcceptance ? 2 : Math.min(20, Math.max(1, options.limit ?? 20)), maxWindowDays: 31, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS, maxBytes: 2_000_000 } as const;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("fx_rates");
-    const initialScope = { localAcceptance, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
+    const initialScope = { localAcceptance, productionCanary, sourceId: "fx_rates", marketScope, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: limits.maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
     const counters = { requests: 0, pages: 0, records: 0, signals: 0, unchangedSignalsSkipped: 0, rawArtifacts: 0, failures: 0 };
     try {
