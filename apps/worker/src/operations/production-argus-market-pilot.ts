@@ -80,7 +80,7 @@ export async function enableProductionArgusMarketPilot(sourceKey: string, enviro
   for (const artifact of artifacts) {
     if (!artifact.storageRef.startsWith("tymra-evidence:")) continue;
     const relativePath = artifact.storageRef.slice("tymra-evidence:".length);
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\/(?:page\.html|screenshot\.png)$/u.test(relativePath)) throw new Error("Argus market pilot evidence path is invalid");
+    if (!isArgusPilotEvidencePath(relativePath)) throw new Error("Argus market pilot evidence path is invalid");
     const bytes = await readFile(path.resolve(environment.ARGUS_EVIDENCE_ROOT, relativePath));
     if (createHash("sha256").update(bytes).digest("hex") !== artifact.contentHash) throw new Error("Argus market pilot evidence hash mismatch");
     verifiedEvidence += 1;
@@ -91,4 +91,8 @@ export async function enableProductionArgusMarketPilot(sourceKey: string, enviro
   }
   const enabled = await enableProductionPublicPilot(sourceKey, environment.NODE_ENV);
   return { ...enabled, argusJobsPurged: executions.length, verifiedEvidence, mutationPerformed: true };
+}
+
+export function isArgusPilotEvidencePath(relativePath: string) {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}\/(?:page\.html|screenshot\.png|downloads\/[A-Za-z0-9][A-Za-z0-9._-]{0,199})$/u.test(relativePath);
 }

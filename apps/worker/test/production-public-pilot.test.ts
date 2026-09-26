@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotSchedulePayload } from "../src/operations/production-public-pilot";
+import { isArgusPilotEvidencePath } from "../src/operations/production-argus-market-pilot";
 
 describe("direct-public production pilot", () => {
   it("admits only registered direct public sources with exact weekly bounds", () => {
@@ -24,5 +25,12 @@ describe("direct-public production pilot", () => {
     const browserPilot = { ...valid, key: "pilot-public-venue_eden_park-weekly", payload: publicPilotSchedulePayload("venue_eden_park") };
     expect(isProductionPublicPilotSchedule(browserPilot)).toBe(true);
     expect(isProductionPublicPilotSchedule({ ...browserPilot, payload: { ...browserPilot.payload, limit: 20 } })).toBe(false);
+  });
+  it("accepts retained HTML, screenshot and download evidence without path traversal", () => {
+    expect(isArgusPilotEvidencePath("trace-1/page.html")).toBe(true);
+    expect(isArgusPilotEvidencePath("trace-1/screenshot.png")).toBe(true);
+    expect(isArgusPilotEvidencePath("trace-1/downloads/calendar.pdf")).toBe(true);
+    expect(isArgusPilotEvidencePath("trace-1/downloads/../other.pdf")).toBe(false);
+    expect(isArgusPilotEvidencePath("../page.html")).toBe(false);
   });
 });
