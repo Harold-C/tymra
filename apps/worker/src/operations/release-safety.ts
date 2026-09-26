@@ -10,14 +10,20 @@ export type ReleaseSource = {
 export function productionPreflight(input: {
   schedulerRuntimeEnabled: boolean;
   enabledScheduleCount: number;
+  isolatedSourceTrial?: boolean;
+  requestedSourceEnabledScheduleCount?: number;
   technicalValidation?: boolean;
   requestedSourceKeys?: string[];
   sources: ReleaseSource[];
   otaHealth?: OtaHealthMetrics[];
 }) {
   const failures: string[] = [];
-  if (input.schedulerRuntimeEnabled) failures.push("Scheduler runtime must remain disabled during preflight");
-  if (input.enabledScheduleCount !== 0) failures.push(`Expected zero enabled schedules; found ${input.enabledScheduleCount}`);
+  if (input.isolatedSourceTrial) {
+    if (input.requestedSourceEnabledScheduleCount !== 0) failures.push("Requested source already has an enabled schedule");
+  } else {
+    if (input.schedulerRuntimeEnabled) failures.push("Scheduler runtime must remain disabled during preflight");
+    if (input.enabledScheduleCount !== 0) failures.push(`Expected zero enabled schedules; found ${input.enabledScheduleCount}`);
+  }
   const available = new Set(input.sources.map((source) => source.key));
   const otaKeys = new Set<string>(ACTIVE_OTA_SOURCE_KEYS);
   const inactiveOtaKeys = new Set<string>(INACTIVE_OTA_SOURCE_KEYS);

@@ -18,6 +18,12 @@ describe("production release safety", () => {
     expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 1, technicalValidation: true, requestedSourceKeys: ["expedia"], sources: [degradedExpedia] }).ready).toBe(false);
   });
 
+  it("allows an isolated source trial beside unrelated schedules but not its own enabled schedule", () => {
+    const source = { key: "linz", enabled: true, status: "PILOT", operationalStatus: "HEALTHY" };
+    expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 5, isolatedSourceTrial: true, requestedSourceEnabledScheduleCount: 0, requestedSourceKeys: ["linz"], sources: [source] }).ready).toBe(true);
+    expect(productionPreflight({ schedulerRuntimeEnabled: true, enabledScheduleCount: 5, isolatedSourceTrial: true, requestedSourceEnabledScheduleCount: 1, requestedSourceKeys: ["linz"], sources: [source] }).failures).toContain("Requested source already has an enabled schedule");
+  });
+
   it("rejects OTA sources outside the active six-source scope", () => {
     const inactive = { ...source, key: "wotif", enabled: false };
     expect(productionPreflight({ schedulerRuntimeEnabled: false, enabledScheduleCount: 0, requestedSourceKeys: ["wotif"], sources: [inactive] }).failures)

@@ -100,6 +100,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         localAcceptance: optionalBoolean(payload, "localAcceptance"),
         developmentBootstrap: optionalBoolean(payload, "developmentBootstrap"),
         boundedPublicSchedule: optionalBoolean(payload, "boundedPublicSchedule"),
+        productionCanary: optionalBoolean(payload, "productionCanary"),
       });
       return;
     case "PUBLIC_DATA_COLLECTION":
@@ -113,6 +114,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         localAcceptance: optionalBoolean(payload, "localAcceptance"),
         lincolnOnly: optionalBoolean(payload, "lincolnOnly"),
         boundedPublicSchedule: optionalBoolean(payload, "boundedPublicSchedule"),
+        productionCanary: optionalBoolean(payload, "productionCanary"),
       });
       return;
     case "RETENTION_CLEANUP":
@@ -153,7 +155,7 @@ async function handlePublicCollection(
   job: Job,
   environment: Environment,
   payload: JsonObject,
-  options: { from?: Date; to?: Date; phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; dryRun?: boolean; localAcceptance?: boolean; developmentBootstrap?: boolean; lincolnOnly?: boolean; boundedPublicSchedule?: boolean },
+  options: { from?: Date; to?: Date; phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; dryRun?: boolean; localAcceptance?: boolean; developmentBootstrap?: boolean; lincolnOnly?: boolean; boundedPublicSchedule?: boolean; productionCanary?: boolean },
 ) {
   try {
     const result = await new WorkerService(environment).collectSource(

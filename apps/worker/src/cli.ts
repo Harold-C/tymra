@@ -10,6 +10,7 @@ import { executeCanary, canaryPlan, productionPreflight } from "./operations/rel
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary } from "./operations/production-public-canary";
+import { enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS } from "./operations/production-public-pilot";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
 
 const environment = getEnvironment();
@@ -147,6 +148,49 @@ switch (command) {
     print(await bootstrapProductionPublicCanary(requiredOption(args, "--source"), environment.NODE_ENV));
     break;
   }
+  case "release:pilot-run": {
+    const sourceKey = requiredOption(args, "--source");
+    if (environment.NODE_ENV !== "production" || option(args, "--confirm") !== "RUN_ONE_PUBLIC_PILOT"
+      || !PUBLIC_PILOT_SOURCE_KEYS.includes(sourceKey)) throw new Error("Pilot run requires one approved direct-public production source");
+    if (await prisma.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } })) {
+      throw new Error("Pilot source already exists; inspect its state before any repeat");
+    }
+    await bootstrapProductionPublicCanary(sourceKey, environment.NODE_ENV);
+    let result: Awaited<ReturnType<typeof executeCanary>> | undefined;
+    try {
+      await service.activateSource(sourceKey);
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
+      const from = nzStartOfDay(new Date());
+      const to = new Date(from.getTime() + 31 * 86_400_000);
+      result = await executeCanary([sourceKey], async (_key, pass) => {
+        const before = await sourceBusinessCounts(source.id);
+        try {
+          const collected = await service.collectSource(sourceKey, "new-zealand", undefined, { from, to, limit: 2, dryRun: false, productionCanary: true });
+          const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: collected.runId } });
+          const after = await sourceBusinessCounts(source.id);
+          const scope = run.scope && typeof run.scope === "object" && !Array.isArray(run.scope) ? run.scope as Record<string, unknown> : {};
+          return {
+            sourceKey, pass, runId: run.id,
+            configurationUnchanged: scope.configurationUnchanged === true,
+            schedulesUnchanged: scope.schedulesUnchanged === true,
+            parserFailures: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } }),
+            repeatRowGrowth: pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0,
+            remoteEvidenceRemaining: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } }),
+            ...(run.status === "SUCCEEDED" && run.successCount > 0 ? {} : { error: `RUN_${run.status}` }),
+          };
+        } catch (error) {
+          return { sourceKey, pass, configurationUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.name : "UNKNOWN" };
+        }
+      });
+      if (!result.passed) throw new Error(result.stoppedBy ?? "PILOT_FAILED");
+      const enabled = await enableProductionPublicPilot(sourceKey, environment.NODE_ENV);
+      print({ sourceKey, passed: true, executedPasses: result.executedPasses, schedule: enabled.schedule, mutationPerformed: true });
+    } catch (error) {
+      await service.suspendSource(sourceKey);
+      print({ sourceKey, passed: false, stoppedBy: result?.stoppedBy ?? (error instanceof Error ? error.name : "UNKNOWN"), executedPasses: result?.executedPasses ?? 0, scheduleEnabled: false, mutationPerformed: true });
+    }
+    break;
+  }
   case "release:canary-plan": {
     const requested = csvOption(args, "--sources");
     if (!requested.length) throw new Error("Missing --sources");
@@ -169,7 +213,13 @@ switch (command) {
     if (to <= from || to.getTime() - from.getTime() > 31 * 86_400_000) throw new Error("Canary collection window must be positive and no longer than 31 days");
     const sourceRows = await prisma.dataSource.findMany({ where: { key: { in: requested } } });
     const otaHealth = (await service.otaHealth()).filter((source) => requested.includes(source.key));
-    const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: await prisma.scheduleDefinition.count({ where: { enabled: true } }), technicalValidation, requestedSourceKeys: requested, sources: sourceRows, otaHealth });
+    const enabledSchedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true }, select: { payload: true } });
+    const isolatedSourceTrial = !technicalValidation && requested.length === 1 && PUBLIC_PILOT_SOURCE_KEYS.includes(requested[0]!);
+    const requestedSourceEnabledScheduleCount = enabledSchedules.filter((schedule) => {
+      const payload = schedule.payload;
+      return typeof payload === "object" && payload !== null && !Array.isArray(payload) && payload.sourceId === requested[0];
+    }).length;
+    const preflight = productionPreflight({ schedulerRuntimeEnabled: environment.SCHEDULER_ENABLED, enabledScheduleCount: enabledSchedules.length, isolatedSourceTrial, requestedSourceEnabledScheduleCount, technicalValidation, requestedSourceKeys: requested, sources: sourceRows, otaHealth });
     if (!preflight.ready) throw new Error(`Canary preflight failed: ${preflight.failures.join("; ")}`);
     print(await executeCanary(requested, async (sourceKey, pass) => {
       const source = sourceRows.find((item) => item.key === sourceKey)!;

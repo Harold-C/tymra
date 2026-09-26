@@ -2,9 +2,10 @@ import { prisma, type Prisma } from "@tymra/db";
 import { publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
+import { isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS } from "./production-public-pilot";
 import { isFirstPublicSchedule } from "./production-public-schedules";
 
-export const APPROVED_PUBLIC_CANARY_SOURCES = ["public_holidays_nz", "rto_calendars", "mbie", "geonet", "stats_nz"] as const;
+export const APPROVED_PUBLIC_CANARY_SOURCES: string[] = ["public_holidays_nz", "rto_calendars", "mbie", "geonet", "stats_nz", ...PUBLIC_PILOT_SOURCE_KEYS];
 const allowedSources = new Set<string>(APPROVED_PUBLIC_CANARY_SOURCES);
 
 export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv: string) {
@@ -19,7 +20,7 @@ export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv
 
   return prisma.$transaction(async (transaction) => {
     const schedules = await transaction.scheduleDefinition.findMany();
-    if (schedules.some((schedule) => !isFirstPublicSchedule(schedule))) {
+    if (schedules.some((schedule) => !isFirstPublicSchedule(schedule) && !isProductionPublicPilotSchedule(schedule))) {
       throw new Error("Public canary bootstrap found an unexpected schedule");
     }
     if (await transaction.dataSource.findUnique({ where: { key: sourceKey }, select: { id: true } })) {
@@ -64,6 +65,6 @@ export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv
       } satisfies Prisma.DataSourceCreateInput,
       select: { id: true, key: true, enabled: true, environments: true, isDemo: true },
     });
-    return { source, schedulesEnabled: 0, mutationPerformed: true };
+    return { source, schedulesEnabled: schedules.filter((schedule) => schedule.enabled).length, mutationPerformed: true };
   });
 }
