@@ -5,6 +5,7 @@ import { isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotS
 describe("direct-public production pilot", () => {
   it("admits only registered direct public sources with exact weekly bounds", () => {
     expect(PUBLIC_PILOT_SOURCE_KEYS).toContain("linz");
+    expect(PUBLIC_PILOT_SOURCE_KEYS).toEqual(expect.arrayContaining(["school_holidays_nz", "eventbrite_events", "humanitix_events"]));
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("eventfinda");
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("fx_rates");
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("booking");
