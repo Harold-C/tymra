@@ -26,7 +26,8 @@ export async function bootstrapProductionArgusMarketPilot(sourceKey: string, nod
   const record = registrySourceSeedRecords().find((source) => source.key === sourceKey);
   const adapter = publicDataAdapters[sourceKey];
   if (!record || record.providerType !== "PUBLIC" || record.isDemo
-    || record.accessMethod !== (sourceKey === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER" : "PUBLIC_WEB_ARGUS_READ_ONLY")
+    || record.accessMethod !== (sourceKey === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
+      : sourceKey === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL" : "PUBLIC_WEB_ARGUS_READ_ONLY")
     || adapter?.metadata.adapterKey !== record.adapterKey) {
     throw new Error("Argus market source registry and deployed adapter do not match");
   }

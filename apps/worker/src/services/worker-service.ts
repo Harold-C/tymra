@@ -1756,9 +1756,17 @@ export class WorkerService {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "ticketmaster" } });
     const localAcceptance = options.localAcceptance === true;
     const developmentBootstrap = options.developmentBootstrap === true;
+    const productionCanary = options.productionCanary === true;
+    const pilotMetadata = jsonRecord(source.metadata);
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || !options.jobId || localAcceptance
+      || developmentBootstrap || options.dryRun || options.from || options.to || options.phase
+      || options.maxPages || options.maxDetails || options.limit !== 2
+      || pilotMetadata.browserPilot !== true || pilotMetadata.boundedProductionCanary !== true)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Ticketmaster canary requires the approved queued two-record production pilot", 422);
+    }
     if (localAcceptance && developmentBootstrap) throw new WorkerRequestError("INVALID_COLLECTION_MODE", "Choose either local acceptance or development bootstrap", 422);
     const guardedDevelopmentRun = localAcceptance || developmentBootstrap;
-    this.assertTicketmasterSourceAllowed(source, localAcceptance, developmentBootstrap);
+    this.assertTicketmasterSourceAllowed(source, localAcceptance, developmentBootstrap, productionCanary);
     const now = new Date();
     const requestedPhase = options.phase ?? "full";
     const metadata = jsonRecord(source.metadata);
@@ -1767,18 +1775,18 @@ export class WorkerService {
     const requestedFrom = options.from ?? new Date(now.getTime() - 86_400_000);
     const requestedTo = options.to ?? new Date(now.getTime() + 400 * 86_400_000);
     const from = requestedFrom;
-    const to = localAcceptance ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
+    const to = localAcceptance || productionCanary ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
     if (to <= from || to.getTime() - from.getTime() > 730 * 86_400_000) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Ticketmaster collection range must be positive and no longer than 730 days", 422);
-    const requestedMaxPages = localAcceptance ? 1 : Math.min(options.maxPages ?? this.environment.TICKETMASTER_DISCOVERY_MAX_PAGES, TICKETMASTER_LISTING_URLS.length);
-    const requestedMaxDetails = localAcceptance ? Math.min(options.maxDetails ?? options.limit ?? 2, 2) : Math.min(options.maxDetails ?? options.limit ?? this.environment.TICKETMASTER_DETAIL_BATCH_SIZE, 100);
+    const requestedMaxPages = localAcceptance || productionCanary ? 1 : Math.min(options.maxPages ?? this.environment.TICKETMASTER_DISCOVERY_MAX_PAGES, TICKETMASTER_LISTING_URLS.length);
+    const requestedMaxDetails = productionCanary ? 1 : localAcceptance ? Math.min(options.maxDetails ?? options.limit ?? 2, 2) : Math.min(options.maxDetails ?? options.limit ?? this.environment.TICKETMASTER_DETAIL_BATCH_SIZE, 100);
     const maxPages = circuit.halfOpen ? 1 : requestedMaxPages;
     const maxDetails = circuit.halfOpen ? 0 : requestedMaxDetails;
-    const maxRecords = localAcceptance ? 2 : Math.min(options.limit ?? 5_000, 5_000);
+    const maxRecords = localAcceptance || productionCanary ? 2 : Math.min(options.limit ?? 5_000, 5_000);
     const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails * 2 : 0);
-    const limits = { maxRequests: localAcceptance ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
+    const limits = { maxRequests: localAcceptance || productionCanary ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance || productionCanary ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("ticketmaster");
-    const initialScope = { localAcceptance, developmentBootstrap, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
+    const initialScope = { localAcceptance, developmentBootstrap, productionCanary, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
     const counters = { requests: 0, pages: 0, discovered: 0, records: 0, targetsUpserted: 0, listingEventsAccepted: 0, listingEventsPersisted: 0, detailRequestsAvoided: 0, detailsFetched: 0, unchangedDetails: 0, eventsPersisted: 0, unchangedEventsSkipped: 0, rawArtifacts: 0, failures: 0 };
     let circuitTransitionApplied = false;
@@ -1846,10 +1854,11 @@ export class WorkerService {
             if (coverage.complete) counters.detailRequestsAvoided += 1;
             const cancelled = coverage.events.length > 0 && coverage.events.every((event) => event.status === "CANCELLED");
             if (!dryRun && coverage.complete) {
-              const persistedEvents = await this.persistNormalisedEvents(coverage.events, source.id, run.id);
+              const boundedEvents = productionCanary ? coverage.events.slice(0, Math.max(0, 2 - counters.eventsPersisted)) : coverage.events;
+              const persistedEvents = await this.persistNormalisedEvents(boundedEvents, source.id, run.id);
               counters.unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
-              counters.listingEventsPersisted += coverage.events.length;
-              counters.eventsPersisted += coverage.events.length;
+              counters.listingEventsPersisted += boundedEvents.length;
+              counters.eventsPersisted += boundedEvents.length;
             }
             if (!dryRun) {
               const urlHash = ticketmasterUrlHash(url);
@@ -1921,7 +1930,8 @@ export class WorkerService {
               const allEvents = normaliseTicketmasterEvents(browserResult.extracted.events)
                 .filter((event) => canonicalTicketmasterUrl(event.sourceUrl) === targetUrl);
               if (!allEvents.length) throw new AdapterError("PARSING_ERROR", `Ticketmaster detail could not be normalised for ${target.url}`, false);
-              const events = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
+              const eligibleEvents = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
+              const events = productionCanary ? eligibleEvents.slice(0, Math.max(0, 2 - counters.eventsPersisted)) : eligibleEvents;
               if (!dryRun) {
                 const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
                 counters.unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
@@ -1999,12 +2009,12 @@ export class WorkerService {
     }
   }
 
-  private assertTicketmasterSourceAllowed(source: Awaited<ReturnType<typeof prisma.dataSource.findUniqueOrThrow>>, localAcceptance: boolean, developmentBootstrap = false) {
+  private assertTicketmasterSourceAllowed(source: Awaited<ReturnType<typeof prisma.dataSource.findUniqueOrThrow>>, localAcceptance: boolean, developmentBootstrap = false, productionCanary = false) {
     if (localAcceptance || developmentBootstrap) {
       this.assertLocalAcceptanceAllowed(source, true);
       return;
     }
-    this.assertSourceCollectionAllowed(source, true);
+    this.assertSourceCollectionAllowed(source, productionCanary);
   }
 
   private async collectEventfindaSource(marketScope: string, analysisRequestId?: string, options: CollectSourceOptions = {}) {
@@ -2013,25 +2023,36 @@ export class WorkerService {
     const phase = options.phase ?? "full";
     const localAcceptance = options.localAcceptance === true;
     const developmentBootstrap = options.developmentBootstrap === true;
+    const productionCanary = options.productionCanary === true;
+    const pilotMetadata = jsonRecord(source.metadata);
+    if (productionCanary && (this.environment.NODE_ENV !== "production" || localAcceptance
+      || developmentBootstrap || options.dryRun || options.phase || options.maxPages || options.maxDetails
+      || options.limit !== 2 || pilotMetadata.boundedProductionCanary !== true)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Eventfinda canary requires the approved two-record direct-public pilot", 422);
+    }
     if (localAcceptance && developmentBootstrap) throw new WorkerRequestError("INVALID_COLLECTION_MODE", "Choose either local acceptance or development bootstrap", 422);
     const guardedDevelopmentRun = localAcceptance || developmentBootstrap;
     const now = new Date();
     const from = options.from ?? new Date(now.getTime() - 7 * 86_400_000);
-    const to = options.to ?? new Date(now.getTime() + 400 * 86_400_000);
-    const maxPages = localAcceptance
+    const requestedTo = options.to ?? new Date(now.getTime() + 400 * 86_400_000);
+    const to = productionCanary ? new Date(Math.min(requestedTo.getTime(), from.getTime() + 31 * 86_400_000)) : requestedTo;
+    if (productionCanary && (to <= from || Math.abs(from.getTime() - now.getTime()) > 8 * 86_400_000)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Eventfinda canary requires a current 31-day window", 422);
+    }
+    const maxPages = localAcceptance || productionCanary
       ? Math.min(options.maxPages ?? 1, 1)
       : Math.min(options.maxPages ?? this.environment.EVENTFINDA_DISCOVERY_MAX_PAGES, this.environment.EVENTFINDA_DISCOVERY_MAX_PAGES);
-    const maxDetails = localAcceptance
+    const maxDetails = localAcceptance || productionCanary
       ? Math.min(options.maxDetails ?? options.limit ?? 2, 2)
       : Math.min(options.maxDetails ?? options.limit ?? this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, 500);
     const dryRun = options.dryRun === true;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("eventfinda");
-    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, configurationBefore, schedulesBefore };
+    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, productionCanary, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
 
     try {
-      this.assertEventfindaSourceAllowed(source, localAcceptance, developmentBootstrap);
+      this.assertEventfindaSourceAllowed(source, localAcceptance, developmentBootstrap, productionCanary);
       const metadata = jsonRecord(source.metadata);
       const cooldownUntil = typeof metadata.collectionCooldownUntil === "string" ? new Date(metadata.collectionCooldownUntil) : null;
       if (cooldownUntil && !Number.isNaN(cooldownUntil.getTime()) && cooldownUntil > now) {
@@ -2057,7 +2078,8 @@ export class WorkerService {
         let unchangedEventsSkipped = 0;
 
         const capture = async (url: string): Promise<ArgusBrowserTaskResult> => {
-          for (let attempt = 1; attempt <= 3; attempt += 1) {
+          const maxAttempts = productionCanary ? 1 : 3;
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
             try {
               if (usedToday + requests >= this.environment.EVENTFINDA_DAILY_REQUEST_BUDGET) {
                 throw new AdapterError("RATE_LIMITED", "Eventfinda daily request budget has been reached", true);
@@ -2076,7 +2098,7 @@ export class WorkerService {
               return browserResult;
             } catch (error) {
               const retryable = error instanceof AdapterError && error.retryable && error.code !== "RATE_LIMITED";
-              if (!retryable || attempt === 3) throw error;
+              if (!retryable || attempt === maxAttempts) throw error;
               retryCount += 1;
               await wait(attempt * 30_000);
             }
@@ -2108,6 +2130,7 @@ export class WorkerService {
             const listingGroups = groupEventfindaListingEvents(extraction.events);
             listingCards += listingGroups.reduce((count, group) => count + group.events.length, 0);
             for (const group of listingGroups) {
+              if (productionCanary && !discovered.has(group.url) && discovered.size >= 2) continue;
               const current = discovered.get(group.url);
               const merged = groupEventfindaListingEvents([...(current?.events ?? []), ...group.events])[0]?.events ?? group.events;
               discovered.set(group.url, {
@@ -2191,7 +2214,8 @@ export class WorkerService {
               }
               const listing = jsonRecord(jsonRecord(target.metadata).listing);
               const allEvents = normaliseEventfindaDetail(extraction, listing);
-              const events = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
+              const eligibleEvents = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
+              const events = productionCanary ? eligibleEvents.slice(0, Math.max(0, 2 - eventsPersisted)) : eligibleEvents;
               if (!dryRun) {
                 const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
                 unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
@@ -2260,14 +2284,14 @@ export class WorkerService {
     }
   }
 
-  private assertEventfindaSourceAllowed(source: Awaited<ReturnType<typeof prisma.dataSource.findUniqueOrThrow>>, localAcceptance = false, developmentBootstrap = false) {
+  private assertEventfindaSourceAllowed(source: Awaited<ReturnType<typeof prisma.dataSource.findUniqueOrThrow>>, localAcceptance = false, developmentBootstrap = false, productionCanary = false) {
     if (localAcceptance || developmentBootstrap) {
       const mode = developmentBootstrap ? "development bootstrap" : "local acceptance";
       if (this.environment.NODE_ENV !== "development") throw new AdapterError("CONFIGURATION_ERROR", developmentBootstrap ? "Eventfinda development bootstrap is restricted to the development environment" : "Local Eventfinda acceptance is restricted to the development environment", false);
       if (!source.enabled || !source.environments.includes("DEVELOPMENT")) throw new AdapterError("CONFIGURATION_ERROR", `Eventfinda is not enabled for ${mode}`, false);
       return;
     }
-    this.assertSourceCollectionAllowed(source, true);
+    this.assertSourceCollectionAllowed(source, productionCanary);
   }
 
   private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {

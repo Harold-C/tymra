@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { prisma, type Prisma } from "@tymra/db";
 import { ARGUS_PUBLIC_MARKET_SOURCES, publicDataAdapters } from "@tymra/providers";
 
@@ -10,7 +12,6 @@ const firstSourceKeys = new Set<string>(FIRST_PUBLIC_SCHEDULES.map((schedule) =>
 export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()
   .filter((source) => source.providerType === "PUBLIC"
     && !firstSourceKeys.has(source.key)
-    && source.key !== "eventfinda"
     && !/ARGUS|BROWSER/.test(source.accessMethod)
     && publicDataAdapters[source.key]?.metadata.adapterKey === source.adapterKey)
   .map((source) => source.key);
@@ -18,7 +19,7 @@ export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()
 export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = [
   ...ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId),
   "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events",
-  "auckland_airport_monthly", "mot_airline_performance", "fx_rates",
+  "auckland_airport_monthly", "mot_airline_performance", "fx_rates", "ticketmaster",
 ];
 const browserPilotKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
 const pilotKeys = new Set([...PUBLIC_PILOT_SOURCE_KEYS, ...ARGUS_MARKET_PILOT_SOURCE_KEYS]);
@@ -79,7 +80,22 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
   if (await transaction.rawArtifact.count({ where: { collectionRunId: { in: runs.map((run) => run.id) }, parserFailure: true } })) {
     throw new Error("Pilot passes contain parser failures");
   }
+  if (sourceId === "eventfinda") {
+    const artifacts = await transaction.rawArtifact.findMany({
+      where: { collectionRunId: { in: runs.map((run) => run.id) }, artifactType: "HTML", deletedAt: null },
+      select: { collectionRunId: true, contentHash: true, payload: true },
+    });
+    if (runs.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id))
+      || artifacts.some((artifact) => typeof (artifact.payload as Record<string, unknown> | null)?.html !== "string"
+        || createHash("sha256").update(JSON.stringify((artifact.payload as Record<string, unknown>).html)).digest("hex") !== artifact.contentHash)) {
+      throw new Error("Eventfinda pilot HTTP evidence is incomplete or has a hash mismatch");
+    }
+  }
   if (browserPilotKeys.has(sourceId)) {
+    if (!await transaction.sourceEvent.count({ where: { dataSourceId: source.id } })
+      && !await transaction.sourceMarketSignal.count({ where: { dataSourceId: source.id } })) {
+      throw new Error("Argus pilot has no persisted business record");
+    }
     const jobIds = runs.map((run) => run.jobId).filter((id): id is string => Boolean(id));
     if (jobIds.length !== 2 || (metadata as Record<string, unknown>).browserPilot !== true) throw new Error("Argus pilot requires two queued passes");
     const jobs = await transaction.job.findMany({ where: { id: { in: jobIds } }, select: { status: true, attemptCount: true, maxAttempts: true } });

@@ -2,7 +2,7 @@ import { prisma, type Prisma } from "@tymra/db";
 import { publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
-import { isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS } from "./production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS } from "./production-public-pilot";
 import { isFirstPublicSchedule } from "./production-public-schedules";
 
 export const APPROVED_PUBLIC_CANARY_SOURCES: string[] = ["public_holidays_nz", "rto_calendars", "mbie", "geonet", "stats_nz", ...PUBLIC_PILOT_SOURCE_KEYS];
@@ -27,7 +27,8 @@ export async function bootstrapProductionPublicCanary(sourceKey: string, nodeEnv
       throw new Error("Source already exists; public canary bootstrap will not overwrite it");
     }
     const otherSources = await transaction.dataSource.findMany({ select: { key: true } });
-    if (otherSources.some((source) => source.key !== "christchurch_university_dates" && !allowedSources.has(source.key))) {
+    if (otherSources.some((source) => source.key !== "christchurch_university_dates"
+      && !allowedSources.has(source.key) && !ARGUS_MARKET_PILOT_SOURCE_KEYS.includes(source.key))) {
       throw new Error("Unexpected production source exists; review the registry before bootstrapping");
     }
 

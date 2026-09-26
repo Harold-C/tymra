@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { prisma } from "@tymra/db";
 import { afterAll, expect, it } from "vitest";
@@ -46,6 +46,11 @@ it("requires queued Argus delivery and locally retained evidence before scheduli
       enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
       metadata: { boundedProductionCanary: true, browserPilot: true, marker },
     } });
+    await transaction.sourceEvent.create({ data: {
+      dataSourceId: source.id, externalId: `browser-pilot-test:${marker}`,
+      sourceUrl: "https://edenpark.co.nz/events/", title: "Bounded pilot event",
+      contentHash: marker,
+    } });
     const artifacts: string[] = [];
     for (let pass = 1; pass <= 2; pass += 1) {
       const job = await transaction.job.create({ data: {
@@ -79,6 +84,41 @@ it("requires queued Argus delivery and locally retained evidence before scheduli
     const enabled = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production");
     expect(enabled.acceptedRuns).toHaveLength(2);
     expect(enabled.schedule.enabled).toBe(true);
+    throw new Error("ROLLBACK_TEST_TRANSACTION");
+  })).rejects.toThrow("ROLLBACK_TEST_TRANSACTION");
+  expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
+});
+
+it("requires intact stored HTML from both Eventfinda pilot passes", async () => {
+  const sourceKey = "eventfinda";
+  const marker = randomUUID();
+  await expect(prisma.$transaction(async (transaction) => {
+    const source = await transaction.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
+    await transaction.dataSource.update({ where: { id: source.id }, data: {
+      enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
+      metadata: { boundedProductionCanary: true, marker },
+    } });
+    const runs = [];
+    for (let pass = 1; pass <= 2; pass += 1) {
+      runs.push(await transaction.collectionRun.create({ data: {
+        dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", successCount: 1,
+        scope: { productionCanary: true, configurationUnchanged: true, schedulesUnchanged: true, marker, pass },
+        startedAt: new Date(Date.now() + pass), finishedAt: new Date(Date.now() + pass), isDemo: false,
+      } }));
+    }
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("HTTP evidence is incomplete");
+    for (const [index, run] of runs.entries()) {
+      const html = `<html>pass ${index + 1}</html>`;
+      await transaction.rawArtifact.create({ data: {
+        collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML",
+        storageRef: `postgres:RawArtifact:${marker}:${index}`, contentHash: index === 0 ? "invalid" : createHash("sha256").update(JSON.stringify(html)).digest("hex"),
+        payload: { html }, expiresAt: new Date(Date.now() + 60_000),
+      } });
+    }
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("hash mismatch");
+    const bad = await transaction.rawArtifact.findFirstOrThrow({ where: { collectionRunId: runs[0]!.id } });
+    await transaction.rawArtifact.update({ where: { id: bad.id }, data: { contentHash: createHash("sha256").update(JSON.stringify("<html>pass 1</html>")).digest("hex") } });
+    expect((await enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).schedule.enabled).toBe(true);
     throw new Error("ROLLBACK_TEST_TRANSACTION");
   })).rejects.toThrow("ROLLBACK_TEST_TRANSACTION");
   expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();

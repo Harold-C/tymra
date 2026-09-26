@@ -178,7 +178,8 @@ switch (command) {
             parserFailures: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } }),
             repeatRowGrowth: pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0,
             remoteEvidenceRemaining: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } }),
-            ...(run.status === "SUCCEEDED" && run.successCount > 0 ? {} : { error: `RUN_${run.status}` }),
+            ...(run.status === "SUCCEEDED" && run.successCount > 0 && after.some((count) => count > 0)
+              ? {} : { error: `RUN_${run.status}_NO_BUSINESS_RESULT` }),
           };
         } catch (error) {
           return { sourceKey, pass, configurationUnchanged: false, schedulesUnchanged: false, parserFailures: 0, repeatRowGrowth: 0, remoteEvidenceRemaining: 0, error: error instanceof Error ? error.name : "UNKNOWN" };
