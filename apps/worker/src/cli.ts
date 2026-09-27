@@ -10,7 +10,7 @@ import { executeCanary, canaryPlan, productionPreflight } from "./operations/rel
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary, validateSuspendedProductionPublicCanary } from "./operations/production-public-canary";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
@@ -228,7 +228,9 @@ switch (command) {
       || metadata.browserPilot !== true || metadata.boundedProductionCanary !== true) throw new Error("Argus market source is not approved for a bounded trial");
     if (await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })) throw new Error("Argus market pilot already has a schedule");
     if (await prisma.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Argus market pilot requires an idle Tymra queue");
-    const prior = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false },
+    const acceptanceStart = argusPilotAcceptanceStart(metadata);
+    if (!acceptanceStart) throw new Error("Argus market pilot has no fresh acceptance window");
+    const prior = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false, createdAt: { gte: acceptanceStart } },
       orderBy: { createdAt: "desc" }, take: 2,
       select: { id: true, status: true, successCount: true, scope: true, job: { select: { status: true, attemptCount: true, maxAttempts: true } } },
     });

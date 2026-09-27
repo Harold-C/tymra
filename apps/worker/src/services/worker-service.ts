@@ -76,6 +76,7 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
+import { isOurAucklandDetailUrl } from "../collection/ourauckland-detail-url";
 import { boundProductionCanaryResults } from "../operations/release-safety";
 import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicReferenceRecordLimit, firstPublicSchedule } from "../operations/production-public-schedules";
 import { redactPublicArtifact } from "../operations/public-artifact-redaction";
@@ -2360,7 +2361,8 @@ export class WorkerService {
       : [];
     if (candidates.length === 0) throw new AdapterError("PARSING_ERROR", "OurAuckland Argus listing returned no event cards", false);
     const records: PublicRawRecord[] = [];
-    for (const event of candidates.slice(0, maxRecords)) {
+    for (const event of candidates.filter((candidate) =>
+      typeof candidate.sourceUrl === "string" && isOurAucklandDetailUrl(candidate.sourceUrl)).slice(0, maxRecords)) {
       const externalId = typeof event.id === "string" ? event.id : "";
       const sourceUrl = typeof event.sourceUrl === "string" ? event.sourceUrl : "";
       if (!externalId || !sourceUrl) continue;

@@ -190,6 +190,14 @@ export async function enableProductionPublicPilot(sourceId: string, nodeEnv: str
   return prisma.$transaction((transaction) => enableProductionPublicPilotTransaction(transaction, sourceId, nodeEnv));
 }
 
+export function argusPilotAcceptanceStart(metadata: unknown): Date | null {
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>).pilotAcceptanceStartedAt;
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value)) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) || date.toISOString() !== value ? null : date;
+}
+
 export async function enableProductionPublicPilotTransaction(transaction: Prisma.TransactionClient, sourceId: string, nodeEnv: string) {
   if (nodeEnv !== "production" || !pilotKeys.has(sourceId)) throw new Error("Public pilot requires an approved production source");
   const source = await transaction.dataSource.findUnique({ where: { key: sourceId } });
@@ -200,8 +208,10 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
     || (metadata as Record<string, unknown>).boundedProductionCanary !== true) {
     throw new Error("Source has not passed the public-pilot activation gate");
   }
+  const acceptanceStart = browserPilotKeys.has(sourceId) ? argusPilotAcceptanceStart(metadata) : null;
+  if (browserPilotKeys.has(sourceId) && !acceptanceStart) throw new Error("Argus pilot has no fresh acceptance window");
   const runs = await transaction.collectionRun.findMany({
-    where: { dataSourceId: source.id, isDemo: false },
+    where: { dataSourceId: source.id, isDemo: false, ...(acceptanceStart ? { createdAt: { gte: acceptanceStart } } : {}) },
     orderBy: { finishedAt: "desc" }, take: 2,
     select: { id: true, jobId: true, status: true, successCount: true, scope: true },
   });

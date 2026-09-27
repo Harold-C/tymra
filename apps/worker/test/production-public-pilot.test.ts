@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SKI_SEASON_SOURCES } from "@tymra/providers";
+import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
 import { isArgusPilotEvidencePath, isLegacyCouncilDirectPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
@@ -92,6 +93,20 @@ describe("direct-public production pilot", () => {
     expect(nextArgusMarketPilotPass([recovered, failed])).toBe(1);
     expect(nextArgusMarketPilotPass([eligible, recovered])).toBe(2);
     expect(() => nextArgusMarketPilotPass([eligible, eligible])).toThrow("two eligible recent passes");
+  });
+  it("keeps retest passes inside a fresh acceptance window", () => {
+    const start = "2026-09-27T00:30:00.000Z";
+    expect(argusPilotAcceptanceStart({ pilotAcceptanceStartedAt: start })?.toISOString()).toBe(start);
+    expect(argusPilotAcceptanceStart({ pilotAcceptanceStartedAt: "2026-09-27" })).toBeNull();
+    expect(argusPilotAcceptanceStart({ pilotAcceptanceStartedAt: "2026-13-27T00:30:00.000Z" })).toBeNull();
+    expect(argusPilotAcceptanceStart({})).toBeNull();
+  });
+  it("submits only official OurAuckland event-detail URLs", () => {
+    expect(isOurAucklandDetailUrl("https://ourauckland.aucklandcouncil.govt.nz/events/2026/09/japanese-film-screening/")).toBe(true);
+    expect(isOurAucklandDetailUrl("https://ourauckland.aucklandcouncil.govt.nz/heritage-festival/heritage-festival-events/")).toBe(false);
+    expect(isOurAucklandDetailUrl("https://ourauckland.aucklandcouncil.govt.nz/events/2026/09/japanese-film-screening/?page=1")).toBe(false);
+    expect(isOurAucklandDetailUrl("https://other.example/events/2026/09/japanese-film-screening/")).toBe(false);
+    expect(isOurAucklandDetailUrl("http://ourauckland.aucklandcouncil.govt.nz/events/2026/09/japanese-film-screening/")).toBe(false);
   });
   it("converts only the untouched suspended council direct-pilot metadata", () => {
     expect(isLegacyCouncilDirectPilot("council_calendars", { boundedProductionCanary: true })).toBe(true);

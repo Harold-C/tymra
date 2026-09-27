@@ -172,7 +172,7 @@ it("requires queued Argus delivery and locally retained evidence before scheduli
     const source = await transaction.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
     await transaction.dataSource.update({ where: { id: source.id }, data: {
       enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
-      metadata: { boundedProductionCanary: true, browserPilot: true, marker },
+      metadata: { boundedProductionCanary: true, browserPilot: true, pilotAcceptanceStartedAt: new Date(Date.now() - 1_000).toISOString(), marker },
     } });
     await transaction.sourceEvent.create({ data: {
       dataSourceId: source.id, externalId: `browser-pilot-test:${marker}`,
@@ -284,7 +284,7 @@ it("permits only two independently verified zero-business School Sport Canterbur
     expect(await transaction.sourceMarketSignal.count({ where: { dataSourceId: source.id } })).toBe(0);
     await transaction.dataSource.update({ where: { id: source.id }, data: {
       enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
-      metadata: { boundedProductionCanary: true, browserPilot: true, marker },
+      metadata: { boundedProductionCanary: true, browserPilot: true, pilotAcceptanceStartedAt: new Date(Date.now() - 1_000).toISOString(), marker },
     } });
     const executionIds: string[] = [];
     for (let pass = 1; pass <= 2; pass += 1) {
@@ -312,6 +312,11 @@ it("permits only two independently verified zero-business School Sport Canterbur
         expiresAt: new Date(Date.now() + 60_000),
       } });
     }
+    await transaction.collectionRun.create({ data: {
+      dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", isDemo: false,
+      createdAt: new Date(Date.now() - 86_400_000), finishedAt: new Date(Date.now() + 60_000),
+      scope: { productionCanary: true, marker, historical: true },
+    } });
     await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("no verified business");
     await transaction.argusExecution.update({ where: { id: executionIds[1]! }, data: { result } });
     const enabled = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production");

@@ -8,7 +8,7 @@ import { publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { getArgusJobResult } from "../clients/argus-client";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, enableProductionPublicPilot, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, verifiedSchoolSportCanterburyZeroPass } from "./production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, verifiedSchoolSportCanterburyZeroPass } from "./production-public-pilot";
 import { FIRST_PUBLIC_SCHEDULES, isFirstPublicSchedule } from "./production-public-schedules";
 
 const browserKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
@@ -52,7 +52,7 @@ export async function bootstrapProductionArgusMarketPilot(sourceKey: string, nod
         retentionPolicy: { rawHours: 72, parserFailureHours: 168 },
         concurrencyLimit: 1, dailyBudget: record.dailyBudget,
         operationalStatus: "DEGRADED", healthSummary: { mode: "argus-market-production-trial", verified: false },
-        metadata: { boundedProductionCanary: true, browserPilot: true },
+        metadata: { boundedProductionCanary: true, browserPilot: true, pilotAcceptanceStartedAt: new Date().toISOString() },
         status: "UNKNOWN", healthStatus: "DEGRADED", enabled: true,
         acquisitionMethod: record.accessMethod, retentionDays: 365, owner: "Tymra production", isDemo: false,
         capabilities: { create: ["COLLECT_PUBLIC_SIGNALS", "HEALTH_CHECK"].map((capability) => ({
@@ -92,10 +92,11 @@ export async function rearmSuspendedProductionArgusMarketPilot(sourceKey: string
     if (schedules.some((schedule) => !isFirstPublicSchedule(schedule) && !isProductionPublicPilotSchedule(schedule))
       || schedules.some((schedule) => schedule.key === `pilot-public-${sourceKey}-weekly`)) throw new Error("Argus market retest found an unexpected or existing source schedule");
     if (await transaction.job.count({ where: { status: { in: ["PENDING", "RUNNING"] } } })) throw new Error("Argus market retest requires an idle Tymra queue");
+    const acceptanceMetadata = { ...metadata, boundedProductionCanary: true, browserPilot: true, pilotAcceptanceStartedAt: new Date().toISOString() };
     const updated = await transaction.dataSource.update({ where: { id: source.id }, data: {
       enabled: true, lifecycle: "RESEARCH", operationalStatus: "DEGRADED", healthStatus: "DEGRADED", lastReviewedAt: new Date(),
+      metadata: acceptanceMetadata,
       ...(legacyDirectPilot ? {
-        metadata: { boundedProductionCanary: true, browserPilot: true },
         ...(legacySkiPilot ? {
           adapterKey: record.adapterKey,
           accessMethod: record.accessMethod,
@@ -149,7 +150,9 @@ export function nextArgusMarketPilotPass(runsNewestFirst: readonly {
 export async function enableProductionArgusMarketPilot(sourceKey: string, environment: Environment) {
   if (environment.NODE_ENV !== "production" || !browserKeys.has(sourceKey)) throw new Error("Argus market pilot requires one approved production source");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
-  const runs = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false }, orderBy: { finishedAt: "desc" }, take: 2, select: { id: true, status: true, successCount: true, scope: true } });
+  const acceptanceStart = argusPilotAcceptanceStart(source.metadata);
+  if (!acceptanceStart) throw new Error("Argus market pilot has no fresh acceptance window");
+  const runs = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false, createdAt: { gte: acceptanceStart } }, orderBy: { finishedAt: "desc" }, take: 2, select: { id: true, status: true, successCount: true, scope: true } });
   if (runs.length !== 2 || runs.some((run) => run.status !== "SUCCEEDED")) throw new Error("Argus market pilot has not completed two successful passes");
   const runIds = runs.map((run) => run.id);
   const executions = await prisma.argusExecution.findMany({ where: { collectionRunId: { in: runIds } }, select: { argusJobId: true, collectionRunId: true, traceId: true, status: true, result: true } });
