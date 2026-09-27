@@ -1,30 +1,31 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-27 (suspended public-source production retest)
+Last updated: 2026-09-27 (final bounded public-source production continuation)
 
 ## 2026-09-27 current production collection state
 
-Tymra Worker/API/Scheduler run pushed commit `4fbe6110cee5584c96bc91a52c839369d8db5a47`
-as `tymra:public-suspended-repair-20260927-v2`, image
-`sha256:6ff9a55c4e76f730476286e37c9ffa8a8595d380cd66be9f9963212fe8f63ec0`.
-The Argus production browser runs `ffb066ffb988b15c07154ec2c4079e5ca8412d82`.
-Argus health/readiness/OpenAPI, authenticated Job 404, Tymra API readiness and evidence-volume
-write/read checks passed. No migration ran. The latest production check found 70 enabled
-public-source schedules, seven suspended sources and zero pending/running Tymra Jobs.
-All 70 next-run timestamps were outside weekday 09:00–17:00 NZ time; four late-afternoon
-schedules were shifted to around 20:44 local time before this check. Because the Scheduler
-uses execution time plus an interval rather than a timezone-anchored calendar rule, this is
-an observed next-run check, not a permanent office-hours guarantee.
+Tymra Worker/API/Scheduler run pushed commit `a373bb19259652e195abc3e3376218f0bcbc755e`
+as `tymra:public-final-repair-20260927-v2`, image
+`sha256:d959251eda82062048f76dd6b581cd28d8bdcd7c61dd33e074c6346883b7a3a8`.
+Argus production browser runs pushed commit `d1211ea4d96d1f537ad7c81349f8acbb0e020de0`
+as `argus-release-20260927-4`. Health/readiness/OpenAPI, authenticated Job 404,
+account/runtime 403, Tymra API readiness and retained evidence hashes passed. No Tymra
+migration or seed ran. The latest check found 72 enabled public-source schedules, five
+suspended sources, zero pending/running Tymra Jobs and zero active Argus tasks.
+The next-run and one-year interval projection found no weekday 09:00–17:00 NZ execution;
+the Scheduler remains interval-based, so this is not a permanent timezone policy.
 
-Of the original 25 suspended sources, 18 passed two new bounded production trials and were
-given weekly schedules. The latest two are `council_calendars` and
-`school_sport_canterbury`. The latter saves verified raw evidence but no unlocated activity
-as a Canterbury business event. Seven remain suspended: `auckland_airport_monthly`,
-`mot_airline_performance`, `christchurch_council_events`, `christchurch_sports`, `metservice`,
-`eventfinda`, `ticketmaster`. Exact release images, checks, ACK/PURGED evidence, known failures,
-and protected recovery materials are in
+Of the original 25 suspended sources, 20 passed bounded production trials and have
+weekly schedules. The latest are `christchurch_sports` (two deduplicated hosted events)
+and `metservice` (verified unchanged or unmapped CAP feed without invented market rows).
+Five remain suspended: `auckland_airport_monthly`, `mot_airline_performance`,
+`christchurch_council_events`, `eventfinda`, `ticketmaster`. Auckland Airport and MOT
+still show intermittent official-workbook download failures, despite the new Argus
+browser download handling; both auto-paused. Council returned an access interstitial.
+Exact release images, tests, bounded Job outcomes, ACK/PURGED evidence, known limits,
+office-hour timing and protected recovery materials are in
 [`evidence/public-suspended-repair-production-2026-09-27.md`](./evidence/public-suspended-repair-production-2026-09-27.md).
-The following section is the pre-release candidate record and must not be read as current runtime.
+The following section is a historical pre-release candidate record, not current runtime.
 
 ## 2026-09-27 suspended-source repair candidate — historical pre-release record
 

@@ -1,28 +1,32 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-27（暂停渠道受限复测与生产发布）
+Last updated: 2026-09-27（公开渠道最终受限复测与生产发布）
 
 ## 2026-09-27 当前生产采集顺序
 
 原 78 个无账号公开来源的首轮中，52 个有定期计划、25 个暂停、Lincoln 仅作验收。
-暂停来源经逐项修复与两次新的受限生产试运行后，已有 18 个恢复每周计划；当前共
-70 条计划启用、7 个来源继续暂停。Worker/API/Scheduler 运行同一 v2 精确镜像，
+暂停来源经逐项修复与两次新的受限生产试运行后，已有 20 个恢复每周计划；当前共
+72 条计划启用、5 个来源继续暂停。Worker/API/Scheduler 运行
+`a373bb19259652e195abc3e3376218f0bcbc755e` 的同一 v2 精确镜像，Argus 浏览器
+运行 `d1211ea4d96d1f537ad7c81349f8acbb0e020de0`，
 高频 Scheduler、新 Check、内部按需、客户入口、支付、SMTP 和会员继续关闭。
 具体镜像、成功来源、遗留失败及备份见
 [`evidence/public-suspended-repair-production-2026-09-27.md`](./evidence/public-suspended-repair-production-2026-09-27.md)。
 
 Mac mini 同时用于办公：避免在工作日 09:00–17:00 NZ 时间执行新的批量采集和部署。
-当前 70 条计划的下一次执行均在该时段外；四条可能受冬令时影响进入下午的计划
+当前 72 条计划的下一次执行均在该时段外；四条可能受冬令时影响进入下午的计划
 已移至晚间。下一自然周期须重新核对请求预算、来源身份、变化/撤稿、去重、
 证据和 ACK/PURGED，并复查新西兰本地执行时间。此轮两个新的每周计划分别为
-OurAuckland Council 与 School Sport Canterbury；后者只认可无地点条目的原始证据，
-不能当作坎特伯雷已确认活动。
+Christchurch Sports 与 MetService；前者取得两条去重后的明确赛事，后者只保存
+有来源证据且属于支持市场的 CAP 告警，不为未映射地区制造信号。
 
-余下七个暂停来源中，`auckland_airport_monthly` 与 `mot_airline_performance` 的
-Argus `INTERNAL_ERROR` 先诊断保留执行记录，不连续访问源站；
-`christchurch_council_events` 与 `christchurch_sports` 需明确当前窗口无业务时的
-产品判据；`metservice` 需区分真实 CAP 更新与重复写入。`eventfinda` 和
-`ticketmaster` 不在本轮修复范围。仅在单项安全门槛满足后恢复计划。
+余下五个暂停来源中，`auckland_airport_monthly` 与 `mot_airline_performance` 的
+官方页面可读、链接存在，但浏览器工作簿下载间歇失败；Argus 当前只给出
+`INTERNAL_ERROR`，尚不能确定是浏览器事件还是来源网络。两者已自动停采，
+下步先用保留页面和受限诊断明确失败阶段，再设计保持浏览器点击与域名约束的
+最小修复，不连续访问源站或用一次成功代替两次门槛。
+`christchurch_council_events` 收到 Incapsula 中间页，保留暂停，不绕过站点控制。
+`eventfinda` 和 `ticketmaster` 不在本轮修复范围。仅在单项安全门槛满足后恢复计划。
 历史失败 Job 与证据保留，不能把 `FAILED_JOBS_PRESENT` 单独等同当前积压。
 
 以下本地候选及首轮记录保留其发生时状态，不描述当前部署。

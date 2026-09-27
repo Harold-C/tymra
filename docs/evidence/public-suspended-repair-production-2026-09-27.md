@@ -4,6 +4,96 @@ This follows the [78-source first-round snapshot](./public-source-production-rol
 It records new production trials, not a claim that every source is fully covered or that a
 natural recurring cycle has passed. Booking, Airbnb and Synix accounts were not used.
 
+## Final bounded continuation (current production state)
+
+- Tymra Worker/API/Scheduler now run pushed commit
+  `a373bb19259652e195abc3e3376218f0bcbc755e` as
+  `tymra:public-final-repair-20260927-v2`, local image
+  `sha256:d959251eda82062048f76dd6b581cd28d8bdcd7c61dd33e074c6346883b7a3a8`.
+  The exact source archive SHA-256 is
+  `98797ceaee325f9ad79b2291ab62ddd39325b5abc3ce05a508060e79dad61148`.
+  The preceding v1 commit `6ba581ff2645707985946e43e7673aca33622072`
+  remains as image `sha256:7e22485563d3696f6dfe89ad0f5c8c671a1088a09b6cf36bd953713aceb81cf6`.
+  Only Worker/API/Scheduler were recreated; Web, PostgreSQL and Redis were not.
+  API health/readiness are HTTP 200, all three collection containers have zero restarts,
+  and no migration or seed ran (33/33 migrations remain complete).
+- Argus browser now runs pushed commit `d1211ea4d96d1f537ad7c81349f8acbb0e020de0`,
+  tag `argus-release-20260927-4`, registry digest
+  `sha256:7809b877b6d91227db9cedddeb83b7f5bf6dcf638a40f2e2c53a4d99dcfc84bf`.
+  Its loaded Mac mini image ID is
+  `sha256:0521259ab4f230dfbff91f59852dcef0b62879a5dea98090d62ad1e3c0dc3263`.
+  The private export checksum and all RootFS layers match the release assets, and the
+  deployed revision label and compiled workbook code match the release. The export
+  manifest records a different pre-transfer image ID
+  (`sha256:447a1f5c72b3455d87d542f79578e41a7710183e6e576533ff44d7041122bebd`);
+  this transport-level ID discrepancy remains to be explained. CI `36285616980`
+  and private export `36286705310` passed. PostgreSQL and tunnel were not rebuilt.
+  Browser health/readiness are HTTP 200, zero restarts and zero active tasks.
+- From the actual Tymra production Worker, Argus health, readiness and OpenAPI returned
+  HTTP 200; its protected client received HTTP 404 for a nonexistent Job and HTTP 403
+  for account and runtime routes. The origin is `https://api.argus.nz`; no token,
+  Argus credential or local `argus.test` configuration changed.
+
+Two formerly suspended direct sources passed the guarded two-pass gate:
+
+| Source | New production result | State |
+| --- | --- | --- |
+| `christchurch_sports` | Runs `cmuj5tvz90003p73mxuwz6x81` and `cmuj5u1dj000sp73mox6rlopd` each succeeded with two accepted records inside the 90-day window. The final source has two deduplicated `SourceEvent` rows. | Weekly schedule enabled; next run Sunday 2026-10-04 14:48 NZDT. |
+| `metservice` | Runs `cmuj6a6230003qr0xqnvhtkta` and `cmuj6a72h0005qr0xctjsxj45` both succeeded with zero *new* mapped signals. Stored feed/detail XML, source lineage and SHA-256 showed a legitimate unmapped Arthur's Pass alert; no unsupported-market signal was invented. Four prior mapped signals remain, all with distinct external IDs. | Weekly schedule enabled; next run Sunday 2026-10-04 15:01 NZDT. |
+
+Three sources remain paused after bounded diagnosis:
+
+| Source | Current evidence and stop reason |
+| --- | --- |
+| `christchurch_council_events` | One Worker fetch received HTTP 200 but only a 212-byte Incapsula access interstitial, rather than event HTML. The code now classifies this as nonretryable `SOURCE_UNAVAILABLE`. No bypass or repeated source visit was attempted. |
+| `auckland_airport_monthly` | One new Tymra Job `cmuj6jhss0000qr35ypybel44` produced Argus Job `job_747063328e36f11829bdaaafa5fcfccc`, which failed `INTERNAL_ERROR` after saving the correct official monthly page (HTTP 200, XLSX link present) but before a workbook download. Tymra automatically suspended the source. |
+| `mot_airline_performance` | First new Tymra Job `cmuj6py1p0000qr53jttcp5sl` and Argus Job `job_fe8d41cf7a50f411f7f95c8fb8b0dd1a` succeeded with two signals and workbook evidence. Second Job `cmuj6qy6m0000qr5y4u8f5k5t` / Argus `job_a89fcd487fd4086cc125dfb35dd70a1f` failed `INTERNAL_ERROR` after saving the same official page and link but without download evidence. The source automatically returned to suspended state. Two consecutive passes are absent. |
+
+The three aviation Argus Jobs copied seven evidence files to Tymra (2 + 3 + 2).
+Byte readback matched all seven stored SHA-256 hashes. All three were ACKed; authenticated
+result rereads returned HTTP 410 and Argus database readback showed `PURGED` /
+`ACKNOWLEDGED`, null result payloads and no retained item results. The two MOT signals
+and two older Auckland Airport signals have distinct external IDs; neither failed pass
+invented a business row. The download failure's precise browser/network cause is not
+yet established. The Connector still requires a rendered-page click; this record does
+not treat a direct file request or a single successful pass as release acceptance.
+`eventfinda` and `ticketmaster` were excluded from this continuation.
+
+Exactly 72 public schedules are enabled, five sources are suspended, no Tymra Job is
+PENDING/RUNNING, and Argus has no queued/running Job. A read-only projection over all
+72 next-run timestamps, 52 weekly intervals and 370 daily intervals found zero
+weekday 09:00–17:00 Pacific/Auckland executions. The earliest next run is Sunday
+2026-09-27 20:44 NZDT. This projection must be repeated after scheduling changes;
+the scheduler uses execution-time intervals rather than a permanent office-hours rule.
+Customer entry, registration, new Checks, internal on-demand, high-frequency scheduling,
+Stripe, SMTP and membership remain disabled. Ordinary named public scheduling remains on.
+
+The current post-acceptance Tymra backup is
+`/srv/apps/tymra/backups/public-final-repair-20260927-postacceptance/`, containing the
+protected environment, v2 Compose, PostgreSQL custom dump and evidence tar. All files
+are root-owned mode `0600`; `SHA256SUMS`, `pg_restore -l` and tar listing passed. Dump
+SHA-256 is `a81513b6db7d7eba8d5c1834b38b21876cf1cccee081f2d41ec4b00a24347899`;
+evidence tar SHA-256 is
+`258de6833561743f2ca7a8dd7ffc27d1f7f3a81d0c50212e5284de3d2e978139`.
+This Tymra snapshot was listing-verified, not isolated-restored. Its pre-deploy backup
+and v1/v2 image/release directories remain available. Image rollback can recreate only
+Worker/API/Scheduler from v1 after `release:rollback --confirm DISABLE_COLLECTIONS`;
+routine database rollback would discard accepted rows whose Argus results are purged.
+
+The Argus pre-deploy encrypted paired backup is
+`/Users/haroldchen/Development/argus/runtime/production-backups/argus-prod-20260927-workbook-repair-predeploy.sparseimage`,
+SHA-256 `0e63f6d6b8f5009560b6ee12b97f51fa8905922cf66050d9c965c8222d6f09f1`.
+Reopening the encrypted image and hashing its database, `/data` tar and protected
+configuration succeeded. Isolated PostgreSQL restore matched 189 Jobs and two account
+rows; all 20,075 archived `/data` members were restored into a separate volume and
+GNU tar reported zero byte/metadata differences. Temporary restore resources were
+removed. The previous Argus image and protected release configuration remain available
+for a browser-only rollback. An older 2026-09-27 sparseimage did not reopen with the
+available checked Keychain entries; it was preserved, and the newly verified backup is
+the current recovery material.
+
+The rest of this document records the earlier v2 snapshot and its then-current findings.
+
 ## Release and guarded scope
 
 - Argus commit `ffb066ffb988b15c07154ec2c4079e5ca8412d82`, tag
