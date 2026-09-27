@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { prisma, type Prisma } from "@tymra/db";
 import { nzDateKey, nzStartOfDay } from "@tymra/domain";
-import { ARGUS_PUBLIC_MARKET_SOURCES, SKI_SEASON_SOURCES, argusPublicMarketSource, parseMetServiceCapAlert, parseMetServiceCapFeed, publicDataAdapters } from "@tymra/providers";
+import { ARGUS_PUBLIC_MARKET_SOURCES, SKI_SEASON_SOURCES, argusPublicMarketSource, nzCoverageKeysForAreaText, parseMetServiceCapAlert, parseMetServiceCapFeed, publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { normaliseSportySchoolSportEvents, sportySchoolSportExtractionSchema } from "../collection/school-sport-ticketek";
@@ -67,7 +67,7 @@ export function zeroBusinessPublicPilotPassAccepted(sourceId: string, artifacts:
       && typeof place === "object" && place !== null && !Array.isArray(place)
       && ((typeof placeId === "string" && placeId.length > 0) || (typeof placeId === "number" && Number.isFinite(placeId)));
   });
-  if (validArtifacts.length !== 1) return false;
+  if (validArtifacts.length < 1 || validArtifacts.length > 2) return false;
   const feed = validArtifacts.find((artifact) => {
     const payload = artifact.payload;
     return payload && typeof payload === "object" && !Array.isArray(payload) && (payload as Record<string, unknown>).kind === "cap_feed";
@@ -80,10 +80,24 @@ export function zeroBusinessPublicPilotPassAccepted(sourceId: string, artifacts:
     const parsed = parseMetServiceCapFeed(feed.rawXml);
     if (parsed.items.length !== items.length) return false;
   } catch { return false; }
-  if (items.length === 0) return true;
+  if (items.length === 0 && validArtifacts.length === 1) return true;
   const counters = scope && typeof scope === "object" && !Array.isArray(scope) ? (scope as Record<string, unknown>).counters : null;
-  return existingBusinessRecords > 0 && counters !== null && typeof counters === "object" && !Array.isArray(counters)
-    && (counters as Record<string, unknown>).requestsAvoided === items.length;
+  if (existingBusinessRecords < 1 || !isPilotRecord(counters)) return false;
+  if (validArtifacts.length === 1) return counters.requestsAvoided === items.length;
+  const detail = validArtifacts.find((artifact) => isPilotRecord(artifact.payload) && artifact.payload.kind === "cap_alert")?.payload;
+  if (!isPilotRecord(detail) || typeof detail.rawXml !== "string" || typeof detail.sourceUrl !== "string") return false;
+  try {
+    const parsedFeed = parseMetServiceCapFeed(feed.rawXml);
+    const alert = parseMetServiceCapAlert(detail.rawXml);
+    const region = alert.infos[0]?.areas.map((area) => area.areaDesc).join("; ");
+    return parsedFeed.items.length === items.length
+      && pilotPayloadMatchesParsed(parsedFeed, feed.feed)
+      && pilotPayloadMatchesParsed(alert, detail.alert)
+      && parsedFeed.items.some((item) => item.link === detail.sourceUrl
+        && pilotPayloadMatchesParsed(item, detail.feedItem))
+      && typeof region === "string" && region.length > 0 && nzCoverageKeysForAreaText(region).length === 0
+      && counters.requests === 2 && typeof counters.requestsAvoided === "number" && counters.requestsAvoided >= 1;
+  } catch { return false; }
 }
 
 export function verifiedMetServiceIncrementalPasses(
@@ -106,10 +120,10 @@ export function verifiedMetServiceIncrementalPasses(
     try {
       const parsedFeed = parseMetServiceCapFeed(feed.rawXml);
       const parsedAlert = parseMetServiceCapAlert(detail.rawXml);
-      if (JSON.stringify(canonicalPilotJson(parsedFeed)) !== JSON.stringify(canonicalPilotJson(feed.feed))
-        || JSON.stringify(canonicalPilotJson(parsedAlert)) !== JSON.stringify(canonicalPilotJson(detail.alert))
+      if (!pilotPayloadMatchesParsed(parsedFeed, feed.feed)
+        || !pilotPayloadMatchesParsed(parsedAlert, detail.alert)
         || !parsedFeed.items.some((item) => item.link === detail.sourceUrl
-          && JSON.stringify(canonicalPilotJson(item)) === JSON.stringify(canonicalPilotJson(detail.feedItem)))) return false;
+          && pilotPayloadMatchesParsed(item, detail.feedItem))) return false;
       const runSignals = signals.filter((signal) => signal.lastCollectionRunId === run.id);
       if (runSignals.length !== run.successCount || runSignals.some((signal) => signal.externalId !== `cap-alert:${parsedAlert.identifier}`
         && !signal.externalId.startsWith(`cap-alert:${parsedAlert.identifier}:market:`))) return false;
@@ -125,6 +139,15 @@ export function verifiedMetServiceIncrementalPasses(
 
 function isPilotRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pilotPayloadMatchesParsed(parsed: unknown, stored: unknown): boolean {
+  if (parsed === null) return stored === null || (isPilotRecord(stored) && Object.keys(stored).length === 0);
+  if (Array.isArray(parsed)) return Array.isArray(stored) && parsed.length === stored.length
+    && parsed.every((value, index) => pilotPayloadMatchesParsed(value, stored[index]));
+  if (isPilotRecord(parsed)) return isPilotRecord(stored) && Object.keys(parsed).length === Object.keys(stored).length
+    && Object.entries(parsed).every(([key, value]) => Object.hasOwn(stored, key) && pilotPayloadMatchesParsed(value, stored[key]));
+  return parsed === stored;
 }
 
 export function verifiedSchoolSportCanterburyZeroPass(sourceId: string, scope: unknown, argusResult: unknown, existingBusinessRecords: number) {

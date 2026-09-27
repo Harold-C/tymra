@@ -151,6 +151,27 @@ describe("direct-public production pilot", () => {
     expect(zeroBusinessPublicPilotPassAccepted("metservice", [unchanged], { counters: { requestsAvoided: 1 } }, 1)).toBe(true);
     expect(zeroBusinessPublicPilotPassAccepted("metservice", [unchanged], { counters: { requestsAvoided: 0 } }, 1)).toBe(false);
   });
+  it("accepts a verified CAP detail with no supported market without inventing a MetService signal", () => {
+    const hashed = (payload: unknown) => ({ contentHash: createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex"), payload });
+    const link = "https://alerts.metservice.com/cap/alert?id=roadsnow-1";
+    const feedXml = `<rss><channel><item><title>Road Snowfall Warning</title><link>${link}</link><guid>roadsnow-1</guid></item></channel></rss>`;
+    const feed = parseMetServiceCapFeed(feedXml);
+    const alertXml = '<alert><identifier>roadsnow-1</identifier><sender>MetService</sender><sent>2026-09-27T00:00:00Z</sent><status>Actual</status><msgType>Update</msgType><scope>Public</scope><info><event>Road Snowfall Warning</event><area><areaDesc>Arthur\'s Pass (SH73)</areaDesc></area></info></alert>';
+    const alert = parseMetServiceCapAlert(alertXml);
+    const artifacts = [hashed({ kind: "cap_feed", sourceUrl: "https://alerts.metservice.com/cap/rss", rawXml: feedXml, feed }),
+      hashed({ kind: "cap_alert", sourceUrl: link, feedItem: feed.items[0], rawXml: alertXml, alert })];
+    const scope = { counters: { requests: 2, requestsAvoided: 1 } };
+    expect(zeroBusinessPublicPilotPassAccepted("metservice", artifacts, scope, 2)).toBe(true);
+    const databaseJson = (value: unknown): unknown => value === null ? {} : Array.isArray(value) ? value.map(databaseJson)
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value as Record<string, unknown>)
+        .map(([key, item]) => [key, databaseJson(item)])) : value;
+    const storedArtifacts = artifacts.map((item) => hashed(databaseJson(item.payload)));
+    expect(zeroBusinessPublicPilotPassAccepted("metservice", storedArtifacts, scope, 2)).toBe(true);
+    expect(zeroBusinessPublicPilotPassAccepted("metservice", artifacts, scope, 0)).toBe(false);
+    expect(zeroBusinessPublicPilotPassAccepted("metservice", [{ ...artifacts[0]!, contentHash: "0".repeat(64) }, artifacts[1]!], scope, 2)).toBe(false);
+    const mappedXml = alertXml.replace("Arthur's Pass (SH73)", "Canterbury");
+    expect(zeroBusinessPublicPilotPassAccepted("metservice", [artifacts[0]!, hashed({ kind: "cap_alert", sourceUrl: link, feedItem: feed.items[0], rawXml: mappedXml, alert: parseMetServiceCapAlert(mappedXml) })], scope, 2)).toBe(false);
+  });
   it("accepts only a verified School Sport Canterbury pass with unresolved raw events", () => {
     const canonicalUrl = "https://www.sporty.co.nz/sscanterbury/calendar";
     const scope = { effective: { from: "2026-09-26T12:00:00.000Z", to: "2026-11-27T12:00:00.000Z" } };
