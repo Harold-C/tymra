@@ -3,6 +3,7 @@ import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
 import { firstPublicPriorJobAction, isFirstPublicSchedule } from "./operations/production-public-schedules";
 import { isProductionPublicPilotSchedule } from "./operations/production-public-pilot";
+import { nextCollectionOutsideOfficeHours } from "./operations/collection-office-hours";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -27,7 +28,7 @@ async function enqueueDueSchedules(now = new Date()) {
     if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot) {
       throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
     }
-    if (environment.NODE_ENV === "production") {
+    if (environment.NODE_ENV === "production" && schedule.jobType === "PUBLIC_DATA_COLLECTION") {
       const latestJob = await prisma.job.findFirst({
         where: { idempotencyKey: { startsWith: `schedule:${schedule.key}:` } },
         orderBy: { createdAt: "desc" },
@@ -57,6 +58,14 @@ async function enqueueDueSchedules(now = new Date()) {
         continue;
       }
       if (blockers.length) continue;
+    }
+    if (environment.NODE_ENV === "production") {
+      const deferredUntil = nextCollectionOutsideOfficeHours(now);
+      if (deferredUntil > now) {
+        await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { nextRunAt: deferredUntil } });
+        process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "source_schedule_deferred_for_office_hours", schedule: schedule.key, nextRunAt: deferredUntil.toISOString() })}\n`);
+        continue;
+      }
     }
     const intervalMs = intervalMsFor(schedule.cronExpression);
     const bucket = Math.floor(now.getTime() / intervalMs);
