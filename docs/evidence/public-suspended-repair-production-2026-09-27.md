@@ -4,7 +4,76 @@ This follows the [78-source first-round snapshot](./public-source-production-rol
 It records new production trials, not a claim that every source is fully covered or that a
 natural recurring cycle has passed. Booking, Airbnb and Synix accounts were not used.
 
-## Final bounded continuation (current production state)
+## Official-workbook follow-up (latest bounded snapshot)
+
+Argus v5, pushed commit `bbc9aa85368eab2658f4a47a62f6a88f3db170cf`, tag
+`argus-release-20260927-5`, passed fixed-image CI `36289267705` and private export
+`36290152384`. Registry digest is
+`sha256:7d75b381b8340a9574b26999dbfe1162f3db05e3d63ebfa88914b71910cd6072`;
+the loaded Mac mini browser image ID is
+`sha256:ea07b77fc60bd17aa31e3dff99734c852d05490f04dc812088449ee88f17bb29`.
+The source archive SHA-256 is
+`18c704621cf492064431ec87a0ca0e3e520cec4d2dc29d04a9293407cf0685e3`.
+The private transfer checksum, saved OCI config and all twelve RootFS layers were
+verified before import. The export config ID
+`sha256:7dccade3d7921309920c93e1d11cab028b4ca8d10691b0dfdf7b19f198243b66`
+still differs from the loaded Docker Desktop ID; platform, environment, entrypoint,
+command, labels and RootFS match. That transport-level identity discrepancy remains
+unexplained. Only the browser container was recreated; it is healthy with zero
+restarts. PostgreSQL and tunnel were not rebuilt. Tymra Worker/API/Scheduler stayed
+on the v2 image documented below. No Tymra migration or seed ran. The actual production Worker
+received HTTP 200 for Argus health/readiness/OpenAPI, authenticated 404 for a missing
+Job and 403 for account/runtime operations.
+
+| Source | One-attempt production trial | Result and retention |
+| --- | --- | --- |
+| `auckland_airport_monthly` | Tymra Job `cmuj998n20000qrcfcdxs3463`, CollectionRun `cmuj999jv000lqr07l94pqncf`, Argus Job `job_eeb979a8daba835ce9f48c58305c3185` | `DEAD_LETTER` / `SOURCE_UNAVAILABLE`; Argus `WORKBOOK_DOWNLOAD_FAILED` after the official page and XLSX link. Zero new business rows. Two copied page evidence files passed SHA-256 readback. ACKed, result reread 410, delivery `PURGED` / `ACKNOWLEDGED`. |
+| `mot_airline_performance` | Tymra Job `cmuj9eams0000qrhgzt18kkld`, CollectionRun `cmuj9eb4o000tqr07ue7s6b46`, Argus Job `job_1da1f9bd2357910c467b513780b62a0d` | Same failure and retention outcome: zero new business rows, two copied page evidence files with verified SHA-256, ACK, 410 and `PURGED` / `ACKNOWLEDGED`. |
+
+Both source rows have `enabled=false` and no schedule. Their database `status` values
+are `UNKNOWN`, so “paused” here denotes the operational gate, not a `SUSPENDED` enum.
+Tymra has 72 enabled schedules and zero pending/running Jobs. At the latest Argus
+readback, the only running Job belonged to `synix-prod`; it was neither inspected for
+content nor interrupted. The four copied page artifacts contain no downloaded workbook.
+The retained HTML shows one matching relative XLSX link on each official page, but
+does not identify whether Chromium lost the download event, the response body was
+unreadable or the downloaded file could not be read. Neither source was retried after
+this failure.
+
+The following Argus v6 diagnostic release was prepared but **not deployed**: commit
+`28a1b863ba4e1bb32507663e2c2eaff251a6c81f`, tag
+`argus-release-20260927-6`, fixed-image CI `36292318220`, private export
+`36293215407`, registry digest
+`sha256:28851fb1045a84465376b4e68a4ea7792e06ed17befb87c739fe40d778637a15`,
+Mac mini imported image ID
+`sha256:efb6b1be1309aa333eeb22e45aead5f40318cbbe40c8343df312ce6fed4d9d96`.
+Only safe workbook failure observations were added; no new source request or Tymra
+record followed. A renewed `synix-prod` Job blocked the idle cutover. The production
+release configuration was restored to v5 before any container change. A fresh encrypted
+backup is at
+`/Users/haroldchen/Development/argus/runtime/production-backups/argus-prod-20260927-workbook-diagnostics-predeploy.sparseimage`,
+SHA-256 `f75155a8cdae4a453ed22383262dc3877610c16c7197dadedffd12c5cfaac43f`.
+It reopened and passed component checksums; isolated restores matched 211 Argus Jobs,
+two accounts and 21,179 private `/data` members. The online database snapshot includes
+one running Synix Job, so this is a recoverable checkpoint rather than a quiescent
+paired snapshot. Its recovery status must be reassessed at the eventual cutover.
+
+Before the v5 Argus switch, the encrypted paired backup was saved as
+`/Users/haroldchen/Development/argus/runtime/production-backups/argus-prod-20260927-workbook-events-predeploy.sparseimage`,
+SHA-256 `01bbeb304f565f925508a582c99324b221f097642171f27f4abf3688093b3c48`.
+It reopened successfully; its protected config, PostgreSQL dump and `/data` archive
+passed hash checks. Isolated PostgreSQL restore matched 192 Jobs and two accounts;
+20,080 `/data` members restored to a separate volume and compared without differences.
+The previous v4 image and protected release configuration remain available for a
+browser-only rollback, subject to checking for other clients' active Jobs first.
+The pretrial Tymra backup is
+`/srv/apps/tymra/backups/public-workbook-events-20260927-pretrial/`: protected config,
+Compose, PostgreSQL custom dump and evidence tar passed checksums and listing checks.
+Isolated PostgreSQL 17 restore matched the recorded table counts, and 293 evidence
+members restored to a separate volume. Restoring that database in normal operation
+would discard accepted production rows and is not a routine rollback step.
+
+## Final bounded continuation (previous production snapshot)
 
 - Tymra Worker/API/Scheduler now run pushed commit
   `a373bb19259652e195abc3e3376218f0bcbc755e` as

@@ -1,24 +1,55 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-27 (final bounded public-source production continuation)
+Last updated: 2026-09-27 (bounded official-workbook follow-up)
 
-## 2026-09-27 current production collection state
+## 2026-09-27 official-workbook follow-up (current)
+
+Argus browser now runs pushed commit `bbc9aa85368eab2658f4a47a62f6a88f3db170cf`
+(`argus-release-20260927-5`), loaded image
+`sha256:ea07b77fc60bd17aa31e3dff99734c852d05490f04dc812088449ee88f17bb29`.
+The browser is healthy with zero restarts. Tymra Worker/API/Scheduler remain on the v2
+image recorded below; no Tymra migration, seed, image switch or new schedule occurred.
+From the production Worker, Argus health/readiness/OpenAPI returned 200, a nonexistent
+Job returned authenticated 404, and account/runtime routes returned 403.
+
+One bounded production trial each for `auckland_airport_monthly` and
+`mot_airline_performance` failed at Argus `WORKBOOK_DOWNLOAD_FAILED` after the official
+HTML and workbook link were captured. Both used one Tymra attempt and are still disabled
+with no schedule; neither wrote a business result. Two page evidence files per Job were
+copied and passed SHA-256 readback, both failed results were ACKed and then returned 410,
+and Argus delivery is `PURGED`/`ACKNOWLEDGED`. The failure detail distinguishes the
+download stage but not whether the response body, browser download or filesystem read
+failed. No further source retry or browser restart followed these failures. Current
+Tymra queue is empty, 72 schedules remain enabled and the five deferred sources have
+`enabled=false`; this operational pause does not mean every `DataSource.status` enum
+equals `SUSPENDED`. At the latest Argus check, one unrelated `synix-prod` Job was
+running; it was left untouched. Exact Jobs and recovery evidence are recorded in the
+linked production evidence report.
+
+The safe-stage diagnostic follow-up is pushed as Argus commit
+`28a1b863ba4e1bb32507663e2c2eaff251a6c81f`; its fixed-image CI and private export
+passed, and its image was verified and imported on the Mac mini. Repeated `synix-prod`
+Jobs prevented the required idle cutover. The protected release configuration was
+restored to v5 and the browser was not restarted, so the diagnostic code is **not live**.
+No new Tymra canary ran after the two failures above.
+
+## 2026-09-27 collection snapshot before the workbook follow-up
 
 Tymra Worker/API/Scheduler run pushed commit `a373bb19259652e195abc3e3376218f0bcbc755e`
 as `tymra:public-final-repair-20260927-v2`, image
 `sha256:d959251eda82062048f76dd6b581cd28d8bdcd7c61dd33e074c6346883b7a3a8`.
-Argus production browser runs pushed commit `d1211ea4d96d1f537ad7c81349f8acbb0e020de0`
+Argus production browser previously ran pushed commit `d1211ea4d96d1f537ad7c81349f8acbb0e020de0`
 as `argus-release-20260927-4`. Health/readiness/OpenAPI, authenticated Job 404,
 account/runtime 403, Tymra API readiness and retained evidence hashes passed. No Tymra
-migration or seed ran. The latest check found 72 enabled public-source schedules, five
-suspended sources, zero pending/running Tymra Jobs and zero active Argus tasks.
+migration or seed ran. That snapshot found 72 enabled public-source schedules, five
+disabled sources, zero pending/running Tymra Jobs and zero active Argus tasks.
 The next-run and one-year interval projection found no weekday 09:00–17:00 NZ execution;
 the Scheduler remains interval-based, so this is not a permanent timezone policy.
 
 Of the original 25 suspended sources, 20 passed bounded production trials and have
 weekly schedules. The latest are `christchurch_sports` (two deduplicated hosted events)
 and `metservice` (verified unchanged or unmapped CAP feed without invented market rows).
-Five remain suspended: `auckland_airport_monthly`, `mot_airline_performance`,
+Five remain disabled: `auckland_airport_monthly`, `mot_airline_performance`,
 `christchurch_council_events`, `eventfinda`, `ticketmaster`. Auckland Airport and MOT
 still show intermittent official-workbook download failures, despite the new Argus
 browser download handling; both auto-paused. Council returned an access interstitial.
