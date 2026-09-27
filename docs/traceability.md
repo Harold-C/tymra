@@ -1,8 +1,45 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-28 (public-source release preparation)
+Last updated: 2026-09-28 (production release and bounded source acceptance)
 
-## 2026-09-28 生产定期采集时间保护候选（未发布）
+## 2026-09-28 生产发布与五个暂停来源复验（当前状态）
+
+Tymra `main` 提交 `4eed026f6219054199119889a46d7122caece91b` 已推送，CI
+`36354345154` 通过。Worker/API/Scheduler 运行同一镜像
+`tymra:public-office-20260928-v2`，镜像 ID
+`sha256:37d413d0908d8256b28d4ef4f814e51057017c79ae4e0fda6273dad40e8607cb`，
+revision 标签与提交一致；Web、PostgreSQL、Redis 未重建，33 个现有迁移未变化。
+Argus Mac mini browser 运行 `argus-release-20260928-1`，代码提交
+`5647271d785d0878bd417025ff4a2bdedd5c6b65`，本机镜像 ID
+`sha256:de21e5db3674a9c3fd42a18b0265acb8719e44c1686a095cbe89c412756acfed`；
+只重建 browser，PostgreSQL 和 tunnel 未重建。两端容器均健康、重启次数为零。
+生产 Tymra Worker 用现有受保护凭证读取 Argus health、readiness、OpenAPI 均得
+200，查询不存在的 Job 得 404；凭证未进入代码或发布记录。
+
+正式 Tymra 单次尝试 Job 的两轮门槛与来源状态：
+
+| 来源 | 复验结果 | 业务与证据 | 最终状态 |
+| --- | --- | --- | --- |
+| `auckland_airport_monthly` | 两次成功 | 2 条生产信号；6 份持久证据校验；2 个 Argus 结果 ACK 后 410/PURGED | 周一 17:00 NZT 每周计划已启用 |
+| `christchurch_council_events` | 两次成功 | 2 条生产活动；4 份持久证据校验；2 个 Argus 结果 ACK 后 410/PURGED | 周一 17:00 NZT 每周计划已启用 |
+| `mot_airline_performance` | 两次成功 | 2 条生产信号；6 份持久证据校验；2 个 Argus 结果 ACK 后 410/PURGED | 周一 17:00 NZT 每周计划已启用 |
+| `eventfinda` | 首轮失败：源站 HTTP 202，`RATE_LIMITED` | 未通过新的两轮门槛 | 暂停，无定期计划 |
+| `ticketmaster` | 首轮失败：源站 HTTP 403，`RATE_LIMITED` | 未通过新的两轮门槛 | 暂停，无定期计划 |
+
+成功来源的启用命令重新读取本地证据文件并比对 SHA-256，要求每轮业务结果、
+已复制证据和 Argus 结果 410；第二轮没有新增重复业务行。Argus 数据库中本轮
+6 个 `tymra-prod` 交付状态均为 `PURGED`。最终 Tymra 活动 Job 为零，Argus
+无非终态 Job。现有 72 条计划加新启用 3 条，共 75 条；全部下次运行时间非空，
+按 `Pacific/Auckland` 换算，没有一条落在工作日 09:00–17:00。Scheduler 保持启用，
+高频 Scheduler、新 Check、内部按需仍关闭；客户、支付、SMTP、会员未随本次发布启用。
+
+Tymra 发布前备份位于 `/srv/apps/tymra/backups/public-office-20260928-predeploy/`：
+受保护配置、Compose、PostgreSQL dump 和证据归档的四项 SHA-256 通过；数据库
+隔离恢复读回 78 个来源、72 个计划和 192 个 Job。Argus 加密备份、隔离恢复与
+旧镜像回滚材料见 Argus `docs/current-state.md`。下一自然周期仍须观察新三项
+来源的稳定性、预算和增量去重；HTTP 202/403 来源不得自动重试或开启。
+
+## 2026-09-28 生产定期采集时间保护候选（发布前快照）
 
 生产 Scheduler 过去仅按固定毫秒间隔续期，新的来源计划也从启用时立即到期，
 没有持久的工作日办公时段保护。本地候选按 `Pacific/Auckland` 把工作日
@@ -10,7 +47,7 @@ Last updated: 2026-09-28 (public-source release preparation)
 周末和工作日非办公时段照常运行。它只约束自动计划，不改变人工有界验收。
 本候选需随 Worker/API/Scheduler 同镜像发布，生产日程读回与首次周期观察仍未完成。
 
-## 2026-09-28 Eventfinda / Ticketmaster 本地修复与 MOT 复核（未发布）
+## 2026-09-28 Eventfinda / Ticketmaster 本地修复与 MOT 复核（发布前快照）
 
 Eventfinda 首轮曾收到 HTTP 202，旧直接 HTTP 路径把所有 2xx 都视为成功，
 空列表也会形成零业务记录的成功采集。本地修复仅接受 HTTP 200，拒绝空列表；
@@ -28,7 +65,7 @@ MOT 沿用已发布的 v9 工作簿路径：历史上已有一次完整生产成
 `argus.test` 配置未变。后续各自仍须正式生产 Job 的业务写入、证据与 ACK/PURGED
 及原定两次独立成功门槛，才可恢复定期采集。
 
-## 2026-09-28 Christchurch Council 本地修复候选（未发布）
+## 2026-09-28 Christchurch Council 本地修复候选（发布前快照）
 
 `christchurch_council_events` 的直接 HTTP 路径在生产拿到 Incapsula 中间页。
 本地候选改由 Argus 的 `christchurch-council-events/collect_events` 固定有头
@@ -42,7 +79,7 @@ Argus 提交 `5647271` 已推送，常规 CI 通过；Tymra 全量单元、隔�
 Scheduler 和 `argus.test` 均未改变；该渠道继续暂停。正式 Tymra Job 的
 业务写入、证据哈希、ACK/PURGED 与两次独立成功门槛尚未通过。
 
-## 2026-09-27 v9 MOT workbook repair (current)
+## 2026-09-27 v9 MOT workbook repair (previous snapshot)
 
 Argus production now runs pushed commit `e71d10a2d934d3a257f53bd7d541c808199cb1c0`
 (`argus-release-20260927-9`), registry digest

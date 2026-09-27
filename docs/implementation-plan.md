@@ -1,8 +1,27 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-28（公开渠道统一发布准备）
+Last updated: 2026-09-28（公开渠道生产发布后）
 
-## 本轮统一发布与计划恢复
+## 当前生产采集状态与下一步
+
+Argus `argus-release-20260928-1` 和 Tymra `4eed026f` 候选已经发布，
+Worker/API/Scheduler 健康。75 条定期计划已启用，所有下次运行时间均避开
+`Pacific/Auckland` 工作日 09:00–17:00；排程器也会在每次自动入队前再次顺延
+办公时段内到期的采集计划。此时段限制仅针对自动采集，不限制发布操作。
+
+本轮逐项生产复验中，`auckland_airport_monthly`、
+`christchurch_council_events`、`mot_airline_performance` 各通过两次单次尝试的
+Tymra 正式 Job、业务去重、持久证据 SHA-256 及 Argus ACK 后 410/PURGED，
+已恢复周一 17:00 的每周计划。`eventfinda` 的 HTTP 202 和 `ticketmaster` 的
+HTTP 403 均触发 `RATE_LIMITED`，两项仍暂停且无计划，不做自动重试。
+
+下一步观察新三项的第一个自然定期周期，复查源站请求预算、业务增量与去重、
+持久证据和 ACK/PURGED，并监控计划在夏令时变化后的新西兰本地时间。
+Eventfinda/Ticketmaster 先依据本轮错误和保留证据定位合法访问路径；只有
+明确修复且重新通过两轮有界生产验收，才可分别恢复计划。其他客户、会员、
+支付、邮件、新 Check 和内部按需功能继续保持原有关闭边界。
+
+## 本轮统一发布与计划恢复（发布前计划）
 
 先完成 Tymra 与 Argus 当前候选的正式验证、提交和推送；Argus 所在 Mac mini 的
 镜像切换与新的真实采集安排在工作日 17:00 后。Tymra 的自动计划加入
@@ -11,7 +30,7 @@ Last updated: 2026-09-28（公开渠道统一发布准备）
 两次独立受限生产验收、业务去重和证据/ACK 门槛后逐项创建并启用计划。
 任一失败则该来源继续暂停，不用一次本地页面读取代替生产验收。
 
-## Christchurch Council 下一步门槛
+## Christchurch Council 下一步门槛（发布前计划）
 
 本地候选已把 `christchurch_council_events` 的网页读取转到 Argus 固定有头
 Profile，并保持原有活动身份与去重。Argus 修复已推送；Tymra 候选待完成
@@ -22,7 +41,7 @@ Profile，并保持原有活动身份与去重。Argus 修复已推送；Tymra �
 业务去重、持久证据字节与 SHA-256、ACK/PURGED、无遗留任务及失败自动暂停。
 两次门槛未过前维持该渠道暂停且无定期计划；Scheduler 等现有边界不扩大。
 
-## 2026-09-27 MOT 当前门槛
+## 2026-09-27 MOT 当前门槛（前一快照）
 
 Argus v9 的 MOT 单请求工作簿路径已通过固定镜像 CI、可恢复备份、空闲发布和
 Tymra 正式 Worker 的一次受限生产验收。MOT Job 一次尝试成功，写入两条去重的
