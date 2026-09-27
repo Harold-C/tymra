@@ -134,6 +134,7 @@ describe("public data adapter contract", () => {
       html: `<div class="listings-events"><article class="card h-event"><h2 class="p-name"><a href="/2026/sample/christchurch">Sample</a></h2><div class="dtstart"><span class="value-title" title="2026-08-20T19:00:00+12:00"></span></div><div class="p-location"><a class="location">Town Hall</a> Christchurch</div></article></div>`,
     });
     expect(eventfinda).toMatchObject({ kind: "listing", events: [{ title: "Sample", startsAt: "2026-08-20T19:00:00+12:00" }] });
+    expect(() => extractEventfindaHttpPage({ finalUrl: "https://www.eventfinda.co.nz/whatson/events/new-zealand", title: "Interim", html: "<html><title>Processing</title></html>" })).toThrow("no event cards");
 
     const ticketmaster = extractTicketmasterHttpPage({
       finalUrl: "https://www.ticketmaster.co.nz/discover/christchurch",
@@ -679,13 +680,18 @@ describe("public data adapter contract", () => {
       startsAt: new Date("2026-11-10T11:00:00.000Z"),
       endsAt: new Date("2026-11-13T10:59:59.000Z"),
     });
+    const offsite = parseChristchurchCouncilEventsPage(`<div class="event-card"><div class="card-event"><time class="card-pre-heading">11 November 2026</time><h4 class="card-title"><a href="/search-results/searchRedirect?url=https%3A%2F%2Fevil.example%2Fevent">The Show</a></h4></div></div><a class="next-prev-link" href="https://evil.example/next?start_rank=16">Next</a>`);
+    expect(offsite.events).toHaveLength(0);
+    expect(offsite.nextUrl).toBeNull();
   });
 
-  it("classifies a Council access interstitial as source unavailable, not an empty calendar", async () => {
-    vi.stubGlobal("fetch", async () => new Response('<html><script src="/_Incapsula_Resource?token=opaque"></script></html>', { status: 200, headers: { "content-type": "text/html" } }));
+  it("keeps Council direct HTTP disabled after the Argus browser handoff", async () => {
+    const directFetch = vi.fn();
+    vi.stubGlobal("fetch", directFetch);
     try {
       await expect(publicDataAdapters.christchurch_council_events.fetch("https://www.ccc.govt.nz/news-and-events/whats-on", fixtureContext))
-        .rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", retryable: false });
+        .rejects.toMatchObject({ code: "CONFIGURATION_ERROR", retryable: false });
+      expect(directFetch).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -930,7 +936,7 @@ describe.skipIf(process.env.LIVE_SOURCE_PROBE !== "1")("Christchurch live source
       collectionRange: { from, to },
       collectionLimits: { maxRequests: 3, maxRecords: 5, maxBytes: 2_000_000 },
     };
-    for (const sourceId of ["te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "canterbury_major_annual_events"]) {
+    for (const sourceId of ["te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "canterbury_major_annual_events"]) {
       const adapter = publicDataAdapters[sourceId];
       const references = await adapter.discover({ marketScope: "christchurch", from, to }, context);
       const records = (await Promise.all(references.map((reference) => adapter.fetch(reference, context)))).flat();

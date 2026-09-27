@@ -157,7 +157,7 @@ export function registrySourceSeedRecords() {
                               : key === "te_pae_events" ? "public:te-pae-events:html-v1"
                                 : key === "venues_otautahi_events" ? "public:venues-otautahi:storyblok-v1"
                               : key === "isaac_theatre_royal_events" ? "public:isaac-theatre-royal-events:html-v1"
-                                : key === "christchurch_council_events" ? "public:christchurch_council_events:official-html-pagination-v1"
+                                : key === "christchurch_council_events" ? "public:christchurch_council_events:argus-v1"
                                   : key === "ara_academic_dates" ? "public:ara_academic_dates:academic-calendar-html-v1"
                                     : key === "canterbury_major_annual_events" ? "public:canterbury_major_annual_events:official-event-page-html-v1"
                                 : key === "christchurch_airport" ? "public:christchurch-airport:flights-json-v1"
@@ -176,7 +176,7 @@ export function registrySourceSeedRecords() {
         : key === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL"
         : key === "eventfinda" ? "PUBLIC_HTTP_HTML_JSONLD"
           : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD_PAGINATED"
-            : ["school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
+            : ["school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "christchurch_council_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
       : key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
         : key === "mbie" ? "OFFICIAL_PUBLIC_CSV_RANGE"
           : ["mbie_tourism_flows", "mbie_mrte"].includes(key) ? "OFFICIAL_PUBLIC_XLSX"
@@ -197,7 +197,6 @@ export function registrySourceSeedRecords() {
                     : key === "wellingtonnz_events" ? "OFFICIAL_PUBLIC_HTML"
                     : key === "council_calendars" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
                       : key === "venues_otautahi_events" ? "PUBLIC_HTML_DISCOVERED_JSON"
-                        : key === "christchurch_council_events" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
                         : key === "christchurch_airport" ? "PUBLIC_JSON"
                           : key === "christchurch_cruise" ? "OFFICIAL_PUBLIC_CSV"
                             : key === "christchurch_university_dates" ? "OFFICIAL_PUBLIC_HTML_AND_ARGUS"
@@ -242,7 +241,7 @@ export function registrySourceSeedRecords() {
                                 : ["tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events"].includes(key) ? 24
                   : key === "venue_calendars" ? 48
                     : ["venues_otautahi_events", "isaac_theatre_royal_events"].includes(key) ? 48
-                      : key === "christchurch_council_events" ? 48
+                      : key === "christchurch_council_events" ? 12
                         : ["ara_academic_dates", "canterbury_major_annual_events"].includes(key) ? 4
                       : ["eventbrite_events", "humanitix_events"].includes(key) ? 24
                         : ["school_sport_nz", "school_sport_canterbury"].includes(key) ? 4

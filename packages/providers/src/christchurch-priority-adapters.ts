@@ -26,46 +26,22 @@ class ChristchurchCouncilEventsAdapter implements PublicDataAdapter {
     "christchurch_council_events",
     "Christchurch City Council What's On",
     ["www.ccc.govt.nz"],
-    "official-html-pagination-v1",
-    48,
-    "OFFICIAL_PUBLIC_HTML_PAGINATED",
+    "argus-v1",
+    12,
+    "PUBLIC_WEB_ARGUS_READ_ONLY",
   );
 
   async discover(_request: PublicDiscoveryRequest): Promise<string[]> { return [CCC_EVENTS_URL]; }
 
-  async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
-    assertAllowed(reference, this.metadata.supportedDomains);
-    const requestLimit = maxRequests(context, 30);
-    const recordLimit = maxRecords(context, 500);
-    const events = new Map<string, PublicEvent>();
-    let nextUrl: string | null = reference;
-    let requests = 0;
-
-    while (nextUrl && requests < requestLimit && events.size < recordLimit) {
-      const pageUrl: string = nextUrl;
-      const page = await fetchHtml(pageUrl, context, this.metadata.sourceName);
-      if (isCccAccessChallenge(page.text)) {
-        throw new AdapterError("SOURCE_UNAVAILABLE", "Christchurch City Council returned an access challenge instead of event content", false);
-      }
-      requests += 1;
-      const parsed = parseChristchurchCouncilEventsPage(page.text, page.url);
-      for (const event of parsed.events) {
-        if (overlaps(event.startsAt, event.endsAt, context)) events.set(event.externalId, event);
-        if (events.size >= recordLimit) break;
-      }
-      const pageIsBeyondRange = context.collectionRange?.to
-        ? parsed.events.length > 0 && parsed.events.every((event) => event.startsAt > context.collectionRange!.to)
-        : false;
-      nextUrl = !pageIsBeyondRange && parsed.nextUrl && parsed.nextUrl !== pageUrl ? parsed.nextUrl : null;
-    }
-
-    if (!events.size) throw new AdapterError("PARSING_ERROR", "Christchurch City Council What's On returned no events in the requested range", false);
-    return eventRawRecords(this.metadata.sourceId, [...events.values()], requests);
+  async fetch(): Promise<PublicRawRecord[]> {
+    throw new AdapterError("CONFIGURATION_ERROR", "Christchurch City Council collection is orchestrated by Argus", false);
   }
 
   async normalise(): Promise<PublicSignal[]> { return []; }
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> { return rawEvents(records); }
-  async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return health(CCC_EVENTS_URL, this.metadata.sourceName, context); }
+  async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
+    return { status: "DEGRADED", checkedAt: new Date(), message: "Argus browser readiness is authoritative", latencyMs: 0, mode: context.mode };
+  }
 }
 
 class AraAcademicCalendarAdapter implements PublicDataAdapter {
@@ -143,7 +119,7 @@ export function parseChristchurchCouncilEventsPage(html: string, finalUrl = CCC_
   });
   const nextHref = [...document.querySelectorAll("a.next-prev-link[href]")]
     .find((link) => /next/i.test(link.textContent ?? ""))?.getAttribute("href");
-  return { events, nextUrl: safeUrl(nextHref ?? null, finalUrl) };
+  return { events, nextUrl: cccNextUrl(nextHref, finalUrl) };
 }
 
 export function isCccAccessChallenge(html: string) {
@@ -317,8 +293,26 @@ function isAraDemandDate(title: string) {
 function cccEventUrl(href: string, base: string) {
   const absolute = safeUrl(href, base);
   if (!absolute) return null;
-  const redirect = new URL(absolute).searchParams.get("url");
-  return safeUrl(redirect, base) ?? absolute;
+  const candidate = new URL(absolute);
+  if (candidate.protocol !== "https:" || candidate.username || candidate.password || candidate.port
+    || !["ccc.govt.nz", "www.ccc.govt.nz"].includes(candidate.hostname)) return null;
+  const redirect = candidate.searchParams.get("url");
+  const target = new URL(safeUrl(redirect, base) ?? absolute);
+  return target.protocol === "https:" && !target.username && !target.password && !target.port
+    && ["ccc.govt.nz", "www.ccc.govt.nz"].includes(target.hostname)
+    && target.pathname.startsWith("/news-and-events/whats-on/event/")
+    ? target.href : null;
+}
+
+function cccNextUrl(href: string | null | undefined, base: string) {
+  const absolute = safeUrl(href ?? null, base);
+  if (!absolute) return null;
+  const url = new URL(absolute);
+  const rank = Number(url.searchParams.get("start_rank"));
+  const currentRank = Number(new URL(base).searchParams.get("start_rank")) || 0;
+  return url.protocol === "https:" && !url.username && !url.password && !url.port && url.hostname === "www.ccc.govt.nz"
+    && url.pathname === "/news-and-events/whats-on" && !url.hash
+    && Number.isInteger(rank) && rank > currentRank && rank <= 46 ? url.href : null;
 }
 
 function namedDate(year: number, monthName: string, day: number) {

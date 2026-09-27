@@ -76,6 +76,8 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
+import { directEventHttpFailure } from "../collection/direct-event-http";
+import { nextCollectionOutsideOfficeHours } from "../operations/collection-office-hours";
 import { isOurAucklandDetailUrl } from "../collection/ourauckland-detail-url";
 import { boundProductionCanaryResults } from "../operations/release-safety";
 import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicReferenceRecordLimit, firstPublicSchedule } from "../operations/production-public-schedules";
@@ -159,6 +161,7 @@ import {
   regionalArgusEventExtractionSchema,
   regionalArgusSourceDefinition,
 } from "../collection/regional-argus-events";
+import { christchurchCouncilExtractionSchema, councilArgusRawRecords } from "../collection/christchurch-council-argus";
 import {
   aucklandAirportExtractionRecords,
   aucklandAirportMonthlyExtractionSchema,
@@ -1219,6 +1222,8 @@ export class WorkerService {
                 ? await this.executeSkiSeasonArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : sourceId === "auckland_airport_monthly" || sourceId === "mot_airline_performance"
                 ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+              : sourceId === "christchurch_council_events"
+                ? await this.executeCouncilArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : argusPublicMarketSource(sourceId)
                 ? await this.executePublicMarketArgusTask(sourceId, source.id, run.id, context, options.dryRun === true, options.jobId)
               : await adapter.fetch(reference, boundedPublicSchedule && sourceId === "geonet"
@@ -2464,8 +2469,8 @@ export class WorkerService {
     } catch (error) {
       throw new AdapterError(error instanceof DOMException && error.name === "TimeoutError" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", `${source} HTTP request failed: ${error instanceof Error ? error.message : "unknown error"}`, true);
     }
-    if (response.status === 429) throw new AdapterError("RATE_LIMITED", `${source} returned HTTP 429`, true);
-    if (!response.ok) throw new AdapterError(response.status >= 500 ? "SOURCE_UNAVAILABLE" : "PARSING_ERROR", `${source} returned HTTP ${response.status}`, response.status >= 500);
+    const failure = directEventHttpFailure(source, response.status);
+    if (failure) throw new AdapterError(failure.code, failure.message, failure.retryable);
     const length = Number(response.headers.get("content-length") ?? 0);
     if (length > 5_000_000) throw new AdapterError("PARSING_ERROR", `${source} response exceeds the 5 MB limit`, false);
     return { html: await response.text(), finalUrl: response.url };
@@ -2732,17 +2737,53 @@ export class WorkerService {
     }));
   }
 
+  private async executeCouncilArgusTask(
+    dataSourceId: string,
+    collectionRunId: string,
+    reference: string,
+    context: AdapterContext,
+    dryRun: boolean,
+    parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    if (!context.collectionRange || reference !== "https://www.ccc.govt.nz/news-and-events/whats-on") {
+      throw new AdapterError("PARSING_ERROR", "Council browser task requires the approved listing and a bounded date range", false);
+    }
+    const capture = await this.executePriorityArgusEventTask({
+      sourceId: "christchurch_council_events",
+      dataSourceId,
+      collectionRunId,
+      connectorId: "christchurch-council-events",
+      workflowId: "collect_events",
+      url: reference,
+      maxPages: Math.min(3, context.collectionLimits?.maxRequests ?? 3),
+      dryRun,
+      parentJobId,
+    });
+    const parsed = christchurchCouncilExtractionSchema.safeParse(capture.extracted);
+    if (!parsed.success) {
+      if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, capture.traceId);
+      throw new AdapterError("PARSING_ERROR", `Council browser result is invalid: ${parsed.error.issues[0]?.message ?? "schema validation failed"}`, false);
+    }
+    try {
+      return councilArgusRawRecords(parsed.data, context.collectionRange, context.collectionLimits?.maxRecords ?? 2);
+    } catch (error) {
+      if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, capture.traceId);
+      throw error;
+    }
+  }
+
   private async executePriorityArgusEventTask(input: {
-    sourceId: ArgusEventSourceId;
+    sourceId: ArgusEventSourceId | "christchurch_council_events";
     dataSourceId: string;
     collectionRunId: string;
-    connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public";
+    connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "christchurch-council-events";
     workflowId: "collect_events" | "collect_listing" | "collect_detail";
     url: string;
     entryUrl?: string;
     startDate?: string;
     endDate?: string;
     maxRecords?: number;
+    maxPages?: number;
     dryRun: boolean;
     parentJobId?: string;
   }): Promise<ArgusBrowserTaskResult> {
@@ -2758,6 +2799,7 @@ export class WorkerService {
       ...(input.startDate === undefined ? {} : { startDate: input.startDate }),
       ...(input.endDate === undefined ? {} : { endDate: input.endDate }),
       ...(input.maxRecords === undefined ? {} : { maxRecords: input.maxRecords }),
+      ...(input.maxPages === undefined ? {} : { maxPages: input.maxPages }),
     };
     const response = input.parentJobId
       ? await captureBrowserTaskWithDurableArgus(this.environment, captureInput, { parentJobId: input.parentJobId, collectionRunId: input.collectionRunId, dataSourceId: input.dataSourceId })
@@ -3273,7 +3315,9 @@ export class WorkerService {
       const scheduleIds = schedules.map((schedule) => schedule.id);
       await transaction.scheduleDefinition.updateMany({
         where: { id: { in: scheduleIds } },
-        data: { enabled: input.enabled, nextRunAt: input.enabled ? new Date() : null },
+        data: { enabled: input.enabled, nextRunAt: input.enabled
+          ? this.environment.NODE_ENV === "production" ? nextCollectionOutsideOfficeHours(new Date()) : new Date()
+          : null },
       });
       await transaction.auditEvent.create({ data: {
         eventType: input.enabled ? "source_schedules_enabled" : "source_schedules_disabled",

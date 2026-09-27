@@ -4,7 +4,7 @@ import { SKI_SEASON_SOURCES, parseMetServiceCapAlert, parseMetServiceCapFeed } f
 import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
-import { isArgusPilotEvidencePath, isLegacyCouncilDirectPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
+import { isArgusPilotEvidencePath, isLegacyChristchurchCouncilDirectPilot, isLegacyCouncilDirectPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("direct-public production pilot", () => {
@@ -65,7 +65,8 @@ describe("direct-public production pilot", () => {
     expect(isProductionPublicPilotSchedule({ ...valid, payload: { ...valid.payload, extra: true } })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, cronExpression: "daily" })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, key: "pilot-public-booking-weekly" })).toBe(false);
-    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toHaveLength(30);
+    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toHaveLength(31);
+    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("christchurch_council_events");
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("fx_rates");
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("council_calendars");
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("ski_seasons_nz");
@@ -132,6 +133,9 @@ describe("direct-public production pilot", () => {
     expect(isLegacyCouncilDirectPilot("council_calendars", { boundedProductionCanary: true, browserPilot: false })).toBe(false);
     expect(isLegacyCouncilDirectPilot("council_calendars", { boundedProductionCanary: true, browserPilot: true })).toBe(false);
     expect(isLegacyCouncilDirectPilot("venue_takina", { boundedProductionCanary: true })).toBe(false);
+    const council = { adapterKey: "public:christchurch_council_events:official-html-pagination-v1", accessMethod: "OFFICIAL_PUBLIC_HTML_PAGINATED", supportedDomains: ["www.ccc.govt.nz"] };
+    expect(isLegacyChristchurchCouncilDirectPilot("christchurch_council_events", council)).toBe(true);
+    expect(isLegacyChristchurchCouncilDirectPilot("christchurch_council_events", { ...council, supportedDomains: ["evil.example"] })).toBe(false);
     expect(isLegacySkiDirectPilot("ski_seasons_nz", {
       adapterKey: "public:nz-ski-seasons:official-html-v1", accessMethod: "OFFICIAL_PUBLIC_HTML",
     }, { boundedProductionCanary: true })).toBe(true);

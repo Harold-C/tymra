@@ -74,18 +74,24 @@ export async function rearmSuspendedProductionArgusMarketPilot(sourceKey: string
     const metadata = source?.metadata;
     const legacyCouncilPilot = isLegacyCouncilDirectPilot(sourceKey, metadata);
     const legacySkiPilot = isLegacySkiDirectPilot(sourceKey, source, metadata);
-    const legacyDirectPilot = legacyCouncilPilot || legacySkiPilot;
+    const legacyChristchurchCouncilPilot = isLegacyChristchurchCouncilDirectPilot(sourceKey, source);
+    const legacyDirectPilot = legacyCouncilPilot || legacySkiPilot || legacyChristchurchCouncilPilot;
     if (!record || !adapter || !source || source.providerType !== "PUBLIC" || source.isDemo
-      || (!legacySkiPilot && source.adapterKey !== record.adapterKey)
+      || (!legacySkiPilot && !legacyChristchurchCouncilPilot && source.adapterKey !== record.adapterKey)
       || adapter.metadata.adapterKey !== record.adapterKey
-      || (!legacySkiPilot && source.accessMethod !== record.accessMethod)
+      || (!legacySkiPilot && !legacyChristchurchCouncilPilot && source.accessMethod !== record.accessMethod)
       || source.enabled || source.lifecycle !== "SUSPENDED"
       || source.operationalStatus === "BLOCKED" || !source.environments.includes("PRODUCTION")
       || typeof metadata !== "object" || metadata === null || Array.isArray(metadata)
       || (metadata.browserPilot !== true && !legacyDirectPilot) || metadata.boundedProductionCanary !== true) {
       throw new Error("Suspended Argus market source does not match the approved registry and pilot state");
     }
-    if (legacyDirectPilot && await transaction.collectionRun.count({ where: { dataSourceId: source.id } })) {
+    if (legacyChristchurchCouncilPilot && (await transaction.collectionRun.count({ where: { dataSourceId: source.id, status: "SUCCEEDED" } })
+      || await transaction.sourceEvent.count({ where: { dataSourceId: source.id } })
+      || await transaction.sourceMarketSignal.count({ where: { dataSourceId: source.id } }))) {
+      throw new Error("Legacy Christchurch Council source has accepted business history; browser conversion requires review");
+    }
+    if ((legacyCouncilPilot || legacySkiPilot) && await transaction.collectionRun.count({ where: { dataSourceId: source.id } })) {
       throw new Error("Legacy direct source already has a collection run; browser conversion requires review");
     }
     const schedules = await transaction.scheduleDefinition.findMany();
@@ -97,7 +103,7 @@ export async function rearmSuspendedProductionArgusMarketPilot(sourceKey: string
       enabled: true, lifecycle: "RESEARCH", operationalStatus: "DEGRADED", healthStatus: "DEGRADED", lastReviewedAt: new Date(),
       metadata: acceptanceMetadata,
       ...(legacyDirectPilot ? {
-        ...(legacySkiPilot ? {
+        ...(legacySkiPilot || legacyChristchurchCouncilPilot ? {
           adapterKey: record.adapterKey,
           accessMethod: record.accessMethod,
           acquisitionMethod: record.accessMethod,
@@ -113,6 +119,16 @@ export async function rearmSuspendedProductionArgusMarketPilot(sourceKey: string
 export function isLegacyCouncilDirectPilot(sourceKey: string, metadata: unknown) {
   return sourceKey === "council_calendars" && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
     && Object.keys(metadata).length === 1 && (metadata as Record<string, unknown>).boundedProductionCanary === true;
+}
+
+export function isLegacyChristchurchCouncilDirectPilot(
+  sourceKey: string,
+  source: { adapterKey: string | null; accessMethod: string | null; supportedDomains: unknown } | null,
+) {
+  return sourceKey === "christchurch_council_events"
+    && source?.adapterKey === "public:christchurch_council_events:official-html-pagination-v1"
+    && source.accessMethod === "OFFICIAL_PUBLIC_HTML_PAGINATED"
+    && JSON.stringify(source.supportedDomains) === JSON.stringify(["www.ccc.govt.nz"]);
 }
 
 export function isLegacySkiDirectPilot(
@@ -156,7 +172,14 @@ export async function enableProductionArgusMarketPilot(sourceKey: string, enviro
   if (runs.length !== 2 || runs.some((run) => run.status !== "SUCCEEDED")) throw new Error("Argus market pilot has not completed two successful passes");
   const runIds = runs.map((run) => run.id);
   const executions = await prisma.argusExecution.findMany({ where: { collectionRunId: { in: runIds } }, select: { argusJobId: true, collectionRunId: true, traceId: true, status: true, result: true } });
-  if (executions.length < 2 || runIds.some((id) => !executions.some((execution) => execution.collectionRunId === id))
+  const runsNeedingArgus = sourceKey === "ticketmaster"
+    ? runs.filter((run) => {
+      const counters = (run.scope as Record<string, unknown>).counters;
+      return counters && typeof counters === "object" && !Array.isArray(counters)
+        && Number((counters as Record<string, unknown>).detailsFetched) > 0;
+    }) : runs;
+  if ((sourceKey !== "ticketmaster" && executions.length < 2)
+    || runsNeedingArgus.some((run) => !executions.some((execution) => execution.collectionRunId === run.id))
     || executions.some((execution) => execution.status !== "COMPLETED")) throw new Error("Argus market pilot Jobs are incomplete");
   if (sourceKey === "ski_seasons_nz" && runIds.some((id) => executions.filter((execution) => execution.collectionRunId === id).length !== 3)) {
     throw new Error("Each ski pilot pass requires three completed fixed-page Argus Jobs");
@@ -168,9 +191,14 @@ export async function enableProductionArgusMarketPilot(sourceKey: string, enviro
       executions.find((execution) => execution.collectionRunId === run.id)?.result, businessRecords)))) {
     throw new Error("Argus market pilot has no verified business or source-specific zero result");
   }
-  const artifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: { in: runIds }, deletedAt: null }, select: { collectionRunId: true, storageRef: true, contentHash: true } });
+  const artifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: { in: runIds }, deletedAt: null }, select: { collectionRunId: true, storageRef: true, contentHash: true, artifactType: true, payload: true } });
+  if (sourceKey === "ticketmaster" && (runIds.some((id) => !artifacts.some((artifact) => artifact.collectionRunId === id && artifact.artifactType === "HTML"))
+    || artifacts.some((artifact) => artifact.artifactType === "HTML" && (typeof (artifact.payload as Record<string, unknown> | null)?.html !== "string"
+      || createHash("sha256").update(JSON.stringify((artifact.payload as Record<string, unknown>).html)).digest("hex") !== artifact.contentHash)))) {
+    throw new Error("Ticketmaster listing evidence is incomplete or has a hash mismatch");
+  }
   if (artifacts.some((artifact) => artifact.storageRef.startsWith("argus-evidence:"))
-    || runIds.some((id) => !artifacts.some((artifact) => artifact.collectionRunId === id && artifact.storageRef.startsWith("tymra-evidence:")))) {
+    || runsNeedingArgus.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id && artifact.storageRef.startsWith("tymra-evidence:")))) {
     throw new Error("Argus market pilot evidence has not been fully copied");
   }
   if (sourceKey === "ski_seasons_nz" && executions.some((execution) =>

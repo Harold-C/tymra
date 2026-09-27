@@ -257,6 +257,33 @@ describe("Argus async Job client", () => {
     assert.equal(capture.workflow_id, "collect_events");
   });
 
+  it("submits the bounded Council browser task and validates its page contract", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async (request) => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      return {
+        ...baseResult("ccc-test", "collect_events", "christchurch-council-events"),
+        data: {
+          data_schema: "christchurch-council-events.collect_events",
+          schema_version: "1.0.0",
+          canonicalUrl: "https://www.ccc.govt.nz/news-and-events/whats-on",
+          listingPages: [{ url: "https://www.ccc.govt.nz/news-and-events/whats-on", html: '<div class="event-card"><div class="card-event">Event</div></div>' }],
+          pageCount: 1,
+          cardCount: 1,
+          truncated: false,
+        },
+      };
+    });
+    const response = await captureBrowserTaskWithArgus(await listenEnvironment(), {
+      traceId: "ccc-test", connectorId: "christchurch-council-events", workflowId: "collect_events",
+      url: "https://www.ccc.govt.nz/news-and-events/whats-on", maxPages: 3,
+    });
+    assert.equal(response.ok, true);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.connector_id, "christchurch-council-events");
+    assert.equal(capture.max_pages, 3);
+  });
+
   it("accepts the Auckland Airport monthly passenger contract", async () => {
     server = jobServer(async () => aucklandAirportMonthlyResult());
     const environment = await listenEnvironment();

@@ -256,6 +256,56 @@ it("requires intact stored HTML from both Eventfinda pilot passes", async () => 
   expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
 });
 
+it("accepts two Ticketmaster listing-only passes only with queued Jobs and intact HTML", async () => {
+  const sourceKey = "ticketmaster";
+  const marker = randomUUID();
+  await expect(prisma.$transaction(async (transaction) => {
+    const source = await transaction.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
+    await transaction.dataSource.update({ where: { id: source.id }, data: {
+      enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
+      metadata: { boundedProductionCanary: true, browserPilot: true,
+        pilotAcceptanceStartedAt: new Date(Date.now() - 1_000).toISOString(), marker },
+    } });
+    await transaction.sourceEvent.create({ data: {
+      dataSourceId: source.id, externalId: `ticketmaster-pilot-test:${marker}`,
+      sourceUrl: "https://www.ticketmaster.co.nz/", title: "Bounded listing event", contentHash: marker,
+    } });
+    const artifacts: string[] = [];
+    for (let pass = 1; pass <= 2; pass += 1) {
+      const job = await transaction.job.create({ data: {
+        type: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", status: "SUCCEEDED",
+        attemptCount: 1, maxAttempts: 1, payload: { sourceId: sourceKey, marketScope: "new-zealand", limit: 2, productionCanary: true },
+        idempotencyKey: `ticketmaster-pilot-test:${marker}:${pass}`, sourceId: sourceKey,
+      } });
+      const run = await transaction.collectionRun.create({ data: {
+        jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", successCount: 1,
+        scope: { productionCanary: true, configurationUnchanged: true, schedulesUnchanged: true,
+          counters: { detailsFetched: 0 }, marker, pass },
+        startedAt: new Date(Date.now() + pass), finishedAt: new Date(Date.now() + pass), isDemo: false,
+      } });
+      const html = `<html>ticketmaster listing pass ${pass}</html>`;
+      const artifact = await transaction.rawArtifact.create({ data: {
+        collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML",
+        storageRef: `postgres:RawArtifact:${marker}:${pass}`,
+        contentHash: pass === 1 ? "invalid" : createHash("sha256").update(JSON.stringify(html)).digest("hex"),
+        payload: { html }, expiresAt: new Date(Date.now() + 60_000),
+      } });
+      artifacts.push(artifact.id);
+    }
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production"))
+      .rejects.toThrow("hash mismatch");
+    const firstHtml = "<html>ticketmaster listing pass 1</html>";
+    await transaction.rawArtifact.update({ where: { id: artifacts[0]! }, data: {
+      contentHash: createHash("sha256").update(JSON.stringify(firstHtml)).digest("hex"),
+    } });
+    const enabled = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production");
+    expect(enabled.schedule.enabled).toBe(true);
+    expect(enabled.acceptedRuns).toHaveLength(2);
+    throw new Error("ROLLBACK_TEST_TRANSACTION");
+  })).rejects.toThrow("ROLLBACK_TEST_TRANSACTION");
+  expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
+});
+
 it("permits only two independently verified zero-business School Sport Canterbury passes", async () => {
   const sourceKey = "school_sport_canterbury";
   const marker = randomUUID();

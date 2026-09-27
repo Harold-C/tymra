@@ -32,6 +32,7 @@ export function extractEventfindaHttpPage(input: { html: string; title: string; 
       .map((anchor) => pageNumber(anchor.getAttribute("href")))
       .filter((value): value is number => value !== null);
     const currentPage = pageNumber(url.pathname) ?? 1;
+    if (!events.length) throw new Error("Eventfinda listing contains no event cards");
     return {
       extractor: "eventfinda" as const,
       kind: "listing" as const,
