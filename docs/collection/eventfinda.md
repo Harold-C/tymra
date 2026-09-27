@@ -2,6 +2,10 @@
 
 Last updated: 2026-08-03
 
+2026-09-28 本地修复候选：直接 HTTP 只接受完整的 200 页面；202 中间响应停止
+本轮并进入保护性冷却，空的全国列表拒绝解析，避免以零业务结果误报成功。
+当前本地受限读取能解析首页与一张详情页，尚未完成新的生产持久化验收。
+
 **Development status:** Collector development is complete. Local bounded acceptance, nationwide
 discovery and bounded detail persistence are verified; production activation and multi-day
 unattended evidence remain separate operating gates.

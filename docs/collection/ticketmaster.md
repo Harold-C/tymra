@@ -2,6 +2,10 @@
 
 Last updated: 2026-08-03
 
+2026-09-28 本地修复候选：城市列表的 HTTP 403 与 429 触发已有访问限制熔断，
+不再误记为解析错误；受限读取的 Auckland 列表目前可解析活动。
+新的生产业务写入及详情回退仍需独立验收。
+
 **Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
 detail frontier and bounded hydration are implemented. Automated database acceptance covers both
 the direct and fallback paths. The latest bounded real detail runs remained unresolved after passive waits and stopped safely, so

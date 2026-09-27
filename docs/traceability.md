@@ -1,6 +1,46 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-27 (v9 MOT official-workbook repair)
+Last updated: 2026-09-28 (public-source release preparation)
+
+## 2026-09-28 生产定期采集时间保护候选（未发布）
+
+生产 Scheduler 过去仅按固定毫秒间隔续期，新的来源计划也从启用时立即到期，
+没有持久的工作日办公时段保护。本地候选按 `Pacific/Auckland` 把工作日
+09:00–17:00 到期的自动计划顺延到当天 17:00；生产启用计划时也使用同一规则。
+周末和工作日非办公时段照常运行。它只约束自动计划，不改变人工有界验收。
+本候选需随 Worker/API/Scheduler 同镜像发布，生产日程读回与首次周期观察仍未完成。
+
+## 2026-09-28 Eventfinda / Ticketmaster 本地修复与 MOT 复核（未发布）
+
+Eventfinda 首轮曾收到 HTTP 202，旧直接 HTTP 路径把所有 2xx 都视为成功，
+空列表也会形成零业务记录的成功采集。本地修复仅接受 HTTP 200，拒绝空列表；
+202 会停止该轮并进入现有保护性冷却。一次受限本地读取的当前首页为 HTTP 200，
+解析出 20 张卡片、249 页；一张详情页为 HTTP 200，解析出 3 个日期。
+
+Ticketmaster 首轮的 HTTP 403 旧路径标成解析失败。本地修复将 403 归入
+现有访问限制熔断，不重试或继续城市批次；429 同样处理。一次受限本地读取的
+Auckland 城市页为 HTTP 200，解析出 19 条活动，其中 17 条落在未来 31 天。
+本轮没有访问 Ticketmaster 账号或详情页，也没有验证业务持久化。
+
+MOT 沿用已发布的 v9 工作簿路径：历史上已有一次完整生产成功，第二次独立成功仍
+缺失。本轮本地 Argus 工作簿浏览器回归两项通过，没有发现支持再次改写下载路径的
+新证据。三项均未重新开启生产来源或计划；Tymra 候选尚未部署，
+`argus.test` 配置未变。后续各自仍须正式生产 Job 的业务写入、证据与 ACK/PURGED
+及原定两次独立成功门槛，才可恢复定期采集。
+
+## 2026-09-28 Christchurch Council 本地修复候选（未发布）
+
+`christchurch_council_events` 的直接 HTTP 路径在生产拿到 Incapsula 中间页。
+本地候选改由 Argus 的 `christchurch-council-events/collect_events` 固定有头
+Profile 读取官方 What's On，最多三页；Tymra 仍使用原有日期、活动身份和
+去重规则，且直接 HTTP adapter 现会拒绝采集。新旧来源配置元数据在正式
+发布时需单项核对并更新，不能运行通用 seed。
+
+本地真实 Argus Connector 一次成功取得三页、44 张卡片和两份证据；Tymra 对
+同一快照的离线解析返回两条有界活动，外部 ID 保持 `ccc-whats-on:*` 格式。
+Argus 提交 `5647271` 已推送，常规 CI 通过；Tymra 全量单元、隔离集成、类型检查及构建通过。生产镜像、数据库、Schedule、
+Scheduler 和 `argus.test` 均未改变；该渠道继续暂停。正式 Tymra Job 的
+业务写入、证据哈希、ACK/PURGED 与两次独立成功门槛尚未通过。
 
 ## 2026-09-27 v9 MOT workbook repair (current)
 

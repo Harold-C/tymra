@@ -60,9 +60,11 @@ evidence and handoff are in
 
 ## Christchurch priority coverage
 
-- `christchurch_council_events` pages through Christchurch City Council What's On and extracts the
-  title, advertised date, image and canonical event URL from list cards. It does not open event
-  details, so a full pass costs one request per listing page rather than one request per event.
+- `christchurch_council_events` uses Argus's fixed headed public Profile for the official
+  Christchurch City Council What's On listing. At most three same-route pages supply the
+  title, advertised date, image and canonical event URL; Tymra keeps the existing occurrence
+  identity and deduplication. No event detail is opened. A challenge or empty listing stops
+  collection. The production source remains paused pending two bounded passes.
 - `ara_academic_dates` reads Ara's official academic calendar. Semester starts/ends, mid-year break
   and Christchurch graduation dates become `TOURISM_DEMAND` signals. Timaru-only, registration,
   campus-closure and small campus ceremony rows remain unpromoted.
