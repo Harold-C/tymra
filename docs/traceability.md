@@ -1,8 +1,39 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-27 (bounded official-workbook follow-up)
+Last updated: 2026-09-27 (v7 official-workbook diagnostic)
 
-## 2026-09-27 official-workbook follow-up (current)
+## 2026-09-27 v7 official-workbook diagnostic (current)
+
+Argus production already runs pushed commit `0d03bd10f874a4f8a38976a7af8687187cc03340`
+(`argus-release-20260927-7`), loaded Mac mini image
+`sha256:eb475cf65b0bc70756321c8806fe89a57405a3b288acd14d754174b17c49e23e`.
+It includes the v6 fixed-code workbook diagnostic; replacing it with v6 would be a downgrade.
+Browser health is `healthy`, restart count zero and active Argus Jobs zero at readback.
+Tymra Worker/API/Scheduler still run `tymra:public-final-repair-20260927-v2`; no Tymra
+image, migration or production environment setting changed in this follow-up.
+
+One formally enqueued MOT trial used Tymra Job `cmujkgqvc0000qrpzyk01tnm7`,
+CollectionRun `cmujkgrkm0023qr07uk3lcvw9` and Argus Job
+`job_0a77c80501f89fe4df6ced910af83cab`. The only attempt ended
+`DEAD_LETTER` / `SOURCE_UNAVAILABLE`; Argus reported `WORKBOOK_DOWNLOAD_FAILED`.
+Its fixed safe observations were `response_body_unreadable` and
+`browser_download_failed`: Chromium emitted a download event, but that download failed
+and the matching response body was unreadable. The underlying browser failure reason
+is not yet known. No new business signals were written; the prior two remain.
+Tymra copied two page evidence files (HTML 329,474 bytes, screenshot 132,714 bytes)
+to its persistent evidence volume and their SHA-256 and sizes matched stored metadata.
+The result was ACKed; Argus now reports `PURGED` / `ACKNOWLEDGED`, result GET returns
+410, and both remote evidence GETs return 404. MOT automatically returned to
+`SUSPENDED`, `enabled=false`, with no schedule. Tymra has zero pending/running Jobs
+and retains 72 enabled schedules. The other four deferred sources remain closed.
+The protected pretrial Tymra config, Compose, database dump and evidence archive are
+at `/srv/apps/tymra/backups/public-workbook-diagnostic-20260927-pretrial/` with
+checksums and archive listings verified; no isolated restore was attempted.
+Argus v7's quiescent encrypted backup and previous browser image are recorded in
+Argus `docs/current-state.md`. Do not retry the source or enable MOT until a specific
+download repair is validated, followed by two independent successful production passes.
+
+## 2026-09-27 official-workbook follow-up (previous snapshot)
 
 Argus browser now runs pushed commit `bbc9aa85368eab2658f4a47a62f6a88f3db170cf`
 (`argus-release-20260927-5`), loaded image

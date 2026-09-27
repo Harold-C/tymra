@@ -1,8 +1,24 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-27（官方工作簿受限复测后）
+Last updated: 2026-09-27（Argus v7 工作簿阶段诊断后）
 
-## 2026-09-27 工作簿来源后续门槛
+## 2026-09-27 当前工作簿来源门槛
+
+Argus 已在空闲窗口发布 v7，包含原 v6 的安全阶段诊断；旧 v6 无需再切换。
+MOT 在正式 Tymra Worker 编排下仅试运行一次，仍为
+`WORKBOOK_DOWNLOAD_FAILED`。固定阶段码显示响应体不可读，且浏览器确实产生
+下载事件但下载失败；尚不能确认下载失败的底层原因。未新增业务结果；两份本地
+证据的字节数和 SHA-256 已核对，ACK 后结果 410、远端证据 404、交付
+`PURGED` / `ACKNOWLEDGED`。MOT 自动停采且没有定期计划。
+
+下一步仅基于保留证据和浏览器下载路径定位失败原因，形成最小修复并通过本地
+回归与生产发布门槛后，再作一次有界试运行。不能重复请求来源来猜测原因，
+不能把失败计入两次成功的定期开启门槛。Auckland Airport 月报及另三项来源
+仍暂停；其余 72 条计划继续运行。Mac mini 的采集、构建和部署继续避开
+工作日 09:00–17:00 NZ 时间。Job、镜像、备份与验收细节见
+[`evidence/public-suspended-repair-production-2026-09-27.md`](./evidence/public-suspended-repair-production-2026-09-27.md)。
+
+## 2026-09-27 工作簿来源后续门槛（前一快照）
 
 Argus v5（提交 `bbc9aa85368eab2658f4a47a62f6a88f3db170cf`）已发布，
 Tymra v2 不变。Auckland Airport 月报与 MOT 航空数据各通过正式生产编排完成

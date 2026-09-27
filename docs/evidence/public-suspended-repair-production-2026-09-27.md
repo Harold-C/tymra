@@ -4,7 +4,46 @@ This follows the [78-source first-round snapshot](./public-source-production-rol
 It records new production trials, not a claim that every source is fully covered or that a
 natural recurring cycle has passed. Booking, Airbnb and Synix accounts were not used.
 
-## Official-workbook follow-up (latest bounded snapshot)
+## Argus v7 MOT diagnostic (latest bounded snapshot)
+
+Argus v7 was already deployed in an idle window by its release owner: commit
+`0d03bd10f874a4f8a38976a7af8687187cc03340`, tag
+`argus-release-20260927-7`, registry digest
+`sha256:03725313af4fc7968ba2cf753049048de65a3ab386daa8d60caf36a4f0dce`,
+loaded Mac mini image
+`sha256:eb475cf65b0bc70756321c8806fe89a57405a3b288acd14d754174b17c49e23e`.
+It includes the v6 safe-stage diagnostic. The browser remains healthy with zero
+restarts; PostgreSQL and tunnel were not restarted for this Tymra trial. The Tymra
+production image and release config were not changed.
+
+Before the trial, protected Tymra config, Compose, PostgreSQL custom dump and
+`argus-evidence` archive were saved in
+`/srv/apps/tymra/backups/public-workbook-diagnostic-20260927-pretrial/`.
+The files and directory retain restrictive permissions; archive listings and
+`SHA256SUMS` passed. An isolated restore was not performed. Argus v7's separate
+quiescent encrypted predeploy backup and previous image are recorded in Argus
+`docs/current-state.md`.
+
+One source-only guarded rearm and enqueue created Tymra Job
+`cmujkgqvc0000qrpzyk01tnm7`, CollectionRun `cmujkgrkm0023qr07uk3lcvw9`,
+Argus Job `job_0a77c80501f89fe4df6ced910af83cab`, with one actual attempt.
+Tymra ended `DEAD_LETTER` / `SOURCE_UNAVAILABLE` and CollectionRun `FAILED`;
+Argus returned `WORKBOOK_DOWNLOAD_FAILED`. The v7 safe diagnostic logged only
+`response_body_unreadable` and `browser_download_failed`. A browser download event
+was received, but the download failed, and the matching response body could not be
+read. The underlying download failure cause remains unknown. No new
+`SourceMarketSignal` was written; the existing count remains two.
+
+The Worker copied one HTML (329,474 bytes) and one screenshot (132,714 bytes) to
+`/argus-evidence`. Both copied sizes and SHA-256 matched stored metadata. The Argus
+delivery row is `PURGED` / `ACKNOWLEDGED` with null result payload. From the actual
+production Worker, authenticated result GET returned 410 and each remote HTML and
+screenshot evidence GET returned 404. The MOT source auto-suspended again
+(`lifecycle=SUSPENDED`, `enabled=false`), with no schedule. At final readback there
+were zero active Tymra and Argus Jobs and 72 enabled Tymra schedules. No other
+source was trialled; Scheduler and unrelated features were not changed.
+
+## Official-workbook follow-up (previous bounded snapshot)
 
 Argus v5, pushed commit `bbc9aa85368eab2658f4a47a62f6a88f3db170cf`, tag
 `argus-release-20260927-5`, passed fixed-image CI `36289267705` and private export
