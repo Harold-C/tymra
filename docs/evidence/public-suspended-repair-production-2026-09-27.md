@@ -82,6 +82,9 @@ Two Argus Jobs were ACKed and returned HTTP 410; four copied evidence files pass
 readback. Its older first-round pass and the intermediate v1 retest were excluded by the
 new acceptance timestamp. This is a verified limited source signal, not proof of hosted
 Canterbury events.
+Direct Argus database readback confirmed all six new Jobs have delivery status `PURGED`,
+purge reason `ACKNOWLEDGED`, and no retained result payload. Argus has zero queued or active
+Jobs at the final check.
 
 Exactly 70 schedules are now enabled: the original 52 and these 18 accepted sources.
 At the final check, no Tymra Job was PENDING/RUNNING. Seven sources remain suspended with
@@ -108,7 +111,9 @@ The Argus host is also an office Mac mini. No new batch capture is planned for w
 whose summer next run was around 17:44 were moved three hours later: GeoNet daily, MBIE ADP,
 public holidays and Stats NZ weekly. Their next local runs are around 20:44; after the
 2027 daylight-saving change they remain around 19:44. A read-only calculation across all
-70 enabled schedules found **zero next runs** in weekday 09:00–17:00 NZ time. The Scheduler
+70 enabled schedules found **zero next runs** in weekday 09:00–17:00 NZ time. A projection
+of 52 weekly intervals and 370 daily intervals per schedule also found zero weekday office-hour
+runs across the next seasonal time changes. The Scheduler
 advances from execution time, so this check must be repeated when scheduling changes or
 future drift is material; it is not a permanent timezone policy in code.
 
