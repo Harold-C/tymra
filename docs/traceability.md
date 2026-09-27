@@ -1,8 +1,43 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-27 (v7 official-workbook diagnostic)
+Last updated: 2026-09-27 (v9 MOT official-workbook repair)
 
-## 2026-09-27 v7 official-workbook diagnostic (current)
+## 2026-09-27 v9 MOT workbook repair (current)
+
+Argus production now runs pushed commit `e71d10a2d934d3a257f53bd7d541c808199cb1c0`
+(`argus-release-20260927-9`), registry digest
+`sha256:c797fd15b60e2af56ceabf5bd1acdb7de33de7447990875525a566f6e63b8619`,
+loaded Mac mini browser image
+`sha256:55b78266418bc2fde833880451a944b6d04ac0d09acc9006a593711ac962f4ed`.
+The exact-link browser request path is limited to MOT; the download-manager path for
+other workbooks has not changed. Tymra Worker/API/Scheduler remain on
+`tymra:public-final-repair-20260927-v2`; there was no Tymra image rebuild,
+migration, seed, or environment change. Its pretrial protected configuration,
+Compose, PostgreSQL dump and evidence archive are at
+`/srv/apps/tymra/backups/public-mot-route-20260927-pretrial/`; four checksums,
+dump listing and archive listing passed. An isolated Tymra restore was not done.
+The Argus encrypted, isolated-restore-verified backup and v7 rollback image are
+recorded in Argus `docs/current-state.md`.
+
+One formally enqueued MOT trial used Tymra Job `cmujo3nf20000qrvznc9vgfq8`,
+CollectionRun `cmujo3o8o014hqr07njdn4e6h`, and Argus Job
+`job_553e1d474ad00222967bbcd383be823a`. Both Jobs succeeded on one attempt;
+the run saved two production signals, with two unique external IDs and no duplicate
+business row. Three evidence files were retained in `/argus-evidence`: HTML 329,312
+bytes, screenshot 493,949 bytes and XLSX download 29,194 bytes. Each file's size and
+SHA-256 matched the Argus pointer and Tymra artifact metadata. After Tymra ACK,
+Argus delivery is `PURGED` / `ACKNOWLEDGED`; authenticated production Worker reads
+returned result 410 and three evidence 404. The `tymra-prod` Argus queue and Tymra
+pending/running queue were empty at final readback.
+
+MOT was explicitly returned to `SUSPENDED`, `enabled=false`, and has no schedule.
+The existing 72 enabled schedules are unchanged. This is the first successful
+production pass; a second independent pass and the same persistence/evidence/ACK
+checks remain required before enabling its weekly schedule. Auckland Airport and
+the other deferred sources were not tested or enabled by this repair. Details are
+in [`evidence/public-suspended-repair-production-2026-09-27.md`](./evidence/public-suspended-repair-production-2026-09-27.md).
+
+## 2026-09-27 v7 official-workbook diagnostic (previous snapshot)
 
 Argus production already runs pushed commit `0d03bd10f874a4f8a38976a7af8687187cc03340`
 (`argus-release-20260927-7`), loaded Mac mini image

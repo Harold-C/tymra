@@ -1,8 +1,25 @@
 # Tymra 当前实施计划
 
-Last updated: 2026-09-27（Argus v7 工作簿阶段诊断后）
+Last updated: 2026-09-27（Argus v9 MOT 工作簿修复首轮验收后）
 
-## 2026-09-27 当前工作簿来源门槛
+## 2026-09-27 MOT 当前门槛
+
+Argus v9 的 MOT 单请求工作簿路径已通过固定镜像 CI、可恢复备份、空闲发布和
+Tymra 正式 Worker 的一次受限生产验收。MOT Job 一次尝试成功，写入两条去重的
+生产信号；HTML、截图和 XLSX 三份持久化证据的字节数与 SHA-256 均与 Argus
+元数据一致。Tymra ACK 后，Argus 交付为 `PURGED` / `ACKNOWLEDGED`，结果
+返回 410，三份远端证据均返回 404。MOT 已重新暂停，没有定期计划；其余
+72 条计划未变。
+
+下一步为 MOT 的第二次独立受限生产验收，仍须通过一次尝试成功、业务去重、
+持久化证据、ACK/PURGED 和无遗留任务门槛。只有两次新成功均成立，才考虑
+为 MOT 建立周期计划。Auckland Airport 仍使用旧下载路径，尚未修复或复验；
+Christchurch Council、Eventfinda 与 Ticketmaster 继续按各自阻碍保持暂停。
+Mac mini 的新采集和部署避开工作日 09:00–17:00 NZ 时间。精确版本、Job、
+证据与备份见
+[`evidence/public-suspended-repair-production-2026-09-27.md`](./evidence/public-suspended-repair-production-2026-09-27.md)。
+
+## 2026-09-27 v7 工作簿来源门槛（前一快照）
 
 Argus 已在空闲窗口发布 v7，包含原 v6 的安全阶段诊断；旧 v6 无需再切换。
 MOT 在正式 Tymra Worker 编排下仅试运行一次，仍为

@@ -4,7 +4,48 @@ This follows the [78-source first-round snapshot](./public-source-production-rol
 It records new production trials, not a claim that every source is fully covered or that a
 natural recurring cycle has passed. Booking, Airbnb and Synix accounts were not used.
 
-## Argus v7 MOT diagnostic (latest bounded snapshot)
+## Argus v9 MOT repair (latest bounded snapshot)
+
+The Argus-only repair was pushed as commit
+`e71d10a2d934d3a257f53bd7d541c808199cb1c0`, tag
+`argus-release-20260927-9`. Fixed-image CI `36310547346` and private export
+`36311500213` passed. Registry digest:
+`sha256:c797fd15b60e2af56ceabf5bd1acdb7de33de7447990875525a566f6e63b8619`;
+loaded Mac mini browser image ID:
+`sha256:55b78266418bc2fde833880451a944b6d04ac0d09acc9006a593711ac962f4ed`.
+The browser is healthy with zero restarts. Tymra Worker/API/Scheduler remained on
+`tymra:public-final-repair-20260927-v2`; no Tymra code, migration or release
+configuration changed. Argus backup and rollback materials are recorded in its
+`docs/current-state.md`.
+
+Before the trial, protected Tymra production configuration, Compose, PostgreSQL
+custom dump and `argus-evidence` archive were saved under
+`/srv/apps/tymra/backups/public-mot-route-20260927-pretrial/` with restrictive
+permissions. Four SHA-256 checksums, PostgreSQL listing and evidence archive
+listing passed. No isolated Tymra restore was performed.
+
+One guarded rearm and enqueue created Tymra Job `cmujo3nf20000qrvznc9vgfq8`,
+CollectionRun `cmujo3o8o014hqr07njdn4e6h`, and Argus Job
+`job_553e1d474ad00222967bbcd383be823a`. The one allowed attempt succeeded
+end to end. The run reported two successful results and zero failures. Tymra has
+two `SourceMarketSignal` rows for MOT and two distinct external IDs; both point to
+this CollectionRun, so this pass did not create duplicate business records.
+
+The production Worker retained three Argus evidence objects on its persistent
+`/argus-evidence` volume: HTML 329,312 bytes, screenshot 493,949 bytes, XLSX
+download 29,194 bytes. Each local byte count and SHA-256 matched its Argus result
+pointer and Tymra artifact metadata. After Tymra ACK, Argus database delivery
+readback was `PURGED` / `ACKNOWLEDGED`, with no result payload. Using Tymra's
+protected client from the production Worker, result GET returned 410 and each
+of the three remote evidence GETs returned 404. Argus and Tymra had zero active
+Jobs at final readback.
+
+MOT was explicitly suspended after acceptance (`enabled=false`, no schedule).
+The existing 72 enabled schedules were unchanged. This is one successful fresh
+pass; the second independent production pass remains a gate before recurring MOT
+collection. Auckland Airport and the other deferred sources were not trialled.
+
+## Argus v7 MOT diagnostic (previous bounded snapshot)
 
 Argus v7 was already deployed in an idle window by its release owner: commit
 `0d03bd10f874a4f8a38976a7af8687187cc03340`, tag
