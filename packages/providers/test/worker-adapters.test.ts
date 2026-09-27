@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
+import { isCccAccessChallenge } from "../src/christchurch-priority-adapters";
 
 import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, findNzCruiseScheduleCsvUrl, parseNzCruiseScheduleCsv, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "../src";
 
@@ -666,6 +667,8 @@ describe("public data adapter contract", () => {
   });
 
   it("parses Christchurch City Council cards and follows only listing pagination", () => {
+    expect(isCccAccessChallenge('<html><head><script src="/_Incapsula_Resource?token=opaque"></script></head><body></body></html>')).toBe(true);
+    expect(isCccAccessChallenge('<div class="event-card"><div class="card-event">Public event</div></div>')).toBe(false);
     const parsed = parseChristchurchCouncilEventsPage(`<div class="event-card"><div class="card-event"><img src="/event.jpg"><time class="card-pre-heading">11 to 13 November 2026</time><h4 class="card-title"><a href="/search-results/searchRedirect?url=https%3A%2F%2Fwww.ccc.govt.nz%2Fnews-and-events%2Fwhats-on%2Fevent%2Fthe-show">The Show</a></h4></div></div><a class="next-prev-link" href="/news-and-events/whats-on?start_rank=16">Next</a>`);
     expect(parsed.nextUrl).toBe("https://www.ccc.govt.nz/news-and-events/whats-on?start_rank=16");
     expect(parsed.events[0]).toMatchObject({
@@ -676,6 +679,16 @@ describe("public data adapter contract", () => {
       startsAt: new Date("2026-11-10T11:00:00.000Z"),
       endsAt: new Date("2026-11-13T10:59:59.000Z"),
     });
+  });
+
+  it("classifies a Council access interstitial as source unavailable, not an empty calendar", async () => {
+    vi.stubGlobal("fetch", async () => new Response('<html><script src="/_Incapsula_Resource?token=opaque"></script></html>', { status: 200, headers: { "content-type": "text/html" } }));
+    try {
+      await expect(publicDataAdapters.christchurch_council_events.fetch("https://www.ccc.govt.nz/news-and-events/whats-on", fixtureContext))
+        .rejects.toMatchObject({ code: "SOURCE_UNAVAILABLE", retryable: false });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("keeps only accommodation-demand-relevant Ara academic dates", () => {

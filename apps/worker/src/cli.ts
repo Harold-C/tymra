@@ -10,7 +10,7 @@ import { executeCanary, canaryPlan, productionPreflight } from "./operations/rel
 import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/guarded-operations";
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary, validateSuspendedProductionPublicCanary } from "./operations/production-public-canary";
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
@@ -179,12 +179,32 @@ switch (command) {
             select: { contentHash: true, payload: true },
           }) : [];
           const acceptedZeroBusiness = run.successCount === 0 && zeroBusinessPublicPilotPassAccepted(sourceKey, zeroBusinessArtifacts, scope, after[0]! + after[2]!);
+          const rowGrowth = pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0;
+          let verifiedIncrementalGrowth = false;
+          const onlyNewMetServiceSignals = after[2]! - before[2]! === run.successCount
+            && after[5]! - before[5]! === run.successCount
+            && [0, 1, 3, 4].every((index) => after[index] === before[index]);
+          if (sourceKey === "metservice" && rowGrowth > 0 && pass === 2 && onlyNewMetServiceSignals) {
+            const previous = await prisma.collectionRun.findFirst({
+              where: { dataSourceId: source.id, status: "SUCCEEDED", id: { not: run.id } },
+              orderBy: { finishedAt: "desc" }, select: { id: true, successCount: true, scope: true },
+            });
+            if (previous) {
+              const ids = [run.id, previous.id];
+              const [artifacts, signals] = await Promise.all([
+                prisma.rawArtifact.findMany({ where: { collectionRunId: { in: ids }, artifactType: "NETWORK_RESPONSE", deletedAt: null, parserFailure: false }, select: { collectionRunId: true, contentHash: true, payload: true } }),
+                prisma.sourceMarketSignal.findMany({ where: { dataSourceId: source.id, lastCollectionRunId: { in: ids } }, select: { lastCollectionRunId: true, externalId: true } }),
+              ]);
+              verifiedIncrementalGrowth = verifiedMetServiceIncrementalPasses([{ id: run.id, successCount: run.successCount, scope: run.scope }, previous], artifacts, signals);
+            }
+          }
           return {
             sourceKey, pass, runId: run.id,
             configurationUnchanged: scope.configurationUnchanged === true,
             schedulesUnchanged: scope.schedulesUnchanged === true,
             parserFailures: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, parserFailure: true } }),
-            repeatRowGrowth: pass > 1 ? after.reduce((total, count, index) => total + Math.max(0, count - before[index]!), 0) : 0,
+            repeatRowGrowth: verifiedIncrementalGrowth ? 0 : rowGrowth,
+            ...(verifiedIncrementalGrowth ? { verifiedIncrementalGrowth: rowGrowth } : {}),
             remoteEvidenceRemaining: await prisma.rawArtifact.count({ where: { collectionRunId: run.id, storageRef: { startsWith: "argus-evidence:" } } }),
             ...(run.status === "SUCCEEDED" && ((run.successCount > 0 && after.some((count) => count > 0)) || acceptedZeroBusiness)
               ? {} : { error: `RUN_${run.status}_NO_BUSINESS_RESULT` }),

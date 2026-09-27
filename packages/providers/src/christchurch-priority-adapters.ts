@@ -44,6 +44,9 @@ class ChristchurchCouncilEventsAdapter implements PublicDataAdapter {
     while (nextUrl && requests < requestLimit && events.size < recordLimit) {
       const pageUrl: string = nextUrl;
       const page = await fetchHtml(pageUrl, context, this.metadata.sourceName);
+      if (isCccAccessChallenge(page.text)) {
+        throw new AdapterError("SOURCE_UNAVAILABLE", "Christchurch City Council returned an access challenge instead of event content", false);
+      }
       requests += 1;
       const parsed = parseChristchurchCouncilEventsPage(page.text, page.url);
       for (const event of parsed.events) {
@@ -141,6 +144,11 @@ export function parseChristchurchCouncilEventsPage(html: string, finalUrl = CCC_
   const nextHref = [...document.querySelectorAll("a.next-prev-link[href]")]
     .find((link) => /next/i.test(link.textContent ?? ""))?.getAttribute("href");
   return { events, nextUrl: safeUrl(nextHref ?? null, finalUrl) };
+}
+
+export function isCccAccessChallenge(html: string) {
+  return html.length < 2_048 && /\/_Incapsula_Resource\?/iu.test(html)
+    && !/class=["'][^"']*event-card/iu.test(html);
 }
 
 export function parseAraAcademicCalendar(html: string, finalUrl = ARA_CALENDAR_URL): PublicSignal[] {

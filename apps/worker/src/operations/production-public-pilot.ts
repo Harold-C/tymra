@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { prisma, type Prisma } from "@tymra/db";
 import { nzDateKey, nzStartOfDay } from "@tymra/domain";
-import { ARGUS_PUBLIC_MARKET_SOURCES, SKI_SEASON_SOURCES, argusPublicMarketSource, parseMetServiceCapFeed, publicDataAdapters } from "@tymra/providers";
+import { ARGUS_PUBLIC_MARKET_SOURCES, SKI_SEASON_SOURCES, argusPublicMarketSource, parseMetServiceCapAlert, parseMetServiceCapFeed, publicDataAdapters } from "@tymra/providers";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { normaliseSportySchoolSportEvents, sportySchoolSportExtractionSchema } from "../collection/school-sport-ticketek";
@@ -27,7 +27,7 @@ export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()
     && publicDataAdapters[source.key]?.metadata.adapterKey === source.adapterKey)
   .map((source) => source.key);
 const pilotKeys = new Set([...PUBLIC_PILOT_SOURCE_KEYS, ...ARGUS_MARKET_PILOT_SOURCE_KEYS]);
-const extendedWindowSourceKeys = new Set(["ara_academic_dates", "canterbury_major_annual_events", "christchurch_council_events", "christchurch_cruise", "taranakienz_events"]);
+const extendedWindowSourceKeys = new Set(["ara_academic_dates", "canterbury_major_annual_events", "christchurch_council_events", "christchurch_cruise", "christchurch_sports", "taranakienz_events"]);
 
 export function publicPilotWindowDays(sourceId: string) {
   if (sourceId === "christchurch_airport_monthly") return 366;
@@ -84,6 +84,47 @@ export function zeroBusinessPublicPilotPassAccepted(sourceId: string, artifacts:
   const counters = scope && typeof scope === "object" && !Array.isArray(scope) ? (scope as Record<string, unknown>).counters : null;
   return existingBusinessRecords > 0 && counters !== null && typeof counters === "object" && !Array.isArray(counters)
     && (counters as Record<string, unknown>).requestsAvoided === items.length;
+}
+
+export function verifiedMetServiceIncrementalPasses(
+  runs: readonly { id: string; successCount: number; scope: unknown }[],
+  artifacts: readonly { collectionRunId: string; contentHash: string; payload: unknown }[],
+  signals: readonly { lastCollectionRunId: string; externalId: string }[],
+) {
+  if (runs.length !== 2 || runs.some((run) => run.successCount < 1)) return false;
+  const identifiers: string[] = [];
+  for (const run of runs) {
+    const records = artifacts.filter((artifact) => artifact.collectionRunId === run.id);
+    if (records.length !== 2 || records.some((artifact) => artifact.contentHash
+      !== createHash("sha256").update(JSON.stringify(canonicalPilotJson(artifact.payload))).digest("hex"))) return false;
+    const feed = records.find((artifact) => isPilotRecord(artifact.payload) && artifact.payload.kind === "cap_feed")?.payload;
+    const detail = records.find((artifact) => isPilotRecord(artifact.payload) && artifact.payload.kind === "cap_alert")?.payload;
+    if (!isPilotRecord(feed) || !isPilotRecord(detail)
+      || feed.sourceUrl !== "https://alerts.metservice.com/cap/rss"
+      || typeof feed.rawXml !== "string" || typeof detail.rawXml !== "string"
+      || typeof detail.sourceUrl !== "string") return false;
+    try {
+      const parsedFeed = parseMetServiceCapFeed(feed.rawXml);
+      const parsedAlert = parseMetServiceCapAlert(detail.rawXml);
+      if (JSON.stringify(canonicalPilotJson(parsedFeed)) !== JSON.stringify(canonicalPilotJson(feed.feed))
+        || JSON.stringify(canonicalPilotJson(parsedAlert)) !== JSON.stringify(canonicalPilotJson(detail.alert))
+        || !parsedFeed.items.some((item) => item.link === detail.sourceUrl
+          && JSON.stringify(canonicalPilotJson(item)) === JSON.stringify(canonicalPilotJson(detail.feedItem)))) return false;
+      const runSignals = signals.filter((signal) => signal.lastCollectionRunId === run.id);
+      if (runSignals.length !== run.successCount || runSignals.some((signal) => signal.externalId !== `cap-alert:${parsedAlert.identifier}`
+        && !signal.externalId.startsWith(`cap-alert:${parsedAlert.identifier}:market:`))) return false;
+      identifiers.push(parsedAlert.identifier);
+    } catch { return false; }
+  }
+  const latest = runs[0]!;
+  const counters = isPilotRecord(latest.scope) ? latest.scope.counters : null;
+  return new Set(identifiers).size === 2 && isPilotRecord(counters)
+    && typeof counters.requestsAvoided === "number" && counters.requestsAvoided >= 1
+    && typeof counters.requests === "number" && counters.requests <= 2;
+}
+
+function isPilotRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function verifiedSchoolSportCanterburyZeroPass(sourceId: string, scope: unknown, argusResult: unknown, existingBusinessRecords: number) {
@@ -222,6 +263,22 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
       || (scope as Record<string, unknown>).configurationUnchanged !== true
       || (scope as Record<string, unknown>).schedulesUnchanged !== true;
   })) throw new Error("Two successful bounded production passes are required");
+  if (sourceId === "metservice" && runs.every((run) => run.successCount > 0)) {
+    const runIds = runs.map((run) => run.id);
+    const signals = await transaction.sourceMarketSignal.findMany({
+      where: { dataSourceId: source.id, lastCollectionRunId: { in: runIds } },
+      select: { lastCollectionRunId: true, externalId: true },
+    });
+    if (runs.every((run) => signals.some((signal) => signal.lastCollectionRunId === run.id))) {
+      const artifacts = await transaction.rawArtifact.findMany({
+        where: { collectionRunId: { in: runIds }, artifactType: "NETWORK_RESPONSE", deletedAt: null, parserFailure: false },
+        select: { collectionRunId: true, contentHash: true, payload: true },
+      });
+      if (!verifiedMetServiceIncrementalPasses(runs, artifacts, signals)) {
+        throw new Error("MetService incremental pilot evidence does not reconcile to distinct CAP alerts");
+      }
+    }
+  }
   if (sourceId === "canterbury_major_annual_events" && runs.some((run) => {
     const counters = (run.scope as Record<string, unknown>).counters;
     if (!counters || typeof counters !== "object" || Array.isArray(counters)) return true;

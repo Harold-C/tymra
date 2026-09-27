@@ -1,13 +1,32 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { SKI_SEASON_SOURCES } from "@tymra/providers";
+import { SKI_SEASON_SOURCES, parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers";
 import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
 import { isArgusPilotEvidencePath, isLegacyCouncilDirectPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("direct-public production pilot", () => {
+  it("accepts distinct MetService alerts from one feed only with matching hashed source evidence", () => {
+    const hashed = (payload: unknown) => ({ payload, contentHash: createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex") });
+    const urls = ["https://alerts.metservice.com/a.xml", "https://alerts.metservice.com/b.xml"];
+    const feedXml = `<rss><channel>${urls.map((url, index) => `<item><title>Warning ${index}</title><link>${url}</link><guid>warning-${index}</guid></item>`).join("")}</channel></rss>`;
+    const feed = parseMetServiceCapFeed(feedXml);
+    const runs = [{ id: "second", successCount: 1, scope: { counters: { requests: 2, requestsAvoided: 1 } } }, { id: "first", successCount: 1, scope: {} }];
+    const records = runs.map((run, index) => {
+      const alertXml = `<alert><identifier>warning-${index}</identifier><sender>MetService</sender><sent>2026-09-27T00:00:00Z</sent><status>Actual</status><msgType>Alert</msgType><scope>Public</scope><info><event>Strong Wind Watch</event><area><areaDesc>Canterbury</areaDesc></area></info></alert>`;
+      return [
+        { collectionRunId: run.id, ...hashed({ kind: "cap_feed", sourceUrl: "https://alerts.metservice.com/cap/rss", rawXml: feedXml, feed }) },
+        { collectionRunId: run.id, ...hashed({ kind: "cap_alert", sourceUrl: urls[index], feedItem: feed.items[index], rawXml: alertXml, alert: parseMetServiceCapAlert(alertXml) }) },
+      ];
+    }).flat();
+    const signals = runs.map((run, index) => ({ lastCollectionRunId: run.id, externalId: `cap-alert:warning-${index}` }));
+    expect(verifiedMetServiceIncrementalPasses(runs, records, signals)).toBe(true);
+    expect(verifiedMetServiceIncrementalPasses(runs, [{ ...records[0]!, contentHash: "0".repeat(64) }, ...records.slice(1)], signals)).toBe(false);
+    expect(verifiedMetServiceIncrementalPasses(runs, records, [{ ...signals[0]!, externalId: signals[1]!.externalId }, signals[1]!])).toBe(false);
+    expect(verifiedMetServiceIncrementalPasses([{ ...runs[0]!, scope: { counters: { requests: 3, requestsAvoided: 0 } } }, runs[1]!], records, signals)).toBe(false);
+  });
   it("requires three distinct hashed resort results and the full three-request budget in each ski pass", () => {
     const artifacts = SKI_SEASON_SOURCES.map((source) => {
       const extraction = publicSkiSeasonExtractionSchema.parse({
@@ -62,7 +81,7 @@ describe("direct-public production pilot", () => {
     expect(isProductionPublicPilotSchedule({ ...browserPilot, payload: { ...browserPilot.payload, limit: 20 } })).toBe(false);
     expect(publicPilotSchedulePayload("school_sport_nz").marketScope).toBe("christchurch");
     expect(publicPilotSchedulePayload("dunedinnz_events").marketScope).toBe("dunedin");
-    expect(["ara_academic_dates", "canterbury_major_annual_events", "christchurch_council_events", "christchurch_cruise", "taranakienz_events"].map(publicPilotWindowDays)).toEqual([90, 90, 90, 90, 90]);
+    expect(["ara_academic_dates", "canterbury_major_annual_events", "christchurch_council_events", "christchurch_cruise", "christchurch_sports", "taranakienz_events"].map(publicPilotWindowDays)).toEqual([90, 90, 90, 90, 90, 90]);
     expect(publicPilotWindowDays("public_holidays_nz")).toBe(31);
     expect(publicPilotWindowDays("christchurch_airport_monthly")).toBe(366);
     const monthlyRange = publicPilotRange("christchurch_airport_monthly", new Date("2026-09-27T12:00:00Z"));
