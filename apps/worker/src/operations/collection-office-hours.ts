@@ -7,6 +7,10 @@ const nzClock = new Intl.DateTimeFormat("en-NZ", {
   hourCycle: "h23",
 });
 
+export function isCollectionScheduleJobType(jobType: string): boolean {
+  return jobType === "PUBLIC_DATA_COLLECTION" || jobType === "EVENT_COLLECTION";
+}
+
 /** Defer automatic collection due during New Zealand weekday office hours. */
 export function nextCollectionOutsideOfficeHours(now: Date): Date {
   const parts = Object.fromEntries(nzClock.formatToParts(now).map((part) => [part.type, part.value]));

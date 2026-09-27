@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { nextCollectionOutsideOfficeHours } from "../src/operations/collection-office-hours";
+import { isCollectionScheduleJobType, nextCollectionOutsideOfficeHours } from "../src/operations/collection-office-hours";
 
 describe("production collection office hours", () => {
+  it("covers both production collection plan types without delaying unrelated jobs", () => {
+    expect(isCollectionScheduleJobType("PUBLIC_DATA_COLLECTION")).toBe(true);
+    expect(isCollectionScheduleJobType("EVENT_COLLECTION")).toBe(true);
+    expect(isCollectionScheduleJobType("RETENTION_CLEANUP")).toBe(false);
+  });
+
   it("defers a Monday morning due time to 17:00 NZ daylight time", () => {
     expect(nextCollectionOutsideOfficeHours(new Date("2026-09-27T21:45:00Z")).toISOString())
       .toBe("2026-09-28T04:00:00.000Z");
