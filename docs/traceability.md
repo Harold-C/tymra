@@ -2,7 +2,35 @@
 
 Last updated: 2026-09-28 (production release and bounded source acceptance)
 
-## 2026-09-28 Eventfinda 列表优先与缓慢补齐本地候选
+## 2026-09-28 Eventfinda/Ticketmaster 浏览器采集代码生产发布（当前状态）
+
+`main` 的采集修复 `c9d39528` 与兼容暂停来源、增加浏览器验收门槛的
+`049335c160fce47d62a3c0d69dbb9e93d09c6479` 均已推送；对应 CI
+`36384326153`、`36385773873` 均成功。隔离 `tymra_worker_test` 的完整
+`pnpm verify` 通过，覆盖 lint、类型检查、236 项 common 测试、275 项 Worker
+单元测试、122 项集成测试及 Web/Worker 构建。
+
+生产 Worker/API/Scheduler 运行 `tymra:eventfinda-browser-20260928-v2`，镜像 ID
+`sha256:86c21a7f98e9ce13689847edce2410b493605227b48870fcaff7bad5cd91efc0`，
+OCI revision `049335c160fce47d62a3c0d69dbb9e93d09c6479`；API healthy，
+三项容器 restart=0，Web/PostgreSQL/Redis 未切换。生产运行配置的 Eventfinda
+每日上限为 24 次、发现最多 5 页、详情每批 15 个、请求间隔 12–18 秒。
+生产 `argus:health` 为 ready，HTTP health/readiness 均为 200。
+
+部署前备份位于受保护的
+`/srv/apps/tymra/backups/eventfinda-browser-20260928-predeploy/`；内部校验和通过，
+PostgreSQL 隔离恢复读回 78 个来源、75 个计划、205 个 Job。旧镜像
+`tymra:public-office-20260928-v2` 保留供回滚。备份后的 Compose 恢复步骤曾因
+未显式指定镜像短暂启动旧的 admin-only 镜像；发现后立即用原运行镜像恢复，
+来源状态、计划和 Job 计数未变，然后以显式镜像完成本次发布。
+
+Eventfinda 与 Ticketmaster 在生产均为 lifecycle=`SUSPENDED`、
+healthStatus=`DEGRADED`、enabled=false，没有启用计划，
+未触发真实抓取、业务写入或两轮生产验收。现有 Eventfinda 来源行仍保存历史
+`dailyBudget=2500`，但实际运行上限为 24；受限重新启用流程会把来源元数据同步为
+24。其余 75 条已启用计划未改动。
+
+## 2026-09-28 Eventfinda 列表优先与缓慢补齐本地候选（发布前记录）
 
 本地 Argus 有头会话读取全国第一页 19 张卡片及 Cricket Camp 一张详情的 3 个日期，
 均返回 HTTP 200，无可见登录要求。Tymra 当前本地镜像的一次排队发现写入 20 个
