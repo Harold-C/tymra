@@ -55,14 +55,17 @@ Lincoln/UC 来源已将每日预算设为 3 次并纳入两校域名。第一轮
 同样访问 3 页并保存 27 条未来信号；4 份浏览器证据本地留存、0 解析失败，
 重复采集没有新增 `PublicFactVersion`。两次批次均通过内置验收后，
 `rolling-christchurch-university-dates-weekly` 已启用，首次计划于
-2026-10-05 11:01:51 UTC 运行。来源仍限制每日 3 次请求。此时 79 条计划中
-78 条启用（Ticketmaster 旧周计划关闭），启用计划都有下次运行时间且队列无在途任务。
+2026-10-05 11:01:51 UTC 运行。来源仍限制每日 3 次请求。该阶段 78 条
+现行计划均已启用且有下次运行时间；已被替代的 Ticketmaster 旧周试运行定义
+留在计划表中并处于关闭状态，队列无在途任务。
 
-启用 Eventfinda 每日计划后共有 80 条计划、78 条启用，启用计划均有
-`nextRunAt`，队列没有在途 Job。当前 Source Registry 的 78 条来源均为 `PUBLIC_DATA`；
+启用 Eventfinda 每日计划后，78 条现行计划均已启用且有 `nextRunAt`，
+队列没有在途 Job。计划表还保留 2 条已被每日计划替代、处于关闭状态的
+Eventfinda 和 Ticketmaster 旧周试运行定义；它们不属于现行采集计划。
+当前 Source Registry 的 78 条来源均为 `PUBLIC_DATA`；
 `ota:health --window-days 30`
 只读查询返回空列表。六个文档内 OTA 渠道尚未进入生产 registry 与真实面板验收，
-不能把公开来源的 78 条启用计划解释成全部文档渠道已自动运行。
+不能把 78 条现行公开来源计划解释成全部文档渠道已自动运行。
 截至 2026-09-28 10:35 UTC，本次发布后的 15 个 Argus Job 均为 `COMPLETED` 且
 交付状态为 `PURGED`；21 个 Tymra Job 均成功，但六个 CollectionRun 中仍有上述
 Eventfinda `PARTIAL`，不能仅以队列状态判断来源成功。追加历史表已有 344 条活动

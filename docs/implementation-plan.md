@@ -9,6 +9,8 @@ Argus AUT 修复先于 Tymra 产品版本切换，本次 Eventfinda URL 修复�
 Argus browser。CI、备份恢复、迁移及服务健康通过。Ticketmaster 已以两次受限成功
 试采替换为每日渐进计划。Lincoln/UC 在相邻两个新西兰预算日分别完成三页
 滚动试采、证据留存与 Argus ACK，周计划已启用，来源每日请求上限为 3 次。
+生产的 78 条现行计划均已启用；计划表另保留 Eventfinda 和 Ticketmaster
+两条已被替代、处于关闭状态的旧周试运行定义，不计入现行计划。
 
 Eventfinda 城市／城区详情 URL 合同已修复并通过一版额外固定镜像的生产发布。
 两轮新的精确试采分别得到 66、64 条结果，均为 3 列表页、1 必要详情、
