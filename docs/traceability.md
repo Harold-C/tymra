@@ -1,8 +1,57 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-28 (production release and bounded source acceptance)
+Last updated: 2026-09-29 (future/history release and bounded acceptance)
 
-## 2026-09-28 未来日期与历史版本本地候选（未发布）
+## 2026-09-28–29 未来日期与历史版本生产发布（当前状态）
+
+源码 `2d670b51777d5233bb0c2ffa42261883dcaa7a3a` 已推送，CI `36403972873`
+成功。生产候选 `tymra:future-history-20260928-v1` 只构建一次，镜像 ID
+`sha256:3ed60cba2c9c63e86becd032ed22632eed00e01c94487a398e0e34cb7de7b90e`
+的 revision 与源码一致。发布前备份
+`/srv/apps/tymra/backups/future-history-20260928-predeploy/` 的校验和与隔离数据库恢复
+通过（78 来源、77 计划、224 Job）。新增 `20260928120000_public_fact_versions` 为第
+34 个成功迁移；Web、Worker、API、Scheduler 已切到同一新镜像并运行，Web/API 健康，
+Argus health/readiness 为 200。管理员登录页返回 200，未登录的当前／历史页面返回
+登录跳转，公开域名未解析；历史筛选的实际页面交互已在本地验证，尚未在已登录的生产
+管理员会话验收。
+
+Eventfinda 渐进试采第一轮 `cmul336gh0000qb1p76pn17ur` 成功：3 列表页、1 详情、
+4 请求、63 条结果，8 份本地证据，0 失败。第二轮
+`cmul384gh0000qb2kajw0cuf9` 的 Job 成功但 CollectionRun `PARTIAL`：3 列表页、
+0 成功详情、4 请求、56 条结果，6 份本地证据、1 失败；详情目标
+`https://www.eventfinda.co.nz/2026/office-comedy-clash/auckland/ponsonby`
+在 Argus Job 建立前返回 `SOURCE_UNAVAILABLE`，目标进入退避。当天停止继续请求；
+新预算日的一次受限重试 `cmul52aeg0000qbagm4xhdrmy` 仍是同一目标
+`SOURCE_UNAVAILABLE`，批次 `PARTIAL`（3 列表页、4 请求、60 条结果、
+6 份本地证据、1 失败）。Argus 的 Eventfinda URL 合同只允许年份／活动／一级位置，
+生产 138 个目标中 27 个使用城市／城区两级位置，因而在提交前被拒绝。
+Argus 已有仅放行这一级路径的本地修复和定向测试，尚未再次构建或发布；
+每日计划未启用，原每周 pilot 保留。
+
+Ticketmaster 两轮精确渐进试采 `cmul3gxkz0000qb3jqw1tl486` 与
+`cmul3jxpg0000qb4eqwae83sc` 均成功；每轮 3 列表页、3 请求、52 条结果、
+0 必要详情、0 失败，6 份证据均本地留存。原每周 pilot 已关闭，
+`progress-ticketmaster-daily` 已启用，首次计划于 2026-09-29 10:22:49 UTC 运行。
+
+Lincoln/UC 来源已将每日预算设为 3 次并纳入两校域名。第一轮滚动试采
+`cmul3mwr50000qb6wmzhtlj71` 成功访问 3 页，产生 27 条信号，日期覆盖
+2026-09-30 至 2027-09-12，全部为未来且没有倒置区间；4 份浏览器证据已留本地。
+第二轮 `cmul4z4ed0000qb8sd92hhebt` 于 2026-09-29 新西兰预算日成功，
+同样访问 3 页并保存 27 条未来信号；4 份浏览器证据本地留存、0 解析失败，
+重复采集没有新增 `PublicFactVersion`。两次批次均通过内置验收后，
+`rolling-christchurch-university-dates-weekly` 已启用，首次计划于
+2026-10-05 11:01:51 UTC 运行。来源仍限制每日 3 次请求。此时 79 条计划中
+78 条启用（Ticketmaster 旧周计划关闭），启用计划都有下次运行时间且队列无在途任务。
+
+当前 Source Registry 的 78 条来源均为 `PUBLIC`；`ota:health --window-days 30`
+只读查询返回空列表。六个文档内 OTA 渠道尚未进入生产 registry 与真实面板验收，
+不能把公开来源的 77 条启用计划解释成全部文档渠道已自动运行。
+截至 2026-09-28 10:35 UTC，本次发布后的 15 个 Argus Job 均为 `COMPLETED` 且
+交付状态为 `PURGED`；21 个 Tymra Job 均成功，但六个 CollectionRun 中仍有上述
+Eventfinda `PARTIAL`，不能仅以队列状态判断来源成功。追加历史表已有 344 条活动
+和 27 条日期信号版本，相同来源、事实 ID 与内容哈希没有重复版本。
+
+## 2026-09-28 未来日期与历史版本发布前本地验证
 
 本地 `tymra_worker_test` 已应用新增 `PublicFactVersion` 迁移；普通信号的首次、
 重复和变化采集以及活动改期的标准场次关系均通过集成测试。活动被改期时旧场次
