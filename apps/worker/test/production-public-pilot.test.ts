@@ -4,7 +4,7 @@ import { SKI_SEASON_SOURCES, parseMetServiceCapAlert, parseMetServiceCapFeed } f
 import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
-import { isArgusPilotEvidencePath, isLegacyChristchurchCouncilDirectPilot, isLegacyCouncilDirectPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
+import { isArgusPilotEvidencePath, isLegacyChristchurchCouncilDirectPilot, isLegacyCouncilDirectPilot, isLegacyEventWebPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("direct-public production pilot", () => {
@@ -136,6 +136,12 @@ describe("direct-public production pilot", () => {
     const council = { adapterKey: "public:christchurch_council_events:official-html-pagination-v1", accessMethod: "OFFICIAL_PUBLIC_HTML_PAGINATED", supportedDomains: ["www.ccc.govt.nz"] };
     expect(isLegacyChristchurchCouncilDirectPilot("christchurch_council_events", council)).toBe(true);
     expect(isLegacyChristchurchCouncilDirectPilot("christchurch_council_events", { ...council, supportedDomains: ["evil.example"] })).toBe(false);
+    const eventfinda = { adapterKey: "public:eventfinda:http-v1", accessMethod: "PUBLIC_HTTP_HTML_JSONLD", supportedDomains: ["www.eventfinda.co.nz", "eventfinda.co.nz"] };
+    const ticketmaster = { adapterKey: "public:ticketmaster:http-listing-argus-detail-v1", accessMethod: "PUBLIC_HTTP_LISTING_ARGUS_DETAIL", supportedDomains: ["www.ticketmaster.co.nz", "ticketmaster.co.nz"] };
+    expect(isLegacyEventWebPilot("eventfinda", eventfinda, { boundedProductionCanary: true })).toBe(true);
+    expect(isLegacyEventWebPilot("ticketmaster", ticketmaster, { boundedProductionCanary: true, browserPilot: true })).toBe(true);
+    expect(isLegacyEventWebPilot("eventfinda", { ...eventfinda, supportedDomains: ["evil.example"] }, { boundedProductionCanary: true })).toBe(false);
+    expect(isLegacyEventWebPilot("eventfinda", eventfinda, {})).toBe(false);
     expect(isLegacySkiDirectPilot("ski_seasons_nz", {
       adapterKey: "public:nz-ski-seasons:official-html-v1", accessMethod: "OFFICIAL_PUBLIC_HTML",
     }, { boundedProductionCanary: true })).toBe(true);
