@@ -1,6 +1,6 @@
 # New Zealand major-market public-signal coverage
 
-Last updated: 2026-08-06
+Last updated: 2026-09-29 (source-specific schedule wording)
 
 ## Completion definition
 
@@ -205,7 +205,7 @@ and pricing-visible `MAJOR_EVENT` state on 2026-08-06.
 
 ## Argus integration status
 
-Tymra has the source identities, disabled schedules, scope validation, durable Job submission, fixed
+Tymra has the source identities, source-specific schedules, scope validation, durable Job submission, fixed
 v1 response schemas, named-download retention, normalisation, canonical-market routing,
 deduplication and persistence for all three browser connectors. Argus has registered all three:
 

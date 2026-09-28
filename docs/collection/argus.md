@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-09-26 (result integrity and local evidence durability)
+Last updated: 2026-09-29 (browser collection boundary and production plans)
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
 Job API for Ticketmaster and Eventfinda listings/details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
@@ -85,11 +85,12 @@ covers queueing plus execution and must be greater than the capture deadline.
   wakes the parent so normal source failure handling can finish the `CollectionRun`.
 
 Direct browser CLI calls without a database Job retain the synchronous compatibility path. Scheduled
-and manually queued browser captures, including required Ticketmaster details, RBNZ, School Sport and
-Ticketek, use the durable Argus path. Eventfinda listing/detail and Ticketmaster listings use direct
-HTTP in Tymra; their collection Jobs do not make those HTTP steps Argus executions.
+and manually queued browser captures, including Eventfinda listings/details, Ticketmaster
+listings/required details, RBNZ, School Sport and Ticketek, use the durable Argus path. The Worker's
+direct Eventfinda/Ticketmaster page loader is an explicit test fixture, not the production transport.
 
-The accepted Argus data contracts are currently:
+Selected accepted Argus data contracts are listed below. This is not the full connector inventory;
+the current Worker contract registry is `apps/worker/src/clients/argus-client.ts`.
 
 | Connector/workflow | `data_schema` | `schema_version` |
 | --- | --- | --- |
@@ -104,8 +105,9 @@ The accepted Argus data contracts are currently:
 | `ticketek-public / collect_listing` | `ticketek-public.collect_listing` | `1.0.0` |
 | `ticketek-public / collect_detail` | `ticketek-public.collect_detail` | `1.0.0` |
 
-These contracts are the local candidate collection path. Production schedules remain paused until
-the new browser path passes bounded acceptance and source-specific operating gates.
+The Eventfinda and Ticketmaster contracts are in the bounded production collection path. Their
+daily progress schedules were enabled after source-specific two-pass acceptance; other sources
+retain their own operating gates. See `docs/traceability.md` for the dated production state.
 
 The Worker reaches the same HTTPS API origin used by cross-network clients. Docker maps `api.argus.test`
 to the host gateway, and Node trusts only the mounted mkcert development root CA. Do not disable TLS
@@ -183,7 +185,7 @@ failures, and dry-run persistence remained empty. See
 
 ## Historical local runtime snapshot (2026-08-05)
 
-This snapshot predates the [2026-09-13 workspace/runtime baseline](../traceability.md#current-workspace-and-runtime-baseline-2026-09-13).
+This snapshot predates the [2026-09-13 workspace/runtime baseline](../traceability.md#historical-workspace-and-runtime-baseline-2026-09-13).
 It does not establish current Argus availability, readiness or scheduler state.
 
 On 2026-08-05 `https://api.argus.test/health` and `/readiness` returned HTTP 200. The current Tymra

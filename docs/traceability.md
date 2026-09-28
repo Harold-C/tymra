@@ -66,10 +66,15 @@ Eventfinda 和 Ticketmaster 旧周试运行定义；它们不属于现行采集�
 `ota:health --window-days 30`
 只读查询返回空列表。六个文档内 OTA 渠道尚未进入生产 registry 与真实面板验收，
 不能把 78 条现行公开来源计划解释成全部文档渠道已自动运行。
-截至 2026-09-28 10:35 UTC，本次发布后的 15 个 Argus Job 均为 `COMPLETED` 且
-交付状态为 `PURGED`；21 个 Tymra Job 均成功，但六个 CollectionRun 中仍有上述
-Eventfinda `PARTIAL`，不能仅以队列状态判断来源成功。追加历史表已有 344 条活动
-和 27 条日期信号版本，相同来源、事实 ID 与内容哈希没有重复版本。
+**较早的发布后快照（2026-09-28 10:35 UTC）：**当时 15 个 Argus Job 均为
+`COMPLETED` 且交付状态为 `PURGED`；21 个 Tymra Job 均成功，但六个
+CollectionRun 中有上述 Eventfinda `PARTIAL`，不能仅以队列状态判断来源成功。
+当时追加历史表已有 344 条活动和 27 条日期信号版本，相同来源、事实 ID 与内容
+哈希没有重复版本。这些计数不包含上文随后完成的 Eventfinda 修复后试采，不能
+作为本次发布后的最终累计数。
+
+以下带日期的运行、验证和发布段落按各自记录时间保留；除明确更新到
+2026-09-29 的需求差距表外，不把其中的“当前”或“仍暂停”解释为本节之后的运行状态。
 
 ## 2026-09-28 未来日期与历史版本发布前本地验证
 
@@ -92,7 +97,7 @@ Next.js 构建退出码 0，但未注入运行环境变量，静态页预生成�
 警告；发布前须以真实部署镜像、CI 及运行健康重新验收。生产数据库、镜像与
 计划在本节记录时未变更，仍保持 77 条已启用计划。
 
-## 2026-09-28 Eventfinda/Ticketmaster 每周自动试运行（当前状态）
+## 2026-09-28 Eventfinda/Ticketmaster 每周自动试运行（历史快照）
 
 两项来源在各自新的 pilot 验收窗口内分别完成两轮独立、一次尝试的正式生产 Job；
 Eventfinda 的 `cmukx9c630025jy07or8agkox`、`cmukxabg5002djy07du30vfbp`
@@ -299,7 +304,7 @@ SHA-256 为 `ffbb9f9d5e55e0fe8e95c9cc9b3d8d28f34cb68dabbd9382b03e9f95025e8ba0`�
 网络出口、Argus origin、数据库内容和运行开关仍有意隔离；这些本地结果不构成
 `eventfinda` 或 `ticketmaster` 的生产两轮验收。
 
-## 2026-09-28 生产发布与五个暂停来源复验（当前状态）
+## 2026-09-28 生产发布与五个暂停来源复验（历史快照）
 
 Tymra `main` 提交 `4eed026f6219054199119889a46d7122caece91b` 已推送，CI
 `36354345154` 通过。Worker/API/Scheduler 运行同一镜像
@@ -644,7 +649,7 @@ Auckland Airport
 monthly needs two fresh one-attempt Argus passes after its first successful and second failed passes.
 Eventfinda and Ticketmaster are outside this repair candidate.
 
-## 2026-09-27 public-source production rollout — current state
+## 2026-09-27 public-source production rollout — historical snapshot
 
 Production Worker/API/Scheduler run pushed commit `5011694516ac49ba8384d05cf143190635ff8ad7`,
 release `/srv/apps/tymra/releases/public-final-two-20260927-v4/`, image
@@ -995,12 +1000,13 @@ informational only and does not create compatibility requirements.
 
 The tables below contain both current status and explicitly dated historical evidence. A historical
 `verified` result remains valid for that snapshot but does not mean the current revision was
-rerun through the same gate. The current-worktree section is authoritative for fresh verification.
+rerun through the same gate. The release section at the top is authoritative for the latest
+recorded production and current-worktree verification.
 
-## Current Workspace And Runtime Baseline (2026-09-13)
+## Historical Workspace And Runtime Baseline (2026-09-13)
 
-The editable main checkout is now `/Users/haroldchen/Development/tymra/repo`; the iCloud business
-entry is `Workspaces/tymra`. HEAD remains `4def572f18dbeb1cd332430fcc3bd900443a5446`, with the
+At that inspection, the editable main checkout was `/Users/haroldchen/Development/tymra/repo`; the iCloud business
+entry was `Workspaces/tymra`. HEAD was `4def572f18dbeb1cd332430fcc3bd900443a5446`, with the
 original 53 dirty paths preserved, including intentional deletions and new migrations. The old
 checkout remains intact. This migration does not release or complete that development candidate.
 Company ownership and current local-document authority are defined in [product/README.md](./product/README.md).
@@ -1053,10 +1059,12 @@ Detailed historical run IDs and counts are preserved in the
 The reusable standard is [`collection/acceptance.md`](./collection/acceptance.md). Local acceptance
 never changes source configuration and cannot enable schedules.
 
-## National Data Core v1.3 Implementation Gap Audit (2026-08-21)
+## National Data Core v1.3 Implementation Gap Audit (opened 2026-08-21; selected rows refreshed 2026-09-29)
 
-This table began as the approved `DATA-CORE-001..022` gap audit and now records the implementation
-state of the same scope. `P0` blocks the first unified production candidate or would cause irreversible
+This table began as the approved `DATA-CORE-001..022` gap audit. Current rows are updated against
+the 2026-09-29 release where evidence is available; older development-only verification remains
+identified by its status and should not be read as fresh production acceptance. The latest operating
+state is at the top of this file. `P0` blocks the first unified production candidate or would cause irreversible
 loss/misattribution; `P1` completes nationwide operating depth; `P2` improves scale and operator
 efficiency. Tymra has never launched, so obsolete development-only schema and routes were deleted
 directly without a compatibility layer or historical backfill. `implemented_database_verified` means
@@ -1066,7 +1074,7 @@ non-demo run or production acceptance.
 | Requirement | Current repository evidence | Concrete gap | Priority | Status |
 | --- | --- | --- | --- | --- |
 | `DATA-CORE-001` nationwide identity directory | 17 Region × six OTA durable crawl frontier; bounded discovery persists explicit Property/Unit/Listing identities and versions | Nationwide non-demo population depth has not yet been run or measured | P0 | `implemented_database_verified` |
-| `DATA-CORE-002` nationwide public signals | National aggregators, 15 major-market mappings, regional official adapters and canonical event/signal persistence exist; five bounded production public schedules are enabled | The five-source first-day result is not nationwide continuity or the two-UTC-day gate; Chatham Islands, Gisborne, Marlborough and West Coast depth is not represented by the 15-market operating set | P1 | `five_source_canary_running_nationwide_not_accepted` |
+| `DATA-CORE-002` nationwide public signals | National aggregators, 15 major-market mappings, regional official adapters and canonical event/signal persistence exist; 78 bounded current public-source plans were enabled in the 2026-09-29 production snapshot | Schedule enablement does not establish complete nationwide depth, historical coverage or long-term stability; the 15-market operating set does not by itself represent every region | P1 | `bounded_public_schedules_running_nationwide_depth_not_accepted` |
 | `DATA-CORE-003` representative OTA panel | Region-stratified 840 Anchor + 360 Rotating selector, approved date basket, bounded Argus rate collection and coverage update | Real nationwide inventory must fill and calibrate the target panel | P0 | `implemented_database_verified` |
 | `DATA-CORE-004` nationwide bounded on-demand collection | Admin `/admin/on-demand` accepts one unique NZ address or supported OTA URL and starts the existing auditable Price Check/Argus path with 30-night/365-day/occupancy bounds | Live address and all-six-OTA operator acceptance remains | P1 | `implemented_database_verified` |
 | `DATA-CORE-005` member-property monitoring | Host/Pro/Portfolio scheduler, plan cadence, quota and NZ business-date query plans exist | Unified-production and real-provider scheduled monitoring have no fresh all-plan acceptance; scheduler reuses the latest check and does not yet prove full target-mode/context preservation | P1 | `implemented_not_verified` |
@@ -1080,12 +1088,13 @@ non-demo run or production acceptance.
 | `DATA-CORE-013` time fields | Observation and identity versions expose source/effective/observed/collected/ingested/business/validity/superseded semantics; NZ business dates remain `Pacific/Auckland` | Nullable source timestamps honestly remain null when a provider does not publish them | P0 | `implemented_database_verified` |
 | `DATA-CORE-014` Freshness | Typed versioned `FreshnessAssessment` stores domain, purpose, reference, age, limit, state and limitations | Cross-domain policy thresholds need real operating data | P1 | `implemented_database_verified` |
 | `DATA-CORE-015` Confidence | Typed layered `ConfidenceAssessment` supports identity, field, snapshot and derived result scopes | Real thresholds need calibration | P1 | `implemented_database_verified` |
+| `DATA-CORE-015A` current/future-first collection time semantics | Event/signal facts append `PublicFactVersion` rows on content changes; moved occurrences retain superseded history; Admin supports current, history and all filters; Lincoln/UC requests the current and next academic years | First natural cycles, other future-dated channels and all six OTA production channels still need source-specific acceptance; monthly/statistical sources use their latest published periods | P0 | `public_facts_released_all_channels_not_accepted` |
 | `DATA-CORE-016` versioned identity graph | `IdentityEntityVersion` preserves Property/Unit history; `ListingVersion` and `IdentityRelationVersion` preserve Listing and Listing→Unit evidence/validity | Split/conflict operating exercises remain | P0 | `implemented_database_verified` |
 | `DATA-CORE-017` Listing change history | All current catalog, OTA resolution, address promotion and manual-import mutation paths append content-addressed identity/Listing versions | Real multi-pass source-change acceptance remains | P0 | `implemented_database_verified` |
 | `DATA-CORE-018` Data Lineage | `TransformationRun` and `LineageEdge` connect raw artifacts, normalized rates, snapshots, analyses, results and insights; Admin explorer queries the graph | Production-scale query tuning remains | P0 | `implemented_database_verified` |
 | `DATA-CORE-019` snapshot target modes | `MarketSnapshot.analysisType` is required; address mode uses nullable Listing/Unit and a spatial anchor without fabricated target Listing | Fresh live two-mode acceptance remains | P0 | `implemented_database_verified` |
 | `DATA-CORE-020` price/recommendation separation | Separate result statuses, one-valid-price delivery behavior and dedicated integration tests exist | Preserve through the schema migration and rerun both target modes; no new product behavior is required | Regression only | `verified_for_prior_development_candidate` |
-| `DATA-CORE-021` unified nationwide backend gate | Required code/schema paths pass fresh isolated migration/seed, 110 integration tests and build; five bounded public schedules run in production | Production has no Property/Unit/Listing/MarketCoverage rows; non-demo nationwide execution, representative OTA panel, capacity and full readiness remain release gates | P0 dependency gate | `implemented_not_live_accepted` |
+| `DATA-CORE-021` unified nationwide backend gate | The 2026-09-28 local gate passed isolated migration/seed, 122 integration tests and one Tymra build; 78 bounded current public-source plans were enabled in the 2026-09-29 production snapshot | Production had no Property/Unit/Listing/MarketCoverage rows in that snapshot; non-demo nationwide execution, representative OTA panel, capacity and full readiness remain release gates | P0 dependency gate | `implemented_not_live_accepted` |
 | `DATA-CORE-022` client same-version deployment and hidden discovery | Fresh Web types pass; isolated desktop/mobile, English/Chinese hidden-home and direct-route browser check passes with unauthenticated/invalid-session rejection | Production remains Admin-only; paid entitlement, real provider, Stripe, mail, managed challenge, full browser/accessibility, capacity and customer ingress are unaccepted | P0 | `local_hidden_gate_verified_production_not_accepted` |
 
 ### Approved implementation order from the audit

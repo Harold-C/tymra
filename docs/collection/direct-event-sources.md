@@ -1,6 +1,6 @@
 # Direct event and transport sources
 
-Last updated: 2026-08-06
+Last updated: 2026-09-29 (Christchurch Council status clarification)
 
 Tymra directly collects Eventbrite New Zealand, Humanitix New Zealand and Christchurch Airport
 without Argus. All development schedules are seeded disabled.
@@ -64,7 +64,8 @@ evidence and handoff are in
   Christchurch City Council What's On listing. At most three same-route pages supply the
   title, advertised date, image and canonical event URL; Tymra keeps the existing occurrence
   identity and deduplication. No event detail is opened. A challenge or empty listing stops
-  collection. The production source remains paused pending two bounded passes.
+  collection. That was the 2026-08-06 acceptance boundary; current production schedule state is
+  recorded in [traceability](../traceability.md).
 - `ara_academic_dates` reads Ara's official academic calendar. Semester starts/ends, mid-year break
   and Christchurch graduation dates become `TOURISM_DEMAND` signals. Timaru-only, registration,
   campus-closure and small campus ceremony rows remain unpromoted.

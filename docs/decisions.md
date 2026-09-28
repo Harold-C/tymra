@@ -1,6 +1,6 @@
 # Tymra Product And Technical Decisions
 
-Last updated: 2026-08-21
+Last updated: 2026-09-29
 
 This file records current product and technical decisions. Decision history explains rationale but
 does not create migration or compatibility requirements; current scope and verification status are
@@ -328,7 +328,8 @@ trust boundaries. Same-origin customer APIs avoid unnecessary CORS and parent-do
 
 ## D-028 Browser Event Collection Before Scheduling
 
-**Status:** Implemented in development; production activation pending.
+**Status:** Implemented; bounded Eventfinda and Ticketmaster daily production plans are active
+after source-specific acceptance. Unattended coverage and challenged detail access remain under review.
 
 **Decision:** Eventfinda and Ticketmaster use the same read-only Browser Worker architecture; no
 Ticketmaster API integration is retained. Development keeps event schedules disabled. Eventfinda
@@ -517,9 +518,10 @@ framework error overlay and no relevant console warning or error.
 **Status:** Implemented and locally verified.
 
 **Decision:** Tymra retains ownership of source configuration, schedules, budgets, locks, collection
-runs, persistence and canonicalisation. Browser execution for Ticketmaster selective details,
-OurAuckland, RBNZ and Lincoln University key dates is submitted to Argus through its asynchronous `/v1/jobs`
-contract. `ArgusExecution` persists the remote Job identity and result, a delayed
+runs, persistence and canonicalisation. Browser execution for Eventfinda listings/details,
+Ticketmaster listings/selective details, OurAuckland, RBNZ and Lincoln University key dates is
+submitted to Argus through its asynchronous `/v1/jobs` contract. `ArgusExecution` persists the
+remote Job identity and result, a delayed
 `ARGUS_JOB_POLL` queue releases the parent Worker lease between polls, and the parent resumes the
 same collection run after a terminal result. Tymra first downloads and verifies every referenced
 HTML/screenshot into its own evidence volume, updates `RawArtifact` to a local `tymra-evidence:`
@@ -748,7 +750,8 @@ normal pricing signal selector consumes confirmed signals only.
 
 ## D-044 Route Argus Public Market Facts Through Source-Isolated Lineage
 
-**Status:** Implemented; production schedules remain disabled pending operational activation.
+**Status:** Implemented; production activation is source-specific. The bounded public-source plans
+that passed their operating gates are active; development seed schedules remain disabled.
 
 **Decision:** Tymra integrates the accepted Argus official-venue, cruise, live-airport and university
 contracts as 20 distinct public sources. Venue and university records enter the canonical event

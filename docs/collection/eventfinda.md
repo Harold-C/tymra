@@ -1,10 +1,21 @@
 # Eventfinda New Zealand collection
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
+
+**Current operating state:** Eventfinda listing and necessary detail captures use the Argus headed
+browser with its persistent public Profile. After two successful bounded production trials, the
+`progress-eventfinda-daily` plan was enabled and the old weekly pilot was disabled. Each daily run
+is capped at three listing pages, one necessary detail and 500 results; source concurrency is one,
+the daily request budget is 24 and requests wait at least 12 seconds plus up to 6 seconds of jitter.
+The first natural daily cycle and longer unattended stability still need independent review. The
+dated local and earlier production observations below are historical snapshots, not the current
+schedule state; see [traceability](../traceability.md) for the release evidence.
+
+### Earlier local candidate (2026-09-28)
 
 2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集列表和详情。
 HTTP 202 中间响应作为访问限制停止，空的全国列表拒绝解析；保护性冷却仍生效。
-此变更尚未完成新的生产持久化验收，生产定期计划保持暂停。
+当时此变更尚未完成新的生产持久化验收，生产定期计划保持暂停。
 同日本地单页 dry-run 再遇访问挑战，零个成功页面，失败 Job 已 ACK/PURGED，
 没有详情请求或业务写入。来源本地并无待解除冷却；每日预算耗尽现与网站挑战区分。
 `NODE_ENV=development` 现在不执行跨轮次每日累计额度；单次采集范围、间隔及
@@ -17,18 +28,17 @@ HTTP 200、无可见登录要求。一次正式本地队列发现保存了 20 �
 同一份已保存 HTML 离线结果 327,642 字节。后续切换本地 Argus/Worker 候选，
 单次尝试的正式详情 Job 成功返回 289 个场次，并在当前时间窗口保存 58 个
 来源场次及对应 canonical links；两份证据 SHA-256 一致且 ACK 后 Argus 结果
-为 410/PURGED。旧失败记录仍保留为历史事实。生产来源及定期计划继续暂停。
+为 410/PURGED。旧失败记录仍保留为历史事实。当时生产来源及定期计划继续暂停。
 
-**Development status:** Collector development is complete. Local bounded acceptance, nationwide
-discovery and bounded detail persistence are verified; production activation and multi-day
-unattended evidence remain separate operating gates.
+**Development status:** Collector development, local bounded acceptance, nationwide discovery and
+bounded detail persistence are verified. Production activation passed the two-run gate; multi-day
+unattended evidence remains a separate operating check.
 
 ## Scope
 
 Tymra is intended to collect the complete set of currently published New Zealand events discoverable from Eventfinda's nationwide event listing. Historical Eventfinda archives are not bulk-crawled. A recurring event is stored as one source series with one source occurrence per advertised time, then linked into canonical event and occurrence records so accommodation analysis can match the exact affected dates.
 
-The source remains blocked from scheduled collection while production operational and stability gates
-are outstanding. The current candidate routes both listing and detail capture through Argus's
+The active bounded production plan routes listing and necessary detail capture through Argus's
 fixed read-only connector and persistent browser profile. Tymra retains frontier, pacing,
 deduplication and business persistence.
 
@@ -37,12 +47,12 @@ bounded real persistence run, fixture-backed idempotent persistence, database mi
 source-lineage checks, raw-evidence retention checks, Redis lock contention, durable lease recovery,
 environment/scheduler guard tests, a complete workspace verification and service health checks.
 The nationwide persisted frontier and detail pipeline are now verified. Hydrating the remaining
-frontier uses deliberately paced detail batches; production still requires duplicate-rate review,
-multi-day unattended evidence and explicit activation.
+frontier uses deliberately paced detail batches; production still requires multi-day unattended
+observation and ongoing duplicate-rate review.
 
-The latest complete real-source evidence remains dated 2026-07-30. On 2026-08-01 the current
-Eventfinda unit tests, Worker typecheck and Worker build passed, but nationwide discovery and the
-real two-pass acceptance were not rerun.
+In the 2026-08-01 development snapshot, unit tests, Worker typecheck and build passed, but
+nationwide discovery and real two-pass acceptance were not rerun that day. Later production
+acceptance is recorded in [traceability](../traceability.md).
 
 All local collection work follows the project-wide
 [local source collection acceptance](./acceptance.md) standard. This document
@@ -113,15 +123,21 @@ full canonicalisation transaction.
 
 - HTTP concurrency is one and a Redis source lock prevents overlapping Eventfinda runs.
 - Production requests wait 12-18 seconds by default, including random jitter.
-- Production's candidate daily ceiling is 24 stored HTML captures; development has no cumulative daily ceiling.
-- Production candidate discovery is capped at five pages per daily run and detail work at 15 targets per daily run. Four deeper listing pages rotate across days. Schedule activation remains blocked.
+- Production's daily ceiling is 24 stored HTML captures; development has no cumulative daily ceiling.
+- The active daily progress plan permits at most three listing pages and one necessary detail.
+  Five discovery pages and 15 details are collector configuration defaults or legacy seed bounds,
+  not the enabled production schedule payload.
 - Ordinary failures back off from 15 minutes to 24 hours per URL.
 - Retryable HTTP/network failures receive at most two retries after 30 and 60 seconds; every
   attempt consumes the same daily budget and retains evidence.
 - Rate limits and access challenges stop the current batch immediately and set a two-hour source cooldown. No bypass is attempted.
 - Long collection jobs renew their database lease while running.
 
-Production values can be adjusted using `PROD_EVENTFINDA_MIN_DELAY_MS`, `PROD_EVENTFINDA_DELAY_JITTER_MS`, `PROD_EVENTFINDA_DAILY_REQUEST_BUDGET`, `PROD_EVENTFINDA_DISCOVERY_MAX_PAGES` and `PROD_EVENTFINDA_DETAIL_BATCH_SIZE`. The minimum delay cannot be configured below two seconds. These are local candidate defaults only; no production collection has been resumed.
+The Worker reads `EVENTFINDA_MIN_DELAY_MS`, `EVENTFINDA_DELAY_JITTER_MS`,
+`EVENTFINDA_DAILY_REQUEST_BUDGET`, `EVENTFINDA_DISCOVERY_MAX_PAGES` and
+`EVENTFINDA_DETAIL_BATCH_SIZE`. The minimum delay cannot be configured below two seconds;
+production release controls set the current operating budget and spacing. The daily progress
+schedule's three-page/one-detail limits are a separate bounded payload.
 
 ## Local bounded acceptance
 
@@ -214,20 +230,25 @@ full-frontier hydration remains paced operating work.
 
 ## Scheduling and activation
 
-Database seed creates both schedules disabled:
+Database seed creates these legacy schedule definitions disabled:
 
 - `eventfinda-discovery-daily`: first page plus up to four rotating deeper pages daily.
-- `eventfinda-details-hourly`: legacy key whose candidate cron is daily, refreshing at most 15 due details.
+- `eventfinda-details-hourly`: legacy key whose seed cron is daily, refreshing at most 15 due details.
+
+Neither legacy seed definition is the current production plan. The enabled
+`progress-eventfinda-daily` plan runs `phase=full`, at most three listing pages and one necessary
+detail, with a 500-result bound. The former `pilot-public-eventfinda-weekly` definition is retained
+disabled as a superseded pilot. Two one-attempt production trials passed with persisted results,
+copied evidence and Argus ACK/PURGED before the daily plan was enabled.
 
 The detail pass only hydrates
 targets whose `nextDetailFetchAt` is due; unchanged detail pages back off progressively according to
 event proximity. This keeps near-term changes responsive without repeatedly opening stable pages.
 
 The scheduler refuses to enqueue a source job unless the source is enabled and operationally healthy.
-Development never enqueues scheduled jobs. Production activation requires two independent bounded
-queued Jobs with persisted business rows, copied evidence, ACK/PURGED and a reviewed source circuit.
-Use the current source schedule-control procedure only after those gates pass; do not run a generic
-seed or use local acceptance flags in production. `SCHEDULER_ENABLED` stays false in development.
+Development never enqueues scheduled jobs. Future schedule changes require the source-specific
+operational gate and reviewed source circuit; do not run a generic seed or use local acceptance
+flags in production. `SCHEDULER_ENABLED` stays false in development.
 
 ## Bootstrap
 
@@ -236,20 +257,19 @@ frontier gradually. Operators may run additional manual detail batches, but the 
 production daily budget still apply. Exact listing and occurrence counts are snapshots of the source at run time,
 not fixed contractual totals.
 
-### Production canary and rollback gate
+### Production review and rollback
 
-Activation is not one step. In the target environment, keep both schedules disabled while
-running one bounded dry run and one bounded persisted pass. Confirm the source lock, request budget,
-raw evidence, parser-failure rate, duplicate rate, queue depth, lease renewal, canonical-link growth
-and source cooldown before enabling discovery only. Enable the daily detail schedule only after one
-successful daily discovery interval and an operator review of the new frontier.
-
-Rollback is deliberately independent of a deployment: disable both Eventfinda schedules first, then
-leave the source registry and accumulated frontier intact for audit and later recovery. If source
-access or operational health is lost, also deactivate the source through the audited CLI.
-Never delete the frontier, immutable collection runs or evidence as part of rollback. A canary is
-accepted only after disable/re-enable has been exercised in the target environment and no collection
-job or source lock remains active after disable.
+Review each natural run's CollectionRun status, source lock, request budget, copied evidence,
+parser-failure and duplicate rates, queue depth, canonical-link growth and source cooldown. A
+successful queue Job alone is not source acceptance. If the active plan needs to stop, disable
+`progress-eventfinda-daily` through the audited Admin schedule control and leave the source registry,
+frontier, immutable runs and evidence intact for audit and recovery. Use the same plan-specific
+control to resume it after checking source and runtime gates. The `schedule:eventfinda:enable` CLI
+command enables every schedule bound to the source, including retired definitions; do not use it to
+resume the daily plan. The guarded `schedule:progress:enable` command only creates a new plan after
+its two-trial gate and cannot resume an existing one. If source access or operational health is lost,
+also suspend the source through the audited CLI. Do not reactivate the old seed definitions or weekly
+pilot as a rollback shortcut.
 
 ## Data quality controls
 

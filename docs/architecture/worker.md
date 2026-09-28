@@ -1,6 +1,6 @@
 # Tymra Worker Baseline v1
 
-Last updated: 2026-08-12
+Last updated: 2026-09-29 (browser collection boundary and production plans)
 
 ## Runtime
 
@@ -63,14 +63,18 @@ relationship persistence and one explicit public price observation. `WorkerServi
 environment and evidence-persistence callback but no longer embeds that workflow. Shared public-price
 semantics live in `services/ota-price.ts` and remain directly unit tested.
 
-Eventfinda uses direct HTTP for listing and detail collection. Ticketmaster uses direct HTTP listings
-and durable Argus asynchronous Jobs only for selectively required details. RBNZ B1 uses Argus for its rendered table page. Lincoln University annual key dates use Argus and join University of Canterbury direct-HTTP dates under the shared `christchurch_university_dates` standard source. Eventfinda implements nationwide
+Eventfinda uses durable Argus asynchronous Jobs for listings and necessary details. Ticketmaster
+uses the same Argus path for city listings and selectively required details. Direct page loading is
+limited to an explicit Worker test fixture. RBNZ B1 uses Argus for its rendered table page. Lincoln
+University annual key dates use Argus and join University of Canterbury direct-HTTP dates under the
+shared `christchurch_university_dates` standard source. Eventfinda implements nationwide
 discovery, canonical-URL grouping and one detail expansion for all dates in an event series, including
 a scheduler-off development bootstrap mode. Ticketmaster implements five-city listing-first
 discovery: complete listing JSON-LD is persisted directly, while only incomplete groups enter the
 durable detail frontier. Fallback details retain bounded batches, exact-target persistence,
-refresh/backoff and challenge cooldown. Automated direct and fallback database acceptance passes.
-Scheduler flags and all seeded event schedules remain disabled.
+refresh/backoff and challenge cooldown. Automated listing and fallback database acceptance passes.
+Development scheduler execution and legacy seeded event schedules remain disabled. Production uses
+the separate bounded daily progress plans for Eventfinda and Ticketmaster.
 The shared `SourceEvent` and canonical event pipeline is implemented independently of either
 channel's completion state. Only an event with explicit impact evidence is promoted to a
 `MarketSignal(MAJOR_EVENT)`.

@@ -1,19 +1,29 @@
 # Ticketmaster New Zealand collection
 
-Last updated: 2026-08-03
+Last updated: 2026-09-29
+
+**Current operating state:** City listings and selectively required details use the Argus headed
+browser and persistent public Profile. After two successful bounded production trials, the
+`progress-ticketmaster-daily` plan was enabled and its weekly pilot disabled. The daily plan
+allows at most three listing pages, two necessary details and 100 results; the source retains its
+20-request daily budget. The first natural daily cycle, unattended stability and reliable access
+to challenged detail pages remain separate checks. The dated observations below describe earlier
+snapshots; see [traceability](../traceability.md) for the release evidence.
+
+### Earlier local candidate (2026-09-28)
 
 2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集城市列表和详情。
-访问挑战继续触发熔断，不会尝试绕过；新的生产业务写入及详情回退仍需独立验收。
+访问挑战继续触发熔断，不会尝试绕过；当时新的生产业务写入及详情回退仍需独立验收。
 同日单页本地 dry-run 成功：奥克兰列表发现 19 张卡片，本次日期窗口的 2 条完整记录
 均可免详情页；Argus Job 已 ACK/PURGED。当天 20 次本地预算曾拦截正式入队试采，
-源码已修正预算耗尽误触发挑战熔断，仍需非 dry-run 的业务与证据验收。
+源码已修正预算耗尽误触发挑战熔断，当时仍需非 dry-run 的业务与证据验收。
 `NODE_ENV=development` 现在不执行跨轮次每日累计额度；生产的 20 次上限、
 单次采集范围、请求间隔和访问挑战停采保持有效。
 
-**Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
-detail frontier and bounded hydration are implemented. Automated database acceptance covers both
-the direct and fallback paths. The latest bounded real detail runs remained unresolved after passive waits and stopped safely, so
-reliable fallback-detail access is not currently verified.
+**Development status:** Listing-first discovery, canonical persistence, a durable fallback detail
+frontier and bounded hydration are implemented. Automated database acceptance covers listing and
+fallback paths. Two bounded production progress trials succeeded without needing a detail page;
+reliable access to challenged detail pages is still not verified by those trials.
 
 ## Decision
 
@@ -30,8 +40,9 @@ verified page resolved to normal public event content without interaction. A set
 extracted normally; an unresolved state remains `manual_required`, updates the target's failure
 backoff and opens the source circuit.
 
-The Worker-level `discovery`, `details` and `full` phases are implemented. The seeded daily discovery
-and six-hour detail schedules remain disabled, and development hard-disables scheduler execution.
+The Worker-level `discovery`, `details` and `full` phases are implemented. The old seeded daily
+discovery and six-hour detail definitions remain disabled. The separate bounded daily progress plan
+is the current production schedule; development hard-disables scheduler execution.
 
 ## Pipeline
 
@@ -59,11 +70,13 @@ and six-hour detail schedules remain disabled, and development hard-disables sch
 
 The local acceptance bound is one listing page, at most two fallback details and a 31-day effective
 window. The normal collector uses one concurrent request, a 5-9 second inter-request delay, at most
-five city pages and three fallback details per scheduled batch. Production retains a 20-request
-daily ceiling; development has no cumulative daily ceiling. A normal
-complete snapshot now requests only the five listing pages; the previous 17-page/day ceiling remains
-the worst case when incomplete targets require all four fallback batches. No automatic challenge
-retry is performed. Both seeded schedules are disabled.
+five city pages and three fallback details under the collector defaults. The active production
+schedule narrows each run to three listings and two necessary details. Production retains a
+20-request daily ceiling; development has no cumulative daily ceiling. A complete five-city
+snapshot using the collector defaults requests five listing pages; the current daily plan covers
+at most three. The previous 17-page/day ceiling remains the worst case when incomplete targets
+require all four fallback batches. No automatic challenge
+retry is performed. Both legacy seeded schedules are disabled.
 
 The retained five-city snapshot from 2026-07-20 contained 89 cards and 89 unique event URLs. All 89
 had the fields required by the listing-complete rule, including three cancelled events. For that
@@ -176,7 +189,7 @@ source removed that deployment drift; the successful acceptance above uses the r
 - After detail implementation, bounded live runs `cmrtsi3ps0001qs41ob7ghc0z` and
   `cmrtsklsx0001pg2ae0i17xpf` waited ten seconds, while `cmrtsnv680001qn2ap5pdojwi` used the final
   20-second contract. The last two runs targeted the same Amanda Nguyen URL that had previously
-  resolved. In the current external state all three runs retained a persistent challenge, fetched
+  resolved. In those dated runs all three attempts retained a persistent challenge, fetched
   zero details and entered cooldown. Each completed capture retained initial HTML, settled challenge
   HTML, result and manifest; the initial 8,446-byte page grew to 188,100 bytes but retained
   `Browsing Activity Has Been Paused` and `abuse-component` markers. This is evidence of variable
@@ -186,8 +199,8 @@ source removed that deployment drift; the successful acceptance above uses the r
 
 ## Remaining Production Gates
 
-- Confirm source health and operational configuration in the target environment.
-- Repeat one bounded live detail acceptance after the current cooldown; do not retry during cooldown
+- Keep monitoring source health and operational configuration in the target environment.
+- Complete one bounded live detail acceptance when a legitimate incomplete listing is due; do not retry during cooldown
   or increase interaction to force access.
 - Observe evidence expiry and several days of unattended discovery/detail runs in the target environment.
 - Monitor city-route coverage and add a route only after a normal public route is verified; no speculative URL crawling is allowed.
@@ -196,10 +209,14 @@ source removed that deployment drift; the successful acceptance above uses the r
 The implementation and automated database acceptance are complete; the remaining items are external,
 production or operational gates. All schedules stay disabled in development.
 
-On 2026-08-01 the current Ticketmaster unit tests, shared extractor tests, Worker typecheck and
-Worker build passed. Live listing/detail capture and the database integration suite were not rerun;
-the source-behaviour claims above remain tied to their recorded historical traces.
+In the 2026-08-01 development snapshot, Ticketmaster unit tests, shared extractor tests, Worker
+typecheck and build passed. Live listing/detail capture and the database integration suite were
+not rerun that day; later bounded production trial results are in [traceability](../traceability.md).
 
-After source activation, production operators can use `schedule:ticketmaster:enable`; the command
-refuses to enable the schedule unless the source is enabled and operationally healthy.
-`schedule:ticketmaster:disable` disables it without changing source configuration.
+`schedule:ticketmaster:enable` enables every schedule bound to the Ticketmaster source, including
+retired definitions and the active daily plan. Do not use this source-wide command to resume the
+daily plan: the production Scheduler rejects unapproved enabled definitions. The guarded
+`schedule:progress:enable` command creates the daily plan after its two-trial gate; it cannot
+resume a plan that already exists. To pause or resume the existing daily plan, use the audited
+Admin schedule control for `progress-ticketmaster-daily` after checking source and runtime gates.
+Retain the source registry, frontier, runs and evidence.

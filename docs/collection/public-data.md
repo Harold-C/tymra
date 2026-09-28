@@ -1,6 +1,6 @@
 # Non-OTA public collection
 
-Last updated: 2026-08-06
+Last updated: 2026-09-29 (Argus sources and bounded plans)
 
 ## Request strategy
 
@@ -20,7 +20,7 @@ not followed by a detail request when it already contains the fields needed by t
 | NZTA Journey Planner | One GeoJSON request | No detail requests |
 | DOC recreation alerts | Fourteen official regional JSON requests | Keep only closures, unsafe/no-access and equivalent accommodation-relevant destination alerts; deduplicate repeated place notices |
 | Interislander | One official service-alert JSON request | Current alerts route to Wellington and Nelson/Tasman; no booking or sailing-detail requests |
-| Official ski seasons | Three official resort HTML pages | Exact season windows for The Remarkables, Mt Hutt and Whakapapa; explicitly weather-dependent |
+| Official ski seasons | Three official resort pages through Argus browser Jobs | Exact season windows for The Remarkables, Mt Hutt and Whakapapa; explicitly weather-dependent |
 | MetService CAP | One RSS index plus changed CAP alerts | Skip an alert detail when its URL, GUID and publication time match the stored version; fetch new or updated versions |
 | RBNZ exchange rates | One Argus browser Job | No detail pages |
 | Auckland Airport monthly passengers | One Argus browser Job | Fixed monthly domestic/international/total contract; no terminal or flight details |
@@ -36,15 +36,15 @@ not followed by a detail request when it already contains the fields needed by t
 
 Eventfinda and Ticketmaster have source-specific collection strategies documented separately.
 
-Source escalation remains source-specific. OurAuckland and RBNZ B1 use existing Argus connectors.
-DunedinNZ, Auckland Airport monthly traffic and Ministry of Transport airline on-time performance
-require new Argus connectors because their authoritative pages or report assets do not provide the
-required structured response through ordinary HTTP. Tymra's registry, disabled schedules, strict response contracts,
-normalisers, market routing, persistence and price-analysis lineage for all three are already present.
+Source escalation remains source-specific. OurAuckland, RBNZ B1, DunedinNZ, Auckland Airport
+monthly traffic and Ministry of Transport airline on-time performance use registered Argus
+connectors. Their authoritative pages or report assets do not provide the required structured
+response through ordinary HTTP. Tymra retains strict response contracts, normalisers, market
+routing, persistence and price-analysis lineage. Production schedules are reviewed per source.
 
 The two holiday calendars change slowly, so their schedules run weekly instead of daily. This
-reduces those requests from 14 to 2 per week. Eventfinda nationwide discovery runs daily instead of
-twice daily; its separate hourly detail pass only opens targets that are actually due.
+reduces those requests from 14 to 2 per week. Eventfinda's bounded daily progress plan rotates
+listing pages and opens at most one necessary or due detail target per run.
 
 ## Cross-source deduplication
 

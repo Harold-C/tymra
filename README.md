@@ -171,20 +171,22 @@ pnpm cli retention:cleanup
 
 ### Event collection and browser responsibility
 
-Eventfinda listing and detail pages use ordinary read-only HTTP directly in Tymra. Ticketmaster
-listings are also direct HTTP; selectively required Ticketmaster details and RBNZ browser captures
-use durable Argus Jobs. Those browser collections persist each Argus execution, release the Worker
-while it runs, poll through a separate delayed database Job and resume the same collection after
+Eventfinda listing and necessary detail pages, Ticketmaster city listings and selectively required
+details, and RBNZ browser captures use durable, read-only Argus Jobs. Those collections persist each
+Argus execution, release the Worker while it runs, poll through a separate delayed database Job and
+resume the same collection after
 completion or restart. There is no in-process or private-browser fallback. Eventfinda supports
 nationwide paginated discovery, one detail target per event series, multi-date expansion and
-development-only bootstrap runs. Ticketmaster collects complete structured events directly from five
+development-only bootstrap runs. Ticketmaster collects complete structured events from five
 verified city listing routes and schedules a detail page only when required identity, date, status or
 venue fields are missing. Its detail pages may show a temporary verification interstitial, so this
 listing-first path also materially reduces challenge exposure. The Worker retains a durable fallback
-detail frontier, exact-target persistence, refresh/backoff policy and database acceptance. A daily
-discovery schedule and six-hour fallback-detail schedule are defined but remain disabled.
-Current real-page acceptance is partial because two later captures remained challenged after the
-bounded passive wait; no Ticketmaster API key or API endpoint is used.
+detail frontier, exact-target persistence, refresh/backoff policy and database acceptance. The
+current production plans are `progress-eventfinda-daily` (up to three listing pages and one necessary
+detail) and `progress-ticketmaster-daily` (up to three listing pages and two necessary details).
+The older discovery/detail seed definitions and weekly pilots are not the active production plans.
+Ticketmaster detail access remains subject to source challenges; no Ticketmaster API key or API
+endpoint is used. Direct page loading in the Worker is available only through an explicit test fixture.
 
 Docker `restart: unless-stopped` policies remain configured on the current local services.
 As verified on 2026-09-13, no Tymra LaunchAgent is installed or loaded; the earlier claim that a

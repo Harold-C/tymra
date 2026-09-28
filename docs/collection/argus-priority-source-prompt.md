@@ -1,6 +1,12 @@
-# Argus remaining New Zealand public-signal work
+# Historical Argus public-signal handoff (2026-08-05–08)
 
-Use this handoff in the Argus project. Tymra already owns source configuration, disabled schedules,
+**Historical handoff:** This document was added on 2026-08-05 and updated on 2026-08-08. It is retained because the dated
+[Christchurch priority-source acceptance](../evidence/christchurch-priority-sources-acceptance-2026-08-04.md)
+links to it. Its connector gaps and disabled-schedule statements describe that handoff period, not
+current code or production state. For current responsibilities and status, use
+[Argus responsibilities](./argus-responsibilities.md) and [traceability](../traceability.md).
+
+This handoff was prepared for the Argus project. At that point Tymra owned source configuration, disabled schedules,
 durable submit/poll/resume, copy-before-ACK evidence retention, strict response validation,
 normalisation, canonical-market routing, persistence and price-analysis lineage. Do not reproduce
 those responsibilities in Argus.
@@ -14,7 +20,7 @@ those responsibilities in Argus.
   city/region, category, description, status and field-level provenance.
 - Respect the requested date window and record limit. Never infer missing dates, venues, attendance
   or accommodation impact.
-- Current evidence: Argus health/readiness are green, but the running service rejects this connector
+- Evidence at handoff: Argus health/readiness were green, but the running service rejected this connector
   as `INVALID_REQUEST`, so it is not registered yet.
 
 ## 2. Ticketek detail robustness
@@ -72,5 +78,5 @@ those responsibilities in Argus.
 
 For each new connector, add normal, empty, partial and challenge fixtures; run one bounded real Job;
 verify the exact v1 schema and retained evidence; then run the same Job twice through Tymra and prove
-zero second-pass source, canonical or lineage growth. Production schedules remain disabled until
-source activation and operational review remain separate.
+zero second-pass source, canonical or lineage growth. At that handoff, production schedules were to
+remain disabled pending separate source activation and operational review.

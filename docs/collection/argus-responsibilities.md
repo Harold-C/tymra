@@ -6,9 +6,9 @@ Tymra has no browser runtime. Tymra may collect a source only when the required 
 
 Argus returns source-specific raw evidence. Tymra owns source configuration, job orchestration, raw-artifact retention after transfer, normalisation, lineage, deduplication, monitoring, and application-facing standard tables.
 
-## P0: platform readiness
+## Platform contract
 
-- Restore Argus as an always-on required development dependency at `api.argus.test`.
+- Keep Argus available as a required development dependency at `api.argus.test`.
 - Provide separate liveness and readiness endpoints. Readiness must prove that the queue, browser runtime, evidence storage, and worker are usable.
 - Expose connector/version inventory and active capacity so Tymra can show it in collection monitoring.
 - Preserve evidence until Tymra has copied and verified it, then accept an explicit ACK before deleting or expiring the Argus copy.
@@ -24,11 +24,17 @@ Argus returns source-specific raw evidence. Tymra owns source configuration, job
 
 ### Ticketmaster New Zealand
 
-- Accept only selective detail URLs that Tymra's direct-HTTP listing collector marks incomplete.
+- Collect the allowlisted city listings through Argus and accept only selective detail URLs that
+  Tymra's listing-first collector marks incomplete.
 - Detect cancelled detail pages and return `CANCELLED`; do not continue ticket/price enrichment for a cancelled occurrence.
-- Deduplicate shared event pages and do not perform separate listing discovery in Argus.
+- Deduplicate shared event pages; Tymra controls which city listing Jobs are submitted.
 - On every challenge, save a full-page screenshot, visible text, final URL, response status, challenge type, timestamp, browser mode, and connector version before cooldown/circuit-breaker handling.
 - Keep the current conservative concurrency, cooldown, challenge circuit breaker, and manual evidence review path.
+
+### Eventfinda New Zealand
+
+- Collect nationwide listing pages and only the detail targets Tymra marks necessary or due.
+- Return all advertised occurrences from one event-series detail page with browser evidence.
 
 ### RBNZ B1 exchange rates
 
@@ -59,8 +65,8 @@ content whose final URL remains `show.aspx`. In Tymra's 2026-08-06 isolated real
 listing/detail pass completed, persisted 15 records and 11 occurrences, copied four evidence objects
 and ACKed them. The second listing still completed, but its selected detail intermittently returned
 `PARSING_ERROR`; it retained the HTML/screenshot and the overall run correctly became `PARTIAL` with
-zero row growth. The remaining work is therefore real-page robustness, not the earlier single URL
-classifier case. Production schedules remain disabled.
+zero row growth. That was a dated real-page robustness gap, not the earlier single URL classifier
+case; current production plan state belongs in [traceability](../traceability.md).
 
 ### School Sport NZ and School Sport Canterbury
 
@@ -109,8 +115,9 @@ directly by Tymra.
 
 Tymra directly handles Christchurch sports fixtures, UC dates, Addington/Riccarton dates, the
 ChristchurchNZ public Power BI cruise report, Christchurch, Wellington and Queenstown Airport monthly
-passenger data, DOC regional closures, Interislander service alerts, official ski-season windows,
-and MBIE ADP, Tourism Volumes & Flows, MRTE and IVS aggregate data.
+passenger data, DOC regional closures, Interislander service alerts, and MBIE ADP, Tourism Volumes &
+Flows, MRTE and IVS aggregate data. Official ski-season pages and Christchurch City Council What's
+On listings are captured through Argus; Tymra normalises their results.
 
 ## Argus response contract
 
@@ -133,8 +140,6 @@ Each execution must return:
 The following do not require Argus unless their delivery changes materially:
 
 - ChristchurchNZ public event JSON.
-- Eventfinda nationwide listing and detail HTML/JSON-LD.
-- Ticketmaster city listing HTML/JSON-LD; only selectively required detail pages go to Argus.
 - Eventbrite New Zealand listing JSON-LD.
 - Humanitix New Zealand listing JSON-LD.
 - Christchurch Airport arrivals/departures JSON.
@@ -146,7 +151,6 @@ The following do not require Argus unless their delivery changes materially:
 - Queenstown Airport public Power BI monthly passenger matrices.
 - DOC regional recreation-alert JSON.
 - Interislander service-alert JSON.
-- The Remarkables, Mt Hutt and Whakapapa official season-date HTML.
 - MBIE ADP CSV, Tourism Volumes & Flows XLSX, MRTE summary XLSX and IVS aggregate JSON.
 - Crusaders, Mainland Tactix and Canterbury Cricket official fixture pages.
 - University of Canterbury key dates.
@@ -155,14 +159,14 @@ The following do not require Argus unless their delivery changes materially:
 - Te Pae Christchurch public event HTML.
 - Venues Otautahi public page plus its browser-visible Storyblok JSON endpoint.
 - Isaac Theatre Royal public event HTML.
-- Christchurch City Council What's On paginated list HTML.
 - Ara official academic calendar HTML.
 - Canterbury A&P Show and Christchurch Marathon official event pages.
 - Existing ordinary-HTTP government, weather, transport, university, venue, airport, port, and cruise adapters.
 
-All schedule definitions remain disabled in development. Production schedules require an operational review before they are enabled.
+All schedule definitions remain disabled in development. Production schedule activation is
+source-specific; Eventfinda and Ticketmaster now use bounded daily progress plans after review.
 
-## Current Argus follow-up
+## Argus integration evidence (2026-08-06)
 
 The three national-signal connectors are registered and passed Tymra integration. DunedinNZ and
 Ministry of Transport passed real two-pass collection; Ticketek classifies the retained hidden HTTP
