@@ -116,6 +116,31 @@ export function eventfindaPaginationNeedsProbe(extraction: EventfindaListingExtr
   return extraction.totalPages === 1 && extraction.events.length >= 18;
 }
 
+export function eventfindaDiscoveryPagePlan(totalPages: number, maxPages: number, nextPage: number) {
+  if (!Number.isInteger(totalPages) || totalPages < 1 || !Number.isInteger(maxPages) || maxPages < 1) {
+    throw new Error("Eventfinda discovery bounds must be positive integers");
+  }
+  const pages = [1];
+  if (totalPages === 1 || maxPages === 1) return { pages, nextPage: Number.isInteger(nextPage) && nextPage >= 2 && nextPage <= totalPages ? nextPage : 2 };
+  let current = Number.isInteger(nextPage) && nextPage >= 2 && nextPage <= totalPages ? nextPage : 2;
+  while (pages.length < Math.min(totalPages, maxPages)) {
+    pages.push(current);
+    current = current === totalPages ? 2 : current + 1;
+  }
+  return { pages, nextPage: current };
+}
+
+export function eventfindaListingHasNewInformation(previous: EventfindaListingEvent[], current: EventfindaListingEvent[]) {
+  const previousByDate = new Map(previous.map((event) => [event.startsAt ?? "", event]));
+  return current.some((event) => {
+    const old = previousByDate.get(event.startsAt ?? "");
+    return !old || old.eventId !== event.eventId || old.title !== event.title
+      || old.venueName !== event.venueName || old.location !== event.location
+      || old.category !== event.category || old.imageUrl !== event.imageUrl
+      || old.ticketAction !== event.ticketAction;
+  });
+}
+
 export function isEventfindaDetailUrl(value: string) {
   try {
     const url = new URL(value);

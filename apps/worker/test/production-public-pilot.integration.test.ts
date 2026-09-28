@@ -217,46 +217,57 @@ it("requires queued Argus delivery and locally retained evidence before scheduli
   expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
 });
 
-it("requires intact stored HTML from both Eventfinda pilot passes", async () => {
+it("requires two queued Eventfinda passes with locally retained Argus evidence", async () => {
   const sourceKey = "eventfinda";
   const marker = randomUUID();
   await expect(prisma.$transaction(async (transaction) => {
     const source = await transaction.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
     await transaction.dataSource.update({ where: { id: source.id }, data: {
       enabled: true, operationalStatus: "HEALTHY", environments: ["PRODUCTION"],
-      metadata: { boundedProductionCanary: true, marker },
+      metadata: { boundedProductionCanary: true, browserPilot: true,
+        pilotAcceptanceStartedAt: new Date(Date.now() - 1_000).toISOString(), marker },
     } });
     await transaction.sourceEvent.create({ data: {
       dataSourceId: source.id, externalId: `eventfinda-pilot-test:${marker}`,
       sourceUrl: "https://www.eventfinda.co.nz/", title: "Bounded pilot event", contentHash: marker,
     } });
-    const runs = [];
+    const artifacts: string[] = [];
     for (let pass = 1; pass <= 2; pass += 1) {
-      runs.push(await transaction.collectionRun.create({ data: {
-        dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", successCount: 1,
+      const job = await transaction.job.create({ data: {
+        type: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", status: "SUCCEEDED",
+        attemptCount: 1, maxAttempts: 1, payload: { sourceId: sourceKey, productionCanary: true },
+        idempotencyKey: `eventfinda-pilot-test:${marker}:${pass}`, sourceId: sourceKey,
+      } });
+      const run = await transaction.collectionRun.create({ data: {
+        jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", successCount: 1,
         scope: { productionCanary: true, configurationUnchanged: true, schedulesUnchanged: true, marker, pass },
         startedAt: new Date(Date.now() + pass), finishedAt: new Date(Date.now() + pass), isDemo: false,
-      } }));
-    }
-    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("HTTP evidence is incomplete");
-    for (const [index, run] of runs.entries()) {
-      const html = `<html>pass ${index + 1}</html>`;
-      await transaction.rawArtifact.create({ data: {
-        collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML",
-        storageRef: `postgres:RawArtifact:${marker}:${index}`, contentHash: index === 0 ? "invalid" : createHash("sha256").update(JSON.stringify(html)).digest("hex"),
-        payload: { html }, expiresAt: new Date(Date.now() + 60_000),
       } });
+      await transaction.argusExecution.create({ data: {
+        orchestrationKey: `eventfinda-pilot-test:${marker}:${pass}`, parentJobId: job.id,
+        collectionRunId: run.id, dataSourceId: source.id, argusJobId: `argus-test-${marker}-${pass}`,
+        traceId: `trace-${marker}-${pass}`, connectorId: "eventfinda-public", workflowId: "collect_listing",
+        requestedUrl: "https://www.eventfinda.co.nz/whatson/events/new-zealand", status: "COMPLETED",
+        result: { result_sha256: marker }, deadlineAt: new Date(Date.now() + 60_000),
+      } });
+      const artifact = await transaction.rawArtifact.create({ data: {
+        collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML",
+        storageRef: `argus-evidence:trace-${marker}-${pass}/page.html`, contentHash: marker,
+        expiresAt: new Date(Date.now() + 60_000),
+      } });
+      artifacts.push(artifact.id);
     }
-    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("hash mismatch");
-    const bad = await transaction.rawArtifact.findFirstOrThrow({ where: { collectionRunId: runs[0]!.id } });
-    await transaction.rawArtifact.update({ where: { id: bad.id }, data: { contentHash: createHash("sha256").update(JSON.stringify("<html>pass 1</html>")).digest("hex") } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).rejects.toThrow("retained locally");
+    for (const artifactId of artifacts) {
+      await transaction.rawArtifact.update({ where: { id: artifactId }, data: { storageRef: `tymra-evidence:${artifactId}/page.html` } });
+    }
     expect((await enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).schedule.enabled).toBe(true);
     throw new Error("ROLLBACK_TEST_TRANSACTION");
   })).rejects.toThrow("ROLLBACK_TEST_TRANSACTION");
   expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
 });
 
-it("accepts two Ticketmaster listing-only passes only with queued Jobs and intact HTML", async () => {
+it("accepts two Ticketmaster listing-only passes only after Argus delivery and evidence retention", async () => {
   const sourceKey = "ticketmaster";
   const marker = randomUUID();
   await expect(prisma.$transaction(async (transaction) => {
@@ -283,21 +294,25 @@ it("accepts two Ticketmaster listing-only passes only with queued Jobs and intac
           counters: { detailsFetched: 0 }, marker, pass },
         startedAt: new Date(Date.now() + pass), finishedAt: new Date(Date.now() + pass), isDemo: false,
       } });
-      const html = `<html>ticketmaster listing pass ${pass}</html>`;
+      await transaction.argusExecution.create({ data: {
+        orchestrationKey: `ticketmaster-pilot-test:${marker}:${pass}`, parentJobId: job.id,
+        collectionRunId: run.id, dataSourceId: source.id, argusJobId: `argus-test-${marker}-${pass}`,
+        traceId: `trace-${marker}-${pass}`, connectorId: "ticketmaster-public", workflowId: "collect_listing",
+        requestedUrl: "https://www.ticketmaster.co.nz/discover/auckland", status: "COMPLETED",
+        result: { result_sha256: marker }, deadlineAt: new Date(Date.now() + 60_000),
+      } });
       const artifact = await transaction.rawArtifact.create({ data: {
         collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML",
-        storageRef: `postgres:RawArtifact:${marker}:${pass}`,
-        contentHash: pass === 1 ? "invalid" : createHash("sha256").update(JSON.stringify(html)).digest("hex"),
-        payload: { html }, expiresAt: new Date(Date.now() + 60_000),
+        storageRef: `argus-evidence:trace-${marker}-${pass}/page.html`, contentHash: marker,
+        expiresAt: new Date(Date.now() + 60_000),
       } });
       artifacts.push(artifact.id);
     }
     await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production"))
-      .rejects.toThrow("hash mismatch");
-    const firstHtml = "<html>ticketmaster listing pass 1</html>";
-    await transaction.rawArtifact.update({ where: { id: artifacts[0]! }, data: {
-      contentHash: createHash("sha256").update(JSON.stringify(firstHtml)).digest("hex"),
-    } });
+      .rejects.toThrow("retained locally");
+    for (const artifactId of artifacts) {
+      await transaction.rawArtifact.update({ where: { id: artifactId }, data: { storageRef: `tymra-evidence:${artifactId}/page.html` } });
+    }
     const enabled = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production");
     expect(enabled.schedule.enabled).toBe(true);
     expect(enabled.acceptedRuns).toHaveLength(2);

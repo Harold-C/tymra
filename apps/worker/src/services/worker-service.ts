@@ -76,7 +76,7 @@ import {
   type ResolvedOtaListing,
 } from "@tymra/providers";
 import { mapSignalType } from "../collection/market-signal-type";
-import { directEventHttpFailure } from "../collection/direct-event-http";
+import { dailySourceBudgetExceeded } from "../collection/source-budget";
 import { nextCollectionOutsideOfficeHours } from "../operations/collection-office-hours";
 import { isOurAucklandDetailUrl } from "../collection/ourauckland-detail-url";
 import { boundProductionCanaryResults } from "../operations/release-safety";
@@ -87,6 +87,8 @@ import { cleanupMembershipRetention, membershipOperationalMetrics } from "../mem
 import { redisHealth, withRedisLock, withRedisLockWait } from "@tymra/queue";
 import {
   eventfindaEvidenceTtlHours,
+  eventfindaDiscoveryPagePlan,
+  eventfindaListingHasNewInformation,
   eventfindaFailureBackoff,
   groupEventfindaListingEvents,
   eventfindaListingPageUrl,
@@ -94,6 +96,7 @@ import {
   eventfindaRefreshPolicy,
   eventfindaRequestDelayMs,
   eventfindaUrlHash,
+  isEventfindaDetailUrl,
   normaliseEventfindaDetail,
   type EventfindaDetailExtraction,
   type EventfindaExtraction,
@@ -1806,7 +1809,7 @@ export class WorkerService {
     const maxDetails = circuit.halfOpen ? 0 : requestedMaxDetails;
     const maxRecords = localAcceptance || productionCanary ? 2 : Math.min(options.limit ?? 5_000, 5_000);
     const localMaxRequests = (phase === "discovery" || phase === "full" ? maxPages : 0) + (phase === "details" || phase === "full" ? maxDetails * 2 : 0);
-    const limits = { maxRequests: localAcceptance || productionCanary ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance || productionCanary ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
+    const limits = { maxRequests: localAcceptance || productionCanary || this.environment.NODE_ENV === "development" ? localMaxRequests : this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET, maxPages, maxDetails, maxRecords, maxWindowDays: localAcceptance || productionCanary ? 31 : 730, concurrency: 1, timeoutMs: this.environment.ARGUS_TIMEOUT_MS } as const;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("ticketmaster");
     const initialScope = { localAcceptance, developmentBootstrap, productionCanary, sourceId: "ticketmaster", marketScope, requestedPhase, phase, halfOpenProbe: circuit.halfOpen, circuitBefore: { ...circuit, cooldownUntil: circuit.cooldownUntil?.toISOString() ?? null }, requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null }, effective: { from: from.toISOString(), to: to.toISOString(), limit: maxRecords }, limits, dryRun: options.dryRun === true, configurationBefore, schedulesBefore };
@@ -1820,14 +1823,14 @@ export class WorkerService {
         throw new AdapterError("RATE_LIMITED", `Ticketmaster collection ${reason}`, true);
       }
       const collectionResult = await withRedisLock("source:ticketmaster", 60 * 60_000, async () => {
-        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
+        const usedToday = this.environment.NODE_ENV === "development" ? 0 : await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
         let lastRequestAt = 0;
         let rateLimited = false;
         const discovered = new Map<string, { events: TicketmasterListingEvent[]; discoveredFrom: string[] }>();
         const dryRun = options.dryRun === true;
         const capture = async (url: string, entryUrl?: string) => {
           const sourceRequests = entryUrl ? 2 : 1;
-          if (usedToday + counters.requests + sourceRequests > this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET) throw new AdapterError("RATE_LIMITED", "Ticketmaster daily request budget has been reached", true);
+          if (dailySourceBudgetExceeded(this.environment.NODE_ENV, usedToday, counters.requests, sourceRequests, this.environment.TICKETMASTER_DAILY_REQUEST_BUDGET)) throw new AdapterError("DAILY_BUDGET_EXHAUSTED", "Ticketmaster daily request budget has been reached", false);
           if (lastRequestAt) {
             const delay = ticketmasterRequestDelayMs(this.environment.TICKETMASTER_MIN_DELAY_MS, this.environment.TICKETMASTER_DELAY_JITTER_MS);
             await wait(Math.max(0, delay - (Date.now() - lastRequestAt)));
@@ -2067,11 +2070,13 @@ export class WorkerService {
       : Math.min(options.maxPages ?? this.environment.EVENTFINDA_DISCOVERY_MAX_PAGES, this.environment.EVENTFINDA_DISCOVERY_MAX_PAGES);
     const maxDetails = localAcceptance || productionCanary
       ? Math.min(options.maxDetails ?? options.limit ?? 2, 2)
-      : Math.min(options.maxDetails ?? options.limit ?? this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, 500);
+      : Math.min(options.maxDetails ?? options.limit ?? this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, 500);
     const dryRun = options.dryRun === true;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("eventfinda");
-    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, dryRun, localAcceptance, developmentBootstrap, productionCanary, configurationBefore, schedulesBefore };
+    const savedDiscoveryPage = pilotMetadata.eventfindaDiscoveryNextPage;
+    const discoveryNextPage = typeof savedDiscoveryPage === "number" && Number.isInteger(savedDiscoveryPage) ? savedDiscoveryPage : 2;
+    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, discoveryNextPage, dryRun, localAcceptance, developmentBootstrap, productionCanary, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
 
     try {
@@ -2082,7 +2087,7 @@ export class WorkerService {
         throw new AdapterError("RATE_LIMITED", `Eventfinda collection is cooling down until ${cooldownUntil.toISOString()}`, true);
       }
       const result = await withRedisLock("source:eventfinda", 60 * 60_000, async () => {
-        const usedToday = await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
+        const usedToday = this.environment.NODE_ENV === "development" ? 0 : await prisma.rawArtifact.count({ where: { dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(now) } } });
         let requests = 0;
         let lastRequestAt = 0;
         let rateLimited = false;
@@ -2093,6 +2098,8 @@ export class WorkerService {
         let totalPages = 0;
         let paginationUnverified = false;
         let listingCards = 0;
+        let discoveryPages: number[] = [];
+        let nextDiscoveryPage = discoveryNextPage;
         let duplicateDetailTargetsAvoided = 0;
         let targetsUpserted = 0;
         let detailsFetched = 0;
@@ -2101,11 +2108,11 @@ export class WorkerService {
         let unchangedEventsSkipped = 0;
 
         const capture = async (url: string): Promise<ArgusBrowserTaskResult> => {
-          const maxAttempts = productionCanary ? 1 : 3;
+          const maxAttempts = productionCanary || localAcceptance ? 1 : 3;
           for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
             try {
-              if (usedToday + requests >= this.environment.EVENTFINDA_DAILY_REQUEST_BUDGET) {
-                throw new AdapterError("RATE_LIMITED", "Eventfinda daily request budget has been reached", true);
+              if (dailySourceBudgetExceeded(this.environment.NODE_ENV, usedToday, requests, 1, this.environment.EVENTFINDA_DAILY_REQUEST_BUDGET)) {
+                throw new AdapterError("DAILY_BUDGET_EXHAUSTED", "Eventfinda daily request budget has been reached", false);
               }
               if (lastRequestAt) {
                 const delay = eventfindaRequestDelayMs(this.environment.EVENTFINDA_MIN_DELAY_MS, this.environment.EVENTFINDA_DELAY_JITTER_MS);
@@ -2145,8 +2152,12 @@ export class WorkerService {
             totalPages = probe.totalPages;
             paginationUnverified = false;
           }
-          const pagesToScan = Math.min(totalPages, maxPages);
-          for (let page = 1; page <= pagesToScan; page += 1) {
+          const startPage = jsonRecord(run.scope).discoveryNextPage;
+          const pagePlan = eventfindaDiscoveryPagePlan(totalPages, maxPages,
+            second ? 2 : typeof startPage === "number" ? startPage : discoveryNextPage);
+          discoveryPages = pagePlan.pages;
+          nextDiscoveryPage = pagePlan.nextPage;
+          for (const page of pagePlan.pages) {
             const extraction = page === 1 ? first : page === 2 && second ? second : (await capture(eventfindaListingPageUrl(page))).extracted as EventfindaExtraction;
             if (extraction.kind !== "listing" || extraction.currentPage !== page) throw new AdapterError("PARSING_ERROR", `Eventfinda listing page ${page} could not be verified`, false);
             pagesScanned += 1;
@@ -2175,14 +2186,21 @@ export class WorkerService {
               const existing = existingByHash.get(urlHash);
               const listingContentHash = stableHash(listing.events);
               const previousMetadata = jsonRecord(existing?.metadata);
-              const listingChanged = typeof previousMetadata.listingContentHash === "string" && previousMetadata.listingContentHash !== listingContentHash;
+              const previousObservations = previousMetadata.listingObservations;
+              const knownObservations = Array.isArray(previousObservations) ? previousObservations as EventfindaListingEvent[] : [];
+              const observedChange = Array.isArray(previousObservations)
+                ? eventfindaListingHasNewInformation(knownObservations, listing.events)
+                : typeof previousMetadata.listingContentHash === "string" && previousMetadata.listingContentHash !== listingContentHash;
+              const listingChanged = previousMetadata.listingChanged === true || observedChange;
               const shouldFetchNow = localAcceptance || !existing?.lastFetchedAt || listingChanged;
+              const mergedObservations = groupEventfindaListingEvents([...knownObservations, ...listing.events])[0]?.events ?? listing.events;
               const targetMetadata = {
                 ...previousMetadata,
                 listing: listing.events[0],
-                listingObservations: listing.events,
+                listingObservations: mergedObservations,
                 listingContentHash,
                 listingChanged,
+                detailBlockedReason: observedChange ? null : previousMetadata.detailBlockedReason ?? null,
                 discoveredFrom: listing.discoveredFrom,
                 listingOccurrenceCount: listing.events.length,
               };
@@ -2197,6 +2215,12 @@ export class WorkerService {
           if (!dryRun && !localAcceptance && !paginationUnverified && pagesScanned === totalPages) {
             await prisma.sourceCrawlTarget.updateMany({ where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, lastSeenAt: { lt: now } }, data: { missedDiscoveryCount: { increment: 1 } } });
             await prisma.sourceCrawlTarget.updateMany({ where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, lastSeenAt: { lt: now }, missedDiscoveryCount: { gte: 2 } }, data: { active: false, status: "DISCOVERY_MISSING" } });
+          }
+              if (!dryRun && !guardedDevelopmentRun && !productionCanary && !paginationUnverified && pagePlan.pages.length > 1) {
+            const currentSource = await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id }, select: { metadata: true } });
+            await prisma.dataSource.update({ where: { id: source.id }, data: {
+              metadata: { ...jsonRecord(currentSource.metadata), eventfindaDiscoveryNextPage: nextDiscoveryPage },
+            } });
           }
         }
 
@@ -2217,12 +2241,7 @@ export class WorkerService {
                 )
             : dryRun && discovered.size
               ? [...discovered.entries()].slice(0, maxDetails).map(([url, listing]) => ({ id: null, url, contentHash: null, consecutiveFailures: 0, metadata: { listing: listing.events[0], listingObservations: listing.events } }))
-              : await prisma.sourceCrawlTarget.findMany({
-                  where: { dataSourceId: source.id, kind: "EVENT_DETAIL", active: true, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] },
-                  orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
-                  take: maxDetails,
-                  select: { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true },
-                });
+              : await eventfindaDueDetailTargets(source.id, now, maxDetails);
           if (!persistedUrls.length && options.jobId) {
             await persistDetailTargetBatch(run.id, run.scope, targets.map((target) => target.url));
           }
@@ -2250,7 +2269,7 @@ export class WorkerService {
                 const refresh = eventfindaRefreshPolicy(allEvents, now, unchangedDetailFetchCount);
                 await prisma.sourceCrawlTarget.update({
                   where: { id: target.id! },
-                  data: { status: "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: detailContentHash, httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), eventfindaEventId: extraction.eventId, occurrenceCount: extraction.occurrences.length, lastTitle: extraction.title, listingChanged: false, detailUnchanged, unchangedDetailFetchCount } },
+                  data: { status: "FETCHED", active: refresh.active, priority: refresh.priority, lastFetchedAt: new Date(), nextFetchAt: refresh.nextFetchAt, contentHash: detailContentHash, httpStatus: 200, consecutiveFailures: 0, lastErrorCode: null, lastErrorAt: null, metadata: { ...jsonRecord(target.metadata), eventfindaEventId: extraction.eventId, occurrenceCount: extraction.occurrences.length, lastTitle: extraction.title, listingChanged: false, detailBlockedReason: null, detailUnchanged, unchangedDetailFetchCount } },
                 });
               }
               detailsFetched += 1;
@@ -2259,21 +2278,25 @@ export class WorkerService {
               if (error instanceof DeferredJobError) throw error;
               failureCount += 1;
               const isRateLimited = error instanceof AdapterError && error.code === "RATE_LIMITED";
+              const isOversized = error instanceof AdapterError && error.code === "ARTIFACT_TOO_LARGE";
               if (!dryRun && target.id) {
                 const failures = target.consecutiveFailures + 1;
-                await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { status: isRateLimited ? "RATE_LIMITED" : "FAILED", consecutiveFailures: failures, nextFetchAt: eventfindaFailureBackoff(failures, isRateLimited), lastErrorCode: error instanceof AdapterError ? error.code : "BROWSER_CAPTURE_FAILED", lastErrorAt: new Date() } });
+                await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { status: isRateLimited ? "RATE_LIMITED" : "FAILED", consecutiveFailures: failures, nextFetchAt: isOversized ? new Date(Date.now() + 30 * 86_400_000) : eventfindaFailureBackoff(failures, isRateLimited), lastErrorCode: error instanceof AdapterError ? error.code : "BROWSER_CAPTURE_FAILED", lastErrorAt: new Date(), ...(isOversized ? { metadata: { ...jsonRecord(target.metadata), listingChanged: false, detailBlockedReason: "ARTIFACT_TOO_LARGE" } } : {}) } });
               }
               if (isRateLimited) {
                 rateLimited = true;
                 const collectionCooldownUntil = eventfindaFailureBackoff(1, true);
-                if (!dryRun) await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...metadata, collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
+                if (!dryRun) {
+                  const currentSource = await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id }, select: { metadata: true } });
+                  await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...jsonRecord(currentSource.metadata), collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
+                }
                 break;
               }
             }
           }
         }
 
-        return { requests, retryCount, pagesScanned, totalPages, paginationUnverified, listingCards, discovered: discovered.size, duplicateDetailTargetsAvoided, targetsUpserted, detailsFetched, unchangedDetails, eventsPersisted, unchangedEventsSkipped, failureCount, rateLimited };
+        return { requests, retryCount, pagesScanned, totalPages, paginationUnverified, discoveryPages, nextDiscoveryPage, listingCards, discovered: discovered.size, duplicateDetailTargetsAvoided, targetsUpserted, detailsFetched, unchangedDetails, eventsPersisted, unchangedEventsSkipped, failureCount, rateLimited };
       }, this.environment.REDIS_URL);
 
       const status = result.failureCount > 0 ? "PARTIAL" : "SUCCEEDED";
@@ -2291,7 +2314,8 @@ export class WorkerService {
       if (error instanceof DeferredJobError) throw error;
       if (!dryRun && error instanceof AdapterError && error.code === "RATE_LIMITED") {
         const collectionCooldownUntil = eventfindaFailureBackoff(1, true);
-        await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...jsonRecord(source.metadata), collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
+        const currentSource = await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id }, select: { metadata: true } });
+        await prisma.dataSource.update({ where: { id: source.id }, data: { ...(guardedDevelopmentRun ? {} : { operationalStatus: "DEGRADED" as const, healthStatus: "DEGRADED" as const }), metadata: { ...jsonRecord(currentSource.metadata), collectionCooldownUntil: collectionCooldownUntil.toISOString(), collectionCooldownReason: "RATE_LIMITED_OR_CHALLENGE" } } });
       }
       const configurationAfter = sourceConfigurationSnapshot(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } }));
       const schedulesAfter = await sourceScheduleSnapshot("eventfinda");
@@ -2318,7 +2342,43 @@ export class WorkerService {
   }
 
   private async executeEventfindaBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string) {
-    return this.executeDirectHttpEventTask(dataSourceId, collectionRunId, url, dryRun, "eventfinda", extractEventfindaHttpPage);
+    if (this.directEventPageLoader) {
+      return this.executeDirectHttpEventTask(dataSourceId, collectionRunId, url, dryRun, "eventfinda", extractEventfindaHttpPage);
+    }
+    if (!parentJobId && !dryRun) throw new AdapterError("CONFIGURATION_ERROR", "Eventfinda Argus persistence requires a queued Tymra Job", false);
+    const connectorId = "eventfinda-public" as const;
+    const workflowId = isEventfindaDetailUrl(url) ? "collect_detail" as const : "collect_listing" as const;
+    const traceId = parentJobId
+      ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
+      : `eventfinda-${randomUUID()}`;
+    const input = { traceId, url, connectorId, workflowId };
+    const response = parentJobId
+      ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
+      : await captureBrowserTaskWithArgus(this.environment, input);
+    if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
+    if (!response.ok) {
+      if (!parentJobId && response.delivery) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, false);
+      throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    }
+    const result = response.payload;
+    if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
+    if (!dryRun && result.status !== "success") await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "eventfinda", url);
+    if (result.status !== "success" && !parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
+    if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Eventfinda presented an access challenge; collection stopped without bypassing it", true);
+    if (result.status !== "success") {
+      const category = result.error?.category.toUpperCase();
+      throw new AdapterError(category === "TIMEOUT" ? "TIMEOUT" : category === "ARTIFACT_TOO_LARGE" ? "ARTIFACT_TOO_LARGE" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Eventfinda Argus capture failed", category === "ARTIFACT_TOO_LARGE" ? false : result.error?.retryable ?? true);
+    }
+    const extraction = result.extracted as EventfindaExtraction | null;
+    if (!extraction || extraction.extractor !== "eventfinda"
+      || extraction.kind !== (workflowId === "collect_listing" ? "listing" : "event_detail")
+      || (extraction.kind === "listing" && extraction.events.length === 0)
+      || (extraction.kind === "event_detail" && extraction.occurrences.length === 0)) {
+      throw new AdapterError("PARSING_ERROR", "Eventfinda Argus capture returned an empty or invalid page", false);
+    }
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "eventfinda", url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
+    return result;
   }
 
   private async executeOurAucklandBrowserTask(
@@ -2397,27 +2457,39 @@ export class WorkerService {
   }
 
   private async executeTicketmasterBrowserTask(dataSourceId: string, collectionRunId: string, url: string, dryRun: boolean, parentJobId?: string, entryUrl?: string) {
-    if (!isTicketmasterDetailUrl(url)) {
+    if (this.directEventPageLoader && !isTicketmasterDetailUrl(url)) {
       return this.executeDirectHttpEventTask(dataSourceId, collectionRunId, url, dryRun, "ticketmaster", extractTicketmasterHttpPage);
     }
+    if (!parentJobId && !dryRun && !this.directEventPageLoader) throw new AdapterError("CONFIGURATION_ERROR", "Ticketmaster Argus persistence requires a queued Tymra Job", false);
     const connectorId = "ticketmaster-public" as const;
-    const workflowId = "collect_detail" as const;
-    if (!entryUrl) throw new AdapterError("PARSING_ERROR", "Ticketmaster detail capture requires its discovery entry URL", false);
+    const workflowId = isTicketmasterDetailUrl(url) ? "collect_detail" as const : "collect_listing" as const;
+    if (workflowId === "collect_detail" && !entryUrl) throw new AdapterError("PARSING_ERROR", "Ticketmaster detail capture requires its discovery entry URL", false);
     const traceId = parentJobId
       ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
       : `ticketmaster-${randomUUID()}`;
-    const input = { traceId, url, entryUrl, connectorId, workflowId };
+    const input = { traceId, url, ...(entryUrl ? { entryUrl } : {}), connectorId, workflowId,
+      ...(workflowId === "collect_listing" ? { maxRecords: 500 } : {}) };
     const response = parentJobId
       ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
       : await captureBrowserTaskWithArgus(this.environment, input);
     if (response.httpStatus === 429) throw new AdapterError("RATE_LIMITED", "Argus concurrency limit was reached", true);
-    if (!response.ok) throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    if (!response.ok) {
+      if (!parentJobId && response.delivery) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, false);
+      throw new AdapterError(response.httpStatus === 504 ? "TIMEOUT" : "SOURCE_UNAVAILABLE", response.message, response.httpStatus >= 500);
+    }
     const result = response.payload;
     if (result.externalSideEffectsPerformed !== false || result.readonlyOnly !== true) throw new AdapterError("PARSING_ERROR", "Argus capture violated the read-only result contract", false);
-    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ticketmaster", url);
-    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
+    if (!dryRun && result.status !== "success") await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ticketmaster", url);
+    if (result.status !== "success" && !parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     if (result.status === "manual_required") throw new AdapterError("RATE_LIMITED", "Ticketmaster presented an access challenge; collection stopped without bypassing it", true);
     if (result.status !== "success") throw new AdapterError(result.error?.category.toUpperCase() === "TIMEOUT" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", result.error?.message ?? "Ticketmaster Argus capture failed", result.error?.retryable ?? true);
+    const extraction = result.extracted;
+    if (workflowId === "collect_listing" && (!isTicketmasterListingExtraction(extraction)
+      || extraction.events.length === 0 || (extraction as Record<string, unknown>).truncated === true)) {
+      throw new AdapterError("PARSING_ERROR", "Ticketmaster Argus listing is empty, truncated or invalid", false);
+    }
+    if (!dryRun) await this.persistArgusEvidence(dataSourceId, collectionRunId, result, "ticketmaster", url);
+    if (!parentJobId) await finalizeDirectArgusDelivery(this.environment, collectionRunId, response.delivery, !dryRun);
     return result;
   }
 
@@ -2458,22 +2530,8 @@ export class WorkerService {
   }
 
   private async loadDirectEventPage(source: "eventfinda" | "ticketmaster", url: string) {
-    if (this.directEventPageLoader) return this.directEventPageLoader({ source, url });
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        redirect: "follow",
-        headers: { accept: "text/html,application/xhtml+xml", "accept-language": "en-NZ,en;q=0.9", "user-agent": "TymraDataCollector/1.0 (+https://tymra.nz/data-collection)" },
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (error) {
-      throw new AdapterError(error instanceof DOMException && error.name === "TimeoutError" ? "TIMEOUT" : "SOURCE_UNAVAILABLE", `${source} HTTP request failed: ${error instanceof Error ? error.message : "unknown error"}`, true);
-    }
-    const failure = directEventHttpFailure(source, response.status);
-    if (failure) throw new AdapterError(failure.code, failure.message, failure.retryable);
-    const length = Number(response.headers.get("content-length") ?? 0);
-    if (length > 5_000_000) throw new AdapterError("PARSING_ERROR", `${source} response exceeds the 5 MB limit`, false);
-    return { html: await response.text(), finalUrl: response.url };
+    if (!this.directEventPageLoader) throw new AdapterError("CONFIGURATION_ERROR", "Direct event page loading is available only through an explicit test fixture", false);
+    return this.directEventPageLoader({ source, url });
   }
 
   private async persistDirectHttpEvidence(
@@ -4203,6 +4261,35 @@ function uniqueByExternalId<T extends { externalId: string }>(items: T[], counte
     else unique.set(item.externalId, item);
   }
   return [...unique.values()];
+}
+
+async function eventfindaDueDetailTargets(dataSourceId: string, now: Date, limit: number) {
+  const where: Prisma.SourceCrawlTargetWhereInput = {
+    dataSourceId, kind: "EVENT_DETAIL", active: true,
+    OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }],
+  };
+  const select = { id: true, url: true, contentHash: true, consecutiveFailures: true, metadata: true } as const;
+  const changed = await prisma.sourceCrawlTarget.findMany({
+    where: { ...where, lastFetchedAt: { not: null }, metadata: { path: ["listingChanged"], equals: true } },
+    orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
+    take: limit,
+    select,
+  });
+  if (changed.length === limit) return changed;
+  const firstCaptures = await prisma.sourceCrawlTarget.findMany({
+    where: { ...where, lastFetchedAt: null },
+    orderBy: [{ priority: "asc" }, { firstSeenAt: "asc" }],
+    take: limit - changed.length,
+    select,
+  });
+  if (changed.length + firstCaptures.length === limit) return [...changed, ...firstCaptures];
+  const refreshes = await prisma.sourceCrawlTarget.findMany({
+    where: { ...where, lastFetchedAt: { not: null }, id: { notIn: changed.map((target) => target.id) } },
+    orderBy: [{ priority: "asc" }, { nextFetchAt: "asc" }, { firstSeenAt: "asc" }],
+    take: limit - changed.length - firstCaptures.length,
+    select,
+  });
+  return [...changed, ...firstCaptures, ...refreshes];
 }
 
 function sourceConfigurationSnapshot(source: {

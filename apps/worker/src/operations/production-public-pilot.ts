@@ -16,7 +16,7 @@ const firstSourceKeys = new Set<string>(FIRST_PUBLIC_SCHEDULES.map((schedule) =>
 export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = [
   ...ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId),
   "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events",
-  "auckland_airport_monthly", "mot_airline_performance", "fx_rates", "ticketmaster", "council_calendars", "christchurch_council_events",
+  "auckland_airport_monthly", "mot_airline_performance", "fx_rates", "eventfinda", "ticketmaster", "council_calendars", "christchurch_council_events",
   "ski_seasons_nz",
 ];
 const browserPilotKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
@@ -381,17 +381,6 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
   if (await transaction.rawArtifact.count({ where: { collectionRunId: { in: runs.map((run) => run.id) }, parserFailure: true } })) {
     throw new Error("Pilot passes contain parser failures");
   }
-  if (sourceId === "eventfinda" || sourceId === "ticketmaster") {
-    const artifacts = await transaction.rawArtifact.findMany({
-      where: { collectionRunId: { in: runs.map((run) => run.id) }, artifactType: "HTML", deletedAt: null },
-      select: { collectionRunId: true, contentHash: true, payload: true },
-    });
-    if (runs.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id))
-      || artifacts.some((artifact) => typeof (artifact.payload as Record<string, unknown> | null)?.html !== "string"
-        || createHash("sha256").update(JSON.stringify((artifact.payload as Record<string, unknown>).html)).digest("hex") !== artifact.contentHash)) {
-      throw new Error(`${sourceId} pilot HTTP evidence is incomplete or has a hash mismatch`);
-    }
-  }
   if (browserPilotKeys.has(sourceId)) {
     if (businessRecords === 0 && !(sourceId === "school_sport_canterbury" && verifiedSchoolZeroPasses === 2)) {
       throw new Error("Argus pilot has no persisted business record");
@@ -403,22 +392,13 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
       throw new Error("Argus pilot Jobs did not finish safely in one attempt");
     }
     const executions = await transaction.argusExecution.findMany({ where: { parentJobId: { in: jobIds } }, select: { parentJobId: true, status: true, result: true } });
-    const executionRequiredJobs = sourceId === "ticketmaster"
-      ? runs.filter((run) => {
-        const counters = (run.scope as Record<string, unknown>).counters;
-        return counters && typeof counters === "object" && !Array.isArray(counters)
-          && Number((counters as Record<string, unknown>).detailsFetched) > 0;
-      }).map((run) => run.jobId)
-      : jobIds;
-    if ((sourceId !== "ticketmaster" && executions.length < 2)
-      || executionRequiredJobs.some((id) => !executions.some((execution) => execution.parentJobId === id))
+    if (executions.length < 2
+      || jobIds.some((id) => !executions.some((execution) => execution.parentJobId === id))
       || executions.some((execution) => execution.status !== "COMPLETED" || execution.result === null)) {
       throw new Error("Argus pilot result delivery is incomplete");
     }
     const artifacts = await transaction.rawArtifact.findMany({ where: { collectionRunId: { in: runs.map((run) => run.id) }, deletedAt: null }, select: { collectionRunId: true, storageRef: true } });
-    const runsNeedingCopiedEvidence = sourceId === "ticketmaster"
-      ? runs.filter((run) => executions.some((execution) => execution.parentJobId === run.jobId)) : runs;
-    if (runsNeedingCopiedEvidence.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id && artifact.storageRef.startsWith("tymra-evidence:")))
+    if (runs.some((run) => !artifacts.some((artifact) => artifact.collectionRunId === run.id && artifact.storageRef.startsWith("tymra-evidence:")))
       || artifacts.some((artifact) => artifact.storageRef.startsWith("argus-evidence:"))) {
       throw new Error("Argus pilot evidence has not been retained locally");
     }

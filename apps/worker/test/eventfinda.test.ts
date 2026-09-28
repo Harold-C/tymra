@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, groupEventfindaListingEvents, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
+import { eventfindaDiscoveryPagePlan, eventfindaEvidenceTtlHours, eventfindaFailureBackoff, eventfindaListingHasNewInformation, eventfindaPaginationNeedsProbe, eventfindaRefreshPolicy, groupEventfindaListingEvents, normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
 
 const detail: EventfindaDetailExtraction = {
   extractor: "eventfinda", kind: "event_detail", eventId: "922033", title: "Sample Event", canonicalUrl: "https://www.eventfinda.co.nz/2026/sample/auckland", category: "Theatre", description: "Description", imageUrls: ["https://cdn.eventfinda.co.nz/sample.jpg"],
@@ -44,6 +44,17 @@ describe("Eventfinda normalisation", () => {
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0].events.map((event) => event.startsAt)).toEqual(["2026-08-16T18:00:00+12:00", "2026-08-17T18:00:00+12:00"]);
+    expect(eventfindaListingHasNewInformation(groups[0].events, groups[0].events.slice(0, 1))).toBe(false);
+    expect(eventfindaListingHasNewInformation(groups[0].events.slice(0, 1), groups[0].events)).toBe(true);
+    expect(eventfindaListingHasNewInformation(groups[0].events, [{ ...groups[0].events[0], title: "Renamed Series" }])).toBe(true);
+  });
+
+  it("rotates bounded discovery pages while always revisiting the first page", () => {
+    expect(eventfindaDiscoveryPagePlan(5, 2, 2)).toEqual({ pages: [1, 2], nextPage: 3 });
+    expect(eventfindaDiscoveryPagePlan(5, 3, 4)).toEqual({ pages: [1, 4, 5], nextPage: 2 });
+    expect(eventfindaDiscoveryPagePlan(5, 3, 2)).toEqual({ pages: [1, 2, 3], nextPage: 4 });
+    expect(eventfindaDiscoveryPagePlan(5, 1, 4)).toEqual({ pages: [1], nextPage: 4 });
+    expect(eventfindaDiscoveryPagePlan(1, 2, 9)).toEqual({ pages: [1], nextPage: 2 });
   });
 
   it("retains failed and manual-required browser evidence for the failure TTL", () => {

@@ -1,10 +1,23 @@
 # Eventfinda New Zealand collection
 
-Last updated: 2026-08-03
+Last updated: 2026-09-28
 
-2026-09-28 本地修复候选：直接 HTTP 只接受完整的 200 页面；202 中间响应停止
-本轮并进入保护性冷却，空的全国列表拒绝解析，避免以零业务结果误报成功。
-当前本地受限读取能解析首页与一张详情页，尚未完成新的生产持久化验收。
+2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集列表和详情。
+HTTP 202 中间响应作为访问限制停止，空的全国列表拒绝解析；保护性冷却仍生效。
+此变更尚未完成新的生产持久化验收，生产定期计划保持暂停。
+同日本地单页 dry-run 再遇访问挑战，零个成功页面，失败 Job 已 ACK/PURGED，
+没有详情请求或业务写入。来源本地并无待解除冷却；每日预算耗尽现与网站挑战区分。
+`NODE_ENV=development` 现在不执行跨轮次每日累计额度；单次采集范围、间隔及
+访问挑战停采保持有效，生产日额度不变。
+当日后续本地有头会话获得全国列表 19 张卡片及一张详情的 3 个日期，均为
+HTTP 200、无可见登录要求。一次正式本地队列发现保存了 20 个列表目标和
+校验后的 Argus 证据；详情业务持久化与生产验收仍需独立核对。
+另一次单条详情在正常网页上遇 Argus 结构化结果超限：289 个场次的原结果
+613,463 字节超过 512 KiB。Argus 本地候选消除完全相同票档的场次级重复后，
+同一份已保存 HTML 离线结果 327,642 字节。后续切换本地 Argus/Worker 候选，
+单次尝试的正式详情 Job 成功返回 289 个场次，并在当前时间窗口保存 58 个
+来源场次及对应 canonical links；两份证据 SHA-256 一致且 ACK 后 Argus 结果
+为 410/PURGED。旧失败记录仍保留为历史事实。生产来源及定期计划继续暂停。
 
 **Development status:** Collector development is complete. Local bounded acceptance, nationwide
 discovery and bounded detail persistence are verified; production activation and multi-day
@@ -15,8 +28,9 @@ unattended evidence remain separate operating gates.
 Tymra is intended to collect the complete set of currently published New Zealand events discoverable from Eventfinda's nationwide event listing. Historical Eventfinda archives are not bulk-crawled. A recurring event is stored as one source series with one source occurrence per advertised time, then linked into canonical event and occurrence records so accommodation analysis can match the exact affected dates.
 
 The source remains blocked from scheduled collection while production operational and stability gates
-are outstanding. Collection now uses ordinary read-only HTTP for both listing and detail pages;
-Eventfinda is no longer an Argus responsibility. The source-specific control file remains a technical detail.
+are outstanding. The current candidate routes both listing and detail capture through Argus's
+fixed read-only connector and persistent browser profile. Tymra retains frontier, pacing,
+deduplication and business persistence.
 
 Completed evidence includes extractor unit tests, bounded real listing and detail captures, a two-pass
 bounded real persistence run, fixture-backed idempotent persistence, database migration regression,
@@ -34,10 +48,11 @@ All local collection work follows the project-wide
 [local source collection acceptance](./acceptance.md) standard. This document
 records only Eventfinda-specific limits, behaviour and evidence.
 
-## Read-only HTTP contract
+## Read-only browser contract
 
-Tymra sends only bounded `GET` requests to configured Eventfinda hosts. It does not execute page
-JavaScript, type, log in, solve challenges, buy tickets, or change remote state.
+Tymra submits bounded, read-only listing and detail Jobs to the fixed Eventfinda Argus Connector.
+Argus uses a headed browser and its persistent public Profile. It does not log in, solve challenges,
+buy tickets or change remote state.
 
 The extractor supports:
 
@@ -45,10 +60,10 @@ The extractor supports:
 - Event details using JSON-LD first, with DOM fallbacks for description, restrictions, phone sales, official websites, promoter and tour.
 - Every occurrence, including start and end time, event status, attendance mode, venue address and coordinates, offers, availability, performers, organizer and images.
 
-Direct HTML evidence is stored in `RawArtifact` and retained for the configured TTL, 72 hours by
-default. Parser-failure HTML uses the failure TTL, 168 hours by default. No screenshot is expected
-because this source does not invoke Argus. Normalized event metadata retains useful business fields
-without retaining the whole page indefinitely.
+Argus HTML/screenshot evidence is referenced by `RawArtifact`, copied and SHA-256 checked before
+ACK, then retained for the configured TTL, 72 hours by default. Parser-failure evidence uses the
+failure TTL, 168 hours by default. Normalized event metadata retains useful business fields without
+retaining the whole page indefinitely.
 
 ## Event data pipeline
 
@@ -63,9 +78,11 @@ Automatic cross-source merging is deliberately conservative. Version 1 only auto
 
 ## Crawl frontier
 
-`SourceCrawlTarget` is the durable frontier. It records the canonical URL hash, discovery timestamps, active status, priority, fetch timestamps, next due time, content hash and consecutive failures. Listing cards are grouped by canonical detail URL before the frontier is written; repeated cards retain all observed dates but create one detail target. Existing detail metadata is merged rather than overwritten by the next discovery. A changed listing fingerprint makes the target immediately due, while an unchanged listing preserves its existing refresh time.
+`SourceCrawlTarget` is the durable frontier. It records the canonical URL hash, discovery timestamps, active status, priority, fetch timestamps, next due time, content hash and consecutive failures. Listing cards are grouped by canonical detail URL before the frontier is written; repeated cards retain all observed dates but create one detail target. Listing fields and every observed date are kept on the target. A newly observed date or changed visible card field makes an already fetched detail due; an unchanged card preserves its existing refresh time. Missing dates in a bounded page scan do not by themselves count as a change. A pending change remains due until its detail succeeds.
 
-Discovery scans `/whatson/events/new-zealand` and all advertised pages, up to the configured 250-page safety cap. If a full first page temporarily loses its pagination controls, the collector probes page 2 and accepts the boundary only when page number, non-empty events and a multi-page total all agree. A URL must be absent from two complete, pagination-verified discovery scans before it is deactivated. A partial or pagination-unverified discovery never marks unseen targets inactive. Development `localAcceptance` scans are also excluded from missing-target accounting because their one-page hard bound is not evidence that the nationwide catalogue is complete.
+Discovery starts at `/whatson/events/new-zealand`, then rotates through the advertised deeper pages within the per-run cap. If a full first page temporarily loses its pagination controls, the collector probes page 2 and accepts the boundary only when page number, non-empty events and a multi-page total all agree. A URL must be absent from two complete, pagination-verified discovery scans before it is deactivated. A partial or pagination-unverified discovery never marks unseen targets inactive. Development `localAcceptance` scans are also excluded from missing-target accounting because their one-page hard bound is not evidence that the nationwide catalogue is complete.
+
+Detail selection takes changed visible listings first, then new targets without a detail, then unchanged targets whose scheduled refresh is due. An unchanged fetched target is skipped before its due time. The detail response hash is compared after a required revisit; an unchanged response receives a longer refresh interval. A listing cannot prove that hidden detail-only fields are unchanged, so bounded periodic checks remain necessary.
 
 One Eventfinda detail page is the authoritative series expansion because it can advertise many dates
 that do not all appear on the listing card. Every occurrence is persisted from that one response.
@@ -95,16 +112,16 @@ full canonicalisation transaction.
 ## Source protection
 
 - HTTP concurrency is one and a Redis source lock prevents overlapping Eventfinda runs.
-- Requests wait 4-7 seconds by default, including random jitter.
-- The default daily ceiling is 2,500 stored HTML captures.
-- Discovery is capped at 250 pages and hourly detail work is capped at 80 targets.
+- Production requests wait 12-18 seconds by default, including random jitter.
+- Production's candidate daily ceiling is 24 stored HTML captures; development has no cumulative daily ceiling.
+- Production candidate discovery is capped at five pages per daily run and detail work at 15 targets per daily run. Four deeper listing pages rotate across days. Schedule activation remains blocked.
 - Ordinary failures back off from 15 minutes to 24 hours per URL.
 - Retryable HTTP/network failures receive at most two retries after 30 and 60 seconds; every
   attempt consumes the same daily budget and retains evidence.
 - Rate limits and access challenges stop the current batch immediately and set a two-hour source cooldown. No bypass is attempted.
 - Long collection jobs renew their database lease while running.
 
-Production values can be reduced using `PROD_EVENTFINDA_MIN_DELAY_MS`, `PROD_EVENTFINDA_DELAY_JITTER_MS`, `PROD_EVENTFINDA_DAILY_REQUEST_BUDGET`, `PROD_EVENTFINDA_DISCOVERY_MAX_PAGES` and `PROD_EVENTFINDA_DETAIL_BATCH_SIZE`. The minimum delay cannot be configured below two seconds.
+Production values can be adjusted using `PROD_EVENTFINDA_MIN_DELAY_MS`, `PROD_EVENTFINDA_DELAY_JITTER_MS`, `PROD_EVENTFINDA_DAILY_REQUEST_BUDGET`, `PROD_EVENTFINDA_DISCOVERY_MAX_PAGES` and `PROD_EVENTFINDA_DETAIL_BATCH_SIZE`. The minimum delay cannot be configured below two seconds. These are local candidate defaults only; no production collection has been resumed.
 
 ## Local bounded acceptance
 
@@ -113,16 +130,15 @@ Local development acceptance does not activate the source. The dedicated mode is
 `localAcceptance=true` in `CollectionRun.scope`. It leaves source configuration and operational
 state unchanged. Development hard-disables scheduler execution regardless of configuration.
 
-Run the same bounded full pass twice to verify real-page persistence and idempotency:
+For a single read-only local probe, use a one-page dry-run:
 
 ```bash
 pnpm --filter @tymra/worker cli collect:events \
-  --phase full --max-pages 1 --max-details 2 --local-acceptance
-pnpm --filter @tymra/worker cli collect:events \
-  --phase full --max-pages 1 --max-details 2 --local-acceptance
+  --phase discovery --max-pages 1 --max-details 1 --local-acceptance --dry-run
 ```
 
-This mode is not available in test or production environments and cannot enable a schedule.
+Non-dry-run browser capture requires a queued Tymra Job so Argus evidence can be retained and ACKed
+after business persistence. This mode is not available in test or production and cannot enable a schedule.
 
 ## Development Bootstrap
 
@@ -131,20 +147,16 @@ This mode is not available in test or production environments and cannot enable 
 configuration or operational status, and records `developmentBootstrap=true` plus before/after
 configuration and schedule snapshots on the collection run.
 
-Unlike `--local-acceptance`, this mode may use the configured nationwide 250-page discovery bound
-and detail batches up to 500 targets. It does not relax source protection: the Redis source lock,
-single-request concurrency, 4-7 second request spacing, 2,500-request daily ceiling, response evidence,
+Unlike `--local-acceptance`, this mode may use the configured discovery-page and detail-batch bounds.
+It does not relax source protection: the Redis source lock, single-request concurrency,
+configured request spacing, response evidence,
 failure backoff, challenge stop and cooldown all remain active.
 
-```bash
-pnpm --filter @tymra/worker cli collect:events \
-  --phase discovery --max-pages 250 --development-bootstrap
-pnpm --filter @tymra/worker cli collect:events \
-  --phase details --max-details 80 --development-bootstrap
-```
+Run development bootstrap through the queued `enqueue-source` path, with one-attempt bounds and
+the source's per-run bounds. Do not use the direct CLI for non-dry-run Argus collection.
 
-Discovery and details are deliberately separate. A full discovery seeds or refreshes the durable
-frontier; repeated bounded detail batches then fill canonical events without a single unbounded job.
+Discovery and details are deliberately separate. Rotating bounded discovery runs seed or refresh
+the durable frontier; repeated bounded detail batches then fill canonical events without a single unbounded job.
 
 The 2026-07-21 development bootstrap completed all 187 advertised nationwide listing pages in run
 `cmrtgk94f0001p12abpvktwir`. It made 187 requests with no retry, failure, rate limit or challenge,
@@ -152,7 +164,7 @@ verified the pagination boundary and upserted 2,821 unique detail targets. Run
 `cmrth8ak10001p1mfjq41lue7` then fetched five due targets and persisted 51 advertised event
 occurrences with no failure. Both runs recorded unchanged configuration and schedule snapshots. The
 remaining frontier is intentionally processed in bounded batches so the acceptance run does not
-replace the normal 4-7 second pacing with a one-off bulk crawl.
+replace the configured pacing with a one-off bulk crawl.
 
 The 2026-07-21 local acceptance ran the bounded full pass twice against real Eventfinda pages. Each
 pass scanned one of 187 advertised listing pages, discovered 20 targets, fetched two detail pages
@@ -204,37 +216,24 @@ full-frontier hydration remains paced operating work.
 
 Database seed creates both schedules disabled:
 
-- `eventfinda-discovery-daily`: complete nationwide discovery once per day.
-- `eventfinda-details-hourly`: refresh at most 80 due detail pages each hour.
+- `eventfinda-discovery-daily`: first page plus up to four rotating deeper pages daily.
+- `eventfinda-details-hourly`: legacy key whose candidate cron is daily, refreshing at most 15 due details.
 
-The hourly detail pass does not imply that every known event is opened hourly. It only hydrates
+The detail pass only hydrates
 targets whose `nextDetailFetchAt` is due; unchanged detail pages back off progressively according to
 event proximity. This keeps near-term changes responsive without repeatedly opening stable pages.
 
 The scheduler refuses to enqueue a source job unless the source is enabled and operationally healthy.
-Development never enqueues scheduled jobs. After all remaining completion gates pass, activation uses these deliberate steps:
-
-```bash
-pnpm --filter @tymra/db db:deploy
-pnpm --filter @tymra/db db:seed
-pnpm --filter @tymra/worker cli source:health eventfinda
-pnpm --filter @tymra/worker cli source:activate eventfinda
-pnpm --filter @tymra/worker cli collect:events \
-  --phase full --max-pages 1 --max-details 2 --dry-run
-pnpm --filter @tymra/worker cli schedule:eventfinda:enable
-```
-
-`SCHEDULER_ENABLED` must also be true for the scheduler process to enqueue work. Development keeps it false. To stop collection without changing the source registry:
-
-```bash
-pnpm --filter @tymra/worker cli schedule:eventfinda:disable
-```
+Development never enqueues scheduled jobs. Production activation requires two independent bounded
+queued Jobs with persisted business rows, copied evidence, ACK/PURGED and a reviewed source circuit.
+Use the current source schedule-control procedure only after those gates pass; do not run a generic
+seed or use local acceptance flags in production. `SCHEDULER_ENABLED` stays false in development.
 
 ## Bootstrap
 
-After a successful dry run, run discovery once and then allow hourly detail batches to fill the
+After a successful dry run, use rotating discovery and daily detail batches to fill the
 frontier gradually. Operators may run additional manual detail batches, but the same delay, lock and
-daily budget still apply. Exact listing and occurrence counts are snapshots of the source at run time,
+production daily budget still apply. Exact listing and occurrence counts are snapshots of the source at run time,
 not fixed contractual totals.
 
 ### Production canary and rollback gate
@@ -242,7 +241,7 @@ not fixed contractual totals.
 Activation is not one step. In the target environment, keep both schedules disabled while
 running one bounded dry run and one bounded persisted pass. Confirm the source lock, request budget,
 raw evidence, parser-failure rate, duplicate rate, queue depth, lease renewal, canonical-link growth
-and source cooldown before enabling discovery only. Enable the hourly detail schedule only after one
+and source cooldown before enabling discovery only. Enable the daily detail schedule only after one
 successful daily discovery interval and an operator review of the new frontier.
 
 Rollback is deliberately independent of a deployment: disable both Eventfinda schedules first, then

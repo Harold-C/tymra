@@ -3,7 +3,7 @@
 Last updated: 2026-09-26 (result integrity and local evidence durability)
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
-Job API for Ticketmaster details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
+Job API for Ticketmaster and Eventfinda listings/details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;
 stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
 
 ## Responsibility split
@@ -22,8 +22,8 @@ stable JSON, CSV, RSS, GeoJSON and ordinary HTTP sources run directly in Tymra.
   byte count, pointer SHA-256 and `X-Argus-Content-Sha256`, writes the file atomically to the Tymra evidence
   volume, and changes the artifact reference to `tymra-evidence:`. Only then does it submit the exact
   `result_sha256` to `POST /v1/jobs/{jobId}/ack`. A copy, integrity or database update failure prevents ACK.
-- `ticketmaster-public` supports selectively required detail capture; listings are direct HTTP in Tymra.
-- Eventfinda listing and detail collection are direct HTTP in Tymra; its legacy connector is outside the current responsibility boundary.
+- `ticketmaster-public` captures fixed city listings and selectively required details in a headed, persistent browser profile.
+- `eventfinda-public` captures nationwide listings and bounded details in a headed, persistent browser profile.
 - `rbnz-fx` supports the fixed RBNZ B1 exchange-rate page.
 - `sporty-school-sport-public` supports bounded School Sport NZ and School Sport Canterbury event windows.
 - `ticketek-public` supports one bounded national listing and selectively queued event details.
@@ -93,7 +93,10 @@ The accepted Argus data contracts are currently:
 
 | Connector/workflow | `data_schema` | `schema_version` |
 | --- | --- | --- |
+| `ticketmaster-public / collect_listing` | `ticketmaster-public.collect_listing` | `1.0.0` |
 | `ticketmaster-public / collect_detail` | `ticketmaster-public.collect_detail` | `1.0.0` |
+| `eventfinda-public / collect_listing` | `eventfinda-public.collect_listing` | `1.0.0` |
+| `eventfinda-public / collect_detail` | `eventfinda-public.collect_detail` | `1.0.0` |
 | `ourauckland-public / collect_listing` | `ourauckland-public.collect_listing` | `1.0.0` |
 | `ourauckland-public / collect_detail` | `ourauckland-public.collect_detail` | `1.0.0` |
 | `rbnz-fx / collect_exchange_rates` | `rbnz-fx.collect_exchange_rates` | `1.0.0` |
@@ -101,9 +104,8 @@ The accepted Argus data contracts are currently:
 | `ticketek-public / collect_listing` | `ticketek-public.collect_listing` | `1.0.0` |
 | `ticketek-public / collect_detail` | `ticketek-public.collect_detail` | `1.0.0` |
 
-Historical `ticketmaster-public.collect_listing` and `eventfinda-public.collect_listing` /
-`collect_detail` contracts used schema version `1.0.0`. Retained Argus connector code and old evidence
-do not make them Tymra's current collection path. See [Eventfinda scope](./eventfinda.md#scope).
+These contracts are the local candidate collection path. Production schedules remain paused until
+the new browser path passes bounded acceptance and source-specific operating gates.
 
 The Worker reaches the same HTTPS API origin used by cross-network clients. Docker maps `api.argus.test`
 to the host gateway, and Node trusts only the mounted mkcert development root CA. Do not disable TLS

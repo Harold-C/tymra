@@ -2,9 +2,13 @@
 
 Last updated: 2026-08-03
 
-2026-09-28 本地修复候选：城市列表的 HTTP 403 与 429 触发已有访问限制熔断，
-不再误记为解析错误；受限读取的 Auckland 列表目前可解析活动。
-新的生产业务写入及详情回退仍需独立验收。
+2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集城市列表和详情。
+访问挑战继续触发熔断，不会尝试绕过；新的生产业务写入及详情回退仍需独立验收。
+同日单页本地 dry-run 成功：奥克兰列表发现 19 张卡片，本次日期窗口的 2 条完整记录
+均可免详情页；Argus Job 已 ACK/PURGED。当天 20 次本地预算曾拦截正式入队试采，
+源码已修正预算耗尽误触发挑战熔断，仍需非 dry-run 的业务与证据验收。
+`NODE_ENV=development` 现在不执行跨轮次每日累计额度；生产的 20 次上限、
+单次采集范围、请求间隔和访问挑战停采保持有效。
 
 **Development status:** Listing-first discovery, direct canonical persistence, a durable fallback
 detail frontier and bounded hydration are implemented. Automated database acceptance covers both
@@ -13,8 +17,8 @@ reliable fallback-detail access is not currently verified.
 
 ## Decision
 
-Ticketmaster New Zealand uses ordinary HTTP for city listings and durable Argus read-only Jobs only
-for selectively required detail pages. Tymra uses the current public collection path for detail handling. It does not use a Ticketmaster
+Ticketmaster New Zealand uses Argus read-only Jobs for city listings and selectively required
+detail pages. Tymra owns the frontier and business persistence. It does not use a Ticketmaster
 API key or Discovery API. The current Worker collects public structured event data from five working
 New Zealand city listing routes: Auckland, Wellington, Christchurch, Hamilton and Rotorua.
 
@@ -31,7 +35,7 @@ and six-hour detail schedules remain disabled, and development hard-disables sch
 
 ## Pipeline
 
-1. Fetch up to five fixed city listing pages by ordinary read-only HTTP with a fixed Ticketmaster extractor.
+1. Capture up to five fixed city listing pages through the Argus headed browser connector and its persistent public profile.
 2. Parse public `__NEXT_DATA__` and JSON-LD event IDs, titles, descriptions, dates, statuses, venues, addresses, coordinates, offers, performers and images.
 3. Group listing records by canonical detail URL and date. When every record has a valid identity,
    category, date, explicit status, venue and city, persist all occurrences directly and mark the
@@ -42,7 +46,7 @@ and six-hour detail schedules remain disabled, and development hard-disables sch
 5. For a detail interstitial, retain initial HTML and `challenge-initial-screenshot.png`, poll at
    one-second intervals for at most 20 seconds without interaction, then retain the resolved,
    terminal-challenge or timed-out HTML and `challenge-screenshot.png`.
-6. Persist direct listing HTML in `RawArtifact`. For Argus details, persist HTML/screenshot pointers; before ACK, copy and integrity-check those
+6. Persist Argus HTML/screenshot pointers for listings and details in `RawArtifact`; before ACK, copy and integrity-check those
    files into Tymra's evidence volume. Persist source facts in
    `SourceEvent` and `SourceEventOccurrence`, then exact-link them into `CanonicalEvent`,
    `EventOccurrence` and `CanonicalVenue`.
@@ -55,7 +59,8 @@ and six-hour detail schedules remain disabled, and development hard-disables sch
 
 The local acceptance bound is one listing page, at most two fallback details and a 31-day effective
 window. The normal collector uses one concurrent request, a 5-9 second inter-request delay, at most
-five city pages, three fallback details per scheduled batch and a 20-request daily ceiling. A normal
+five city pages and three fallback details per scheduled batch. Production retains a 20-request
+daily ceiling; development has no cumulative daily ceiling. A normal
 complete snapshot now requests only the five listing pages; the previous 17-page/day ceiling remains
 the worst case when incomplete targets require all four fallback batches. No automatic challenge
 retry is performed. Both seeded schedules are disabled.
@@ -97,7 +102,7 @@ No automatic challenge retry occurs inside a run.
 
 ### ARGUS-TM-NAV-001 detail navigation
 
-Ticketmaster listing discovery uses Tymra ordinary HTTP. A target with incomplete listing fields keeps
+Ticketmaster listing discovery uses Argus. A target with incomplete listing fields keeps
 the allowlisted city listing URL in `metadata.discoveredFrom`. Detail execution sends that URL to
 Argus as `entry_url`; Argus opens the city page and follows the exact event link in the same browser
 context. Missing `discoveredFrom` is a hard parsing failure and never falls back to a cold direct

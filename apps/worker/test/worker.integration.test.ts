@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { getEnvironment } from "@tymra/config";
 import { prisma, Prisma } from "@tymra/db";
@@ -9,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";
 import { normaliseEventfindaDetail, type EventfindaDetailExtraction } from "../src/collection/eventfinda";
-import { captureBrowserTaskWithDurableArgus, durableArgusTraceId, pollArgusExecution } from "../src/services/argus-orchestrator";
+import { acknowledgePersistedArgusResults, captureBrowserTaskWithDurableArgus, durableArgusTraceId, pollArgusExecution } from "../src/services/argus-orchestrator";
 import { DeferredJobError } from "../src/jobs/deferred-job";
 import { WorkerRequestError, WorkerService } from "../src/services/worker-service";
 import { membershipOperationalMetrics } from "../src/membership/operations";
@@ -915,7 +918,7 @@ describe("Worker baseline pipeline", () => {
     expect(JSON.stringify(metrics)).not.toMatch(/email|password|token|address/i);
   });
 
-  it("idempotently persists direct Ticketmaster listings and Argus details without changing configuration", async () => {
+  it("idempotently persists direct fixture Ticketmaster listings and Argus details without changing configuration", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "ticketmaster" } });
     const externalId = `tm-${prefix.replace(/[^a-z0-9]/gi, "").slice(-12)}`;
     const sourceUrl = `https://www.ticketmaster.co.nz/integration-auckland-16-08-2026/event/${externalId}`;
@@ -1265,7 +1268,108 @@ describe("Worker baseline pipeline", () => {
     }
   });
 
-  it("persists bounded Eventfinda discovery and details through direct HTTP", async () => {
+  it("routes bounded Eventfinda and Ticketmaster dry runs through Argus and purges verified results", async () => {
+    const requested: TestArgusCapture[] = [];
+    let acknowledged = 0;
+    let challenge = false;
+    const startsAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    const eventfindaUrl = `https://www.eventfinda.co.nz/2026/integration-${randomUUID()}/auckland`;
+    const ticketmasterUrl = `https://www.ticketmaster.co.nz/integration-${randomUUID()}/event/12345678`;
+    const argusServer = createArgusServer((capture) => {
+      requested.push(capture);
+      if (challenge) return argusChallenge(capture, "Access challenge", "b");
+      if (capture.connector_id === "eventfinda-public") return argusSuccess(capture, {
+        data_schema: "eventfinda-public.collect_listing", schema_version: "1.0.0", extractor: "eventfinda", kind: "listing",
+        title: "Events", canonicalUrl: capture.url, currentPage: 1, totalPages: 1, nextUrl: null,
+        events: [{ eventId: "12345678", title: "Integration Event", sourceUrl: eventfindaUrl, startsAt,
+          venueName: "Integration Venue", location: "Auckland", category: "Theatre", imageUrl: null,
+          sponsored: false, ticketAction: null }],
+      }, "Events", "b");
+      return argusSuccess(capture, {
+        data_schema: "ticketmaster-public.collect_listing", schema_version: "1.0.0", extractor: "ticketmaster", kind: "listing",
+        title: "Auckland Events", canonicalUrl: capture.url,
+        events: [{ eventId: "12345678", title: "Integration Concert", sourceUrl: ticketmasterUrl,
+          category: "MusicEvent", startsAt, endsAt: startsAt, eventStatus: "EventScheduled",
+          venue: { name: "Integration Venue", address: { addressLocality: "Auckland", addressCountry: "NZ" } },
+          offers: [{ availability: "InStock", url: ticketmasterUrl }], performers: [], imageUrls: [] }],
+      }, "Auckland Events", "b");
+    }, () => { acknowledged += 1; });
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Argus test server did not bind");
+    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false,
+      ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`,
+      ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters",
+      EVENTFINDA_MIN_DELAY_MS: 0, EVENTFINDA_DELAY_JITTER_MS: 0, EVENTFINDA_DAILY_REQUEST_BUDGET: 0,
+      TICKETMASTER_MIN_DELAY_MS: 0, TICKETMASTER_DELAY_JITTER_MS: 0, TICKETMASTER_DAILY_REQUEST_BUDGET: 0 });
+    try {
+      const eventfinda = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined,
+        { phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true, dryRun: true });
+      const ticketmaster = await acceptanceService.collectSource("ticketmaster", "new-zealand", undefined,
+        { phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true, dryRun: true,
+          from: new Date(Date.now() - 86_400_000), to: new Date(Date.now() + 30 * 86_400_000) });
+      expect(requested.map(({ connector_id, workflow_id }) => [connector_id, workflow_id])).toEqual([
+        ["eventfinda-public", "collect_listing"], ["ticketmaster-public", "collect_listing"],
+      ]);
+      expect(eventfinda.discovered).toBe(1);
+      expect(ticketmaster.counters.discovered).toBe(1);
+      expect(acknowledged).toBe(2);
+      challenge = true;
+      await expect(acceptanceService.collectSource("eventfinda", "new-zealand", undefined,
+        { phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true, dryRun: true }))
+        .rejects.toMatchObject({ code: "RATE_LIMITED" });
+      expect(acknowledged).toBe(3);
+    } finally {
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("retains Eventfinda failure evidence before acknowledging an oversized Argus result", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
+    const evidenceRoot = await mkdtemp(path.join(tmpdir(), "eventfinda-failed-evidence-"));
+    let acknowledged = 0;
+    const argusServer = createArgusServer((capture) => ({
+      ...argusChallenge(capture, "Oversized detail", "e"),
+      status: "failed", challenge: null,
+      error: { category: "ARTIFACT_TOO_LARGE", message: "Structured result exceeded its limit", retryable: false },
+    }), () => { acknowledged += 1; });
+    await new Promise<void>((resolve) => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Argus test server did not bind");
+    const localEnvironment = { ...environment, NODE_ENV: "development" as const, SCHEDULER_ENABLED: false,
+      ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`,
+      ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters",
+      ARGUS_EVIDENCE_ROOT: evidenceRoot };
+    const job = await prisma.job.create({ data: { type: "EVENT_COLLECTION", payload: { sourceId: "eventfinda" },
+      idempotencyKey: `${prefix}:eventfinda-oversized`, maxAttempts: 1 } });
+    let runId: string | null = null;
+    try {
+      const options = { phase: "discovery" as const, maxPages: 1, localAcceptance: true, jobId: job.id };
+      await expect(new WorkerService(localEnvironment).collectSource("eventfinda", "new-zealand", undefined, options))
+        .rejects.toBeInstanceOf(DeferredJobError);
+      const execution = await prisma.argusExecution.findFirstOrThrow({ where: { parentJobId: job.id } });
+      await pollArgusExecution(localEnvironment, execution.id);
+      await expect(new WorkerService(localEnvironment).collectSource("eventfinda", "new-zealand", undefined, options))
+        .rejects.toMatchObject({ code: "ARTIFACT_TOO_LARGE" });
+      const run = await prisma.collectionRun.findFirstOrThrow({ where: { jobId: job.id } });
+      runId = run.id;
+      expect(run).toMatchObject({ status: "FAILED", errorCode: "ARTIFACT_TOO_LARGE" });
+      const artifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: run.id } });
+      expect(artifacts.map((artifact) => artifact.artifactType).sort()).toEqual(["HTML", "SCREENSHOT"]);
+      expect(artifacts.every((artifact) => artifact.storageRef.startsWith("argus-evidence:"))).toBe(true);
+      expect(acknowledged).toBe(0);
+      await acknowledgePersistedArgusResults(localEnvironment, job.id);
+      const retained = await prisma.rawArtifact.findMany({ where: { collectionRunId: run.id } });
+      expect(retained.every((artifact) => artifact.storageRef.startsWith("tymra-evidence:"))).toBe(true);
+      expect(acknowledged).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) => argusServer.close((error) => error ? reject(error) : resolve()));
+      if (runId) await prisma.rawArtifact.deleteMany({ where: { collectionRunId: runId } });
+      await rm(evidenceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("persists bounded Eventfinda discovery and details through direct HTTP fixtures", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventfinda" } });
     const suffix = prefix.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase();
     const eventId = `acceptance-${suffix}`;
@@ -1277,6 +1381,7 @@ describe("Worker baseline pipeline", () => {
     const protectedUrl = `https://www.eventfinda.co.nz/${eventYear}/nationwide-${suffix}/auckland`;
     let challenge = false;
     let listingTotalPages = 1;
+    let listingTitle = "Acceptance Theatre";
     const argusServer = createArgusServer((capture) => {
       if (challenge) return argusChallenge(capture, "Security check", "a");
       if (capture.workflow_id === "collect_listing") {
@@ -1308,7 +1413,7 @@ describe("Worker baseline pipeline", () => {
     }, undefined, async ({ url }) => {
       if (challenge) throw new AdapterError("RATE_LIMITED", "Synthetic direct HTTP 429", true);
       if (url.includes("/whatson/events/")) {
-        return { html: `<title>Events</title><div class="listings-events"><article class="card h-event"><h2 class="p-name"><a href="${sourceUrl}">Acceptance Theatre</a></h2><div class="dtstart"><span class="value-title" title="${eventStartsAt.toISOString()}"></span></div><div class="p-location"><a class="location">Acceptance Venue</a> Christchurch</div><div class="meta-date"><span class="category">Theatre</span></div><script>_efC(3, ${JSON.stringify(eventId)})</script></article></div>${listingTotalPages > 1 ? `<nav class="pagination"><a href="/whatson/events/new-zealand/page/${listingTotalPages}">${listingTotalPages}</a></nav>` : ""}`, finalUrl: url };
+        return { html: `<title>Events</title><div class="listings-events"><article class="card h-event"><h2 class="p-name"><a href="${sourceUrl}">${listingTitle}</a></h2><div class="dtstart"><span class="value-title" title="${eventStartsAt.toISOString()}"></span></div><div class="p-location"><a class="location">Acceptance Venue</a> Christchurch</div><div class="meta-date"><span class="category">Theatre</span></div><script>_efC(3, ${JSON.stringify(eventId)})</script></article></div>${listingTotalPages > 1 ? `<nav class="pagination"><a href="/whatson/events/new-zealand/page/${listingTotalPages}">${listingTotalPages}</a></nav>` : ""}`, finalUrl: url };
       }
       const jsonLd = [{ "@type": "Place", "@id": "place:acceptance", name: "Acceptance Venue", address: { streetAddress: "1 Acceptance Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011", addressCountry: "New Zealand" }, geo: { latitude: -43.53, longitude: 172.63 } }, { "@type": "Event", name: "Acceptance Theatre", url: sourceUrl, startDate: eventStartsAt.toISOString(), endDate: eventEndsAt.toISOString(), eventStatus: "https://schema.org/EventScheduled", location: { "@id": "place:acceptance" } }];
       return { html: `<title>Acceptance Theatre</title><h1 class="p-name">Acceptance Theatre</h1><span class="p-category">Theatre</span><div id="eventDescription">Bounded direct HTTP persistence acceptance.</div><div data-watchable-type="event" data-watchable-id="${eventId}"></div><script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`, finalUrl: url };
@@ -1318,7 +1423,7 @@ describe("Worker baseline pipeline", () => {
     let eventOccurrenceIds: string[] = [];
     let venueIds: string[] = [];
     const protectedTarget = await prisma.sourceCrawlTarget.create({
-      data: { dataSourceId: source.id, url: protectedUrl, urlHash: `nationwide-${suffix}`, kind: "EVENT_DETAIL", active: true, status: "PENDING", missedDiscoveryCount: 1, lastSeenAt: new Date(0) },
+      data: { dataSourceId: source.id, url: protectedUrl, urlHash: `nationwide-${suffix}`, kind: "EVENT_DETAIL", active: true, status: "PENDING", missedDiscoveryCount: 1, lastSeenAt: new Date(0), nextFetchAt: new Date(Date.now() + 86_400_000) },
     });
     try {
       const discovery = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
@@ -1331,12 +1436,22 @@ describe("Worker baseline pipeline", () => {
       const first = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "details", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(first.runId);
       expect(first).toMatchObject({ detailsFetched: 1, eventsPersisted: 1, failureCount: 0 });
-      await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { priority: 0, nextFetchAt: new Date(0) } });
+      const refreshAt = (await prisma.sourceCrawlTarget.findUniqueOrThrow({ where: { id: target.id } })).nextFetchAt;
+      const unchangedDiscovery = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", maxPages: 1, maxDetails: 1, developmentBootstrap: true });
+      runIds.push(unchangedDiscovery.runId);
+      expect(await prisma.sourceCrawlTarget.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ nextFetchAt: refreshAt, metadata: { listingChanged: false } });
+      listingTitle = "Updated Acceptance Theatre";
+      const changedDiscovery = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", maxPages: 1, maxDetails: 1, developmentBootstrap: true });
+      runIds.push(changedDiscovery.runId);
+      expect(await prisma.sourceCrawlTarget.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ metadata: { listingChanged: true } });
+      const repeatedDiscovery = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", maxPages: 1, maxDetails: 1, developmentBootstrap: true });
+      runIds.push(repeatedDiscovery.runId);
+      expect(await prisma.sourceCrawlTarget.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ metadata: { listingChanged: true } });
 
       const second = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "details", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(second.runId);
-      expect(second).toMatchObject({ detailsFetched: 1, unchangedDetails: 1, eventsPersisted: 1, unchangedEventsSkipped: 1, failureCount: 0 });
-      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ metadata: { detailUnchanged: true, unchangedDetailFetchCount: 1 } });
+      expect(second).toMatchObject({ detailsFetched: 1, unchangedDetails: 1, eventsPersisted: 1, unchangedEventsSkipped: 0, failureCount: 0 });
+      expect(await prisma.sourceCrawlTarget.findUnique({ where: { id: target.id } })).toMatchObject({ metadata: { detailUnchanged: true, unchangedDetailFetchCount: 1, listingChanged: false } });
       const sourceEvents = await prisma.sourceEvent.findMany({ where: { dataSourceId: source.id, externalId: eventId }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       expect(sourceEvents).toHaveLength(1);
       expect(sourceEvents[0].occurrences).toHaveLength(1);
@@ -1350,7 +1465,7 @@ describe("Worker baseline pipeline", () => {
       expect(successArtifacts).toHaveLength(1);
       expect(successArtifacts.every((artifact) => !artifact.parserFailure && artifact.expiresAt.getTime() - artifact.createdAt.getTime() >= 71 * 3_600_000)).toBe(true);
 
-      const unseenTarget = await prisma.sourceCrawlTarget.create({ data: { dataSourceId: source.id, url: unseenUrl, urlHash: `unseen-${suffix}`, kind: "EVENT_DETAIL", active: true, status: "PENDING", missedDiscoveryCount: 1, lastSeenAt: new Date(0) } });
+      const unseenTarget = await prisma.sourceCrawlTarget.create({ data: { dataSourceId: source.id, url: unseenUrl, urlHash: `unseen-${suffix}`, kind: "EVENT_DETAIL", active: true, status: "PENDING", missedDiscoveryCount: 1, lastSeenAt: new Date(0), nextFetchAt: new Date(Date.now() + 86_400_000) } });
       listingTotalPages = 2;
       const partialDiscovery = await acceptanceService.collectSource("eventfinda", "new-zealand", undefined, { phase: "discovery", maxPages: 1, maxDetails: 1, localAcceptance: true });
       runIds.push(partialDiscovery.runId);
@@ -1392,7 +1507,7 @@ type TestArgusCapture = {
   end_date?: string;
 };
 
-function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>) {
+function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>, onAck?: () => void) {
   const results = new Map<string, { capture: TestArgusCapture; result: Record<string, unknown> }>();
   const acknowledged = new Set<string>();
   return createServer(async (request, response) => {
@@ -1426,6 +1541,7 @@ function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<
     if (request.method === "POST" && acknowledgement) {
       if (!results.has(acknowledgement[1]!)) return sendJson(response, 404, { error: "NOT_FOUND" });
       acknowledged.add(acknowledgement[1]!);
+      onAck?.();
       return sendJson(response, 200, { contract_version: "1.0", job_id: acknowledgement[1] });
     }
     const evidence = request.url?.match(/^\/v1\/event-captures\/([^/]+)\/evidence\/(html|screenshot)$/u);

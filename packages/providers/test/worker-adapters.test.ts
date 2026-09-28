@@ -109,8 +109,8 @@ describe("public data adapter contract", () => {
     const adapter = publicDataAdapters.ticketmaster;
     expect(adapter.metadata).toMatchObject({
       supportedDomains: ["www.ticketmaster.co.nz", "ticketmaster.co.nz"],
-      adapterKey: "public:ticketmaster:http-listing-argus-detail-v1",
-      accessMethod: "PUBLIC_HTTP_LISTING_ARGUS_DETAIL",
+      adapterKey: "public:ticketmaster:argus-v1",
+      accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY",
       concurrencyLimit: 1,
     });
     await expect(adapter.discover({ marketScope: "new-zealand", from: new Date(), to: new Date() }, fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });

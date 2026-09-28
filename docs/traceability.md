@@ -2,6 +2,136 @@
 
 Last updated: 2026-09-28 (production release and bounded source acceptance)
 
+## 2026-09-28 Eventfinda 列表优先与缓慢补齐本地候选
+
+本地 Argus 有头会话读取全国第一页 19 张卡片及 Cricket Camp 一张详情的 3 个日期，
+均返回 HTTP 200，无可见登录要求。Tymra 当前本地镜像的一次排队发现写入 20 个
+`SourceCrawlTarget`，Argus 结果经证据字节及哈希核验后 ACK/PURGED；首次证据卷
+权限错误已在本地卷根目录修复。该轮仅发现，没有详情业务写入。
+
+源码候选将列表观察累积到目标，忽略部分分页缺席的旧日期；新增日期或可见字段
+改变时将详情标记为待更新，直到详情成功。详情按列表变化、未曾抓取、到期复查
+排序；未到期且列表无变化的已抓详情不访问。全国分页每日从首页加轮换后续页，
+候选生产默认每日预算 24 次、发现 5 页、详情 15 个、请求间隔 12–18 秒，
+两个计划按日运行。生产来源和计划尚未恢复，以上只是本地代码和配置候选。
+
+Worker 类型检查和 275 项单元测试通过。独立 `tymra_worker_test` 数据库
+补齐 33 项正式迁移并执行开发 seed 后，定向集成测试通过：同一列表未变化时
+保留原详情复查时间；列表标题变化后保持待抓状态；详情成功后清除该标记。
+这仍不等于生产采集验收。
+
+随后一次仅一条详情的本地排队验证访问 Star Trek Laser Tour；Argus 截图显示正常
+页面，但 289 场次的抽取 JSON 613,463 字节超过 512 KiB 上限。该轮零详情业务
+写入，`CollectionRun` 保留 `PARTIAL`。失败时 Worker 未先登记 Argus 失败证据，
+导致 Job 落入 `DEAD_LETTER`；现已从原 Argus 结果恢复两份失败证据，经字节/哈希
+核验后 ACK/PURGED，未再次访问来源。Job 的错误类别纠正为
+`ARTIFACT_TOO_LARGE`，目标详情延后 30 天；已完成的 CollectionRun 依数据库
+不可变规则保留原 `PARTIAL_FAILURE` 错误码，需结合 ArgusExecution 和 Job 核对。
+Worker 源码候选现会在失败时先登记证据，并把此类目标延后 30 天，列表出现
+新变化时才提前复查。Argus 提取器对完全相同的场次票档改用顶层共享字段；同一
+保留 HTML 离线重算 327,642 字节，场次仍为 289 个。上述失败为修复前记录。
+
+随后本地 Argus 切换到 `argus:eventfinda-detail-local-20260928`（镜像
+`sha256:d677b1cd6fce2770c44789cf2a7dafa48f0095b1ff3492e521f1909f473f2d24`），
+Tymra Worker 切换到 `tymra:eventfinda-detail-local-20260928`（镜像
+`sha256:ffbe456c2beb8a1f2e2e965a423964477dbe217f000c7446eaf63d87bc105647`）。
+仅将上述 Star Trek 目标在本地置为到期、列表变化优先，然后提交一次尝试、
+一条详情的 Job `cmukrlcpp0000k44z0v56c8li`；没有重新扫描列表或批量抓取。
+Argus Job `job_922e9eaa48f0a45b017d76e24b3e0fe2` 为 COMPLETED；
+CollectionRun `cmukrld3b0001k40o4vru8ygg` 和 Tymra Job 均 SUCCEEDED。
+详情含 289 个场次，当前时间窗口内 58 个来源场次写入同一来源 series，
+58 个 canonical occurrence links 已读回；目标状态 FETCHED、列表变化标记清除。
+HTML 与截图已保存为 `tymra-evidence:`，文件 SHA-256 与数据库一致，Argus
+ACK 后结果 GET 为 410/PURGED。独立测试库新增的超限失败证据回归测试通过；
+Argus 完整测试 750 通过、105 项需隔离环境的测试跳过，Worker 275 项单元测试通过。
+本地另用独立 Profile 打开该详情供 noVNC 观察，返回 HTTP 200；观察浏览器
+保持可操作，不执行第二次采集入库。生产来源和计划继续暂停。
+
+## 2026-09-28 本地开发的活动来源日额度
+
+Eventfinda 和 Ticketmaster 在 `NODE_ENV=development` 下不再执行跨轮次每日累计
+请求额度检查；生产及其他环境继续执行原有日额度。单次采集页数/详情数、来源锁、
+请求间隔、Argus 访问挑战停止和冷却逻辑保持有效。本地预算耗尽而误开熔断的
+旧行为已由此消除；下方 20 次用尽及临时增加一次额度的记录是变更前的历史试采。
+本地 Worker/API 已重建并切到镜像
+`sha256:729329ed057030274c341e4bc3d3baf42a0571ac28cdbf78fcc2193ceb00470f`；
+原镜像保留为 `tymra:event-argus-local-before-budget-20260928`
+（`sha256:8bc4b1935efc915fe482c1114a0808c758ec3299cc50c884d56028108450bcc1`）。
+运行环境仍为 development、`https://api.argus.test`，Scheduler/高频 Scheduler 均关闭。
+Worker/API 运行，API health/readiness 均 200，Argus health/readiness 均 200。
+Worker 单元测试 274 项、类型检查和隔离数据库的双来源 Argus 模拟集成测试通过；
+未为验证新日额度再请求真实来源网站。
+
+## 2026-09-28 Eventfinda / Ticketmaster 本地单页复试
+
+仅在本地开发环境操作，生产配置、来源和计划未改。先将两项来源元数据备份到
+`/Users/haroldchen/Development/tymra/runtime/local-parity-20260928/source-cooldown-before-20260928.json`
+（权限 0600）。
+Eventfinda 本地没有待解除的冷却；Ticketmaster 的一次挑战冷却经明确请求手动清除。
+
+Eventfinda 用 Argus 有头持久 Profile 试采全国列表第一页，Argus Job
+`job_298bd5fa96bc23f565c57301bec263bb` 遇访问挑战，终态 `FAILED`；
+Tymra CollectionRun `cmukjxtaw0001rx3e845mf0u3` 为 `RATE_LIMITED`，
+零个成功页面、零条业务写入。没有进入详情或再次请求。失败结果已 ACK/PURGED。
+
+Ticketmaster 首次入队尝试在访问源站前被本地每日 20 次 HTML 预算拦下；
+其错误曾被误归为来源挑战并打开六小时熔断，后续入队重试已停止。
+在本次单次开发试采中，临时将预算上限增加 1 次并清除该误触发的本地熔断，
+只请求奥克兰列表第一页。Argus Job `job_90a03aad94cc363c4feb4406eb857f61`
+终态 `COMPLETED`、ACK/PURGED；Tymra CollectionRun
+`cmukjyjv80001rx4fh794rf4f` 为 `SUCCEEDED`，发现 19 张卡片，
+本次 31 天窗口接受 2 条完整列表活动，省去 2 次详情请求。该轮为 dry-run，
+没有业务写入，不能代替正式持久化或生产验收。
+
+本地源码已将两项来源的“自身每日预算耗尽”改为非重试的
+`DAILY_BUDGET_EXHAUSTED`，不再将其计为网站挑战或开启来源熔断。
+本地集成回归验证两项来源在预算耗尽时零请求、来源元数据不变。
+
+## 2026-09-28 Eventfinda / Ticketmaster Argus 有头采集本地候选
+
+本地候选把两项来源的列表和详情都交给现有 Argus 固定 Connector，使用有头
+浏览器与各自持久 Profile；Tymra 继续执行原有来源限速、预算、冷却、前沿去重、
+业务持久化及证据复制后 ACK。直接 HTML 读取只保留为注入式测试 fixture。
+Eventfinda 的 HTTP 202 中间响应按访问限制停止，空列表拒绝解析；非排队 Job
+的业务写入被拒绝，避免在持久化前 ACK。生产来源与定期计划未改动。
+
+本地 Worker/API 候选镜像 `tymra:event-argus-local-20260928`
+（`sha256:8bc4b1935efc915fe482c1114a0808c758ec3299cc50c884d56028108450bcc1`）
+仍连接 `https://api.argus.test`，`NODE_ENV=development`、live provider、
+fixture 关闭、Scheduler 关闭。共享本地 Argus 容器沿用原镜像，新增的 HTTP 202
+分类尚未在该运行容器验证。真实 Eventfinda 单页 dry-run 的
+Argus Job `job_44fb8208630a61fa9cbf930fd4da1a24` 遇访问挑战，终态 `FAILED`
+且分类 `ACCESS_CHALLENGE`；Tymra 停止该轮，没有业务写入。该失败交付的两份
+证据逐字节与 SHA-256 核对后，已由受保护客户端执行一次清理 ACK，结果复读
+410；新候选的自动失败清理路径随后通过隔离集成测试。没有重复请求源站。
+Ticketmaster 的既有本地熔断截止时间为 `2026-09-28T03:48:33.996Z`，本轮
+不提前进行真实试采。隔离数据库的 Argus 模拟服务验证两项列表均走正确
+Connector、成功 dry-run 的证据/ACK/410，以及 Eventfinda 挑战后的 ACK。
+本地页面可达与模拟集成不等于两项生产两轮门槛通过。
+
+## 2026-09-28 本地生产镜像对照试采（前一快照）
+
+本地 Worker/API 已切到从生产主机只读导入的 Tymra 镜像，代码 revision
+`4eed026f6219054199119889a46d7122caece91b`，与生产镜像的 20 个文件层一致；
+本地 Docker 导入后的镜像 ID 为
+`sha256:5b3dbb1dc69e2fde4d39eced5693c9dba673ccafb1bd27a47c95117f196383e6`。
+本地数据库先备份再应用第 33 项正式迁移；备份及无密钥的 Compose 覆盖文件位于
+`/Users/haroldchen/Development/tymra/runtime/local-parity-20260928/`，数据库备份
+SHA-256 为 `ffbb9f9d5e55e0fe8e95c9cc9b3d8d28f34cb68dabbd9382b03e9f95025e8ba0`。
+本地仍使用 `https://api.argus.test`，`NODE_ENV=development` 以保留
+`--local-acceptance` 保护，live provider、fixture 关闭、Scheduler 关闭；Web 和
+共享 Argus 本地容器未切换。API readiness 200，数据库、Redis、Argus 均健康。
+
+生产镜像的本地有界 dry-run：`eventfinda` 发现阶段扫描一页、解析 20 张卡片；
+随后完整阶段再扫描一页、读取一条详情，解析 3 个活动日期，2 次请求、无失败。
+两个 CollectionRun 均为 `SUCCEEDED`；没有新增该来源业务活动，也没有关联这
+两轮的活动 occurrence。`ticketmaster` 的正式采集入口因本地既有熔断冷却期
+（至 2026-09-28T03:48:33.996Z）返回 `RATE_LIMITED`；本轮请求数为 0，
+未访问详情或 Argus。它的轻量 source health 同时返回 HTTP 200，说明网页可达
+与允许采集是两个不同状态。本次不绕过冷却，也不恢复生产计划。本地与生产的
+网络出口、Argus origin、数据库内容和运行开关仍有意隔离；这些本地结果不构成
+`eventfinda` 或 `ticketmaster` 的生产两轮验收。
+
 ## 2026-09-28 生产发布与五个暂停来源复验（当前状态）
 
 Tymra `main` 提交 `4eed026f6219054199119889a46d7122caece91b` 已推送，CI

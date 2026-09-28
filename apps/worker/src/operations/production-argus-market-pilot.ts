@@ -28,7 +28,7 @@ export async function bootstrapProductionArgusMarketPilot(sourceKey: string, nod
   if (!record || record.providerType !== "PUBLIC" || record.isDemo
     || record.accessMethod !== (sourceKey === "council_calendars" ? "OFFICIAL_PUBLIC_HTML_PAGINATED"
       : sourceKey === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
-      : sourceKey === "ticketmaster" ? "PUBLIC_HTTP_LISTING_ARGUS_DETAIL" : "PUBLIC_WEB_ARGUS_READ_ONLY")
+      : "PUBLIC_WEB_ARGUS_READ_ONLY")
     || adapter?.metadata.adapterKey !== record.adapterKey) {
     throw new Error("Argus market source registry and deployed adapter do not match");
   }
