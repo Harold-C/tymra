@@ -2,7 +2,31 @@
 
 Last updated: 2026-09-28 (production release and bounded source acceptance)
 
-## 2026-09-28 Eventfinda/Ticketmaster 浏览器采集代码生产发布（当前状态）
+## 2026-09-28 Eventfinda/Ticketmaster 新浏览器代码各一次生产试采
+
+按每项一次、`maxAttempts=1` 的 Argus market pilot 执行，试采前两项来源均已暂停，
+无来源计划、无在途 Tymra 或 Argus Job。受限重新启用将两个旧来源适配器元数据
+转换为 `public:*:argus-v1`；Eventfinda 来源记录的每日预算由历史 2500 更新为 24，
+Ticketmaster 保持 20。试采时未创建或启用定期计划。
+
+Eventfinda Tymra Job `cmukwsovd0000jy4bcsj0dgtw`、CollectionRun
+`cmukwsp9u0001jy07ozuuir7f` 均 `SUCCEEDED`，一次尝试、零失败；浏览器请求
+3 次：全国列表 1 页、20 张卡片、详情 2 页，新增 2 条 `SourceEvent`。
+列表与详情的 3 个 Argus Job 均 `COMPLETED`，保存 3 份 HTML 和 3 份截图。
+
+Ticketmaster Tymra Job `cmukwx1dq0000jy6ufpl1mntw`、CollectionRun
+`cmukwx1tw0019jy07yimwr2m7` 均 `SUCCEEDED`，一次尝试、零失败；浏览器只请求
+奥克兰列表 1 页，发现 19 张卡片，2 条完整列表活动写入 `SourceEvent`，
+避免 2 次详情访问，保存 1 份 HTML 和 1 份截图。
+
+8 份 Tymra 证据在生产 Worker 内逐文件复算 SHA-256 与数据库一致；4 个 Argus
+Job 的交付均为 `ACKED`/`PURGED`。两轮的来源配置与计划快照均显示试采期间未意外
+改变。试采结束后两项来源重新设为 lifecycle=`SUSPENDED`、enabled=false；
+75 条既有计划仍启用，零个两项来源计划，Tymra 与 Argus 均无在途 Job。
+这只是每项一次的受限生产试采；正式恢复计划仍需新的连续两轮验收。再次从暂停
+状态重新启用会重置 pilot 验收窗口，不能把本次孤立试采算作未来两轮门槛之一。
+
+## 2026-09-28 Eventfinda/Ticketmaster 浏览器采集代码生产发布（发布时状态）
 
 `main` 的采集修复 `c9d39528` 与兼容暂停来源、增加浏览器验收门槛的
 `049335c160fce47d62a3c0d69dbb9e93d09c6479` 均已推送；对应 CI
@@ -26,8 +50,8 @@ PostgreSQL 隔离恢复读回 78 个来源、75 个计划、205 个 Job。旧镜
 
 Eventfinda 与 Ticketmaster 在生产均为 lifecycle=`SUSPENDED`、
 healthStatus=`DEGRADED`、enabled=false，没有启用计划，
-未触发真实抓取、业务写入或两轮生产验收。现有 Eventfinda 来源行仍保存历史
-`dailyBudget=2500`，但实际运行上限为 24；受限重新启用流程会把来源元数据同步为
+发布时未触发真实抓取、业务写入或两轮生产验收。当时 Eventfinda 来源行仍保存历史
+`dailyBudget=2500`，但实际运行上限为 24；上述受限试采已将来源元数据同步为
 24。其余 75 条已启用计划未改动。
 
 ## 2026-09-28 Eventfinda 列表优先与缓慢补齐本地候选（发布前记录）
