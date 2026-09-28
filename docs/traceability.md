@@ -2,6 +2,31 @@
 
 Last updated: 2026-09-28 (production release and bounded source acceptance)
 
+## 2026-09-28 Eventfinda/Ticketmaster 每周自动试运行（当前状态）
+
+两项来源在各自新的 pilot 验收窗口内分别完成两轮独立、一次尝试的正式生产 Job；
+Eventfinda 的 `cmukx9c630025jy07or8agkox`、`cmukxabg5002djy07du30vfbp`
+及 Ticketmaster 的 `cmukxbfc8002ljy071c0dfl8h`、
+`cmukxc3ae002tjy07w5n2zlzl` 均 `SUCCEEDED`，零失败。正式启用检查核对了
+持久业务记录、来源和计划快照、证据及 Argus ACK/PURGED；每项均通过
+`argusJobsPurged=2`、`verifiedEvidence=4`，随后创建其专属的每周计划。
+
+为立即观察真实 Scheduler 行为，只把两项新计划的首次 `nextRunAt` 分别提前到
+当晚非办公时段；计划的 `weekly` 频率、每次最多 2 条的 payload 和其余计划未改。
+Scheduler 分别自动入队 Eventfinda Job `cmukxf7790000pj074yjxo46t`、
+Ticketmaster Job `cmukxghk10001pj0758uhib85`；两者均一次尝试 `SUCCEEDED`。
+Eventfinda 本轮读取全国首页 1 页、20 张卡片，未到期详情访问为 0，
+新增活动为 0；Ticketmaster 本轮读取奥克兰列表 1 页、19 张卡片，
+2 条可直接用列表确认的活动均与已有记录相同，详情访问和新增活动均为 0。
+两项来源的 `SourceEvent` 总数各保持 2。
+
+两轮自动 Job 的 4 份 HTML/截图证据逐文件复算 SHA-256 均与生产数据库相符；
+对应 2 个 Argus Job 均 `ACKED`/`PURGED`，无在途 Argus Job。两项计划保持启用，
+下次分别为 `2026-10-05T07:29:00Z`、`2026-10-05T07:30:00Z`；现有 75 条计划
+未改，生产总计 77 条已启用计划。当前每周 pilot 只读取首页且限制 2 条结果，
+不能代表全国分页渐进补齐；提高频率、轮换后续页及每日请求额度仍需独立的
+生产计划实现与验收。
+
 ## 2026-09-28 Eventfinda/Ticketmaster 新浏览器代码各一次生产试采
 
 按每项一次、`maxAttempts=1` 的 Argus market pilot 执行，试采前两项来源均已暂停，
