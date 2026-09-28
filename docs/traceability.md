@@ -25,8 +25,23 @@ Eventfinda 渐进试采第一轮 `cmul336gh0000qb1p76pn17ur` 成功：3 列表�
 `SOURCE_UNAVAILABLE`，批次 `PARTIAL`（3 列表页、4 请求、60 条结果、
 6 份本地证据、1 失败）。Argus 的 Eventfinda URL 合同只允许年份／活动／一级位置，
 生产 138 个目标中 27 个使用城市／城区两级位置，因而在提交前被拒绝。
-Argus 已有仅放行这一级路径的本地修复和定向测试，尚未再次构建或发布；
-每日计划未启用，原每周 pilot 保留。
+Argus 后续仅放行这一级路径的修复已以 `argus-release-20260929-1` 发布；
+固定镜像 CI 与私有导出均成功，生产 Mac mini 只重建 browser，PostgreSQL 和
+tunnel 未变。Tymra 生产镜像未再次构建。Argus 新镜像的发布证据及加密配对
+备份见其 `docs/current-state.md`。
+
+修复后两轮 Eventfinda 精确试采 `cmul6hs7s0000qbcf281l9y74`、
+`cmul6nnhi0000qbdayuusyw49` 均为一次尝试的 Job 和 `SUCCEEDED` 的
+CollectionRun，分别保存 66、64 条结果，0 失败；每轮 3 个列表页、
+1 个详情、4 次 Argus 浏览器执行，HTML 与截图各 4 份，均本地保留且无解析失败。
+第一轮原先被拒绝的 `office-comedy-clash/auckland/ponsonby` 目标已由 Argus
+完成并标记 `FETCHED`，错误码清空。8 个 Argus Job 均为 `COMPLETED` 且
+交付状态 `PURGED`。验收后原 `pilot-public-eventfinda-weekly` 已关闭，
+`progress-eventfinda-daily` 已启用，下次运行时间为
+2026-09-29 11:51:35 UTC，payload 为最多 3 列表页、1 必要详情、500 条记录。
+Eventfinda 来源并发上限 1、每日请求上限 24，运行间隔设为 12 秒加最多 6 秒抖动；
+启用时的新西兰预算日已有 11 份 HTML 请求证据，尚未耗尽预算。首次自然周期的
+自动运行结果仍需独立核对。
 
 Ticketmaster 两轮精确渐进试采 `cmul3gxkz0000qb3jqw1tl486` 与
 `cmul3jxpg0000qb4eqwae83sc` 均成功；每轮 3 列表页、3 请求、52 条结果、
@@ -43,9 +58,11 @@ Lincoln/UC 来源已将每日预算设为 3 次并纳入两校域名。第一轮
 2026-10-05 11:01:51 UTC 运行。来源仍限制每日 3 次请求。此时 79 条计划中
 78 条启用（Ticketmaster 旧周计划关闭），启用计划都有下次运行时间且队列无在途任务。
 
-当前 Source Registry 的 78 条来源均为 `PUBLIC`；`ota:health --window-days 30`
+启用 Eventfinda 每日计划后共有 80 条计划、78 条启用，启用计划均有
+`nextRunAt`，队列没有在途 Job。当前 Source Registry 的 78 条来源均为 `PUBLIC_DATA`；
+`ota:health --window-days 30`
 只读查询返回空列表。六个文档内 OTA 渠道尚未进入生产 registry 与真实面板验收，
-不能把公开来源的 77 条启用计划解释成全部文档渠道已自动运行。
+不能把公开来源的 78 条启用计划解释成全部文档渠道已自动运行。
 截至 2026-09-28 10:35 UTC，本次发布后的 15 个 Argus Job 均为 `COMPLETED` 且
 交付状态为 `PURGED`；21 个 Tymra Job 均成功，但六个 CollectionRun 中仍有上述
 Eventfinda `PARTIAL`，不能仅以队列状态判断来源成功。追加历史表已有 344 条活动
