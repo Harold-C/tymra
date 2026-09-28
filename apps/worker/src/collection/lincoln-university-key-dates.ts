@@ -4,6 +4,18 @@ import type { PublicSignal } from "@tymra/providers";
 
 export const LINCOLN_KEY_DATES_URL = "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/";
 
+export function lincolnKeyDatesUrl(year: number): string {
+  if (!Number.isInteger(year) || year < 2020 || year > 2099) throw new Error("Lincoln academic year is outside the supported range");
+  return `https://www.lincoln.ac.nz/study/key-dates/${year}-academic-key-dates/`;
+}
+
+export function lincolnKeyDatesUrls(from: Date, to: Date): string[] {
+  const firstYear = Number(new Intl.DateTimeFormat("en-NZ", { timeZone: "Pacific/Auckland", year: "numeric" }).format(from));
+  const lastYear = Number(new Intl.DateTimeFormat("en-NZ", { timeZone: "Pacific/Auckland", year: "numeric" }).format(to));
+  if (to <= from || lastYear - firstYear > 1) throw new Error("Lincoln collection must cover at most two academic years");
+  return Array.from({ length: lastYear - firstYear + 1 }, (_, index) => lincolnKeyDatesUrl(firstYear + index));
+}
+
 const dateSchema = z.string().regex(/^20\d{2}-\d{2}-\d{2}$/u);
 const categorySchema = z.enum([
   "SEMESTER_START", "SEMESTER_END", "ORIENTATION", "OPEN_DAY", "GRADUATION",

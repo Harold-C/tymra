@@ -11,6 +11,8 @@ import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary, validateSuspendedProductionPublicCanary } from "./operations/production-public-canary";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
+import { enableProductionProgressSchedule, enqueueProductionProgressTrial } from "./operations/production-progress-schedules";
+import { enableRollingLincolnSchedule, enqueueRollingLincolnTrial, prepareRollingLincolnAcceptance } from "./operations/rolling-lincoln-schedule";
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
@@ -43,6 +45,31 @@ switch (command) {
   case "schedule:eventfinda:disable": print(await guardedSourceScheduleChange(["eventfinda"], false)); break;
   case "schedule:ticketmaster:enable": print(await guardedSourceScheduleChange(["ticketmaster"], true)); break;
   case "schedule:ticketmaster:disable": print(await guardedSourceScheduleChange(["ticketmaster"], false)); break;
+  case "schedule:progress:enable": {
+    if (option(args, "--confirm") !== "ENABLE_PROGRESS_SCHEDULE") throw new Error("Enabling a progressive schedule requires --confirm ENABLE_PROGRESS_SCHEDULE");
+    print(await enableProductionProgressSchedule(requiredOption(args, "--source"), environment.NODE_ENV));
+    break;
+  }
+  case "schedule:progress:trial": {
+    if (option(args, "--confirm") !== "QUEUE_PROGRESS_TRIAL") throw new Error("Progressive trial requires --confirm QUEUE_PROGRESS_TRIAL");
+    print(await enqueueProductionProgressTrial(requiredOption(args, "--source"), environment.NODE_ENV));
+    break;
+  }
+  case "schedule:rolling-lincoln:enable": {
+    if (option(args, "--confirm") !== "ENABLE_ROLLING_LINCOLN") throw new Error("Enabling the rolling Lincoln schedule requires --confirm ENABLE_ROLLING_LINCOLN");
+    print(await enableRollingLincolnSchedule(environment.NODE_ENV));
+    break;
+  }
+  case "schedule:rolling-lincoln:prepare": {
+    if (option(args, "--confirm") !== "PREPARE_ROLLING_LINCOLN") throw new Error("Preparing rolling Lincoln acceptance requires --confirm PREPARE_ROLLING_LINCOLN");
+    print(await prepareRollingLincolnAcceptance(environment.NODE_ENV));
+    break;
+  }
+  case "schedule:rolling-lincoln:trial": {
+    if (option(args, "--confirm") !== "QUEUE_ROLLING_LINCOLN_TRIAL") throw new Error("Rolling Lincoln trial requires --confirm QUEUE_ROLLING_LINCOLN_TRIAL");
+    print(await enqueueRollingLincolnTrial(environment.NODE_ENV));
+    break;
+  }
   case "schedule:sources:plan": print(await service.sourceSchedulePlan(requiredCsvOption(args, "--sources"))); break;
   case "schedule:first-public:prepare": {
     if (option(args, "--confirm") !== "PREPARE_FIRST_PUBLIC_SCHEDULES") throw new Error("Preparing first public schedules requires --confirm PREPARE_FIRST_PUBLIC_SCHEDULES");
@@ -358,6 +385,7 @@ switch (command) {
         marketScope: option(args, "--market") ?? "new-zealand",
         ...collectionOptions(args),
         lincolnOnly: args.includes("--lincoln-only"),
+        rollingLincoln: args.includes("--rolling-lincoln"),
         phase: eventCollectionPhase(args),
         maxPages: integerOption(args, "--max-pages"),
         maxDetails: integerOption(args, "--max-details"),

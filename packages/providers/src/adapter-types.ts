@@ -214,7 +214,7 @@ export interface PublicDataAdapter {
 
 export class AdapterError extends Error {
   constructor(
-    readonly code: "INVALID_INPUT" | "SOURCE_UNAVAILABLE" | "CONFIGURATION_ERROR" | "PARSING_ERROR" | "TIMEOUT" | "RATE_LIMITED" | "DAILY_BUDGET_EXHAUSTED" | "ARTIFACT_TOO_LARGE",
+    readonly code: "INVALID_INPUT" | "SOURCE_UNAVAILABLE" | "CONFIGURATION_ERROR" | "PARSING_ERROR" | "TIMEOUT" | "RATE_LIMITED" | "DAILY_BUDGET_EXHAUSTED" | "ARTIFACT_TOO_LARGE" | "RECORD_LIMIT_EXCEEDED",
     message: string,
     readonly retryable: boolean,
   ) {

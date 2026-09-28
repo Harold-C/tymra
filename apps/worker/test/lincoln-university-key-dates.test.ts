@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  lincolnKeyDatesUrls,
   lincolnKeyDatesExtractionSchema,
   normaliseLincolnKeyDateSignals,
 } from "../src/collection/lincoln-university-key-dates";
@@ -8,6 +9,14 @@ import {
 const sourceUrl = "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/";
 
 describe("Lincoln University key-date normalisation", () => {
+  it("selects both published-year routes when a New Zealand window crosses New Year", () => {
+    expect(lincolnKeyDatesUrls(new Date("2026-09-28T12:00:00Z"), new Date("2027-09-28T11:59:59Z"))).toEqual([
+      "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/",
+      "https://www.lincoln.ac.nz/study/key-dates/2027-academic-key-dates/",
+    ]);
+    expect(lincolnKeyDatesUrls(new Date("2026-12-31T10:59:59Z"), new Date("2026-12-31T11:00:00Z"))).toHaveLength(2);
+    expect(() => lincolnKeyDatesUrls(new Date("2026-01-01"), new Date("2028-01-01"))).toThrow();
+  });
   it("promotes only resolved demand dates in the requested range", () => {
     const extraction = lincolnKeyDatesExtractionSchema.parse({
       data_schema: "lincoln-university-key-dates.collect_key_dates",

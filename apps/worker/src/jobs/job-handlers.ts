@@ -29,6 +29,8 @@ import {
 } from "../services/argus-orchestrator";
 import { DeferredJobError } from "./deferred-job";
 import { isProductionPublicPilotSchedule } from "../operations/production-public-pilot";
+import { isProductionProgressSchedule } from "../operations/production-progress-schedules";
+import { isRollingLincolnSchedule, ROLLING_LINCOLN_SCHEDULE_KEY } from "../operations/rolling-lincoln-schedule";
 
 type JsonObject = Record<string, unknown>;
 
@@ -114,6 +116,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         dryRun: optionalBoolean(payload, "dryRun"),
         localAcceptance: optionalBoolean(payload, "localAcceptance"),
         lincolnOnly: optionalBoolean(payload, "lincolnOnly"),
+        rollingLincoln: optionalBoolean(payload, "rollingLincoln"),
         boundedPublicSchedule: optionalBoolean(payload, "boundedPublicSchedule"),
         productionCanary: optionalBoolean(payload, "productionCanary"),
       });
@@ -156,7 +159,7 @@ async function handlePublicCollection(
   job: Job,
   environment: Environment,
   payload: JsonObject,
-  options: { from?: Date; to?: Date; phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; dryRun?: boolean; localAcceptance?: boolean; developmentBootstrap?: boolean; lincolnOnly?: boolean; boundedPublicSchedule?: boolean; productionCanary?: boolean },
+  options: { from?: Date; to?: Date; phase?: "discovery" | "details" | "full"; maxPages?: number; maxDetails?: number; limit?: number; dryRun?: boolean; localAcceptance?: boolean; developmentBootstrap?: boolean; lincolnOnly?: boolean; rollingLincoln?: boolean; boundedPublicSchedule?: boolean; productionCanary?: boolean },
 ) {
   try {
     const result = await new WorkerService(environment).collectSource(
@@ -178,12 +181,22 @@ async function handlePublicCollection(
     }
     const sourceId = optionalString(payload, "sourceId");
     const pilotScheduleKey = sourceId ? `pilot-public-${sourceId}-weekly` : "";
-    if (environment.NODE_ENV === "production" && sourceId && isProductionPublicPilotSchedule({
+    const progressScheduleKey = sourceId ? `progress-${sourceId}-daily` : "";
+    const pilotJob = sourceId && isProductionPublicPilotSchedule({
       key: pilotScheduleKey, jobType: job.type, queueName: job.queueName,
       cronExpression: "weekly", payload: job.payload,
-    })) {
+    });
+    const progressJob = sourceId && isProductionProgressSchedule({
+      key: progressScheduleKey, jobType: job.type, queueName: job.queueName,
+      cronExpression: "daily", payload: job.payload,
+    });
+    const rollingLincolnJob = sourceId && isRollingLincolnSchedule({
+      key: ROLLING_LINCOLN_SCHEDULE_KEY, jobType: job.type, queueName: job.queueName,
+      cronExpression: "weekly", payload: job.payload,
+    });
+    if (environment.NODE_ENV === "production" && sourceId && (pilotJob || progressJob || rollingLincolnJob)) {
       await prisma.$transaction([
-        prisma.scheduleDefinition.updateMany({ where: { key: pilotScheduleKey }, data: { enabled: false, nextRunAt: null } }),
+        prisma.scheduleDefinition.updateMany({ where: { key: { in: progressJob ? [pilotScheduleKey, progressScheduleKey] : [pilotJob ? pilotScheduleKey : ROLLING_LINCOLN_SCHEDULE_KEY] } }, data: { enabled: false, nextRunAt: null } }),
         prisma.dataSource.updateMany({ where: { key: sourceId }, data: { lifecycle: "SUSPENDED", enabled: false, lastReviewedAt: new Date() } }),
       ]);
     }

@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 
-import { normaliseArgusPublicMarketRecords, officialVenueEventsExtractionSchema, officialVenueResolveExtractionSchema, publicCruiseScheduleExtractionSchema } from "../src/collection/public-market-argus";
+import { normaliseArgusPublicMarketRecords, officialVenueEventsExtractionSchema, officialVenueResolveExtractionSchema, publicCruiseScheduleExtractionSchema, publicUniversityKeyDatesExtractionSchema } from "../src/collection/public-market-argus";
 
 describe("Argus public-market contracts", () => {
+  it("rejects a university date range that ends before it starts", () => {
+    assert.throws(() => publicUniversityKeyDatesExtractionSchema.parse({
+      data_schema: "public-university-key-dates.collect_key_dates", schema_version: "1.0.0",
+      universityId: "aut", universityName: "AUT", sourceUrl: "https://www.aut.ac.nz/study/semester-dates",
+      academicYear: 2026, totalKeyDates: 1, truncated: false, observedAt: "2026-09-28T00:00:00.000Z",
+      warnings: [], quality: "complete",
+      keyDates: [{ dateId: "summer-break", title: "Mid-semester break", eventType: "STUDENT_BREAK",
+        startsAt: "2026-12-25", endsAt: "2026-01-04", timePrecision: "DATE", timezone: "Pacific/Auckland",
+        scope: "UNIVERSITY", campusId: null, campusName: null, impactEvidence: { schemaVersion: "event-impact-evidence-v1", policyVersion: "event-impact-promotion-v2", items: [] }, fieldSources: {} }],
+    }));
+  });
   it("keeps venue capacity separate from event attendance evidence", () => {
     const venue = officialVenueResolveExtractionSchema.parse({ data_schema: "official-venue-public.resolve_venue", schema_version: "1.0.0", provider: "claudelands-public", venueId: "claudelands-events-centre", canonicalUrl: "https://claudelands.co.nz/", canonicalName: "Claudelands", address: null, city: "Hamilton", region: "Waikato", postcode: null, countryCode: "NZ", latitude: null, longitude: null, maximumCapacity: 230, capacityConfigurations: [{ name: "Theatre", capacity: 230, configurationType: "theatre" }], capacitySourceUrl: "https://claudelands.co.nz/spaces/our-spaces/venues", observedAt: "2026-08-09T00:00:00.000Z", fieldSources: {}, warnings: [], quality: "partial" });
     const events = officialVenueEventsExtractionSchema.parse({ data_schema: "official-venue-public.collect_events", schema_version: "1.0.0", provider: "claudelands-public", venueId: venue.venueId, sourceUrl: "https://claudelands.co.nz/events/all-events", events: [{ eventId: "event-1", title: "Public event", canonicalUrl: "https://claudelands.co.nz/events/example", startsAt: "2026-09-27", endsAt: null, timePrecision: "DATE", timezone: "Pacific/Auckland", status: "SCHEDULED", venueId: venue.venueId, impactEvidence: { schemaVersion: "event-impact-evidence-v1", policyVersion: "event-impact-promotion-v2", items: [] }, fieldSources: {} }], totalEvents: 1, truncated: false, observedAt: "2026-08-09T00:00:00.000Z", warnings: [], quality: "complete" });

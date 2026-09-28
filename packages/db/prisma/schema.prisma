@@ -2047,6 +2047,26 @@ model SourceEventOccurrence {
   @@index([lastCollectionRunId])
 }
 
+model PublicFactVersion {
+  id               String   @id @default(cuid())
+  idempotencyKey   String   @unique
+  dataSourceId     String
+  collectionRunId  String
+  factKind         String
+  externalId       String
+  contentHash      String
+  observedAt       DateTime
+  startsAt         DateTime?
+  endsAt           DateTime?
+  payload          Json
+  isDemo           Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  @@index([dataSourceId, factKind, externalId, createdAt])
+  @@index([collectionRunId])
+  @@index([endsAt])
+}
+
 model CanonicalVenue {
   id                   String            @id @default(cuid())
   canonicalKey         String            @unique

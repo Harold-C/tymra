@@ -137,6 +137,7 @@ import {
 } from "../collection/rbnz-fx";
 import {
   LINCOLN_KEY_DATES_URL,
+  lincolnKeyDatesUrls,
   lincolnKeyDatesExtractionSchema,
   normaliseLincolnKeyDateSignals,
 } from "../collection/lincoln-university-key-dates";
@@ -215,6 +216,7 @@ type ConfirmWorkerRequest = {
 type CollectSourceOptions = {
   jobId?: string;
   lincolnOnly?: boolean;
+  rollingLincoln?: boolean;
   productionCanary?: boolean;
   boundedPublicSchedule?: boolean;
   from?: Date;
@@ -1069,6 +1071,13 @@ export class WorkerService {
       || options.limit !== 2)) {
       throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Lincoln-only acceptance requires the queued 2026 collection with a two-record limit", 422);
     }
+    const rollingLincoln = options.rollingLincoln === true;
+    if (rollingLincoln && (this.environment.NODE_ENV !== "production" || sourceId !== "christchurch_university_dates"
+      || marketScope !== "christchurch" || !options.jobId || options.lincolnOnly || options.from || options.to
+      || options.dryRun || options.localAcceptance || options.productionCanary || options.boundedPublicSchedule
+      || options.limit !== 200)) {
+      throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Rolling Lincoln collection requires its approved queued weekly bounds", 422);
+    }
     const registeredSource = await prisma.dataSource.findUnique({ where: { key: sourceId }, select: { id: true } });
     if (!registeredSource) throw new WorkerRequestError("SOURCE_NOT_FOUND", `SourceRegistry is missing ${sourceId}`, 404);
     if (!await sourceHasCapability(registeredSource.id, "COLLECT_PUBLIC_SIGNALS")) {
@@ -1097,7 +1106,7 @@ export class WorkerService {
     const source = await prisma.dataSource.findUniqueOrThrow({
       where: { key: sourceId },
       select: {
-        id: true, key: true, name: true, enabled: true, environments: true,
+        id: true, key: true, name: true, enabled: true, environments: true, dailyBudget: true,
         lifecycle: true, operationalStatus: true, healthStatus: true,
         metadata: true,
       },
@@ -1108,7 +1117,7 @@ export class WorkerService {
     if (productionCanary && ARGUS_MARKET_PILOT_SOURCE_KEYS.includes(sourceId) && !browserPilot) {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Argus market canary requires an approved queued production pilot", 409);
     }
-    if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly) {
+    if (this.environment.NODE_ENV === "production" && jsonRecord(source.metadata).lincolnAcceptanceOnly === true && !options.lincolnOnly && !rollingLincoln) {
       throw new WorkerRequestError("SOURCE_UNAVAILABLE", "Lincoln acceptance source requires the bounded Lincoln-only job", 409);
     }
     if (boundedPublicSchedule && jsonRecord(source.metadata).boundedProductionCanary !== true) {
@@ -1116,8 +1125,8 @@ export class WorkerService {
     }
     this.assertLocalAcceptanceAllowed(source, localAcceptance);
     const pilotRange = productionCanary ? publicPilotRange(sourceId, new Date()) : null;
-    const requestedFrom = options.from ?? pilotRange?.from ?? new Date();
-    const requestedTo = options.to ?? pilotRange?.to ?? new Date(requestedFrom.getTime() + (boundedPublicSchedule ? 31 : 90) * 86_400_000);
+    const requestedFrom = options.from ?? pilotRange?.from ?? (rollingLincoln ? nzStartOfDay(new Date()) : new Date());
+    const requestedTo = options.to ?? pilotRange?.to ?? new Date(requestedFrom.getTime() + (rollingLincoln ? 365 : boundedPublicSchedule ? 31 : 90) * 86_400_000);
     const localBounds = {
       maxRequests: sourceId === "doc_alerts" ? 14 : sourceId === "queenstown_airport_monthly" ? 6 : ["christchurch_airport", "wellington_airport"].includes(sourceId) ? 4 : ["ski_seasons_nz", "university_calendars", "council_calendars", "canterbury_major_annual_events", "venues_otautahi_events", "eventbrite_events", "humanitix_events", "christchurch_sports", "christchurch_council_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "taranakienz_events", "manawatunz_events"].includes(sourceId) ? 3 : ["geonet", "christchurch_racing", "christchurch_university_dates", "christchurch_cruise"].includes(sourceId) ? 2 : 1,
       maxRecords: argusPublicMarketSource(sourceId)?.kind === "venue" ? 200
@@ -1141,7 +1150,7 @@ export class WorkerService {
     const to = localAcceptance || productionCanary || boundedPublicSchedule
       ? new Date(Math.min(requestedTo.getTime(), from.getTime() + localBounds.maxWindowDays * 86_400_000))
       : requestedTo;
-    const limit = localAcceptance
+    const limit = rollingLincoln ? undefined : localAcceptance
       ? localBounds.maxRecords
       : options.limit === undefined ? undefined : Math.min(5_000, Math.max(1, Math.trunc(options.limit)));
     if (to <= from || to.getTime() - from.getTime() > 366 * 86_400_000) throw new WorkerRequestError("INVALID_COLLECTION_RANGE", "Collection range must be positive and no longer than 366 days", 422);
@@ -1153,7 +1162,9 @@ export class WorkerService {
       concurrency: Math.max(1, adapter.metadata.concurrencyLimit),
       timeoutMs: 120_000,
     } as const;
-    const effectiveBounds = localAcceptance ? localBounds : productionCanary
+    const effectiveBounds = rollingLincoln
+      ? { ...localBounds, maxRequests: 3, maxRecords: 200, maxWindowDays: 366, timeoutMs: 300_000, concurrency: 1 }
+      : localAcceptance ? localBounds : productionCanary
       ? { ...localBounds, maxRequests: publicPilotRequestLimit(sourceId), maxRecords: publicPilotSchedulePayload(sourceId).limit, timeoutMs: sourceId === "council_calendars" ? 120_000 : 30_000 }
       : boundedPublicSchedule && scheduleSpec
         ? { ...localBounds, maxRequests: scheduleSpec.maxRequests, maxRecords: scheduleSpec.limit, maxWindowDays: 31, timeoutMs: sourceId === "rto_calendars" ? 180_000 : 30_000, concurrency: 1 }
@@ -1165,14 +1176,14 @@ export class WorkerService {
       localAcceptance,
       collectionLimits: effectiveBounds,
       collectionRange: { from, to },
-      ...(localAcceptance || productionCanary || boundedPublicSchedule ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
+      ...(localAcceptance || productionCanary || boundedPublicSchedule || rollingLincoln ? { signal: AbortSignal.timeout(effectiveBounds.timeoutMs) } : {}),
       ...(collectionState ? { collectionState } : {}),
       ...(christchurchScan ? { christchurchScan } : {}),
     };
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot(sourceId);
     const initialScope = {
-      localAcceptance, productionCanary, boundedPublicSchedule, sourceId, marketScope,
+      localAcceptance, productionCanary, boundedPublicSchedule, rollingLincoln, sourceId, marketScope,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
       effective: { from: from.toISOString(), to: to.toISOString(), limit: effectiveBounds.maxRecords },
       limits: effectiveBounds,
@@ -1193,12 +1204,24 @@ export class WorkerService {
     const counters = emptyPublicCollectionCounters();
     try {
       if (!localAcceptance) this.assertSourceCollectionAllowed(source, browserPilot);
-        const result = await withRedisLock(`source:${sourceId}`, sourceId === "ski_seasons_nz" && productionCanary ? 600_000
+        const result = await withRedisLock(`source:${sourceId}`, rollingLincoln ? 600_000 : sourceId === "ski_seasons_nz" && productionCanary ? 600_000
           : sourceId === "rto_calendars" && boundedPublicSchedule ? 600_000
           : sourceId === "council_calendars" && productionCanary ? 180_000 : 60_000, async () => {
+        if (rollingLincoln) {
+          const usedToday = await prisma.rawArtifact.count({ where: {
+            dataSourceId: source.id, artifactType: "HTML", createdAt: { gte: nzStartOfDay(new Date()) },
+            collectionRunId: { not: run.id },
+          } });
+          if (source.dailyBudget !== 3 || usedToday + effectiveBounds.maxRequests > source.dailyBudget) {
+            throw new AdapterError("DAILY_BUDGET_EXHAUSTED", "Rolling Lincoln daily browser budget has been reached", false);
+          }
+        }
         const adapterReferences = options.lincolnOnly ? [] : await adapter.discover({ marketScope, from, to, limit }, context);
+        const lincolnReferences = sourceId === "christchurch_university_dates"
+          ? options.lincolnOnly ? [LINCOLN_KEY_DATES_URL] : lincolnKeyDatesUrls(from, to)
+          : [];
         const discovered = sourceId === "christchurch_university_dates"
-          ? [LINCOLN_KEY_DATES_URL, ...adapterReferences]
+          ? [...lincolnReferences, ...adapterReferences]
           : adapterReferences;
         counters.discovered = discovered.length;
         const uniqueReferences = [...new Set(discovered)];
@@ -1219,7 +1242,7 @@ export class WorkerService {
                 options.dryRun === true,
                 options.jobId,
               )
-            : sourceId === "christchurch_university_dates" && reference === LINCOLN_KEY_DATES_URL
+            : sourceId === "christchurch_university_dates" && lincolnReferences.includes(reference)
               ? await this.executeLincolnKeyDatesBrowserTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
               : sourceId === "ski_seasons_nz"
                 ? await this.executeSkiSeasonArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
@@ -1407,7 +1430,30 @@ export class WorkerService {
       });
       return { sourceSignal, canonical: existing.canonicalLink.marketSignal, link: existing.canonicalLink, unchanged: true };
     }
-    const sourceSignal = await prisma.sourceMarketSignal.upsert({
+    return prisma.$transaction(async (tx) => {
+      if (existing && existing.contentHash !== contentHash && !await tx.publicFactVersion.findFirst({
+        where: { dataSourceId, factKind: "MARKET_SIGNAL", externalId: signal.externalId, contentHash: existing.contentHash },
+        select: { id: true },
+      })) {
+        await tx.publicFactVersion.upsert({
+          where: { idempotencyKey: stableId("public-fact-baseline", `${existing.id}:${existing.contentHash}`) },
+          create: {
+            idempotencyKey: stableId("public-fact-baseline", `${existing.id}:${existing.contentHash}`),
+            dataSourceId, collectionRunId: existing.lastCollectionRunId, factKind: "MARKET_SIGNAL",
+            externalId: signal.externalId, contentHash: existing.contentHash,
+            observedAt: existing.lastSeenAt, startsAt: existing.startsAt, endsAt: existing.endsAt,
+            payload: {
+              marketKey: existing.marketKey, type: existing.type, title: existing.title, region: existing.region,
+              startsAt: existing.startsAt.toISOString(), endsAt: existing.endsAt.toISOString(),
+              direction: existing.direction, confidence: existing.confidence, evidenceRef: existing.evidenceRef,
+              metadata: existing.metadata,
+            } as Prisma.InputJsonValue,
+            isDemo: existing.isDemo,
+          },
+          update: {},
+        });
+      }
+      const sourceSignal = await tx.sourceMarketSignal.upsert({
         where: { dataSourceId_externalId: { dataSourceId, externalId: signal.externalId } },
         create: {
           dataSourceId, lastCollectionRunId: collectionRunId, externalId: signal.externalId,
@@ -1424,21 +1470,32 @@ export class WorkerService {
           contentHash, metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata }, lastSeenAt: seenAt,
         },
       });
-    const existingLink = await prisma.marketSignalSourceLink.findUnique({ where: { sourceMarketSignalId: sourceSignal.id }, select: { marketSignalId: true } });
+      await tx.publicFactVersion.upsert({
+        where: { idempotencyKey: stableId("public-fact-version", `${collectionRunId}:MARKET_SIGNAL:${dataSourceId}:${signal.externalId}:${contentHash}`) },
+        create: {
+          idempotencyKey: stableId("public-fact-version", `${collectionRunId}:MARKET_SIGNAL:${dataSourceId}:${signal.externalId}:${contentHash}`),
+          dataSourceId, collectionRunId, factKind: "MARKET_SIGNAL", externalId: signal.externalId,
+          contentHash, observedAt: seenAt, startsAt: signal.startsAt, endsAt: signal.endsAt,
+          payload: sourceContent as Prisma.InputJsonValue, isDemo: signal.fixture || this.environment.NODE_ENV === "test",
+        },
+        update: {},
+      });
+    const existingLink = await tx.marketSignalSourceLink.findUnique({ where: { sourceMarketSignalId: sourceSignal.id }, select: { marketSignalId: true } });
     const canonicalId = existingLink?.marketSignalId
       ?? stableId("signal", eventOccurrenceId ? `event-occurrence:${eventOccurrenceId}` : `${dataSourceId}:${signal.externalId}`);
     const evidence = { title: signal.title, direction: signal.direction, confidence: signal.confidence, evidenceRef: signal.evidenceRef, metadata: signalMetadata } as Prisma.InputJsonValue;
-    const canonical = await prisma.marketSignal.upsert({
+    const canonical = await tx.marketSignal.upsert({
         where: { id: canonicalId },
         create: { id: canonicalId, marketKey, type: signalType, region: signal.region, startsAt: signal.startsAt, endsAt: signal.endsAt, dataSourceId, eventOccurrenceId, status: "CONFIRMED", evidence, isDemo: signal.fixture || this.environment.NODE_ENV === "test" },
         update: { marketKey, type: signalType, region: signal.region, startsAt: signal.startsAt, endsAt: signal.endsAt, dataSourceId, eventOccurrenceId, status: "CONFIRMED", evidence },
       });
-    const link = await prisma.marketSignalSourceLink.upsert({
+    const link = await tx.marketSignalSourceLink.upsert({
         where: { sourceMarketSignalId: sourceSignal.id },
         create: { marketSignalId: canonical.id, sourceMarketSignalId: sourceSignal.id, matchMethod: "SOURCE_ISOLATED_IDENTITY_V1", matchConfidence: 1, evidence: { sourceExternalId: signal.externalId } },
         update: { marketSignalId: canonical.id, matchMethod: "SOURCE_ISOLATED_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { sourceExternalId: signal.externalId } },
       });
     return { sourceSignal, canonical, link, unchanged: false };
+    });
   }
 
   private async resumeOrCreateBrowserCollectionRun(
@@ -2071,12 +2128,13 @@ export class WorkerService {
     const maxDetails = localAcceptance || productionCanary
       ? Math.min(options.maxDetails ?? options.limit ?? 2, 2)
       : Math.min(options.maxDetails ?? options.limit ?? this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, this.environment.EVENTFINDA_DETAIL_BATCH_SIZE, 500);
+    const maxRecords = Math.min(5_000, Math.max(1, Math.trunc(options.limit ?? 5_000)));
     const dryRun = options.dryRun === true;
     const configurationBefore = sourceConfigurationSnapshot(source);
     const schedulesBefore = await sourceScheduleSnapshot("eventfinda");
     const savedDiscoveryPage = pilotMetadata.eventfindaDiscoveryNextPage;
     const discoveryNextPage = typeof savedDiscoveryPage === "number" && Number.isInteger(savedDiscoveryPage) ? savedDiscoveryPage : 2;
-    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, discoveryNextPage, dryRun, localAcceptance, developmentBootstrap, productionCanary, configurationBefore, schedulesBefore };
+    const initialScope = { marketScope, sourceId: "eventfinda", phase, from: from.toISOString(), to: to.toISOString(), maxPages, maxDetails, maxRecords, discoveryNextPage, dryRun, localAcceptance, developmentBootstrap, productionCanary, configurationBefore, schedulesBefore };
     const run = await this.resumeOrCreateBrowserCollectionRun(options.jobId, source.id, analysisRequestId, initialScope, now);
 
     try {
@@ -2165,6 +2223,7 @@ export class WorkerService {
             listingCards += listingGroups.reduce((count, group) => count + group.events.length, 0);
             for (const group of listingGroups) {
               if (productionCanary && !discovered.has(group.url) && discovered.size >= 2) continue;
+              if (!discovered.has(group.url) && discovered.size >= maxRecords) continue;
               const current = discovered.get(group.url);
               const merged = groupEventfindaListingEvents([...(current?.events ?? []), ...group.events])[0]?.events ?? group.events;
               discovered.set(group.url, {
@@ -2258,6 +2317,9 @@ export class WorkerService {
               const allEvents = normaliseEventfindaDetail(extraction, listing);
               const eligibleEvents = allEvents.filter((event) => event.endsAt >= from && event.startsAt <= to);
               const events = productionCanary ? eligibleEvents.slice(0, Math.max(0, 2 - eventsPersisted)) : eligibleEvents;
+              if (eventsPersisted + events.length > maxRecords) {
+                throw new AdapterError("RECORD_LIMIT_EXCEEDED", "Eventfinda detail exceeds the approved collection record limit", false);
+              }
               if (!dryRun) {
                 const persistedEvents = await this.persistNormalisedEvents(events, source.id, run.id);
                 unchangedEventsSkipped += [...persistedEvents.values()].filter((persisted) => persisted.unchanged).length;
@@ -2279,6 +2341,7 @@ export class WorkerService {
               failureCount += 1;
               const isRateLimited = error instanceof AdapterError && error.code === "RATE_LIMITED";
               const isOversized = error instanceof AdapterError && error.code === "ARTIFACT_TOO_LARGE";
+              if (error instanceof AdapterError && error.code === "RECORD_LIMIT_EXCEEDED") throw error;
               if (!dryRun && target.id) {
                 const failures = target.consecutiveFailures + 1;
                 await prisma.sourceCrawlTarget.update({ where: { id: target.id }, data: { status: isRateLimited ? "RATE_LIMITED" : "FAILED", consecutiveFailures: failures, nextFetchAt: isOversized ? new Date(Date.now() + 30 * 86_400_000) : eventfindaFailureBackoff(failures, isRateLimited), lastErrorCode: error instanceof AdapterError ? error.code : "BROWSER_CAPTURE_FAILED", lastErrorAt: new Date(), ...(isOversized ? { metadata: { ...jsonRecord(target.metadata), listingChanged: false, detailBlockedReason: "ARTIFACT_TOO_LARGE" } } : {}) } });
@@ -2751,7 +2814,8 @@ export class WorkerService {
     const traceId = parentJobId
       ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
       : `lincoln-key-dates-${randomUUID()}`;
-    const academicYear = Number(nzDateKey(context.collectionRange?.from ?? new Date()).slice(0, 4));
+    const academicYear = Number(new URL(url).pathname.match(/^\/study\/key-dates\/(20\d{2})-academic-key-dates\/$/u)?.[1]);
+    if (!Number.isInteger(academicYear)) throw new AdapterError("INVALID_INPUT", "Lincoln academic year does not match the approved annual URL", false);
     const input = { traceId, url, connectorId, workflowId, academicYear };
     const response = parentJobId
       ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
@@ -4114,9 +4178,50 @@ export class WorkerService {
             update: { sourceEventId: sourceEvent.id, ...sourceOccurrenceData },
           });
 
-      const existingOccurrenceLink = await tx.eventOccurrenceSourceLink.findUnique({ where: { sourceEventOccurrenceId: sourceOccurrence.id }, select: { eventOccurrenceId: true } });
+      if (existingOccurrence && existingOccurrence.contentHash !== contentHash && !await tx.publicFactVersion.findFirst({
+        where: { dataSourceId, factKind: "EVENT_OCCURRENCE", externalId: existingOccurrence.externalId, contentHash: existingOccurrence.contentHash },
+        select: { id: true },
+      })) {
+        await tx.publicFactVersion.upsert({
+          where: { idempotencyKey: stableId("public-fact-baseline", `${existingOccurrence.id}:${existingOccurrence.contentHash}`) },
+          create: {
+            idempotencyKey: stableId("public-fact-baseline", `${existingOccurrence.id}:${existingOccurrence.contentHash}`),
+            dataSourceId, collectionRunId: existingOccurrence.lastCollectionRunId, factKind: "EVENT_OCCURRENCE",
+            externalId: existingOccurrence.externalId, contentHash: existingOccurrence.contentHash,
+            observedAt: existingOccurrence.lastSeenAt, startsAt: existingOccurrence.startsAt, endsAt: existingOccurrence.endsAt,
+            payload: {
+              title: existingOccurrence.title, status: existingOccurrence.status,
+              startsAt: existingOccurrence.startsAt.toISOString(), endsAt: existingOccurrence.endsAt.toISOString(),
+              venueName: existingOccurrence.venueName, sourceUrl: existingOccurrence.sourceUrl,
+              metadata: existingOccurrence.metadata,
+            } as Prisma.InputJsonValue,
+            isDemo: existingOccurrence.isDemo,
+          },
+          update: {},
+        });
+      }
+      await tx.publicFactVersion.upsert({
+        where: { idempotencyKey: stableId("public-fact-version", `${collectionRunId}:EVENT_OCCURRENCE:${dataSourceId}:${event.externalId}:${contentHash}`) },
+        create: {
+          idempotencyKey: stableId("public-fact-version", `${collectionRunId}:EVENT_OCCURRENCE:${dataSourceId}:${event.externalId}:${contentHash}`),
+          dataSourceId, collectionRunId, factKind: "EVENT_OCCURRENCE", externalId: event.externalId,
+          contentHash, observedAt: seenAt, startsAt: event.startsAt, endsAt: event.endsAt,
+          payload: {
+            title: event.title, status: event.status, startsAt: event.startsAt.toISOString(),
+            endsAt: event.endsAt.toISOString(), venueName: event.venueName, sourceUrl: event.sourceUrl,
+            ticketStatus: event.ticketStatus, metadata: event.metadata,
+          } as Prisma.InputJsonValue,
+          isDemo,
+        },
+        update: {},
+      });
+
+      const existingOccurrenceLink = await tx.eventOccurrenceSourceLink.findUnique({
+        where: { sourceEventOccurrenceId: sourceOccurrence.id },
+        select: { eventOccurrenceId: true, eventOccurrence: { select: { canonicalKey: true } } },
+      });
       const occurrenceData = { canonicalEventId: canonicalEvent.id, venueId: venue?.id ?? null, timezone: event.timezone, timePrecision: event.timePrecision ?? inferredTimePrecision(event), startsAt: event.startsAt, endsAt: event.endsAt, status: event.status, ticketStatus: event.ticketStatus, impactStatus: event.impactStatus, impactScore: event.impactScore, impactConfidence: event.impactConfidence, impactEvidence: event.impactEvidence as Prisma.InputJsonValue, lastSeenAt: seenAt, metadata: { canonicalisationVersion: "event-occurrence-exact-v1", evidenceRef: event.evidenceRef ?? event.sourceUrl, observedAt: (event.observedAt ?? seenAt).toISOString() }, isDemo };
-      const eventOccurrence = existingOccurrenceLink
+      const eventOccurrence = existingOccurrenceLink?.eventOccurrence.canonicalKey === occurrenceCanonicalKey
         ? await tx.eventOccurrence.update({ where: { id: existingOccurrenceLink.eventOccurrenceId }, data: occurrenceData })
         : await tx.eventOccurrence.upsert({
             where: { canonicalKey: occurrenceCanonicalKey },
@@ -4129,6 +4234,10 @@ export class WorkerService {
         create: { eventOccurrenceId: eventOccurrence.id, sourceEventOccurrenceId: sourceOccurrence.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, evidence: { canonicalKey: occurrenceCanonicalKey } },
         update: { eventOccurrenceId: eventOccurrence.id, matchMethod: "EXACT_IDENTITY_V1", matchConfidence: 1, reviewStatus: "AUTO_ACCEPTED", evidence: { canonicalKey: occurrenceCanonicalKey } },
       });
+      if (existingOccurrenceLink && existingOccurrenceLink.eventOccurrenceId !== eventOccurrence.id
+        && await tx.eventOccurrenceSourceLink.count({ where: { eventOccurrenceId: existingOccurrenceLink.eventOccurrenceId } }) === 0) {
+        await tx.eventOccurrence.update({ where: { id: existingOccurrenceLink.eventOccurrenceId }, data: { status: "SUPERSEDED", lastSeenAt: seenAt } });
+      }
 
       return { sourceEvent, sourceOccurrence, canonicalEvent, eventOccurrence, unchanged: false };
     });

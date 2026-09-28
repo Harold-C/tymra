@@ -126,7 +126,7 @@ export function parseUcKeyDates(html: string, finalUrl: string): HtmlResult {
   const { document } = parseHTML(html);
   const signals: PublicSignal[] = [];
   let year = 0;
-  for (const element of document.querySelectorAll("#2026, #2027, .cmp-timeline-ordered-item")) {
+  for (const element of document.querySelectorAll('[id^="20"], .cmp-timeline-ordered-item')) {
     if (element.id && /^20\d{2}$/.test(element.id)) { year = Number(element.id); continue; }
     if (!year || !element.classList.contains("cmp-timeline-ordered-item")) continue;
     const advertised = clean(element.querySelector(".cmp-timeline-ordered-item__title-ctn")?.textContent ?? "");

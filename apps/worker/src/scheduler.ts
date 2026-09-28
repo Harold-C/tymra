@@ -3,6 +3,8 @@ import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
 import { firstPublicPriorJobAction, isFirstPublicSchedule } from "./operations/production-public-schedules";
 import { isProductionPublicPilotSchedule } from "./operations/production-public-pilot";
+import { isProductionProgressSchedule } from "./operations/production-progress-schedules";
+import { isRollingLincolnSchedule } from "./operations/rolling-lincoln-schedule";
 import { isCollectionScheduleJobType, nextCollectionOutsideOfficeHours } from "./operations/collection-office-hours";
 
 const environment = getEnvironment();
@@ -25,7 +27,9 @@ async function enqueueDueSchedules(now = new Date()) {
   const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
   for (const schedule of schedules) {
     const publicPilot = isProductionPublicPilotSchedule(schedule);
-    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot) {
+    const progressSchedule = isProductionProgressSchedule(schedule);
+    const rollingLincolnSchedule = isRollingLincolnSchedule(schedule);
+    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot && !progressSchedule && !rollingLincolnSchedule) {
       throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
     }
     if (environment.NODE_ENV === "production" && isCollectionScheduleJobType(schedule.jobType)) {
@@ -48,11 +52,13 @@ async function enqueueDueSchedules(now = new Date()) {
       const source = await prisma.dataSource.findUnique({ where: { key: payload.sourceId } });
       const blockers = source ? sourceCollectionBlockers(source, environment.NODE_ENV) : ["source missing"];
       const metadata = source?.metadata;
-      const pilotApproved = !publicPilot || (source?.providerType === "PUBLIC" && !source.isDemo
+      const pilotApproved = !(publicPilot || progressSchedule || rollingLincolnSchedule) || (source?.providerType === "PUBLIC" && !source.isDemo
         && source.environments.includes("PRODUCTION")
         && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
-        && (metadata as Record<string, unknown>).boundedProductionCanary === true);
-      if (publicPilot && (blockers.length || !pilotApproved)) {
+        && (rollingLincolnSchedule
+          ? (metadata as Record<string, unknown>).rollingLincolnApproved === true
+          : (metadata as Record<string, unknown>).boundedProductionCanary === true));
+      if ((publicPilot || progressSchedule || rollingLincolnSchedule) && (blockers.length || !pilotApproved)) {
         await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: false, nextRunAt: null } });
         process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "public_pilot_paused_after_source_block", schedule: schedule.key })}\n`);
         continue;

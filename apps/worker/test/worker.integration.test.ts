@@ -55,7 +55,20 @@ describe("Worker baseline pipeline", () => {
       const repeated = await service.persistNormalisedEvent(normalised!, source.id, run.id);
       expect(repeated.unchanged).toBe(true);
       expect(await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, sourceEvent: { externalId: sourceEventId } } })).toBe(before);
+      const versionsBeforeChange = await prisma.publicFactVersion.count({ where: { dataSourceId: source.id, factKind: "EVENT_OCCURRENCE", externalId: normalised!.externalId } });
+      const moved = await service.persistNormalisedEvent({
+        ...normalised!, startsAt: new Date(normalised!.startsAt.getTime() + 86_400_000),
+        endsAt: new Date(normalised!.endsAt.getTime() + 86_400_000),
+      }, source.id, run.id);
+      expect(moved.unchanged).toBe(false);
+      expect(moved.eventOccurrence.id).not.toBe(adopted.eventOccurrence.id);
+      expect(await prisma.eventOccurrenceSourceLink.count({ where: { eventOccurrenceId: adopted.eventOccurrence.id } })).toBe(1);
+      const versions = await prisma.publicFactVersion.findMany({ where: { dataSourceId: source.id, factKind: "EVENT_OCCURRENCE", externalId: normalised!.externalId }, orderBy: { createdAt: "asc" } });
+      expect(versions).toHaveLength(versionsBeforeChange + 2);
+      expect(new Set(versions.map((version) => version.startsAt?.toISOString()))).toEqual(new Set([normalised!.startsAt.toISOString(), moved.sourceOccurrence.startsAt.toISOString()]));
+      expect(await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, sourceEvent: { externalId: sourceEventId } } })).toBe(before);
     } finally {
+      await prisma.publicFactVersion.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: sourceEventId } } });
       const sourceEvent = await prisma.sourceEvent.findUnique({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId: sourceEventId } }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       const canonicalEventIds = sourceEvent?.canonicalLinks.map((link) => link.canonicalEventId) ?? [];
       const occurrenceIds = [...new Set(sourceEvent?.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)) ?? [])];
@@ -614,11 +627,12 @@ describe("Worker baseline pipeline", () => {
   it("persists generic source signals, canonical signals and lineage idempotently", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "geonet" } });
     const externalPrefix = `${prefix}:signal`;
+    let signalVersion = 1;
     const adapter: PublicDataAdapter = {
       metadata: { sourceId: "geonet", sourceName: "GeoNet", sourceType: "PUBLIC_DATA", supportedDomains: ["api.geonet.org.nz"], adapterKey: "public:geonet:integration", accessMethod: "OFFICIAL_OPEN_API", concurrencyLimit: 1, dailyBudget: 10, collectorVersion: "test", parserVersion: "test" },
       async discover() { return ["https://api.geonet.org.nz/quake?MMI=3", "https://api.geonet.org.nz/quake?MMI=3"]; },
       async fetch() { return [0, 1, 2].map((index) => ({ sourceId: "geonet", externalId: `${externalPrefix}:${index}`, payload: { publicID: `${externalPrefix}:${index}`, token: "must-redact" }, fetchedAt: new Date(), fixture: false })); },
-      async normalise(records) { return records.map((record, index) => ({ sourceId: "geonet", externalId: record.externalId, marketKey: "new-zealand", type: "WEATHER_OR_ACCESS_DISRUPTION", title: `Integration quake ${index}`, region: "New Zealand", startsAt: new Date("2026-08-01T00:00:00Z"), endsAt: new Date("2026-08-02T00:00:00Z"), direction: "UNKNOWN", confidence: 0.5, evidenceRef: `https://api.geonet.org.nz/quake/${index}`, metadata: { magnitude: 4.2, sequence: index }, fixture: false })); },
+      async normalise(records) { return records.map((record, index) => ({ sourceId: "geonet", externalId: record.externalId, marketKey: "new-zealand", type: "WEATHER_OR_ACCESS_DISRUPTION", title: `Integration quake ${index}`, region: "New Zealand", startsAt: new Date("2026-08-01T00:00:00Z"), endsAt: new Date("2026-08-02T00:00:00Z"), direction: "UNKNOWN", confidence: signalVersion === 1 ? 0.5 : 0.6, evidenceRef: `https://api.geonet.org.nz/quake/${index}`, metadata: { magnitude: 4.2, sequence: index }, fixture: false })); },
       async healthCheck() { return { status: "HEALTHY", checkedAt: new Date(), message: "fixture transport", latencyMs: 0, mode: "live" }; },
     };
     const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false }, { geonet: adapter });
@@ -641,7 +655,16 @@ describe("Worker baseline pipeline", () => {
       const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: second.runId } });
       expect(run.scope).toMatchObject({ localAcceptance: true, effective: { limit: 2 }, limits: { maxRequests: 2, maxRecords: 2, maxWindowDays: 31 }, configurationUnchanged: true, schedulesUnchanged: true });
       expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toMatchObject({ lifecycle: source.lifecycle, operationalStatus: source.operationalStatus, healthStatus: source.healthStatus });
+      expect(await prisma.publicFactVersion.count({ where: { dataSourceId: source.id, factKind: "MARKET_SIGNAL", externalId: { startsWith: externalPrefix } } })).toBe(2);
+      signalVersion = 2;
+      const changed = await acceptanceService.collectSource("geonet", "new-zealand", undefined, { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-12-01T00:00:00Z"), limit: 999, localAcceptance: true });
+      runIds.push(changed.runId);
+      expect(changed.counters.unchangedSkipped).toBe(0);
+      const versions = await prisma.publicFactVersion.findMany({ where: { dataSourceId: source.id, factKind: "MARKET_SIGNAL", externalId: { startsWith: externalPrefix } } });
+      expect(versions).toHaveLength(4);
+      expect(new Set(versions.map((version) => (version.payload as { confidence: number }).confidence))).toEqual(new Set([0.5, 0.6]));
     } finally {
+      await prisma.publicFactVersion.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } } });
       await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } } });
       await prisma.marketSignal.deleteMany({ where: { id: { in: canonicalIds } } });
       await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });

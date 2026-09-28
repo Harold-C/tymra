@@ -417,6 +417,8 @@ describe("public data adapter contract", () => {
   it("keeps only demand-relevant UC dates", () => {
     const parsed = parseUcKeyDates(`<div id="2026"><h5>2026</h5></div><div class="cmp-timeline-ordered-item"><div class="cmp-timeline-ordered-item__title-ctn"><h3>25 - 27 August</h3></div><div class="cmp-timeline-ordered-item__content-ctn"><p>Spring graduation celebrations. Add to calendar</p></div></div><div class="cmp-timeline-ordered-item"><div class="cmp-timeline-ordered-item__title-ctn"><h3>28 August</h3></div><div class="cmp-timeline-ordered-item__content-ctn"><p>Deadline to submit an assignment.</p></div></div>`, "https://www.canterbury.ac.nz/study/study-support-info/dates-and-timetables/key-university-dates");
     expect(parsed.signals).toEqual([expect.objectContaining({ type: "UNIVERSITY_CALENDAR", title: "Spring graduation celebrations.", startsAt: new Date("2026-08-24T12:00:00.000Z"), endsAt: new Date("2026-08-27T11:59:59.999Z") })]);
+    const future = parseUcKeyDates(`<div id="2028"></div><div class="cmp-timeline-ordered-item"><div class="cmp-timeline-ordered-item__title-ctn">7 March</div><div class="cmp-timeline-ordered-item__content-ctn">Open Day</div></div>`, "https://www.canterbury.ac.nz/study/study-support-info/dates-and-timetables/key-university-dates");
+    expect(future.signals?.[0]?.startsAt).toEqual(new Date("2028-03-06T11:00:00.000Z"));
   });
 
   it("parses Addington meetings and Riccarton Cup Week dates", () => {
