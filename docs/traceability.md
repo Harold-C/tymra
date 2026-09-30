@@ -1,6 +1,6 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-01 (bounded OTA runtime deployed; Argus additional build approval pending)
+Last updated: 2026-10-01 (Argus additional build approved; source acceptance pending)
 
 ## 2026-09-30 六 OTA 生产试采（进行中）
 
@@ -31,7 +31,7 @@ Argus 的公开 OTA 房型选择与完整总价证据合同尚未放行：固定
 bundled 表示可能以未披露的零分项误判费用完整。公开精确房型流程的补充修复已通过
 61 项定向测试，跨系统 fixture 也验证未披露的 bundled 分项保持 null，已发布 Tymra
 将其判为费用 UNKNOWN；Tymra 无需再构建。首个 Argus 候选发布已取消，额外一次
-固定镜像构建正在等待用户确认。Synix 后台、账号、权限、Profile 和 Job 不在此变更范围。Argus 修复发布后仍须
+固定镜像构建已获用户确认，正在继续固定候选门禁和生产发布。Synix 后台、账号、权限、Profile 和 Job 不在此变更范围。Argus 修复发布后仍须
 逐来源真实试采和日计划启用；不得将 Tymra 已部署或 registry 已创建作为六来源生产验收。
 
 ## 2026-09-28–29 未来日期与历史版本生产发布记录
