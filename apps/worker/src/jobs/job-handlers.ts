@@ -31,6 +31,7 @@ import { DeferredJobError } from "./deferred-job";
 import { isProductionPublicPilotSchedule } from "../operations/production-public-pilot";
 import { isProductionProgressSchedule } from "../operations/production-progress-schedules";
 import { isRollingLincolnSchedule, ROLLING_LINCOLN_SCHEDULE_KEY } from "../operations/rolling-lincoln-schedule";
+import { isProductionOtaPayload, pauseProductionOta } from "../operations/production-ota";
 
 type JsonObject = Record<string, unknown>;
 
@@ -125,6 +126,26 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
       await new WorkerService(environment).retentionCleanup();
       return;
     case "CATALOG_DISCOVERY":
+      if (payload.productionOta !== undefined) {
+        if (!isProductionOtaPayload(payload) || job.queueName !== "ota-production" || job.sourceId !== payload.sourceId || job.maxAttempts !== 1) throw new Error("Unapproved production OTA Job");
+        try {
+          await new WorkerService(environment).collectProductionOta(payload, job.id);
+          await acknowledgePersistedArgusResults(environment, job.id);
+          const runs = await prisma.collectionRun.findMany({ where: { jobId: job.id } });
+          for (const run of runs) await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: { ...asObject(run.scope), deliveryVerified: true } as Prisma.InputJsonValue } });
+        } catch (error) {
+          if (error instanceof DeferredJobError) throw error;
+          await pauseProductionOta(payload.sourceId, environment.NODE_ENV);
+          const runs = await prisma.collectionRun.findMany({ where: { jobId: job.id } });
+          for (const run of runs) {
+            if (run.status === "RUNNING") await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: "OTA_TRIAL_FAILED", finishedAt: new Date() } });
+            await syncIncidentSafely(run.id);
+          }
+          try { await acknowledgePersistedArgusResults(environment, job.id); } catch { /* Preserve unacknowledged evidence for explicit recovery. */ }
+          throw error;
+        }
+        return;
+      }
       if (optionalString(payload, "priceCheckId")) {
         const priceCheckId = requiredString(payload, "priceCheckId");
         await new WorkerService(environment).discoverAndCollectPriceCheckComparables(priceCheckId, job.id);

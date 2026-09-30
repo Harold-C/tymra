@@ -281,6 +281,7 @@ export type ArgusCaptureInput = {
   adults?: number;
   children?: number;
   units?: number;
+  unitExternalId?: string;
   currency?: "NZD";
   maxAttempts?: 1 | 2;
   timeoutMs?: number;
@@ -462,14 +463,16 @@ export async function acknowledgeArgusJobResult(
   }
 }
 
-export async function cancelArgusJob(environment: Environment, jobId: string): Promise<void> {
+export async function cancelArgusJob(environment: Environment, jobId: string, requireAccepted = false): Promise<void> {
   try {
-    await fetch(new URL(`/v1/jobs/${jobId}`, environment.ARGUS_API_BASE_URL!), {
+    const response = await fetch(new URL(`/v1/jobs/${jobId}`, environment.ARGUS_API_BASE_URL!), {
       method: "DELETE",
       headers: argusHeaders(environment),
       signal: AbortSignal.timeout(environment.ARGUS_TIMEOUT_MS),
     });
-  } catch {
+    if (requireAccepted && !response.ok) throw new Error(`Argus cancellation was not accepted (HTTP ${response.status})`);
+  } catch (error) {
+    if (requireAccepted) throw error;
     // Cancellation is best-effort; the local parent remains authoritative.
   }
 }
@@ -868,6 +871,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.adults === undefined ? {} : { adults: input.adults }),
       ...(input.children === undefined ? {} : { children: input.children }),
       ...(input.units === undefined ? {} : { units: input.units }),
+      ...(input.unitExternalId === undefined ? {} : { unitExternalId: input.unitExternalId }),
       ...(input.currency === undefined ? {} : { currency: input.currency }),
       timeout_ms: input.timeoutMs ?? environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",

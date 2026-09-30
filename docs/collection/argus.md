@@ -1,6 +1,38 @@
 # Argus browser collection boundary
 
-Last updated: 2026-09-29 (browser collection boundary and production plans)
+Last updated: 2026-09-30 (bounded public OTA production contract)
+
+## Bounded OTA production pilots
+
+The six approved sources are `booking`, `airbnb`, `expedia`, `bookabach`, `agoda`, and `trip`.
+`ota:production:prepare --source <key> --confirm BOUNDED_PRODUCTION_OTA` creates only the named
+non-demo source, four public capabilities and one disabled daily plan. It never overwrites existing
+sources and does not require disabling the existing public-source schedules.
+`ota:production:trial` uses the same arguments to explicitly rearm and queue one source; only one
+Tymra OTA Job can be active. Each Job allows one regional listing discovery, at most one necessary
+detail and one exact-unit future-stay price. New submissions share a lock, allow at most three
+executions per Job and six per source per New Zealand day, and keep the shared Argus concurrency unchanged.
+Waiting for Argus preserves the same run and query; failures suspend only this source and its plan.
+An access challenge cancels only the bounded pilot's own Argus Job and waits for its terminal
+cancellation to release shared browser capacity; customer/manual workflows retain their existing handling.
+
+List identities are reused when complete; unresolved/search-summary identities require details.
+Unchanged discovery identity with retained resolution is reused for seven days; changed identity or
+expired resolution requires another bounded detail. Search occupancy is not physical-unit capacity.
+The rate request carries optional `unitExternalId`; results must match provider, listing, physical
+unit, dates, NZD and occupancy. Available positive all-in totals require either explicit components
+or `totalIncludesMandatoryFees=true` with `fieldSources.totalIncludesMandatoryFees` evidence.
+Unknown breakdown components remain nullable in observation context; existing integer accounting
+columns are not evidence that an unpublished fee equals zero. Each new run appends a price observation;
+replaying the same run is idempotent.
+
+`ota:production:enable` requires the latest two exact, single-attempt successful Jobs within seven
+days, positive physical-unit discovery and complete available price in each, retained evidence and
+verified Argus ACK/purge. D-039 rolling health thresholds also apply. Plans are daily and staggered
+by source outside office hours. `ota:production:pause` disables only the named OTA plan/source.
+All four mutation commands require production and the explicit confirmation string above.
+The generic public canary/preflight and source-wide public schedule commands are not OTA controls.
+Implementation and actual production acceptance are recorded separately in `docs/traceability.md`.
 
 Argus provides Tymra's authenticated, read-only browser execution boundary. Tymra uses its asynchronous
 Job API for Ticketmaster and Eventfinda listings/details, RBNZ B1, OurAuckland listing/details, School Sport and Ticketek NZ;

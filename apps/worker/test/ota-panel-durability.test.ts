@@ -1,0 +1,56 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Environment } from "@tymra/config";
+const mock = vi.hoisted(() => ({ member: vi.fn(), runFind: vi.fn(), runCreate: vi.fn(), runUpdate: vi.fn(), stay: vi.fn(), stayFind: vi.fn(), profile: vi.fn(), observation: vi.fn(), memberUpdate: vi.fn(), capture: vi.fn(), evidence: vi.fn() }));
+vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), sourceHasCapability: async () => true, recordTransformation: vi.fn(), prisma: { panelMembership: { findUniqueOrThrow: mock.member, update: mock.memberUpdate }, collectionRun: { findFirst: mock.runFind, create: mock.runCreate, update: mock.runUpdate }, stayQuery: { create: mock.stay, findUniqueOrThrow: mock.stayFind }, collectionProfile: { upsert: mock.profile }, rateObservation: { upsert: mock.observation }, rawArtifact: { findMany: async () => [] }, $transaction: async (items: Promise<unknown>[]) => Promise.all(items) } }));
+vi.mock("../src/services/argus-orchestrator", async (original) => ({ ...await original<typeof import("../src/services/argus-orchestrator")>(), captureBrowserTaskWithDurableArgus: mock.capture }));
+import { WorkerService } from "../src/services/worker-service";
+import { DeferredJobError } from "../src/jobs/deferred-job";
+const listing = { id: "listing", propertyId: "property", unitId: "unit", dataSourceId: "source", externalId: "hotel:room-1", sourceListingId: "hotel", canonicalUrl: "https://www.booking.com/hotel/nz/example.html", platformUnitName: "Queen room", dataSource: { key: "booking", operationalStatus: "HEALTHY" } };
+const run = { id: "run-1", status: "RUNNING", scope: { checkIn: "2026-10-07", stayQueryId: "query", panelMembershipId: "member" } };
+let rate: Record<string, unknown>;
+let service: WorkerService;
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-30T10:30:00Z"));
+  service = new WorkerService({ NODE_ENV: "production" } as Environment);
+  Object.assign(service, { persistArgusEvidence: mock.evidence });
+  mock.member.mockResolvedValue({ id: "member", sellableUnitId: "unit", membershipType: "ANCHOR", marketKey: "region-canterbury", sellableUnit: { canonicalName: "Queen room", capacity: 2, version: 1, listings: [listing] } });
+  mock.runFind.mockResolvedValue(run); mock.runCreate.mockResolvedValue(run);
+  mock.stayFind.mockResolvedValue({ id: "query" }); mock.stay.mockResolvedValue({ id: "query" });
+  mock.profile.mockResolvedValue({ id: "profile" }); mock.observation.mockResolvedValue({ id: "observation", evidenceRef: "retained" });
+  rate = { sourceListingId: "hotel", unitExternalId: "room-1", checkIn: "2026-10-07", checkOut: "2026-10-08", currency: "NZD", basePriceMinor: 20000, mandatoryFeesMinor: 1000, taxesMinor: 3000, optionalFeesMinor: 0, totalPriceMinor: 24000, availabilityStatus: "AVAILABLE", restrictionReason: null, minimumStay: null, mealPlan: "ROOM_ONLY", cancellationPolicy: "STANDARD", paymentTerms: "PAY_LATER", rateFence: "PUBLIC", sourceUrl: listing.canonicalUrl, collectedAt: "2026-09-30T10:00:00.000Z", qualityFlags: [], fieldSources: { totalPriceMinor: "public rate card" } };
+  mock.capture.mockImplementation(async () => ({ ok: true, payload: { status: "success", extracted: { data_schema: "ota-public.collect_rates", schema_version: "1.0.0", provider: "booking", sourceListingId: "hotel", rates: [rate], observedAt: rate.collectedAt, warnings: [], quality: "complete" } } }));
+});
+afterEach(() => vi.useRealTimers());
+describe("durable physical-unit panel prices", () => {
+  it("resumes one run/query and appends a new observation for a later run on the same stay", async () => {
+    await expect(service.collectPanelMemberRate("member", "job-1", "source")).resolves.toBe(true);
+    expect(mock.runCreate).not.toHaveBeenCalled(); expect(mock.stay).not.toHaveBeenCalled();
+    const first = mock.observation.mock.calls[0][0];
+    expect(first.create.idempotencyKey).toBe(first.where.idempotencyKey);
+    mock.runFind.mockResolvedValue({ ...run, id: "run-2" }); rate.totalPriceMinor = 25000; rate.basePriceMinor = 21000;
+    await service.collectPanelMemberRate("member", "job-2", "source");
+    expect(mock.observation.mock.calls[1][0].where.idempotencyKey).not.toBe(first.where.idempotencyKey);
+    expect(mock.observation.mock.calls[1][0].create.totalAmountMinor).toBe(25000);
+  });
+  it("preserves waiting state without a failed batch or duplicate query", async () => {
+    mock.capture.mockRejectedValue(new DeferredJobError("Waiting", new Date()));
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mock.runUpdate).not.toHaveBeenCalled(); expect(mock.stay).not.toHaveBeenCalled(); expect(mock.observation).not.toHaveBeenCalled();
+  });
+  it.each([{ unitExternalId: "other-room" }, { checkIn: "2026-10-09" }, { adults: 3 }, { sourceListingId: "other-hotel" }])("rejects mismatched identity or stay %j", async (changed) => {
+    Object.assign(rate, changed);
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("no matching rate");
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
+  it("preserves unknown mandatory fees and refuses production acceptance", async () => {
+    rate.mandatoryFeesMinor = null;
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("complete mandatory fees");
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
+  it("does not accept a historical or future observed timestamp as a current production price", async () => {
+    rate.collectedAt = "2026-08-01T00:00:00Z";
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("current day");
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
+});

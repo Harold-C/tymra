@@ -1,6 +1,24 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-29 (future/history release and bounded acceptance)
+Last updated: 2026-09-30 (six-OTA production pilot implementation in progress)
+
+## 2026-09-30 六 OTA 生产试采（进行中）
+
+当前候选增加六来源精确有界 prepare/trial/enable/pause、独立来源日计划、单来源顺序执行、
+每 Job 最多三次 Argus 提交／每来源新西兰日最多六次提交，以及失败时来源级停采。
+等待 Argus 保留原批次和查询；新一轮同入住日期价格追加历史，房型／日期不匹配拒绝绑定。
+费用合同新增可选 `totalIncludesMandatoryFees` 与来源文字依据；未知费用不据此变为完整。
+代码尚未发布，六 OTA 尚未启用。既有自动公共来源计划无需全局关闭。
+
+本轮已通过全工作区类型检查、Worker 302 项单元测试、根目录 236 项单元测试
+（5 项原有跳过），以及独立 `tymra_release_gate_20260928` 数据库中的生产准备／排队
+事务回滚测试；补充的取消确认暂时不可用时保留挑战分类测试也已通过。生产只读快照显示 OTA 来源、非演示 Property
+和价格均为零；公开来源 enabled plans 当前为 77，`progress-ticketmaster-daily` 已暂停，
+另两条 disabled 定义为已退役周 pilot。以下 2026-09-29 的 78 条启用描述为当时快照。
+
+Argus 正在独立工作树完成公开 OTA 房型选择与完整总价证据合同。Synix 后台、账号、权限、
+Profile 和 Job 不在此变更范围。固定候选构建、生产空闲切换、逐来源真实试采和日计划
+启用仍须完成；不得将本段实现状态作为六来源生产验收。
 
 ## 2026-09-28–29 未来日期与历史版本生产发布（当前状态）
 

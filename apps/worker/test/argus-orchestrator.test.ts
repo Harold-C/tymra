@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "@tymra/config";
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   diskEvents: [] as string[],
   enqueueJob: vi.fn(),
   executionFind: vi.fn(),
+  executionCount: vi.fn(),
+  sourceFind: vi.fn(),
   executionFindMany: vi.fn(),
   executionUpsert: vi.fn(),
   executionUpdate: vi.fn(),
@@ -63,12 +65,15 @@ vi.mock("@tymra/db", () => ({
       findMany: mocks.executionFindMany,
       upsert: mocks.executionUpsert,
       update: mocks.executionUpdate,
+      count: mocks.executionCount,
     },
     job: {
       findUnique: mocks.parentFind,
+      findUniqueOrThrow: mocks.parentFind,
       findMany: mocks.parentFindMany,
       updateMany: mocks.parentUpdateMany,
     },
+    dataSource: { findUniqueOrThrow: mocks.sourceFind },
     collectionRun: {
       findMany: mocks.collectionRunFindMany,
       updateMany: mocks.collectionRunUpdateMany,
@@ -80,6 +85,8 @@ vi.mock("@tymra/db", () => ({
     },
   },
 }));
+
+vi.mock("@tymra/queue", async (original) => ({ ...await original<typeof import("@tymra/queue")>(), withRedisLockWait: async (_key: string, _ttl: number, operation: () => Promise<unknown>) => operation() }));
 
 vi.mock("../src/clients/argus-client", async (importOriginal) => {
   const original = await importOriginal<typeof import("../src/clients/argus-client")>();
@@ -95,6 +102,7 @@ vi.mock("../src/clients/argus-client", async (importOriginal) => {
 });
 
 import { DeferredJobError } from "../src/jobs/deferred-job";
+import { productionOtaPayload, OTA_PILOT_VERSION } from "../src/operations/production-ota";
 import {
   acknowledgePersistedArgusResults,
   captureBrowserTaskWithDurableArgus,
@@ -133,6 +141,16 @@ afterEach(async () => {
 });
 
 describe("durable Argus orchestration", () => {
+  it.each([[6, 0, 0], [0, 3, 0], [0, 0, 1]])("blocks a new production OTA submission at source/job/concurrency limits %j", async (sourceCount, jobCount, activeCount) => {
+    mocks.executionCount.mockReset();
+    mocks.executionFind.mockResolvedValue(null);
+    mocks.parentFind.mockResolvedValue({ status: "RUNNING", payload: productionOtaPayload("booking") });
+    mocks.sourceFind.mockResolvedValue({ key: "booking", providerType: "OTA", sourceType: "OTA", enabled: true, isDemo: false, environments: ["PRODUCTION"], concurrencyLimit: 1, dailyBudget: 6, metadata: { productionOta: OTA_PILOT_VERSION }, accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY" });
+    mocks.executionCount.mockResolvedValueOnce(sourceCount).mockResolvedValueOnce(jobCount).mockResolvedValueOnce(activeCount);
+    const result = await captureBrowserTaskWithDurableArgus({ ...environment, NODE_ENV: "production" }, { ...input, connectorId: "booking-public", workflowId: "discover_listings", url: "https://www.booking.com/searchresults.html" }, context);
+    expect(result).toMatchObject({ ok: false, httpStatus: 429 });
+    assert.equal(mocks.submit.mock.calls.length, 0);
+  });
   it("submits once, persists the remote ID, enqueues a poller and releases the parent", async () => {
     mocks.executionFind.mockResolvedValue(null);
     mocks.submit.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "QUEUED" } });
@@ -276,6 +294,15 @@ describe("durable Argus orchestration", () => {
     });
     assert.equal(mocks.getResult.mock.calls.length, 0);
   });
+  it("releases only the bounded production pilot's own challenge instead of occupying the shared browser", async () => {
+    mocks.executionFind.mockResolvedValue(activeExecution());
+    mocks.parentFind.mockResolvedValue({ status: "PENDING", payload: productionOtaPayload("booking") });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "WAITING_FOR_MANUAL" } });
+    mocks.cancel.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "CANCEL_REQUESTED" } });
+    await assert.rejects(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1"), (error: unknown) => error instanceof DeferredJobError);
+    assert.equal(mocks.cancel.mock.calls[0]?.[1], "argus-1");
+    expect(mocks.executionUpdate.mock.calls[0]?.[0].data).toMatchObject({ status: "CANCEL_REQUESTED", errorCategory: "ACCESS_CHALLENGE", retryable: false });
+  });
 
   it("stores the terminal result and wakes the parked parent", async () => {
     mocks.executionFind.mockResolvedValue(activeExecution());
@@ -291,6 +318,15 @@ describe("durable Argus orchestration", () => {
       status: "PENDING",
       lastErrorCode: "WAITING_EXTERNAL",
     });
+  });
+
+  it("preserves a bounded challenge classification while cancellation confirmation is temporarily unavailable", async () => {
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), status: "CANCEL_REQUESTED", errorCategory: "ACCESS_CHALLENGE", errorMessage: "Own challenge cancellation pending" });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING", payload: productionOtaPayload("booking") });
+    mocks.getJob.mockResolvedValue({ ok: false, httpStatus: 503, message: "Temporarily unavailable" });
+    await assert.rejects(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1"), (error: unknown) => error instanceof DeferredJobError);
+    expect(mocks.executionUpdate.mock.calls[0]?.[0].data).toMatchObject({ errorCategory: "ACCESS_CHALLENGE", errorMessage: "Own challenge cancellation pending", retryable: false });
+    assert.equal(mocks.parentUpdateMany.mock.calls.length, 0);
   });
 
   it("retains the matching failed item's safe Argus error category", async () => {

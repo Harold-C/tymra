@@ -75,7 +75,7 @@ export function otaCollectionFailureCode(input: {
 }
 
 export function calculateOtaHealthMetrics(input: OtaHealthInput) {
-  const discoveryRuns = input.runs.filter((run) => scopeOperation(run.scope) === "OTA_COMPARABLE_DISCOVERY");
+  const discoveryRuns = input.runs.filter((run) => ["OTA_COMPARABLE_DISCOVERY", "NATIONAL_CATALOG_DISCOVERY"].includes(scopeOperation(run.scope) ?? ""));
   const completedDiscoveryRuns = discoveryRuns.filter((run) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(run.status));
   const emptyDiscoveryRuns = completedDiscoveryRuns.filter((run) => run.status === "SUCCEEDED" && run.successCount === 0 && run.failureCount === 0);
   const terminalExecutions = input.executions.filter((execution) => execution.completedAt !== null);
@@ -88,7 +88,7 @@ export function calculateOtaHealthMetrics(input: OtaHealthInput) {
     .map((execution) => execution.completedAt!.getTime() - execution.submittedAt.getTime())
     .filter((duration) => duration >= 0);
   const positiveRunTimes = input.runs
-    .filter((run) => run.successCount > 0 && run.finishedAt)
+    .filter((run) => run.status === "SUCCEEDED" && run.successCount > 0 && run.finishedAt)
     .map((run) => run.finishedAt!.getTime());
   const positiveEvidenceTimes = [input.latestListingAt, input.latestRateAt].filter((value): value is Date => value !== null).map((value) => value.getTime());
   const allPositiveTimes = [...positiveRunTimes, ...positiveEvidenceTimes];
@@ -146,6 +146,7 @@ function scopeOperation(scope: unknown) {
 }
 
 function executionOutcome(execution: OtaHealthExecution) {
+  if (execution.errorCategory === "ACCESS_CHALLENGE") return "challenge";
   if (execution.result && typeof execution.result === "object" && !Array.isArray(execution.result)) {
     const result = execution.result as Record<string, unknown>;
     if (Array.isArray(result.items)) {

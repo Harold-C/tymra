@@ -3,6 +3,8 @@ export function publicOtaPrice(rate: {
   mandatoryFeesMinor: number | null;
   taxesMinor: number | null;
   totalPriceMinor: number | null;
+  totalIncludesMandatoryFees?: boolean;
+  fieldSources?: Record<string, string>;
   nightlyPriceMinor?: number | null;
   priceStatus?: "ITEMIZED" | "BUNDLED" | "PARTIAL" | "UNAVAILABLE";
 }, nights: number) {
@@ -17,10 +19,12 @@ export function publicOtaPrice(rate: {
     : rate.nightlyPriceMinor !== null && rate.nightlyPriceMinor !== undefined
       ? "NIGHTLY"
       : "SOURCE_PUBLISHED";
+  const evidencedCompleteTotal = rate.totalPriceMinor !== null && rate.totalIncludesMandatoryFees === true
+    && Boolean(rate.fieldSources?.totalIncludesMandatoryFees?.trim());
   return {
     amountMinor,
     basis,
-    feeCompleteness: itemized || rate.priceStatus === "ITEMIZED"
+    feeCompleteness: (itemized && rate.totalIncludesMandatoryFees !== false) || evidencedCompleteTotal
       ? "COMPLETE" as const
       : rate.priceStatus === "PARTIAL"
         ? "PARTIAL" as const

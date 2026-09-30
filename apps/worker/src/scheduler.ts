@@ -5,6 +5,8 @@ import { firstPublicPriorJobAction, isFirstPublicSchedule } from "./operations/p
 import { isProductionPublicPilotSchedule } from "./operations/production-public-pilot";
 import { isProductionProgressSchedule } from "./operations/production-progress-schedules";
 import { isRollingLincolnSchedule } from "./operations/rolling-lincoln-schedule";
+import { isProductionOtaSchedule, otaSourceApproved } from "./operations/production-ota";
+import { ACTIVE_OTA_SOURCE_KEYS } from "./operations/ota-health";
 import { isCollectionScheduleJobType, nextCollectionOutsideOfficeHours } from "./operations/collection-office-hours";
 
 const environment = getEnvironment();
@@ -29,7 +31,8 @@ async function enqueueDueSchedules(now = new Date()) {
     const publicPilot = isProductionPublicPilotSchedule(schedule);
     const progressSchedule = isProductionProgressSchedule(schedule);
     const rollingLincolnSchedule = isRollingLincolnSchedule(schedule);
-    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot && !progressSchedule && !rollingLincolnSchedule) {
+    const otaSchedule = isProductionOtaSchedule(schedule);
+    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot && !progressSchedule && !rollingLincolnSchedule && !otaSchedule) {
       throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
     }
     if (environment.NODE_ENV === "production" && isCollectionScheduleJobType(schedule.jobType)) {
@@ -52,6 +55,11 @@ async function enqueueDueSchedules(now = new Date()) {
       const source = await prisma.dataSource.findUnique({ where: { key: payload.sourceId } });
       const blockers = source ? sourceCollectionBlockers(source, environment.NODE_ENV) : ["source missing"];
       const metadata = source?.metadata;
+      if (otaSchedule && (!source || !otaSourceApproved(source) || blockers.length)) {
+        await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: false, nextRunAt: null } });
+        continue;
+      }
+      if (otaSchedule && await prisma.job.count({ where: { sourceId: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, status: { in: ["PENDING", "RUNNING"] } } })) continue;
       const pilotApproved = !(publicPilot || progressSchedule || rollingLincolnSchedule) || (source?.providerType === "PUBLIC" && !source.isDemo
         && source.environments.includes("PRODUCTION")
         && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)

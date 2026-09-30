@@ -16,12 +16,24 @@ import { enableRollingLincolnSchedule, enqueueRollingLincolnTrial, prepareRollin
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
+import { prepareProductionOta, enqueueProductionOtaTrial, enableProductionOtaSchedule, pauseProductionOta } from "./operations/production-ota";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
 const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
+  case "ota:production:prepare":
+  case "ota:production:trial":
+  case "ota:production:enable":
+  case "ota:production:pause": {
+    if (option(args, "--confirm") !== "BOUNDED_PRODUCTION_OTA") throw new Error("OTA production mutation requires --confirm BOUNDED_PRODUCTION_OTA");
+    const source = requiredOption(args, "--source");
+    print(await (command.endsWith(":prepare") ? prepareProductionOta(source, environment.NODE_ENV)
+      : command.endsWith(":trial") ? enqueueProductionOtaTrial(source, environment.NODE_ENV)
+        : command.endsWith(":enable") ? enableProductionOtaSchedule(source, environment.NODE_ENV) : pauseProductionOta(source, environment.NODE_ENV)));
+    break;
+  }
   case "preview":
   case "collect:listing":
     print(await service.createPreview({ input: requiredArg(args, 0), idempotencyKey: option(args, "--key") ?? `cli-preview:${Date.now()}`, locale: locale(args), deviceId: "worker-cli", ipAddress: "127.0.0.1" }));

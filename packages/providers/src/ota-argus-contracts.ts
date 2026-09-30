@@ -108,6 +108,7 @@ export const otaRateExtractionSchema = z.object({
   taxesMinor: z.number().int().nonnegative().nullable(),
   optionalFeesMinor: z.number().int().nonnegative().nullable(),
   totalPriceMinor: z.number().int().nonnegative().nullable(),
+  totalIncludesMandatoryFees: z.boolean().optional(),
   availabilityStatus: z.enum(["AVAILABLE", "UNAVAILABLE", "MINIMUM_STAY_RESTRICTION", "OCCUPANCY_RESTRICTION", "DATE_RESTRICTION", "SOLD_OUT", "NOT_LISTED", "UNKNOWN"]),
   adults: z.number().int().positive().optional(),
   children: z.number().int().nonnegative().optional(),
@@ -136,6 +137,7 @@ export const otaRateExtractionSchema = z.object({
   qualityFlags: z.array(z.string()),
   fieldSources: fieldSourcesSchema,
 }).superRefine((rate, context) => {
+  if (rate.totalIncludesMandatoryFees === true && (rate.availabilityStatus !== "AVAILABLE" || rate.totalPriceMinor === null || rate.totalPriceMinor <= 0 || !rate.fieldSources.totalIncludesMandatoryFees?.trim())) context.addIssue({ code: z.ZodIssueCode.custom, path: ["totalIncludesMandatoryFees"], message: "A complete bundled total requires an available positive amount and source evidence" });
   if (rate.totalPriceMinor === null) return;
   const required = [rate.basePriceMinor, rate.mandatoryFeesMinor, rate.taxesMinor];
   if (required.some((value) => value === null)) return;
