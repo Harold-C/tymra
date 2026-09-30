@@ -3229,8 +3229,10 @@ export class WorkerService {
       const run = (bounded ? resumedRun : await prisma.collectionRun.findFirst({ where: { jobId: catalogJobId, dataSourceId: target.dataSourceId, scope: { path: ["targetId"], equals: target.id } } })) ?? await prisma.collectionRun.create({ data: { jobId: catalogJobId, dataSourceId: target.dataSourceId, mode: "MARKET_COVERAGE", status: "RUNNING", scope: { operation: "NATIONAL_CATALOG_DISCOVERY", targetId: target.id, query, marketScope }, startedAt: now, attemptCount: 1, isDemo: false } });
       if (run.status === "SUCCEEDED") { discovered += run.successCount; continue; }
       try {
+        const checkIn = addNzCalendarDays(nzDateKey(run.startedAt ?? now), 7);
+        const checkOut = addNzCalendarDays(checkIn, 1);
         const traceId = durableArgusTraceId(catalogJobId, connectorId, "discover_listings", target.url);
-        const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "discover_listings", url: target.url, searchQuery: query, currency: "NZD", maxRecords: bounded ? 1 : 10 }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
+        const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "discover_listings", url: target.url, searchQuery: query, checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD", maxRecords: bounded ? 1 : 10 }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
         if (response.ok) await this.persistArgusEvidence(target.dataSourceId, run.id, response.payload, connectorId, target.url);
         if (!response.ok || response.payload.status !== "success") throw new WorkerRequestError(otaCollectionFailureCode(response.ok ? { captureStatus: response.payload.status, errorCategory: response.payload.error?.category } : { httpStatus: response.httpStatus }), response.ok ? response.payload.error?.message ?? "Catalog discovery failed" : response.message, 503);
         const extraction = otaDiscoverListingsExtractionSchema.parse(response.payload.extracted);

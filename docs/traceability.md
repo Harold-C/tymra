@@ -1,6 +1,6 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-01 (Argus additional build approved; source acceptance pending)
+Last updated: 2026-10-01 (Argus released; OTA discovery caller fix awaiting build approval)
 
 ## 2026-09-30 六 OTA 生产试采（进行中）
 
@@ -13,7 +13,7 @@ Tymra 候选 `d19ebf4f551e7322d113f3e14aa5e65314c875a4` 已推送；生产镜像
 `sha256:cc36db2cceef32f5c1767db9b06222be07fa2b306fd07fc884963187052f6fae`，
 revision 与上述代码一致。Web、Worker、API、Scheduler 在无在途 Job 时已切换到同一
 镜像，Web/API 健康且 Worker readiness 200。六 OTA 来源及关闭的日计划已创建，
-尚未外采或开启日计划；既有 77 条启用公共来源计划保持原样。
+六条日计划仍关闭；既有 77 条启用公共来源计划保持原样。
 
 发布备份位于 `/srv/apps/tymra/backups/ota-bounded-20260930-predeploy/`，数据库、
 生产配置、旧 Compose、运行镜像和 277 MB 抓取证据均通过 SHA-256 校验。
@@ -27,12 +27,36 @@ Property／RateObservation 均为 0。隔离恢复库已清理；旧镜像和来
 和价格均为零；公开来源 enabled plans 当前为 77，`progress-ticketmaster-daily` 已暂停，
 另两条 disabled 定义为已退役周 pilot。以下 2026-09-29 的 78 条启用描述为当时快照。
 
-Argus 的公开 OTA 房型选择与完整总价证据合同尚未放行：固定镜像复核发现 legacy
+Argus 的公开 OTA 房型选择与完整总价证据合同在首个固定镜像复核时发现 legacy
 bundled 表示可能以未披露的零分项误判费用完整。公开精确房型流程的补充修复已通过
 61 项定向测试，跨系统 fixture 也验证未披露的 bundled 分项保持 null，已发布 Tymra
 将其判为费用 UNKNOWN；Tymra 无需再构建。首个 Argus 候选发布已取消，额外一次
-固定镜像构建已获用户确认，正在继续固定候选门禁和生产发布。Synix 后台、账号、权限、Profile 和 Job 不在此变更范围。Argus 修复发布后仍须
-逐来源真实试采和日计划启用；不得将 Tymra 已部署或 registry 已创建作为六来源生产验收。
+固定镜像构建获用户确认后已完成生产发布：`argus-release-20261001-1`，revision
+`7b33ebab4aef603ed8c7813c2df1c135c2cd473e`，实际运行镜像 ID 为
+`sha256:1b411f13690e2b514e9a8e4d2766e0b81c0537504fbc63c8cbf3793cd4c0c44d`。
+镜像内 925 项测试中 913 通过、12 项数据库环境测试跳过、零失败；独立源码数据库测试已执行。
+最新真实配对备份隔离恢复匹配 464 Job、2 账号及 28,774 项私有文件，账号隔离、
+结果哈希及无网络 Profile 副本核验通过；不能据此宣称网站登录有效。仅替换 browser，
+环境变量名称和值、挂载、PostgreSQL 和 tunnel 均未变；共享并发仍为 1，切换后无在途任务。
+一次切换将变量顺序变化误判为差异，已自动回滚；核对名称和值一致后用同一镜像重试通过，
+没有额外构建。备份及 Argus 发布证据见其 `docs/current-state.md`。
+Synix 后台、账号、权限、Profile 和 Job 不在此变更范围。
+
+Booking 首轮 `cmuo22sft0000migszmejse4w` 在浏览器提交前失败：一次尝试，Job
+`DEAD_LETTER`，业务批次 `FAILED`，`SOURCE_UNAVAILABLE` / `INVALID_INPUT`；
+ArgusExecution、证据及价格均为 0，Booking 已自动关闭并转为 SUSPENDED。
+根因为 Tymra `refreshCatalog` 未传 Argus `discover_listings` 必填的入住／离店日期和人数；
+六渠道共用调用路径，其他五渠道没有重复提交相同无效请求。调用端现已补齐 D+7 一晚、
+2 成人、0 儿童、1 房、NZD，重放日期依原批次 startedAt 固定。23 项定向测试、Worker
+类型检查通过；本地回环服务器验证六条实际序列化请求均通过当前 Argus 合同，原六条缺字段
+请求均被拒绝，没有对外采集。Argus 也已在生产镜像只读复现合同问题，无需修改或重建。
+这项 Tymra 修复尚未部署：此前只构建一次的约束仍有效，额外一次 Tymra 固定镜像构建
+及发布已向用户请求确认。六来源真实试采、业务／证据／ACK 验收及日计划启用尚未完成，
+不得将已部署、registry 已创建或合同测试通过作为六来源生产验收。
+
+发布等待期间 Eventfinda 首个本轮观察的自然周期 `cmuo1ozq60000rx07erpqa5jv` 成功，
+CollectionRun 保存 71 条结果、0 失败，2026-09-30 11:54:49 UTC 结束；先等该周期
+结束并重新配对备份，再切换 Argus，没有暂停或移动该公开计划。
 
 ## 2026-09-28–29 未来日期与历史版本生产发布记录
 
