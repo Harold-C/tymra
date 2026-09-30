@@ -1,26 +1,38 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-09-30 (six-OTA production pilot implementation in progress)
+Last updated: 2026-09-30 (bounded OTA runtime deployed; source acceptance pending)
 
 ## 2026-09-30 六 OTA 生产试采（进行中）
 
-当前候选增加六来源精确有界 prepare/trial/enable/pause、独立来源日计划、单来源顺序执行、
+本轮实现六来源精确有界 prepare/trial/enable/pause、独立来源日计划、单来源顺序执行、
 每 Job 最多三次 Argus 提交／每来源新西兰日最多六次提交，以及失败时来源级停采。
 等待 Argus 保留原批次和查询；新一轮同入住日期价格追加历史，房型／日期不匹配拒绝绑定。
 费用合同新增可选 `totalIncludesMandatoryFees` 与来源文字依据；未知费用不据此变为完整。
-代码尚未发布，六 OTA 尚未启用。既有自动公共来源计划无需全局关闭。
+Tymra 候选 `d19ebf4f551e7322d113f3e14aa5e65314c875a4` 已推送；生产镜像
+`tymra:ota-bounded-20260930-v1` 只构建一次，镜像 ID 为
+`sha256:cc36db2cceef32f5c1767db9b06222be07fa2b306fd07fc884963187052f6fae`，
+revision 与上述代码一致。Web、Worker、API、Scheduler 在无在途 Job 时已切换到同一
+镜像，Web/API 健康且 Worker readiness 200。六 OTA 来源及关闭的日计划已创建，
+尚未外采或开启日计划；既有 77 条启用公共来源计划保持原样。
+
+发布备份位于 `/srv/apps/tymra/backups/ota-bounded-20260930-predeploy/`，数据库、
+生产配置、旧 Compose、运行镜像和 277 MB 抓取证据均通过 SHA-256 校验。
+生产自定义备份已在隔离库恢复，计数一致：78 来源、77 启用计划、273 Job，真实
+Property／RateObservation 均为 0。隔离恢复库已清理；旧镜像和来源级停采回滚脚本保留。
+本轮没有 migration，没有重建 PostgreSQL／Redis，也未修改 Synix 应用或数据。
 
 本轮已通过全工作区类型检查、Worker 302 项单元测试、根目录 236 项单元测试
 （5 项原有跳过），以及独立 `tymra_release_gate_20260928` 数据库中的生产准备／排队
-事务回滚测试；补充的取消确认暂时不可用时保留挑战分类测试也已通过。生产只读快照显示 OTA 来源、非演示 Property
+事务回滚测试；补充的取消确认暂时不可用时保留挑战分类测试也已通过。准备前生产只读快照显示 OTA 来源、非演示 Property
 和价格均为零；公开来源 enabled plans 当前为 77，`progress-ticketmaster-daily` 已暂停，
 另两条 disabled 定义为已退役周 pilot。以下 2026-09-29 的 78 条启用描述为当时快照。
 
-Argus 正在独立工作树完成公开 OTA 房型选择与完整总价证据合同。Synix 后台、账号、权限、
-Profile 和 Job 不在此变更范围。固定候选构建、生产空闲切换、逐来源真实试采和日计划
-启用仍须完成；不得将本段实现状态作为六来源生产验收。
+Argus 的公开 OTA 房型选择与完整总价证据合同尚未放行：固定镜像复核发现 legacy
+bundled 表示仍可能以未披露的零分项误判费用完整，已要求公开精确房型流程修复后重新
+验证。Synix 后台、账号、权限、Profile 和 Job 不在此变更范围。Argus 修复发布后仍须
+逐来源真实试采和日计划启用；不得将 Tymra 已部署或 registry 已创建作为六来源生产验收。
 
-## 2026-09-28–29 未来日期与历史版本生产发布（当前状态）
+## 2026-09-28–29 未来日期与历史版本生产发布记录
 
 源码 `2d670b51777d5233bb0c2ffa42261883dcaa7a3a` 已推送，CI `36403972873`
 成功。生产候选 `tymra:future-history-20260928-v1` 只构建一次，镜像 ID
