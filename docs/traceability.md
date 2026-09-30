@@ -1,6 +1,54 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-01 (discovery caller deployed; six bounded live trials failed closed; identity corrections are unreleased)
+Last updated: 2026-10-01 (locally verified identity releases deployed; subsequent Booking capacity correction locally verified, unreleased)
+
+## 2026-10-01 本地可用性验证后发布及生产复核
+
+用户要求先验证本地可用，再发布。采用独立测试库、Profile、合成客户端与独立浏览器容器，
+复用既有镜像运行候选源码，现有本地 Argus、Tymra 和 Synix 服务未切换。
+Booking 第一次本地试采停在正常 Explore 地区页，未进入标准列表；保留失败及证据，
+修复后通过可见 `View full list of properties` 控件进入房源列表，并严格拒绝改变
+同域、日期、人数或房数条件的链接。两项无网络浏览器回归通过，没有更改测试预期或删除失败历史。
+
+修复后本地 Job `cmuo84tpw0000c6467jv5wy2t` 的一列表、一必要详情、一精确房型报价
+全部完成。两个业务批次 SUCCEEDED，入库一真实 Property、一个容量 2 的 SellableUnit，
+以及 2026-10-08–09、2 成人、1 房、NZD 254.00 的 AVAILABLE / COMPLETE RateObservation。
+六份证据逐个 SHA-256 核验，三个 Argus 执行 ACK/PURGED 通过。
+Trip.com 本地 Job `cmuo7zbq50006c6zjbx19fqhd` 的有日期列表及详情成功，准确地址、
+公开精确地图坐标与房型 ID 已取得；物理容量仍未知，按 UNIT_IDENTITY_NOT_PUBLIC
+终止，没有写入 Property 或价格。四份证据哈希与两个执行 ACK/PURGED 均通过。
+本地数据库中的真实记录不计入生产业务验收。
+
+独立 Tymra 数据库集成一项及 Argus PostgreSQL 十项均通过，无数据库环境跳过。
+Tymra 固定候选 `tymra:ota-identity-20261001-v1`，revision `18781459cf24ecb64a291594e3e019a2454f9742`，
+镜像 ID `sha256:74b13711ce7c9b9797635d676e350ce25b0d25db38fd7ff9b2a3904e1ecf27a5`；
+只构建一次，镜像内 154 项相关测试通过。测试工具调用的缓存、路径及写权限问题已在
+临时测试容器处理，运行镜像与生产用户权限未修改，没有重建。
+新的 `/srv/apps/tymra/backups/ota-identity-20261001-predeploy/` 配置、数据库、证据及
+回滚材料均校验 SHA-256；隔离数据库恢复后全部 81 张表的完整行摘要一致，恢复库已删除。
+Argus `argus-release-20261001-3` / `f61b8c11f72181beabd5abe3662b8d3f399a5d70`
+已先发布，镜像 ID `sha256:7aa2a1b89a3e814391ebf038e76873b67f0f2a0e4a82b88b19e940728020c371`。
+固定镜像 Chrome 门禁 933 项中 921 通过、12 项数据库环境跳过、零失败；独立数据库、
+正式配对恢复和生产运行恢复门禁通过。实际生产备份恢复比对 476 个 Job、两个后台账号、
+34,864 项文件的摘要、权限及所有者一致；只切换空闲 browser，共享并发 1，
+环境、挂载、网络、PostgreSQL、tunnel 不变，未触发 Synix 真实同步或站点认证。
+随后四个 Tymra 服务均切换到上述 `1878145` 镜像，健康且 restart=0；
+配置、挂载、网络及其余服务器容器均未改变，没有 migration。每个系统最终候选只构建一次。
+
+发布后的唯一 Booking 有界生产 Job `cmuo9tbw00000pp1qfsy6imqt` 以
+`NO_VERIFIABLE_UNIT` 终止，未进入报价步骤、未写入真实 Property 或 RateObservation。
+目录批次为 SUCCEEDED / successCount=0，不代表有效业务数据成功；父 Job 为 DEAD_LETTER。
+两个 Argus 执行 `job_29e0a9bdfb21c889a6921ae08ddab2b6`、
+`job_8bb324a5ce7d24ee5c7a4f4c05732ff8` 均完成，四份证据已保留并核验 SHA-256，
+两个结果均从生产 Argus 读回 HTTP 410 / PURGED。
+保留页面的房型区域明确写着 `Sleeps: 2 adults`；旧兜底规则误把价格 `× 1 night`
+读成容量 1。先前“房型只能住一人”的判断被上述证据取代。
+新增 Argus 候选使用可见房型容量说明、排除夜数乘数，并优先读取房型名称链接；
+本地类型检查、五项 Booking 无网络浏览器回归和六渠道费用范围回归通过。
+生产保留 HTML 无网络重放确认同一房型 ID、容量 2、正确名称及输出合同，无额外外站访问。
+该新增修复尚未构建／部署；因用户要求每系统本轮只构建一次，额外一次 Argus 构建待确认，
+Tymra 无需重建。当前新西兰预算日 Booking 已用四次执行，余两次，不足完整三执行重试。
+六 OTA 日计划继续关闭，77 条既有公开计划保留；生产真实房源及价格仍为零。
 
 ## 2026-09-30 六 OTA 生产试采（进行中）
 
