@@ -1,6 +1,6 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-01 (Argus released; OTA discovery caller fix awaiting build approval)
+Last updated: 2026-10-01 (discovery caller deployed; six bounded live trials failed closed; identity corrections are unreleased)
 
 ## 2026-09-30 六 OTA 生产试采（进行中）
 
@@ -50,9 +50,68 @@ ArgusExecution、证据及价格均为 0，Booking 已自动关闭并转为 SUSP
 2 成人、0 儿童、1 房、NZD，重放日期依原批次 startedAt 固定。23 项定向测试、Worker
 类型检查通过；本地回环服务器验证六条实际序列化请求均通过当前 Argus 合同，原六条缺字段
 请求均被拒绝，没有对外采集。Argus 也已在生产镜像只读复现合同问题，无需修改或重建。
-这项 Tymra 修复尚未部署：此前只构建一次的约束仍有效，额外一次 Tymra 固定镜像构建
-及发布已向用户请求确认。六来源真实试采、业务／证据／ACK 验收及日计划启用尚未完成，
-不得将已部署、registry 已创建或合同测试通过作为六来源生产验收。
+这项 Tymra 修复在用户确认后已完成额外一次固定镜像构建和发布：
+`tymra:ota-stay-20261001-v1`，revision `8d02267785c4c5c066456065e1bb8eb533e631da`，
+镜像 ID `sha256:033cfc931e1b77c629940ea6628bd1ce0b88cd081d74d74b49c46de77522b16f`。
+镜像内 23 项定向测试通过；Web、Worker、API、Scheduler 运行同一镜像，健康及
+readiness 通过。生产配置变量名称和值、挂载、网络未变，没有 migration；
+PostgreSQL、Redis、spm-web、Traefik 未替换，Synix 应用和数据未修改。
+最新发布前备份 `/srv/apps/tymra/backups/ota-stay-20261001-predeploy/` 的配置、
+Compose、数据库、证据和回滚材料均通过 SHA-256 校验；隔离恢复匹配
+84 来源、77 启用计划、279 Job、0 真实 Property、0 真实 RateObservation。
+隔离恢复库已删除；回滚保留业务历史，拒绝在自身 OTA Job 活跃时切换镜像。
+
+### 六来源本轮真实试采结果
+
+每来源一次尝试，最多一列表、一详情、一精确房型价格；失败即停采，没有盲目重试。
+以下时间均为 2026-09-30 UTC；日计划从未启用。
+
+| 来源 | Tymra Job | 完成时间 | 实际结果 |
+|---|---|---|---|
+| Booking | `cmuo2selv0000qk0x7c0kyb2h` | 12:23:42 | 列表成功；详情 `PARSING_ERROR`，页面正常但隐藏弹窗选错、`Max. people` 容量漏读、公开地图坐标漏读 |
+| Airbnb | `cmuo2wase0000qk4sjw9q080n` | 12:26:33 | 列表和详情成功；未得到精确地址及坐标，`UNIT_IDENTITY_NOT_PUBLIC` |
+| Expedia | `cmuo2ytld0000qk79jfz20xrv` | 12:28:00 | 列表 `RATE_LIMITED`，未继续详情；当前调用端错误分类为 `ACCESS_CHALLENGE` |
+| Bookabach | `cmuo31boi0000qkc7dk4syq6u` | 12:30:33 | 列表和详情成功；地址及坐标缺失，`UNIT_IDENTITY_NOT_PUBLIC` |
+| Agoda | `cmuo33vz90000qkey250r5ow4` | 12:32:31 | 列表执行约 60 秒后 `TIMEOUT`，无返回页面证据，不能判断为登录、挑战或正常页面 |
+| Trip.com | `cmuo3809z0000qkhqmupzdzrt` | 12:35:43 | 列表和详情成功；完整地址已得到，公开精确地图坐标漏读，无日期详情没有报价房型表，容量未知 |
+
+本轮 10 个实际 Argus Job 均终止，返回的 18 份证据全部本地留存并校验；
+ACK 后独立读取全部返回 HTTP 410 `RESULT_PURGED`。真实 Property 和价格仍为 0，
+六来源自动 SUSPENDED、enabled=false；六日计划关闭，既有 77 条公共计划保持原状，
+核对时无在途 Tymra Job。队列、页面或 Connector 成功不是来源业务验收。
+
+### 本轮失败后的未发布修复
+
+Argus 身份及合同修复源码提交为 `033bd00`；生产仍为上述 `7b33eba`。
+发布顺序必须先 Argus 合同、后 Tymra 调用端，六日计划保持关闭直到真实门槛通过。
+
+Tymra 候选保留具体错误码，避免 `manual_required` 覆盖 `RATE_LIMITED`；
+六公开 OTA 仅将实际 `PARSING_ERROR` 证据标为 parserFailure，其他来源逻辑不变。
+现有历史证据保留：Booking 两份真实解析失败和 Expedia 两份被旧代码误标的证据均未删除或改写。
+Trip.com 有界详情请求新增可选 `identity_stay`，沿用原批次 D+7 一晚、2 成人、
+0 儿童、1 房、NZD；只用于公开房型身份，不替代后续精确价格请求，也不增加 Job 请求上限。
+Argus 同步合同及 OpenAPI，等待真实房型表；其他来源和 Synix 后台合同保持原样。
+
+Argus 候选修复 Booking 实际报价行及明确最大人数、公开地图坐标、解析失败时补充快照丢失，
+并补齐 Trip.com 同酒店且明确公开精度的地图坐标及数值 JSON-LD 坐标。
+Trip.com 容量排除报价区域中的入住人数；未披露仍为 null。
+Booking 原失败 HTML 在无网络隔离浏览器中重放，解析出 NZ 地址、公开坐标及容量 2 的
+真实房型，通过输出合同。Trip.com 原页面重放确认公开坐标已正确提取，四个房型容量仍 null；
+不能据此称房型或价格验收通过。Agoda 既有日志未提供超时阶段，候选只补充允许列表内的
+安全阶段诊断，不将其称为超时根因修复。
+
+Tymra 后续候选 36 项有界控制、发现、分类及价格持久化测试通过，另 1 项真实
+序列化回环测试验证 Trip.com `identity_stay` 及严格身份响应，Worker 类型检查通过。
+Argus 5 项无网络 Chrome 集成及 51 项定向合同／费用／后台 OpenAPI 回归通过，
+类型检查通过。全源码回归首先通过 787 项、跳过 111 项；3 项子进程停机测试因直接
+源码执行的子进程未继承 TypeScript loader 失败，仅纠正执行环境后 3/3 通过，未改断言。
+没有为这些验证构建镜像；固定镜像及发布恢复门槛仍须在授权后执行。
+
+这些后续修复尚未进入运行镜像。现有构建授权已经履行，后续固定镜像构建及替换需要
+另行确认，不使用源码热补丁。Airbnb／Bookabach 的已核实网址到地址映射仍待用户资料，
+Expedia 限流和 Agoda 超时仍为真实外部运行阻塞。任何来源启用还必须满足两次真实正向
+业务结果、证据留存与 ACK，以及 D-039 的滚动失败门槛；当前 30 天窗口保留失败，
+不得删记录、跳过门槛或将离线测试当作正向生产证据。
 
 发布等待期间 Eventfinda 首个本轮观察的自然周期 `cmuo1ozq60000rx07erpqa5jv` 成功，
 CollectionRun 保存 71 条结果、0 失败，2026-09-30 11:54:49 UTC 结束；先等该周期

@@ -156,7 +156,7 @@ import {
   ticketekListingExtractionSchema,
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
-import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaArtifactIsParserFailure, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays } from "../operations/production-public-pilot";
 import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import {
@@ -2979,6 +2979,8 @@ export class WorkerService {
   }
 
   private async persistArgusEvidence(dataSourceId: string, collectionRunId: string, result: ArgusBrowserTaskResult, extractor: string, requestedUrl: string) {
+    const publicOta = ACTIVE_OTA_SOURCE_KEYS.some((key) => extractor === `${key}-public`);
+    const parserFailure = publicOta ? otaArtifactIsParserFailure(result.error?.category) : result.status !== "success";
     const ttlHours = eventfindaEvidenceTtlHours(
       result.status,
       this.environment.RAW_ARTIFACT_TTL_HOURS,
@@ -2989,7 +2991,7 @@ export class WorkerService {
       const id = stableId("argus-evidence", `${collectionRunId}:${storageRef}`);
       await prisma.rawArtifact.upsert({
         where: { id },
-        create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure: result.status !== "success", expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
+        create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure, expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
         update: {},
       });
     }
@@ -3250,9 +3252,9 @@ export class WorkerService {
               resolvedAt = cache.resolvedAt;
             } else {
               const detailTrace = durableArgusTraceId(catalogJobId, connectorId, "resolve_listing", candidate.canonicalUrl);
-              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1 }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
+              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1, ...(connectorId === "trip-public" ? { identityStay: { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const } : {}) }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
               if (detail.ok) await this.persistArgusEvidence(target.dataSourceId, run.id, detail.payload, connectorId, candidate.canonicalUrl);
-              if (!detail.ok || detail.payload.status !== "success") throw new WorkerRequestError("SOURCE_UNAVAILABLE", detail.ok ? detail.payload.error?.message ?? "Listing resolution failed" : detail.message, 503);
+              if (!detail.ok || detail.payload.status !== "success") throw new WorkerRequestError(otaCollectionFailureCode(detail.ok ? { captureStatus: detail.payload.status, errorCategory: detail.payload.error?.category } : { httpStatus: detail.httpStatus }), detail.ok ? detail.payload.error?.message ?? "Listing resolution failed" : detail.message, 503);
               const resolved = otaResolveListingExtractionSchema.parse(detail.payload.extracted);
               if (resolved.provider !== candidate.provider || resolved.sourceListingId !== candidate.sourceListingId) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Detail response does not match the discovered listing", 422);
               candidate = resolved;
@@ -3408,7 +3410,7 @@ export class WorkerService {
     try {
       const response = await captureBrowserTaskWithDurableArgus(this.environment, { traceId, connectorId, workflowId: "collect_rates", url: listing.canonicalUrl, checkIn, checkOut, adults: 2, children: 0, units: 1, ...(boundedSourceId ? { unitExternalId } : {}), currency: "NZD", maxRecords: boundedSourceId ? 1 : 3 }, { parentJobId, collectionRunId: run.id, dataSourceId: listing.dataSourceId });
       if (response.ok) await this.persistArgusEvidence(listing.dataSourceId, run.id, response.payload, connectorId, listing.canonicalUrl);
-      if (!response.ok || response.payload.status !== "success") throw new WorkerRequestError("SOURCE_UNAVAILABLE", response.ok ? response.payload.error?.message ?? "Panel rate collection failed" : response.message, 503);
+      if (!response.ok || response.payload.status !== "success") throw new WorkerRequestError(otaCollectionFailureCode(response.ok ? { captureStatus: response.payload.status, errorCategory: response.payload.error?.category } : { httpStatus: response.httpStatus }), response.ok ? response.payload.error?.message ?? "Panel rate collection failed" : response.message, 503);
       const extraction = otaCollectRatesExtractionSchema.parse(response.payload.extracted);
       if (extraction.provider !== listing.dataSource.key || extraction.sourceListingId !== listing.sourceListingId) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Panel rates belong to another provider or listing", 422);
       const rate = extraction.rates.find((item) => item.sourceListingId === listing.sourceListingId && item.unitExternalId === unitExternalId && item.checkIn === checkIn && item.checkOut === checkOut && item.currency === "NZD" && (item.adults === undefined || item.adults === 2) && (item.children === undefined || item.children === 0) && (item.units === undefined || item.units === 1));

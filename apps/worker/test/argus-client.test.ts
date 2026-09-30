@@ -653,6 +653,27 @@ describe("Argus async Job client", () => {
     assert.deepEqual({ nightlyPriceMinor: rate.nightlyPriceMinor, totalPriceMinor: rate.totalPriceMinor, priceStatus: rate.priceStatus, rateFence: rate.rateFence }, { nightlyPriceMinor: 26_900, totalPriceMinor: null, priceStatus: "PARTIAL", rateFence: "PUBLIC_SIGNED_OUT" });
   });
 
+  it("serializes the optional Trip identity stay without making a rate request", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const url = "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/";
+    server = jobServer(async request => {
+      requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
+      return otaResolveListingResult({ traceId: "trip-identity-serialization", connectorId: "trip-public", provider: "trip", url });
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, {
+      traceId: "trip-identity-serialization", connectorId: "trip-public", workflowId: "resolve_listing",
+      url,
+      identityStay: { checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" },
+    });
+    assert.equal(response.ok, true);
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.workflow_id, "resolve_listing");
+    assert.deepEqual(capture.identity_stay, { check_in: "2026-10-08", check_out: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
+    assert.equal("unitExternalId" in capture, false);
+    assert.equal("check_in" in capture, false);
+  });
+
   it("sends bounded stay parameters and rejects inconsistent OTA totals", async () => {
     let requestBody: Record<string, unknown> | undefined;
     server = jobServer(async (request) => {

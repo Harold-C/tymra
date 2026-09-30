@@ -9,6 +9,7 @@ describe("OTA operational health", () => {
     expect(otaCollectionFailureCode({ httpStatus: 429 })).toBe("RATE_LIMITED");
     expect(otaCollectionFailureCode({ httpStatus: 504 })).toBe("TIMEOUT");
     expect(otaCollectionFailureCode({ captureStatus: "manual_required" })).toBe("ACCESS_CHALLENGE");
+    expect(otaCollectionFailureCode({ captureStatus: "manual_required", errorCategory: "RATE_LIMITED" })).toBe("RATE_LIMITED");
     expect(otaCollectionFailureCode({ errorCategory: "POLICY_BLOCKED" })).toBe("POLICY_BLOCKED");
     expect(otaCollectionFailureCode({ errorCategory: "CONFIGURATION_NOT_READY" })).toBe("CONFIGURATION_NOT_READY");
     expect(otaCollectionFailureCode({ errorCategory: "PARSING_ERROR" })).toBe("PARSING_ERROR");

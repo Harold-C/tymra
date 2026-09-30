@@ -282,6 +282,7 @@ export type ArgusCaptureInput = {
   children?: number;
   units?: number;
   unitExternalId?: string;
+  identityStay?: { checkIn: string; checkOut: string; adults: number; children: 0; units: number; currency: "NZD" };
   currency?: "NZD";
   maxAttempts?: 1 | 2;
   timeoutMs?: number;
@@ -872,6 +873,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.children === undefined ? {} : { children: input.children }),
       ...(input.units === undefined ? {} : { units: input.units }),
       ...(input.unitExternalId === undefined ? {} : { unitExternalId: input.unitExternalId }),
+      ...(input.identityStay === undefined ? {} : { identity_stay: { check_in: input.identityStay.checkIn, check_out: input.identityStay.checkOut, adults: input.identityStay.adults, children: input.identityStay.children, units: input.identityStay.units, currency: input.identityStay.currency } }),
       ...(input.currency === undefined ? {} : { currency: input.currency }),
       timeout_ms: input.timeoutMs ?? environment.ARGUS_TIMEOUT_MS,
       evidence_mode: "html",

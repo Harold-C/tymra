@@ -64,14 +64,18 @@ export function otaCollectionFailureCode(input: {
 }) {
   if (input.httpStatus === 429) return "RATE_LIMITED";
   if (input.httpStatus === 504) return "TIMEOUT";
-  if (input.captureStatus?.toLowerCase() === "manual_required") return "ACCESS_CHALLENGE";
   const category = input.errorCategory?.toUpperCase();
   if (category === "POLICY_BLOCKED") return "POLICY_BLOCKED";
   if (category === "CONFIGURATION_NOT_READY") return "CONFIGURATION_NOT_READY";
   if (category === "PARSING_ERROR") return "PARSING_ERROR";
   if (category === "RATE_LIMITED") return "RATE_LIMITED";
   if (category === "TIMEOUT") return "TIMEOUT";
+  if (input.captureStatus?.toLowerCase() === "manual_required") return "ACCESS_CHALLENGE";
   return "SOURCE_UNAVAILABLE";
+}
+
+export function otaArtifactIsParserFailure(errorCategory?: string | null) {
+  return errorCategory?.toUpperCase() === "PARSING_ERROR";
 }
 
 export function calculateOtaHealthMetrics(input: OtaHealthInput) {

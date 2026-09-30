@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "@tymra/config";
-const mock = vi.hoisted(() => ({ sources: vi.fn(), target: vi.fn(), run: vi.fn(), capture: vi.fn() }));
-vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), sourceHasCapability: async () => true, prisma: { dataSource: { findMany: mock.sources }, marketCoverage: { upsert: vi.fn() }, sourceCrawlTarget: { upsert: vi.fn(), findMany: mock.target }, collectionRun: { findFirst: mock.run, create: mock.run } } }));
+const mock = vi.hoisted(() => ({ sources: vi.fn(), target: vi.fn(), run: vi.fn(), capture: vi.fn(), artifact: vi.fn(), listing: vi.fn() }));
+vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), sourceHasCapability: async () => true, prisma: { dataSource: { findMany: mock.sources }, marketCoverage: { upsert: vi.fn() }, sourceCrawlTarget: { upsert: vi.fn(), findMany: mock.target }, collectionRun: { findFirst: mock.run, create: mock.run }, rawArtifact: { upsert: mock.artifact }, listing: { findFirst: mock.listing } } }));
 vi.mock("../src/services/argus-orchestrator", async (original) => ({ ...await original<typeof import("../src/services/argus-orchestrator")>(), captureBrowserTaskWithDurableArgus: mock.capture }));
 import { WorkerService } from "../src/services/worker-service";
 import { DeferredJobError } from "../src/jobs/deferred-job";
@@ -13,6 +13,27 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("OTA discovery request contract", () => {
+  it.each(["trip", "booking"])("uses the original discovery stay only for Trip dated physical-unit resolution (%s)", async (key) => {
+    const source = { id: "source", key, enabled: true };
+    mock.sources.mockResolvedValue([source]);
+    mock.target.mockResolvedValue([{ id: "target", dataSourceId: source.id, dataSource: source, url: otaDiscoveryUrlForSource(key, "Canterbury, New Zealand"), metadata: { query: "Canterbury, New Zealand", regionKey: "canterbury" } }]);
+    mock.listing.mockResolvedValue(null);
+    const candidate = { provider: key, ...(key === "trip" ? { providerBrand: "TRIP_COM", providerFamily: "TRIP_COM" } : {}), sourceListingId: "hotel", providerPropertyId: "hotel", canonicalUrl: key === "trip" ? "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/" : "https://www.booking.com/hotel/nz/fixture.html", canonicalName: "Fixture hotel", address: null, city: "Christchurch", region: "Canterbury", territorialAuthority: null, postcode: null, countryCode: "NZ", latitude: null, longitude: null, propertyType: "Hotel", units: [{ externalId: "summary", officialName: "Search summary", unitType: "Search summary (not sellable)", capacity: null, bedrooms: null, bathrooms: null, bedTypes: [], amenities: [], entireOrShared: "PRIVATE" }], observedAt: "2026-09-30T12:00:00Z", fieldSources: {}, warnings: [], quality: "partial" };
+    mock.capture.mockResolvedValueOnce({ ok: true, payload: { status: "success", extracted: { data_schema: "ota-public.discover_listings", schema_version: "1.0.0", provider: key, query: "Canterbury, New Zealand", listings: [candidate], observedAt: candidate.observedAt, warnings: [], quality: "partial" } } }).mockRejectedValueOnce(new DeferredJobError("Waiting for detail", new Date()));
+    const service = new WorkerService({ NODE_ENV: "production" } as Environment);
+    Object.assign(service, { persistArgusEvidence: vi.fn() });
+    await expect(service.refreshCatalog("new-zealand", "job", { sourceId: source.id })).rejects.toBeInstanceOf(DeferredJobError);
+    const detail = mock.capture.mock.lastCall?.[1];
+    expect(detail).toMatchObject({ connectorId: `${key}-public`, workflowId: "resolve_listing", maxRecords: 1 });
+    if (key === "trip") expect(detail.identityStay).toEqual({ checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
+    else expect(detail.identityStay).toBeUndefined();
+  });
+  it.each(["PARSING_ERROR", "RATE_LIMITED", "TIMEOUT", "CAPTCHA_REQUIRED"])("keeps %s evidence without labelling every failed capture a parser failure", async (category) => {
+    const service = new WorkerService({ NODE_ENV: "production", RAW_ARTIFACT_TTL_HOURS: 72, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 } as Environment);
+    const result = { status: "failed", error: { category }, page: null, evidence: [{ kind: "html", traceId: "public-capture", storageRef: "argus-evidence:public-capture/page.html", sha256: "a".repeat(64), sizeBytes: 100, containsSensitiveData: false }] };
+    await Reflect.get(service, "persistArgusEvidence").call(service, "source", "run", result, "expedia-public", "https://www.expedia.co.nz/");
+    expect(mock.artifact.mock.lastCall?.[0].create).toMatchObject({ collectionRunId: "run", dataSourceId: "source", parserFailure: category === "PARSING_ERROR", contentHash: "a".repeat(64) });
+  });
   it.each(["booking", "airbnb", "expedia", "bookabach", "agoda", "trip"])("sends a complete future public stay and resumes its NZ date for %s", async (key) => {
     const source = { id: "source", key, enabled: true };
     mock.sources.mockResolvedValue([source]);

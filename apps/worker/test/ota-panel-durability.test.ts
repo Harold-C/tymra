@@ -23,6 +23,12 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("durable physical-unit panel prices", () => {
+  it.each(["PARSING_ERROR", "RATE_LIMITED"])("preserves the actual %s rate failure in the failed batch", async (category) => {
+    mock.capture.mockResolvedValue({ ok: true, payload: { status: category === "RATE_LIMITED" ? "manual_required" : "failed", error: { category, message: "Source capture failed" } } });
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toMatchObject({ code: category });
+    expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: category });
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
   it("resumes one run/query and appends a new observation for a later run on the same stay", async () => {
     await expect(service.collectPanelMemberRate("member", "job-1", "source")).resolves.toBe(true);
     expect(mock.runCreate).not.toHaveBeenCalled(); expect(mock.stay).not.toHaveBeenCalled();
