@@ -2453,6 +2453,7 @@ model ArgusExecution {
   lastPolledAt     DateTime?
   deadlineAt       DateTime
   completedAt      DateTime?
+  deliveryVerifiedAt DateTime?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 

@@ -2,10 +2,14 @@ import { prisma, Prisma } from "@tymra/db";
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate } from "./ota-health";
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
+import { isSourceScopedRentalIdentity } from "./ota-catalog-identity";
+import type { otaListingIdentitySchema } from "@tymra/providers";
+import type { z } from "zod";
 
 export const OTA_PILOT_VERSION = "ota-bounded-production-v1";
 export const OTA_DAILY_EXECUTION_BUDGET = 6;
-export function otaIdentityRequiresDetail(identity: { address: string | null; countryCode: string | null; latitude: number | null; longitude: number | null; warnings: string[]; units: { externalId: string; unitType: string; capacity: number | null }[] }) {
+export function otaIdentityRequiresDetail(identity: { address: string | null; countryCode: string | null; latitude: number | null; longitude: number | null; warnings: string[]; units: { externalId: string; unitType: string; capacity: number | null }[] } & Partial<z.infer<typeof otaListingIdentitySchema>>) {
+  if (identity.provider && identity.sourceListingId && identity.canonicalUrl && isSourceScopedRentalIdentity(identity as z.infer<typeof otaListingIdentitySchema>)) return false;
   return identity.countryCode !== "NZ" || !identity.address || identity.latitude === null || identity.longitude === null
     || !identity.units.some((unit) => unit.capacity !== null)
     || identity.warnings.includes("UNIT_CAPACITY_FROM_SEARCH_OCCUPANCY")
@@ -102,12 +106,17 @@ export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: str
     if (jobs.length !== 2 || jobs.some((job) => !isProductionOtaPayload(job.payload) || job.status !== "SUCCEEDED" || job.attemptCount !== 1 || job.maxAttempts !== 1 || job.createdAt.getTime() < Date.now() - 7 * 86_400_000)) throw new Error("The latest two exact bounded OTA jobs must have succeeded once within seven days");
     for (const job of jobs) {
       const runs = await tx.collectionRun.findMany({ where: { jobId: job.id, dataSourceId: source.id, isDemo: false } });
-      if (runs.length !== 2 || runs.some((r) => r.status !== "SUCCEEDED" || r.successCount < 1 || r.failureCount !== 0 || !r.finishedAt || (r.scope as Record<string, unknown>).deliveryVerified !== true)) throw new Error("Both discovery and exact-unit rate must succeed with verified delivery in each trial");
+      if (runs.length !== 2 || runs.some((r) => r.status !== "SUCCEEDED" || r.successCount < 1 || r.failureCount !== 0 || !r.finishedAt)) throw new Error("Both discovery and exact-unit rate must succeed in each trial");
       if (runs.filter((r) => (r.scope as Record<string, unknown>).operation === "NATIONAL_CATALOG_DISCOVERY").length !== 1 || runs.filter((r) => (r.scope as Record<string, unknown>).operation === "OTA_PANEL_RATE").length !== 1) throw new Error("Each exact trial requires one discovery run and one unit-rate run");
       const rate = await tx.rateObservation.count({ where: { collectionRunId: { in: runs.map((r) => r.id) }, dataSourceId: source.id, isDemo: false, collectedAt: { gte: new Date(Date.now() - 7 * 86_400_000), lte: new Date() }, checkIn: { gte: new Date() }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
       if (!rate) throw new Error("Each trial requires an available positive public total with complete mandatory fees");
       const executions = await tx.argusExecution.findMany({ where: { parentJobId: job.id } });
-      if (executions.length < 2 || executions.length > 3 || executions.some((e) => e.status !== "COMPLETED" || !e.result)) throw new Error("All bounded executions require successful persisted results and Argus ACK");
+      if (executions.length < 2 || executions.length > 3 || executions.some((e) => e.status !== "COMPLETED" || !e.completedAt || !e.deliveryVerifiedAt
+        || e.deliveryVerifiedAt < e.completedAt || e.deliveryVerifiedAt > new Date()
+        || !/^[a-f0-9]{64}$/u.test(String((e.result as Record<string, unknown> | null)?.result_sha256 ?? "")))
+        || runs.some((run) => !executions.some((execution) => execution.collectionRunId === run.id))) {
+        throw new Error("All bounded executions require successful persisted results and verified delivery after Argus ACK/purge");
+      }
       const artifacts = await tx.rawArtifact.findMany({ where: { collectionRunId: { in: runs.map((r) => r.id) }, deletedAt: null } });
       if (!artifacts.some((a) => a.storageRef.startsWith("tymra-evidence:")) || artifacts.some((a) => a.parserFailure || a.storageRef.startsWith("argus-evidence:"))) throw new Error("Local evidence retention is incomplete");
     }

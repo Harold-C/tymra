@@ -209,9 +209,19 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   const remoteStatus = statusResponse.job.status;
   if (!isTerminalArgusJobStatus(remoteStatus)) {
     const waitingForManual = remoteStatus === "WAITING_FOR_MANUAL";
-    if (waitingForManual && environment.NODE_ENV === "production" && isProductionOtaPayload(parent?.payload)) {
-      // This job belongs to the bounded Tymra public pilot. Release only its
-      // challenge session; Synix/manual customer jobs retain their normal flow.
+    const action = statusResponse.job.operator_action;
+    const boundedCaptcha = isProductionOtaPayload(parent?.payload)
+      && execution.connectorId === `${parent.payload.sourceId}-public`
+      && action?.required === true && action.type === "novnc_handoff"
+      && action.issue_url === "/v1/handoffs" && action.reason === "captcha"
+      && typeof action.session_id === "string" && action.session_id.length > 0
+      && action.session_id.length <= 256 && Number.isInteger(action.session_ttl_seconds)
+      && action.session_ttl_seconds > 0 && action.session_ttl_seconds <= 900
+      && Date.parse(action.expires_at) > Date.now()
+      && Date.parse(action.expires_at) <= Date.now() + action.session_ttl_seconds * 1_000 + 1_000;
+    if (waitingForManual && environment.NODE_ENV === "production" && isProductionOtaPayload(parent?.payload) && !boundedCaptcha) {
+      // Only a valid CAPTCHA handoff may wait within the existing execution
+      // deadline. Other challenges release this pilot's own browser session.
       try { await cancelArgusJob(environment, execution.argusJobId, true); }
       catch { throw new DeferredJobError("Unable to release the bounded OTA challenge session", nextPoll(execution.deadlineAt)); }
       await prisma.argusExecution.update({ where: { id: execution.id }, data: { status: "CANCEL_REQUESTED", result: statusResponse.job as unknown as Prisma.InputJsonValue, errorCategory: "ACCESS_CHALLENGE", errorMessage: "Bounded public OTA challenge stopped; waiting for its own session release", retryable: false, lastPolledAt: new Date() } });
@@ -268,7 +278,7 @@ export async function acknowledgePersistedArgusResults(
   const boundedPilot = environment.NODE_ENV === "production" && isProductionOtaPayload((await prisma.job.findUnique({ where: { id: parentJobId }, select: { payload: true } }))?.payload);
   const executions = await prisma.argusExecution.findMany({
     where: { parentJobId, status: { in: boundedPilot ? ["COMPLETED", "FAILED", "CANCELLED"] : ["COMPLETED", "FAILED"] }, result: { not: Prisma.DbNull } },
-    select: { argusJobId: true, collectionRunId: true, result: true },
+    select: { id: true, argusJobId: true, collectionRunId: true, result: true },
   });
   const parentRuns = await prisma.collectionRun.findMany({
     where: { jobId: parentJobId },
@@ -305,6 +315,10 @@ export async function acknowledgePersistedArgusResults(
     if (purged.ok || purged.httpStatus !== 410) {
       throw new Error(`Argus result purge verification failed for ${execution.argusJobId}`);
     }
+    await prisma.argusExecution.updateMany({
+      where: { id: execution.id, deliveryVerifiedAt: null },
+      data: { deliveryVerifiedAt: new Date() },
+    });
   }
 }
 

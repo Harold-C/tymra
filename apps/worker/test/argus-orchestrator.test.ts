@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   executionFindMany: vi.fn(),
   executionUpsert: vi.fn(),
   executionUpdate: vi.fn(),
+  executionUpdateMany: vi.fn(),
   parentFind: vi.fn(),
   parentFindMany: vi.fn(),
   parentUpdateMany: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock("@tymra/db", () => ({
       findMany: mocks.executionFindMany,
       upsert: mocks.executionUpsert,
       update: mocks.executionUpdate,
+      updateMany: mocks.executionUpdateMany,
       count: mocks.executionCount,
     },
     job: {
@@ -304,6 +306,36 @@ describe("durable Argus orchestration", () => {
     expect(mocks.executionUpdate.mock.calls[0]?.[0].data).toMatchObject({ status: "CANCEL_REQUESTED", errorCategory: "ACCESS_CHALLENGE", retryable: false });
   });
 
+  it("retains the bounded public CAPTCHA session within its existing execution deadline", async () => {
+    const execution = { ...activeExecution(), connectorId: "expedia-public" };
+    mocks.executionFind.mockResolvedValue(execution);
+    mocks.parentFind.mockResolvedValue({ status: "RUNNING", payload: productionOtaPayload("expedia") });
+    const summary = { job_id: "argus-1", status: "WAITING_FOR_MANUAL", operator_action: {
+      required: true, type: "novnc_handoff", issue_url: "/v1/handoffs", reason: "captcha",
+      session_id: "manual_" + "2".repeat(32), session_ttl_seconds: 900,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    } };
+    mocks.getJob.mockResolvedValue({ ok: true, job: summary });
+    await assert.rejects(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1"), (error: unknown) => error instanceof DeferredJobError);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.executionUpdate.mock.calls[0]?.[0].data).toMatchObject({ status: "WAITING_FOR_MANUAL", result: summary });
+    expect(mocks.executionUpdate.mock.calls[0]?.[0].data).not.toHaveProperty("deadlineAt");
+  });
+
+  it.each(["expired", "cloudflare", "wrong-source", "excessive-ttl"])("releases an ineligible bounded handoff: %s", async (kind) => {
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: kind === "wrong-source" ? "booking-public" : "expedia-public" });
+    mocks.parentFind.mockResolvedValue({ status: "RUNNING", payload: productionOtaPayload("expedia") });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "WAITING_FOR_MANUAL", operator_action: {
+      required: true, type: "novnc_handoff", issue_url: "/v1/handoffs", reason: kind === "cloudflare" ? "cloudflare" : "captcha",
+      session_id: "manual_" + "2".repeat(32), session_ttl_seconds: kind === "excessive-ttl" ? 901 : 900,
+      expires_at: new Date(Date.now() + (kind === "expired" ? -1_000 : 60_000)).toISOString(),
+    } } });
+    mocks.cancel.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "CANCEL_REQUESTED" } });
+    await assert.rejects(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1"), (error: unknown) => error instanceof DeferredJobError);
+    expect(mocks.cancel).toHaveBeenCalledWith(expect.anything(), "argus-1", true);
+    expect(mocks.executionUpdate.mock.calls[0]?.[0].data).toMatchObject({ status: "CANCEL_REQUESTED", errorCategory: "ACCESS_CHALLENGE" });
+  });
+
   it("stores the terminal result and wakes the parked parent", async () => {
     mocks.executionFind.mockResolvedValue(activeExecution());
     mocks.parentFind.mockResolvedValue({ status: "PENDING" });
@@ -356,6 +388,7 @@ describe("durable Argus orchestration", () => {
 
   it("acknowledges completed results only after their hash is persisted locally", async () => {
     mocks.executionFindMany.mockResolvedValue([{
+      id: "execution-1",
       argusJobId: "argus-1",
       collectionRunId: "run-1",
       result: completedJob(),
@@ -366,10 +399,22 @@ describe("durable Argus orchestration", () => {
 
     assert.deepEqual(mocks.executionFindMany.mock.calls[0]?.[0], {
       where: { parentJobId: "parent-1", status: { in: ["COMPLETED", "FAILED"] }, result: { not: "DbNull" } },
-      select: { argusJobId: true, collectionRunId: true, result: true },
+      select: { id: true, argusJobId: true, collectionRunId: true, result: true },
     });
     assert.deepEqual(mocks.acknowledge.mock.calls[0], [environment, "argus-1", "b".repeat(64)]);
     assert.deepEqual(mocks.getResult.mock.calls[0], [environment, "argus-1"]);
+    assert.equal(mocks.executionUpdateMany.mock.calls[0]?.[0].where.id, "execution-1");
+    assert.equal(mocks.executionUpdateMany.mock.calls[0]?.[0].where.deliveryVerifiedAt, null);
+    assert.ok(mocks.executionUpdateMany.mock.calls[0]?.[0].data.deliveryVerifiedAt instanceof Date);
+    assert.ok(mocks.getResult.mock.invocationCallOrder[0]! < mocks.executionUpdateMany.mock.invocationCallOrder[0]!);
+  });
+
+  it.each(["ack-failed", "not-purged"])("does not record verified delivery when %s", async (phase) => {
+    mocks.executionFindMany.mockResolvedValue([{ id: "execution-1", argusJobId: "argus-1", collectionRunId: "run-1", result: completedJob() }]);
+    mocks.acknowledge.mockResolvedValue(phase === "ack-failed" ? { ok: false, message: "rejected" } : { ok: true });
+    if (phase === "not-purged") mocks.getResult.mockResolvedValue({ ok: true, job: completedJob() });
+    await assert.rejects(acknowledgePersistedArgusResults(environment, "parent-1"), /acknowledgement failed|purge verification failed/u);
+    assert.equal(mocks.executionUpdateMany.mock.calls.length, 0);
   });
 
   it("verifies direct delivery purge after acknowledgement", async () => {

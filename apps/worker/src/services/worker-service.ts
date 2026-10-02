@@ -194,6 +194,8 @@ import { evaluateOperationalAlerts } from "../operations/operational-alerts";
 import { discoverAndCollectAddressOtaComparables } from "./ota-pricing-orchestrator";
 import { publicOtaPrice } from "./ota-price";
 import { isProductionOtaPayload, otaIdentityRequiresDetail, otaSourceApproved } from "../operations/production-ota";
+import { isSourceScopedRentalIdentity, OTA_IDENTITY_PARSER_VERSION } from "../operations/ota-catalog-identity";
+import { otaDiscoveryGeography, otaObservedRegion } from "../operations/ota-discovery-geography";
 
 export { publicOtaPrice } from "./ota-price";
 
@@ -3179,9 +3181,9 @@ export class WorkerService {
     if (NZ_REGIONS.some((region) => region.key === regionKey)) {
       const [properties, units, listings, panel] = await Promise.all([
         prisma.property.count({ where: { region: listing.property.region, countryCode: "NZ", isDemo: false, status: "ACTIVE", mergedIntoId: null } }),
-        prisma.sellableUnit.count({ where: { property: { region: listing.property.region, countryCode: "NZ", isDemo: false }, isDemo: false, status: "ACTIVE", mergedIntoId: null } }),
+        prisma.sellableUnit.count({ where: { property: { region: listing.property.region, countryCode: "NZ", isDemo: false, status: "ACTIVE" }, isDemo: false, status: "ACTIVE", mergedIntoId: null } }),
         prisma.listing.count({ where: { property: { region: listing.property.region }, isDemo: false, listingStatus: "ACTIVE" } }),
-        prisma.panelMembership.count({ where: { marketKey: `region-${regionKey}`, active: true } }),
+        prisma.panelMembership.count({ where: { marketKey: `region-${regionKey}`, active: true, sellableUnit: { property: { status: "ACTIVE" } } } }),
       ]);
       await prisma.marketCoverage.updateMany({ where: { key: `region-${regionKey}` }, data: { knownPropertyCount: properties, knownUnitCount: units, knownListingCount: listings, activePanelCount: panel, anchorPanelCount: panel, lastHealthAt: new Date(), coverageGaps: ["BOUNDED_PILOT_ONLY", "REPRESENTATIVE_OTA_PANEL_PENDING"] } });
     }
@@ -3195,14 +3197,15 @@ export class WorkerService {
       if (!await sourceHasCapability(source.id, "DISCOVER_LISTINGS")) continue;
       for (const region of NZ_REGIONS) {
         if (bounded) await prisma.marketCoverage.upsert({ where: { key: `region-${region.key}` }, create: { key: `region-${region.key}`, name: region.name, status: "PILOT", region: { country: "NZ", level: "REGION", regionName: region.name }, acceptNewChecks: false, freshness: { state: "UNKNOWN", policyVersion: "ota-bounded-production-v1" }, coverageGaps: ["BOUNDED_PILOT_ONLY", "REPRESENTATIVE_OTA_PANEL_PENDING"] }, update: {} });
-        const query = `${region.name}, New Zealand`;
+        const geography = otaDiscoveryGeography(source.key, region);
+        const query = geography.query;
         const url = otaDiscoveryUrlForSource(source.key, query);
         if (!url) continue;
         const urlHash = stableHash(`${source.key}:${region.key}:${url}`);
         await prisma.sourceCrawlTarget.upsert({
           where: { dataSourceId_urlHash: { dataSourceId: source.id, urlHash } },
-          create: { dataSourceId: source.id, url, urlHash, kind: "OTA_REGION_DISCOVERY", status: "PENDING", priority: region.key === "canterbury" ? 90 : 100, nextFetchAt: now, metadata: { regionKey: region.key, regionName: region.name, query } },
-          update: { url, active: true, lastSeenAt: now, metadata: { regionKey: region.key, regionName: region.name, query } },
+          create: { dataSourceId: source.id, url, urlHash, kind: "OTA_REGION_DISCOVERY", status: "PENDING", priority: region.key === "canterbury" ? 90 : 100, nextFetchAt: now, metadata: { regionKey: region.key, regionName: region.name, ...geography } },
+          update: { url, active: true, lastSeenAt: now, metadata: { regionKey: region.key, regionName: region.name, ...geography } },
         });
       }
     }
@@ -3241,7 +3244,7 @@ export class WorkerService {
         for (let candidate of extraction.listings.slice(0, bounded ? 1 : 10)) {
           if (candidate.provider !== target.dataSource.key) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Discovery returned another provider", 422);
           const { observedAt: _observedAt, fieldSources: _fieldSources, ...identityInput } = candidate;
-          const inputHash = stableHash(JSON.stringify(identityInput));
+          const inputHash = stableHash(JSON.stringify({ parserVersion: OTA_IDENTITY_PARSER_VERSION, identity: identityInput }));
           let resolvedAt: string | null = null;
           if (bounded && otaIdentityRequiresDetail(candidate)) {
             const existing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false, listingStatus: "ACTIVE" }, orderBy: { lastConfirmedAt: "desc" } });
@@ -3262,19 +3265,28 @@ export class WorkerService {
             }
           }
           if (bounded && otaIdentityRequiresDetail(candidate)) throw new WorkerRequestError("UNIT_IDENTITY_NOT_PUBLIC", "The public identity does not establish a New Zealand physical unit and location", 422);
-          if (candidate.countryCode !== "NZ" || !candidate.address || candidate.latitude === null || candidate.longitude === null) continue;
+          if (candidate.countryCode === "NZ") {
+            const region = otaObservedRegion(candidate, metadata);
+            if (region !== candidate.region) candidate = { ...candidate, region,
+              fieldSources: { ...candidate.fieldSources, region: "ota-city-region-v1: public locality and postal region identify the configured NZ city; original source retained in evidence" },
+              warnings: [...candidate.warnings, "REGION_NORMALIZED_FROM_PUBLIC_CITY"], quality: "partial" };
+          }
+          const sourceScoped = isSourceScopedRentalIdentity(candidate);
+          if (candidate.countryCode !== "NZ" || (!sourceScoped && (!candidate.address || candidate.latitude === null || candidate.longitude === null))) continue;
           const units = candidate.units.filter((unit) => unit.capacity !== null && (!bounded || unit.capacity >= 2)).slice(0, bounded ? 1 : 50);
           if (!units.length) continue;
           const existingListing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false }, select: { propertyId: true } });
-          const nearby = existingListing ? [] : await prisma.property.findMany({ where: { countryCode: "NZ", isDemo: false, status: "ACTIVE", mergedIntoId: null, latitude: { gte: candidate.latitude - 0.001, lte: candidate.latitude + 0.001 }, longitude: { gte: candidate.longitude - 0.001, lte: candidate.longitude + 0.001 } }, take: 20 });
+          const nearby = existingListing || sourceScoped ? [] : await prisma.property.findMany({ where: { countryCode: "NZ", isDemo: false, status: "ACTIVE", mergedIntoId: null, latitude: { gte: candidate.latitude! - 0.001, lte: candidate.latitude! + 0.001 }, longitude: { gte: candidate.longitude! - 0.001, lte: candidate.longitude! + 0.001 } }, take: 20 });
           const sameAddress = nearby.filter((property) => normalizeAddressQuery(property.address) === normalizeAddressQuery(candidate.address!) && matchOtaListingToConfirmedAddress(property, candidate).status === "MATCH");
-          const propertyId = existingListing?.propertyId ?? (sameAddress.length === 1 ? sameAddress[0].id : stableId("ota-property", `address:${normalizeAddressQuery(candidate.address)}:${candidate.city ?? ""}:${candidate.latitude.toFixed(5)}:${candidate.longitude.toFixed(5)}`));
+          const propertyId = existingListing?.propertyId ?? (sourceScoped ? stableId("ota-property", `provider:${candidate.provider}:${candidate.providerPropertyId ?? candidate.sourceListingId}`)
+            : sameAddress.length === 1 ? sameAddress[0].id : stableId("ota-property", `address:${normalizeAddressQuery(candidate.address!)}:${candidate.city ?? ""}:${candidate.latitude!.toFixed(5)}:${candidate.longitude!.toFixed(5)}`));
           const property = await prisma.property.upsert({
             where: { id: propertyId },
-            create: { id: propertyId, canonicalName: candidate.canonicalName, address: candidate.address, city: candidate.city ?? "", countryCode: "NZ", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, timezone: NEW_ZEALAND_TIME_ZONE, accommodationType: candidate.propertyType ?? "UNCLASSIFIED_ACCOMMODATION", supportStatus: "PILOT", identityConfidence: candidate.quality === "complete" ? 0.9 : 0.7, status: "ACTIVE", isDemo: false },
-            update: { canonicalName: candidate.canonicalName, address: candidate.address, city: candidate.city ?? "", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, status: "ACTIVE" },
+            create: { id: propertyId, canonicalName: candidate.canonicalName, address: sourceScoped ? "" : candidate.address!, city: candidate.city ?? "", countryCode: "NZ", latitude: sourceScoped ? null : candidate.latitude, longitude: sourceScoped ? null : candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, timezone: NEW_ZEALAND_TIME_ZONE, accommodationType: candidate.propertyType ?? "UNCLASSIFIED_ACCOMMODATION", supportStatus: "PILOT", identityConfidence: sourceScoped ? 0.65 : candidate.quality === "complete" ? 0.9 : 0.7, status: sourceScoped ? "SOURCE_SCOPED" : "ACTIVE", isDemo: false },
+            update: sourceScoped ? { canonicalName: candidate.canonicalName }
+              : { canonicalName: candidate.canonicalName, address: candidate.address!, city: candidate.city ?? "", latitude: candidate.latitude, longitude: candidate.longitude, region: candidate.region, territorialAuthority: candidate.territorialAuthority, postcode: candidate.postcode, status: "ACTIVE" },
           });
-          await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { catalogRegion: metadata.regionKey, sourceListingId: candidate.sourceListingId } });
+          await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { catalogRegion: metadata.regionKey, sourceListingId: candidate.sourceListingId, locationPrecision: sourceScoped ? "SOURCE_SCOPED" : "EXACT", approximateLocation: candidate.approximateLocation ?? null } });
           for (const unit of units) {
             const matchingUnits = await prisma.sellableUnit.findMany({ where: { propertyId: property.id, isDemo: false, status: "ACTIVE", mergedIntoId: null, officialName: unit.officialName, unitType: unit.unitType, capacity: unit.capacity!, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, entireOrShared: unit.entireOrShared }, select: { id: true }, take: 2 });
             const unitId = matchingUnits.length === 1 ? matchingUnits[0].id : stableId("catalog-unit", `${candidate.provider}:${candidate.sourceListingId}:${unit.externalId}`);
@@ -3283,7 +3295,7 @@ export class WorkerService {
             const externalId = `${candidate.sourceListingId}:${unit.externalId}`;
             const listing = await prisma.listing.upsert({ where: { dataSourceId_externalId: { dataSourceId: target.dataSourceId, externalId } }, create: { propertyId: property.id, unitId: persistedUnit.id, dataSourceId: target.dataSourceId, platform: candidate.provider, externalId, sourceListingId: candidate.sourceListingId, canonicalUrl: candidate.canonicalUrl, rawUrl: candidate.canonicalUrl, url: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", matchConfidence: candidate.quality === "complete" ? 0.9 : 0.7, operationalStatus: "HEALTHY", metadata: { catalogRegion: metadata.regionKey, fieldSources: candidate.fieldSources, warnings: candidate.warnings }, isDemo: false }, update: { propertyId: property.id, unitId: persistedUnit.id, canonicalUrl: candidate.canonicalUrl, platformUnitName: unit.officialName, lastConfirmedAt: new Date(candidate.observedAt), onlineStatus: "ONLINE", listingStatus: "ACTIVE", operationalStatus: "HEALTHY" } });
             const provider = otaProviderDetails(candidate.provider);
-            await prisma.listing.update({ where: { id: listing.id }, data: { providerBrand: provider?.brand, providerFamily: provider?.family, metadata: { catalogRegion: metadata.regionKey, discoveredFor: "national-catalog", fieldSources: candidate.fieldSources, warnings: candidate.warnings, ...(bounded ? { productionOtaJobId: catalogJobId, discoveryIdentityHash: inputHash, ...(resolvedAt ? { resolvedAt, resolvedIdentity: candidate } : {}) } : {}) } } });
+            await prisma.listing.update({ where: { id: listing.id }, data: { providerBrand: provider?.brand, providerFamily: provider?.family, metadata: { catalogRegion: metadata.regionKey, queryScope: metadata.queryScope ?? "REGION", discoveredFor: "national-catalog", locationPrecision: sourceScoped ? "SOURCE_SCOPED" : "EXACT", approximateLocation: candidate.approximateLocation ?? null, fieldSources: candidate.fieldSources, warnings: candidate.warnings, ...(bounded ? { productionOtaJobId: catalogJobId, discoveryIdentityHash: inputHash, ...(resolvedAt ? { resolvedAt, resolvedIdentity: candidate } : {}) } : {}) } } });
             await recordListingVersion(listing.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { catalogRegion: metadata.regionKey, sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId } });
             targetDiscovered += 1;
             discovered += 1;
@@ -3306,7 +3318,7 @@ export class WorkerService {
     }
     const [properties, units, listings, frontier] = await Promise.all([
       prisma.property.count({ where: { status: "ACTIVE", mergedIntoId: null } }),
-      prisma.sellableUnit.count({ where: { status: "ACTIVE", mergedIntoId: null } }),
+      prisma.sellableUnit.count({ where: { status: "ACTIVE", mergedIntoId: null, property: { status: "ACTIVE", mergedIntoId: null } } }),
       prisma.listing.count({ where: { listingStatus: "ACTIVE" } }),
       prisma.sourceCrawlTarget.count({ where: { kind: "OTA_REGION_DISCOVERY", active: true } }),
     ]);
@@ -3316,7 +3328,7 @@ export class WorkerService {
   async refreshPanel(membershipType: "ANCHOR" | "ROTATING", marketScope: string, parentJobId?: string) {
     const targetSize = membershipType === "ANCHOR" ? 840 : 360;
     const candidates = await prisma.sellableUnit.findMany({
-      where: { status: "ACTIVE", mergedIntoId: null, isDemo: false, listings: { some: { listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, enabled: true } } } },
+      where: { status: "ACTIVE", mergedIntoId: null, isDemo: false, property: { status: "ACTIVE", mergedIntoId: null }, listings: { some: { listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, enabled: true } } } },
       include: { property: true, listings: { where: { listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, enabled: true } }, take: 1 }, panelMemberships: { where: { membershipType }, take: 1 } },
       orderBy: { id: "asc" },
     });
@@ -3419,6 +3431,7 @@ export class WorkerService {
       const price = publicOtaPrice(rate, 1);
       if (boundedSourceId && (Date.parse(rate.collectedAt) < Date.now() - 24 * 3_600_000 || Date.parse(rate.collectedAt) > Date.now() + 60_000)) throw new WorkerRequestError("STALE_RATE", "Production trial rate was not observed within the current day", 422);
       if (available && !price) throw new WorkerRequestError("NO_EXPLICIT_PRICE", "Available panel rate has no explicit public price", 422);
+      if (boundedSourceId && !available) throw new WorkerRequestError("NO_AVAILABLE_PUBLIC_RATE", "The exact-unit public stay is unavailable; a positive production acceptance sample is still required", 422);
       if (boundedSourceId && (!available || !price || price.feeCompleteness !== "COMPLETE" || price.amountMinor <= 0)) throw new WorkerRequestError("NO_COMPLETE_PUBLIC_TOTAL", "Bounded production acceptance requires an available explicit total with complete mandatory fees", 422);
       const observation = await prisma.rateObservation.upsert({
         where: { idempotencyKey: `panel:${run.id}:${member.id}:${checkIn}:${listing.id}` },

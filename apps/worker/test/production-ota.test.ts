@@ -11,11 +11,11 @@ beforeEach(() => {
   mock.source.mockResolvedValue(source);
   mock.schedule.mockResolvedValue(schedule);
   mock.jobs.mockResolvedValue([1, 2].map((i) => ({ id: `job-${i}`, payload: schedule.payload, status: "SUCCEEDED", attemptCount: 1, maxAttempts: 1, createdAt: new Date() })));
-  mock.runs.mockResolvedValue([1, 2].map((i) => ({ id: `run-${i}`, status: "SUCCEEDED", successCount: 1, failureCount: 0, finishedAt: new Date(), scope: { deliveryVerified: true, operation: i === 1 ? "NATIONAL_CATALOG_DISCOVERY" : "OTA_PANEL_RATE" } })));
+  mock.runs.mockResolvedValue([1, 2].map((i) => ({ id: `run-${i}`, status: "SUCCEEDED", successCount: 1, failureCount: 0, finishedAt: new Date(), scope: { operation: i === 1 ? "NATIONAL_CATALOG_DISCOVERY" : "OTA_PANEL_RATE" } })));
   mock.rates.mockResolvedValue(1);
   mock.listingCount.mockResolvedValue(1);
   mock.parserCount.mockResolvedValue(0);
-  mock.executions.mockResolvedValue([1, 2].map((i) => ({ id: i, status: "COMPLETED", result: { result_sha256: "verified" }, completedAt: new Date(), submittedAt: new Date() })));
+  mock.executions.mockResolvedValue([1, 2].map((i) => ({ id: i, collectionRunId: `run-${i}`, status: "COMPLETED", result: { result_sha256: "a".repeat(64) }, completedAt: new Date(Date.now() - 1_000), deliveryVerifiedAt: new Date(), submittedAt: new Date() })));
   mock.artifacts.mockResolvedValue([{ storageRef: "tymra-evidence:retained", parserFailure: false }]);
 });
 describe("production OTA pilot acceptance", () => {
@@ -59,13 +59,23 @@ describe("production OTA pilot acceptance", () => {
     mock.rates.mockResolvedValue(0);
     await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("no positive rate evidence");
     mock.rates.mockResolvedValue(1);
-    const runs = await mock.runs(); runs[0].scope.deliveryVerified = false;
+    const executions = await mock.executions(); executions[0].deliveryVerifiedAt = null;
     await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("verified delivery");
-    runs[0].scope.deliveryVerified = true;
+    executions[0].deliveryVerifiedAt = new Date();
     mock.artifacts.mockResolvedValue([{ storageRef: "argus-evidence:still-remote", parserFailure: false }]);
     await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("retention");
     mock.artifacts.mockResolvedValue([{ storageRef: "tymra-evidence:retained", parserFailure: true }]);
     await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("retention");
+    expect(mock.updateSchedule).not.toHaveBeenCalled();
+  });
+  it("rejects ACK timestamps before completion, invalid wire hashes and missing run delivery", async () => {
+    const executions = await mock.executions();
+    executions[0].deliveryVerifiedAt = new Date(0);
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("verified delivery");
+    executions[0].deliveryVerifiedAt = new Date(); executions[0].result.result_sha256 = "invalid";
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("verified delivery");
+    executions[0].result.result_sha256 = "a".repeat(64); executions[0].collectionRunId = "unrelated-run";
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("verified delivery");
     expect(mock.updateSchedule).not.toHaveBeenCalled();
   });
 });

@@ -43,6 +43,18 @@ export const otaUnitExtractionSchema = z.object({
   entireOrShared: z.enum(["ENTIRE", "PRIVATE", "SHARED"]),
 });
 
+export const otaApproximateLocationSchema = z.object({
+  precision: z.enum(["APPROXIMATE", "LOCALITY"]),
+  label: z.string().min(1),
+  neighborhood: z.string().min(1).nullable(),
+  point: z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+  }).nullable(),
+}).refine(value => value.precision === "APPROXIMATE" || value.point === null, {
+  message: "Locality evidence cannot contain a map point",
+});
+
 export const otaListingIdentitySchema = z.object({
   provider: otaProviderSchema,
   providerBrand: z.enum(["TRIP_COM"]).optional(),
@@ -61,6 +73,7 @@ export const otaListingIdentitySchema = z.object({
   countryCode: z.string().length(2).nullable(),
   latitude: z.number().min(-90).max(90).nullable(),
   longitude: z.number().min(-180).max(180).nullable(),
+  approximateLocation: otaApproximateLocationSchema.nullable().optional(),
   propertyType: z.string().min(1),
   units: z.array(otaUnitExtractionSchema).max(50),
   observedAt: z.string().datetime(),

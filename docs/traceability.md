@@ -1,6 +1,337 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-01 (locally verified identity releases deployed; subsequent Booking capacity correction locally verified, unreleased)
+Last updated: 2026-10-03 (Bounded live Booking, Bookabach and Airbnb quotes persisted; durable ACK lifecycle fixed. Six-source production activation remains blocked; no release image built or production deployment)
+
+## 2026-10-03 发布前本地复核
+
+本节取代下方历史记录的当前阻塞描述。真实验证仍使用独立本地数据库
+`tymra_ota_identity_local_20261001`、有头固定 public profile、关闭的 Scheduler 和
+高频 Scheduler；测试调用生产有界合同，环境和结果仍是本地。Argus 隔离分支已
+合入主线最新预订运行时提交 `cffa127`，保留 Synix 已有后台能力；没有切换生产
+服务、共享开发 Argus 或 Synix。
+
+| 来源 | 本次真实结果 | 尚缺验收 |
+| --- | --- | --- |
+| Booking | 两个精确 Job 成功，Opononi Hotel、物理容量 2、2026-10-10–11、2 成人／1 房、NZD 205 COMPLETE；各六份证据哈希与三次 ACK 后 410 | 最终固定镜像和生产独立再验收；本地成功不直接启用生产计划 |
+| Bookabach | 第二个精确 Job 成功；Rolleston 房源 `20312372`、容量 3、NZD 117 COMPLETE；缓存复用详情，两个执行、四份证据、两次 ACK 后 410 | 第二次正向精确完整任务、最终镜像与生产门槛 |
+| Airbnb | 列表／详情保存 `1271449864798766615`、Kaikōura Ranges 大概位置、容量 2；修复后的单次报价诊断成功保存 NZD 228.85 COMPLETE | 报价诊断队列不是完整精确试采；仍缺两次目录＋报价成功、最终镜像及生产门槛 |
+| Agoda | 推广首屏后的有界同页滚动回归通过；取得非推广 Bks Pohutukawa Lodge `773267` 的地址、坐标及容量 3，但报价持续失败，未新增完整报价 | 实际报价捕获失败尚未收敛，需恢复预算后验证；实际成功目录来自 Whangarei，不能描述为 Christchurch 成功 |
+| Expedia | 默认 API public profile 仅一次执行，任务返回 RATE_LIMITED；保存截图实际有跨域滑块，父页面 DOM 没有滑块文字，旧检测漏判；两份证据与 ACK／410，零房源／报价 | 跨域 CAPTCHA 识别候选已修复；保留原失败结果与冷却至 2026-10-03 03:02:44 NZ，后续仍需新任务同会话人工恢复和真实业务链 |
+| Trip.com | Whangarei 公开入口仍为明确邮箱登录页，未搜索、开详情或报价；两份证据与 ACK／410 | 公开访问恢复；本次旧捕获结果 INTERNAL_ERROR 保留，修复后保存页面重放识别 LOGIN_REQUIRED |
+
+实际正向 Job：Booking `cmuqyjtk20000c69rge4btmwp`、
+`cmuqyunfr0000c6azrep1kuq4`；Bookabach `cmuqxi7iy0000c60y30yeb9v7`。
+Airbnb 单次报价诊断为 `cmuqyex010000c6s1zhmzsv98`，不计作精确生产试采。
+原失败批次、原 Argus 结果与源观察时间保留；保存页面重放不写成新的业务观察。
+
+本次修复：
+
+- Bookabach 当前报价区域包含原价标签时，仍读取唯一当前价及同区域含税费说明；
+  原价、会员价、其他报价区域不作当前价格。
+- Airbnb 只读打开当前报价的 Price details；卡片整数价 229 与弹窗精确 228.85
+  仅按该整数展示的四舍五入规则绑定，保留精确总价。原生住宿小计 199.00 与税
+  29.85 和总价对齐，且无未解释额外金额或另付说明，才证明当前弹窗价格含费用。
+  清洁费／服务费未分别显示，保持 null／BUNDLED，不补零。
+  [Airbnb 价格说明](https://www.airbnb.com/help/article/125) 明确公开展示价包括费用，
+  税可能另加；所以普通卡片总价或官方政策本身仍不足本项目的完整含税费门槛。
+- Agoda 等待只观察当前房型可见加载标记和报价金额，排除推荐区加载、隐藏占位与
+  促销计时文字；离线回归和保存 DOM 就绪检查通过，但两个修复后实测仍失败。
+  没有把未知原因归为登录、CAPTCHA 或已修复；完整报价及捕获阶段仍待预算复核。
+- Booking 对街道形式的 addressLocality 改用公开城市 breadcrumb，并排除房间数量
+  option 金额。新任务城市已读回 Opononi，205 的金额依据不再指向五房 1025。
+  详情指纹加入解析版本；旧解析器缓存不再因列表没变而长期复用错误详情。
+- Trip 精确登录标题、可见邮箱输入框和 Continue with email 识别在搜索和就绪之前
+  返回，供统一挑战分类；不读取表单值或登录，普通 Sign in 按钮不构成登录墙。
+- 有界生产 CAPTCHA 只在当前来源、有效短期 session 和原执行期限内等待；过期、
+  来源不符、其他挑战或超长 TTL 取消自身任务，不延长期限，不影响私有后台任务。
+- Expedia 滑块实际在 `geo.captcha-delivery.com/captcha/` 跨域 iframe 内，页面 HTML
+  不含其滑块文字。现在仅在允许的 Expedia 主机、明确父页面人机验证文字与该 HTTPS
+  验证 frame 同时成立时识别 CAPTCHA；普通 429、其他 frame 和其他来源不放宽。
+  保存截图推翻了先前“普通 429”的判断，原 Job 与冷却记录保留。
+- 生产处理器原先在 ACK 后写 `CollectionRun.scope.deliveryVerified`，被完成历史的
+  数据库保护拒绝。新增 nullable `ArgusExecution.deliveryVerifiedAt`，只在本地证据
+  校验、ACK 成功与读回 410 后写入；完成批次保持不可修改。启用门槛核对每个执行
+  的确认时间、结果 SHA-256 和两个批次归属。新 migration
+  `20261003003000_argus_delivery_verification` 仅在本地验收与独立测试库应用。
+  Bookabach 已有成功结果通过实际处理器再次确认交付；Airbnb／Trip 已保留结果也
+  再次完成 ACK／410 并保存确认时间，零新增源执行，完成历史与原观察保持。
+
+验证：Worker 42 文件／330 项通过；根单测 238 通过、5 项未启用的 `LIVE_SOURCE_PROBE`
+公开实站探针跳过，
+未把跳过算作通过；全项目类型检查、lint 通过。独立全新 `_offline_test` 数据库部署
+35 个 migration，六来源各两轮通过实际生产处理器与模拟 Argus API 完成交付、重复
+执行、详情缓存、哈希和 ACK；防修改触发器负向检查仍拒绝改写完成批次。合成测试
+不计真实来源或生产启用证据。Argus 合入主线后的类型检查、OpenAPI YAML 通过；
+完整源覆盖率 876 通过、150 浏览器环境门槛跳过，行／分支／函数覆盖率
+75.70%／81.80%／85.11%。编译产物的隔离 Linux 回归 1053 项中 1036 项首次通过，
+5 项因测试快照缺少 Compose／脚本文件受阻；补齐原文件后相关 6 项全部通过，
+合计 1041 项通过、12 项 PostgreSQL 条件已在完整源码门禁执行通过，零剩余失败。
+Expedia 内联／跨域滑块同会话恢复、Booking 后台房型及 SMS 检查通过；复用既有
+镜像依赖，不代表最终不可变发布镜像验收。先前直接 tsx 的回归遇到浏览器序列化
+辅助函数错误，已停止该不适用方法，保持后台断言和现行私有代码。已清理本轮拥有
+的两个合成测试库；真实验收库、profile、证据及失败历史保留。
+
+本地 2026-10-03 API 执行数：Booking 6、Agoda 6、Bookabach 5、Airbnb 5、Expedia 1、
+Trip 1。Airbnb 源码 watch 在一次任务内重启，保守另计一次请求，实际预算按 6 处理。
+随后所有 Argus 源码变更在无活跃采集时执行，未影响 Synix。来源与计划均关闭，
+无活跃采集／handoff；六个渠道尚未全部达到实抓和 D-039 门槛。最终发布镜像尚未
+构建，待实际阻塞收敛后每个最终候选只构建一次；未部署或开启生产 OTA 自动采集。
+
+## 先前本地记录
+
+以下均为原日期的证据，当前结果与下一步以上节及实施计划为准。
+
+## 2026-10-01 本地可完成工作补验（18:58 NZ）
+
+在前一轮候选上继续完成不新增来源访问的工作，原始实抓结果与本地请求预算未改写。
+
+- 新增 `apps/worker/test/ota-offline-pipeline.integration.test.ts`。只在独立、空白、
+  名称以 `_offline_test` 结尾的开发测试库执行；本次部署现有 34 个 migration 后，
+  六来源分别验证两轮目录＋报价，经本机回环模拟 Argus Job API 交付，累计 30 个
+  模拟执行、6 条 Listing、12 条报价。校验真实数据库保存、重复执行不再提交、详情
+  指纹缓存复用、报价历史追加、物理容量、含税费总价的未知组件保留、证据哈希与
+  ACK 后 410。Airbnb 已确认精确映射不被后续大概位置覆盖。六项全部通过。
+- 此测试使用明确的合成合同与证据，不运行浏览器／访问 OTA，不属于真实采集、
+  两次正向生产任务或生产授权。测试队列为 `offline-fixture-validation`，payload
+  标记 fixture；本地真实验收库与默认 API profile 未替换。结束回读启用来源／计划
+  均为零，仅删除本轮拥有的临时数据库及合成证据文件，不删除任何真实实抓证据。
+- Agoda 全住宿展示新增异步菜单等待、控件失效的有界失败处理；选中全住宿后，
+  若报价区仍出现每晚文字，不把歧义价格认作全住宿总价或重新认作每晚价。菜单
+  延迟、同 URL 导航失效、选中但尚未完成重定价的浏览器回归通过。
+- Airbnb 明细金额比较改为 NZD 分单位，200 与 200.00 可以正确匹配；金额不同或
+  弹窗同时出现其他币种则不接受费用明细。浏览器正向／负向回归通过。
+- 新增真实不可售与未知费用分别保留错误分类的回归。23 项相关 Worker 测试、
+  6 项相关浏览器测试均通过且无跳过，两个项目类型检查通过，未构建。
+
+本地可进行的接收、数据库保存、重复与异常场景已补验；实际的 Bookabach 修复后
+入库、Airbnb 明细、Agoda 全住宿显示、Expedia 默认 public profile 人工恢复和完整
+位置，以及 Trip 公开访问／正确目的地仍须来源预算与实际页面允许。六来源真实验收
+状态见下节；继续保持停采，无新实站请求、push／发布或 Synix 操作。
+
+## 2026-10-01 六 OTA 逐项修复与本地验收边界
+
+本节取代下方历史记录中的“当前阻塞”描述。修改仅在 Tymra 本地源码与 Argus 隔离
+`tymra-public-ota-20260930` 工作树；有头固定来源 profile、本地独立数据库／Redis 与
+证据目录沿用。未修改共享 Argus 主 checkout、Synix 或生产服务；未构建、push、部署。
+
+| 来源 | 本轮修复与核实 | 仍需真实验证 |
+| --- | --- | --- |
+| Booking | 既有本地完整业务链路成功仍有效，容量／名称修复保留 | 最终固定候选发布及生产再验收 |
+| Airbnb | 来源专属稳定 ID＋公开大概位置＋物理容量允许继续，精确地址保持未知；新增只读价格明细弹窗提取，组件与总价需同一报价且金额一致 | 真实任务读到 NZD 276 总价，但捕获区域没有完整费用依据；弹窗操作仅浏览器回归通过，待预算恢复实测 |
+| Bookabach | 同上来源身份；真实任务保存房源与容量。全页“not available”误判已限定当前预订区域，费用组件也不再取全页 | 保存的真实页面无网络重放得到 AVAILABLE、NZD 134 BUNDLED、明确含税费；Tymra 接收及 COMPLETE 价格规则通过，需新真实任务确认修复后入库 |
+| Expedia | 绑定当前房源的 JSON-LD 地址／坐标，排除附近房源。明确滑块 CAPTCHA 的 429 可留同 Page／Context 供人工验证，清除后恢复一次首页 Search；普通 429 仍停采 | 既有人工验证 profile 与默认 API public profile 未合并；实际 API 同 profile 人工恢复、完整位置及 Job／报价入库待验证 |
+| Agoda | 房源绑定的 Open Graph 坐标补齐，公开政策文字与成人数过滤修复；全住宿总价通过可见选项选择，必须确认选中且页面未切换 | 真实保存页面重放坐标 -43.48996353149414／172.54566955566406、三房型容量，8 条合格报价政策可读但仍无全住宿总价。全住宿选择仅回归通过，非推广候选及真实业务链待验证 |
+| Trip.com | 删除 Christchurch Airport 硬编码回退；城市＋NZ 建议必须匹配，目的地不一致拒绝；物理容量取房型区域可访问标签，报价人数与历史评论不作物理依据 | 保存的 Lylo 页面重放 Queen Ensuite Room 容量 2。新的 Northland／Whangarei 实测入口返回邮箱登录页，未进入搜索；需公开入口恢复后验证正确地理及完整报价 |
+
+Airbnb 新真实本地 Job `cmuotzeny0000c6wzr8np1ati`、Bookabach
+`cmuoua10m0000c6zlftddxpc5` 各完成三个 Argus 执行：列表、详情、报价；各六份证据哈希
+通过，三个 ACK 后读回 410。两个目录批次成功，分别保存
+`airbnb:1575788832170495266`／容量 4 与 `bookabach:9853129`／容量 2；Property
+为 `SOURCE_SCOPED`、地址空、精确坐标 null，不计作跨平台去重后的已确认物理覆盖。
+Airbnb 最初保存时的 ACTIVE 分类已仅在本地纠正，追加第 2 个身份版本并标记
+`LOCATION_CLASSIFICATION_CORRECTED`，不是新的来源观察。目录统计及代表性面板筛选
+排除 SOURCE_SCOPED Property 的物理 Unit；来源 Listing 与自身报价仍可保存。
+原报价批次保留 `NO_COMPLETE_PUBLIC_TOTAL` 失败历史；Bookabach 该旧结果是误判，
+新重放结果明确推翻它，未改写原 Argus 结果或伪造新业务观测。两来源 RateObservation
+本轮仍未新增。正确的真实不可售试采以后单独分类为 `NO_AVAILABLE_PUBLIC_RATE`，
+正向启用门槛仍要求可售且完整含税费价格。
+
+两个更早 Airbnb 本地连接失败 Job `cmuottxy80000c62i27stb3mb`／
+`cmuotxgs80000c6l56zwi6qyp` 未产生 Argus 执行，不是来源拒绝。独立源码监控容器曾因
+新增文件尚未保存完整而停止；确认无活跃任务后恢复同容器，只更新本地临时 API 端口。
+
+Trip 新本地目录验证 Job `cmuoulyry0000c6ptt1wu6zrn` 仅新增一次执行，登录页的两份
+证据已保留并 ACK；未开详情或报价。旧捕获误报 INTERNAL_ERROR，候选已针对 Trip
+的明确邮箱登录页补充 LOGIN_REQUIRED 识别，普通页面的 Sign in 按钮不构成登录墙。
+此前本地自定义验证合同 Job `cmuoul92s0000c6g5jlcfli74` 在调用端被拒绝，零来源执行，
+已终止；未削弱生产任务合同。新的目录验证未通过，不计作正向生产验收。
+
+Agoda／Trip 的地区 frontier 明确保存城市采样范围：Canterbury→Christchurch，
+Northland→Whangarei，其他已配置地区采用显式城市锚点；无可核实锚点仍保留地区查询，
+不自动替换同名地点。城市样本不代表完整地区／全国覆盖。公开 city 与 city-valued
+addressRegion 一致时才归入该城市对应地区；错误城市／国家不据请求上下文补值。
+
+本轮 Tymra Worker 类型检查、42 个测试文件／321 项测试通过。Argus 类型检查及来源
+身份、物理容量、目的地、费用区域、总价展示和同会话人工恢复定向回归通过；原页面
+重放不发网络请求、不新增业务观察。保存的真实样本与人工验证页面不替代两次成功
+Job、D-039 滚动健康及最终固定镜像门槛。
+
+本地当天 Airbnb／Bookabach 各六次（包含之前独立直接诊断），Agoda／Expedia／Booking
+各已达六次；Trip 五次，剩余一次不足完整链且入口登录限制不重试。来源与计划保持
+关闭，无活跃采集。继续时须等预算恢复，逐来源一次有界复核，不反复 build。
+
+## 2026-10-01 Agoda 标签页与目的地修复（本地候选）
+
+同一有头固定 profile 的诊断确认旧代码把 Canterbury, New Zealand 误选成英国
+Canterbury；酒店结果在新标签页打开，原页导航至 Activities，抓取在原页等待超时。
+房源链接 `canterbury-gb.html` 是直接国家证据，没有登录或挑战提示；旧快照固定
+New Zealand 会造成错误国家标注。隔离 Argus 候选现要求匹配地名与 New Zealand
+的可见建议，跟随实际结果标签页并保留同 context／允许域名校验，不重复请求；
+非广告列表按 `*-nz.html` 核实国家，外国／未知／混合结果或目的地变化停止解析。
+
+修复后的唯一真实复试在 Search 前停止：该页面无新西兰 Canterbury 地区选项，
+可见新西兰建议包括 Christchurch、Hanmer Springs，Canterbury 同名城市在英国。
+等待用户决定是否先用 Christchurch 验证城市范围，不能静默当作全 Canterbury。
+没有新 Argus Job、Listing 或 RateObservation；两份证据与哈希保留在既有受保护
+验收根 `data/reports/agoda-local-fixed-navigation-20261001`。noVNC 暂留至 12:50 NZ。
+当天实际三次（一个既有执行、两次直接诊断），后续最多三次，不能只按表中一次计数。
+类型检查、离线国家／标签页回归及容器提取／证据衔接通过；macOS 缺 `/data` 的
+既有证据测试在隔离容器补验通过。六本地来源／计划保持关闭，无 build／push／发布，
+生产和 Synix 未操作。列表、详情、报价及业务入库正向验收仍待完成。
+
+用户随后批准 Christchurch 城市范围验证。一次 Tymra Job
+`cmuoq365x0002c65z35pbr12y` 在建议阶段失败：保存 DOM 表明 New Zealand／City／Popular
+被 `hasText` 拼接，国家边界匹配漏掉正确选项。两个证据哈希及 ACK 后 HTTP 410 通过；
+候选改读完整建议标签／渲染文字，并有界等待异步建议，返回固定安全目的地类别。
+同 profile 的继续诊断正常显示 596 个 Christchurch 房源，但新标签页地址读取出现
+Invalid URL；补齐地址暂空等待与非法目标分类，离线回归通过。复用已加载结果页，不
+刷新搜索，仅增加一个有日期详情导航，读取同页房型与报价，累计实际六次后停止访问。
+
+真实详情技术样本为 Sudima Christchurch Airport（agoda:11971），公开地址为
+550 Memorial Ave；三房型 Superior Twin／Deluxe King／Deluxe Twin 的容量为 3／2／3。
+坐标未取得，五条公开每晚报价均 PARTIAL，住宿总价为空，不能当作完整可比较总价。
+实际列表还显示 Sudima 为 Boosted：候选补齐推广排除，无网络重放确认修正后仅保留
+BreakFree on Cashel（agoda:861964）和 Bealey Quarter（agoda:23911327）；Sudima
+详情仅是技术样本，不作为正式目录候选。原始快照保留，修正结果独立保存并标注。
+
+三类 Tymra 接收合同、八份直接诊断证据哈希及本轮 30 项定向检查通过，类型检查通过。
+直接诊断未创建新的 Job／ACK；Agoda 业务 Listing／RateObservation 仍为零，无活跃
+执行；测试城市 target 已停用，来源与计划仍关闭。证据位于既有受保护验收根
+`data/reports/agoda-christchurch-continuation-20261001`。随后清理本地临时调试连接时
+观察浏览器意外关闭；不是来源挑战，截图／DOM 和 profile 保留，详情截图的内置
+面板打开请求已排队，并在聊天中提供截图，不再新增来源请求恢复会话。后续预算
+恢复后须用非推广候选补齐位置、
+总价及真实 Job／业务入库验收；
+无 build／push／部署，未操作生产或 Synix。
+
+## 2026-10-01 Expedia 首页操作路径候选
+
+按用户要求修改隔离 Argus worktree 的 `expedia-public` discovery：打开 NZ 首页，
+选择 Stays、精确目的地建议、日历日期、房间／人数，点击 Search；网站自行提供
+region ID 和搜索 URL。当前控件实现覆盖零儿童、1–8 房且每房至少一成人；不支持的
+人数、币种／地区变化或控件失败停止，已知详情路径不变。类型检查、7 项隔离浏览器
+检查及 42 项 Connector 回归通过，没有 build／push／部署。
+
+内置浏览器真实操作 Canterbury、2026-10-08–09、2 成人／1 房成功到达正常结果页
+（页面 heading 为 464 Properties）。2026-10-01 10:47 NZ，确认本地运行时空闲与旧
+10:21 冷却结束后，一次独立直接导航诊断复用现有有头 Chrome／固定 Expedia public
+profile；`https://www.expedia.co.nz/` 首页立即返回 HTTP 429／Bot or Not?，未输入参数、
+未提交 Search、未打开详情。停止并暂留原页面供观察，两份 HTML／截图 SHA-256
+读回一致，保存在既有受保护本地验收根下 `data/reports/expedia-homepage-local-20261001`。
+此导航诊断没有创建 Argus Job／ACK 或 Tymra 业务批次，不表示真实 Argus 列表采集
+通过，也没有新 Property／报价入库。`ArgusExecution` 当天 Expedia 为一次，加本次
+直接诊断实际为两次；后续预算须另计。六个本地来源与计划仍关闭，生产与 Synix 未操作。
+
+用户随后要求全新 profile 单次尝试。10:56 NZ 在启动前核实目录不存在，使用
+`expedia-public/fresh-public-20261001-1054`、相同有头 Chrome 与网络打开首页，仍为
+HTTP 429／Bot or Not?，未填写参数、未提交 Search、未抓详情。两份证据 SHA-256
+读回通过，保存在既有本地验收根下 `data/reports/expedia-fresh-profile-local-20261001`。
+noVNC 已在内置浏览器确认连接并显示该新 profile 的挑战页，自动操作停止，短期保留
+供用户观察／控制。没有创建 Job／ACK、业务批次或报价；旧 profile 保留。当天 Expedia
+截至该诊断实际为一条 `ArgusExecution` 加两次直接诊断，共三次，后续不得只按表中一次计预算。
+
+用户自行通过新 profile 的人机验证后，明确要求继续搜索并在测试后对照旧参数地址。
+同一 Page／BrowserContext／profile 内，通过 noVNC 的可见控件完成 Canterbury、
+2026-10-08–09、2 成人／1 房搜索，显示正常 300+ 房源、NZD、未登录。随后单次打开
+原代码构造的 `Hotel-Search` 地址（destination、startDate、endDate、adults=2、children=0、
+rooms=1、currency=NZD），仍显示正确范围的正常列表，网站补上 regionId=6047984，
+没有再次要求验证。截图 `after-human-home-search.jpg` 和 `after-human-old-parameter-url.jpg`
+保存在上述受保护本地目录。当天保守额外计两次，共五次；没有继续详情或报价抓取。
+这证明人工验证后当前会话两条访问路径可用，不能把之前受阻仅归因于参数地址。
+原诊断助手在初次 429 后停止，后续由 noVNC 操作，未恢复自动 snapshot／extractor，
+没有新 Job／ACK、业务批次、Property 或报价入库。真实自动采集门槛仍未通过；生产、
+Synix 与六个本地来源／计划未操作，没有 build／push／发布。noVNC 停留在正常列表。
+
+用户要求继续剩余流程后，只读导出当前列表 DOM 片段；现行 snapshot／extractor
+离线重放得到 Cranford Oak Motel、BreakFree on Cashel Christchurch、Braemar Lodge
+And Spa 三条非广告房源，日期／人数／NZD／未登录范围一致。单次参数访问前者
+（expedia:2211800）的 2026-10-08–09、2 成人／1 房详情正常，显示 5 房型、未再次挑战。
+前三房型显示 NZ$127／136／132，均包含税费。当天累计保守六次，达到实际来源配置
+dailyBudget=6，不再访问来源。原诊断助手的观察时限随后到期，浏览器自动关闭；
+旧 noVNC 已不再是可控制会话。房型截图 `detail-rooms-observed.jpg` 与列表／详情
+DOM 片段、原始及修正后快照／提取结果仍保存在同一受保护本地证据目录。
+
+网络阻断的 Chrome 重放真实详情片段发现推荐／图库标题误作房型名、相邻 DOM 文本
+使 Sleeps 2 与 1 Queen／King Bed 拼成容量 21。Argus 隔离候选现改用渲染文本并排除
+推荐／图库标题；同一证据复核得到 Queen Studio、King Studio with Spa Bath、King
+Studio or Twin Studio，容量均为 2，含税费总价仍为 12700／13600／13200 minor units。
+类型检查、15 项定向测试含房型与六源税费浏览器检查通过。Tymra 三类接收 Schema
+均通过；实际本地 Expedia Listing=0、RateObservation=0、ArgusExecution=1，来源及
+计划关闭。此次片段没有包含地址区域，位置字段不能视为已验证或源页缺失；完整
+Job／ACK／位置核实／业务入库仍待预算恢复后的有界验收，没有 build／push／发布。
+
+## 2026-10-01 Airbnb／Bookabach 公开大概位置修复（本地候选）
+
+用户要求检查内置浏览器公开预览并更新抓取代码。Bookabach 内置浏览器页面显示
+Christchurch、Woolston 街区，公开 Apollo 状态的房源专属 `ProductLocationAddress`
+含地图坐标。Airbnb 在内置浏览器中加载后崩溃，不能将此视作来源挑战；其已留存真实
+页面的公开 `VacationRental` JSON-LD 和后续隔离 Argus 实抓均提供房源专属坐标。
+
+Argus 本地候选新增可选 `approximateLocation`，Tymra 接收合同同步保留：
+`precision=APPROXIMATE` 表示公开点但精确性未核实；只有文字地区时为 `LOCALITY`，
+`point=null`。城市、地区、街区按来源读取；坐标必须匹配 Airbnb 房源 ID 或 Bookabach
+canonical URL，排除搜索中心、附近地点及其他房源。精确 `address/latitude/longitude`
+仍为 null，不用大概位置通过精确地址匹配，也不改变 D-039 启用门槛。
+
+两个原真实页面无网络重放通过。隔离本地 Argus 各新增一次 `resolve_listing`、一次尝试，
+不运行列表或报价、不启用来源／计划：
+
+| 来源 | Argus 本地技术验证 Job | 实际结果 |
+| --- | --- | --- |
+| Airbnb | `job_26c87f49b3df11c31f41fa27344ac2b5` | Kaikōura District、Canterbury Region；APPROXIMATE point；容量 4 |
+| Bookabach | `job_862956c3803148263d31762ef9fbc215` | Woolston、Christchurch、Canterbury；APPROXIMATE point；容量 2 |
+
+两份 wire payload 和四份 HTML／截图证据在既有受保护本地验收根中保留，哈希核对通过，
+ACK 后读回 HTTP 410。Tymra 当前接收合同解析真实 payload 通过；这些直接技术验证
+没有创建新的生产式业务批次或 Property／RateObservation，不计作 D-039 正向价格验收。
+本地当天每来源新增一次，连同此前两次为各三次；直接诊断没有写入
+`ArgusExecution` 日计数，后续当日预算必须另计这一次，不能只读该表。
+
+Argus 39 项 Connector 回归、隔离 Chrome 的十种位置匹配／缺失／损坏场景、
+Tymra 26 项合同／地址匹配测试通过；类型检查通过，无 build、migration、push 或生产发布。
+只修改 Tymra 工程和隔离 Argus worktree，未编辑共享 Argus 主 checkout 或操作 Synix。
+两个来源的公开位置采集已通过；精确身份映射和完整报价链路仍待验收，不能表述为
+“页面抓取失败”，也不能表述为“两个 OTA 已全部成功”。
+
+## 2026-10-01 六 OTA 本地真实抓取复核
+
+用户要求逐个在本地测试六渠道。复用独立 `tymra_ota_identity_local_20261001`
+数据库、Redis DB 14、合成客户端及隔离 Argus 容器，运行 Tymra `f9b7daf` 源码与
+Argus `0f8fe78` 候选源码；Booking snapshot 文件的容器／工作树 SHA-256 一致。
+无镜像构建、生产发布、迁移、生产请求或自动计划启用。六来源顺序执行，每 Job
+最多三次、每来源新西兰日最多六次；失败停止，不绕过挑战、限流或字段要求。
+
+| 来源 | 本轮本地 Job | 真实业务结果 |
+| --- | --- | --- |
+| Booking | `cmuok59cp0000c6lxqoiky40i` | SUCCEEDED；身份指纹一致，复用有效真实详情，仅一列表＋一精确报价；容量 2，2026-10-08–09、2 成人／1 房、NZD 254.00、AVAILABLE／COMPLETE |
+| Airbnb | `cmuojtzqf0006c6966huyhajp` | 列表及详情完成，容量 4；精确地址及坐标未公开，UNIT_IDENTITY_NOT_PUBLIC，未抓报价 |
+| Expedia | `cmuojvqje0006c6hctyh7cj40` | 列表 RATE_LIMITED，停止；两份证据保留，没有房源或报价入库 |
+| Bookabach | `cmuojxdp40006c6sjev4gigob` | 列表及详情完成，容量 2；精确地址及坐标缺失，UNIT_IDENTITY_NOT_PUBLIC，未抓报价 |
+| Agoda | `cmuojz2wr0006c664cigu142t` | TIMEOUT，固定安全阶段为 `visible public search navigation`；无页面证据，没有业务入库，具体控件根因未确定 |
+| Trip.com | `cmuok0xs40000c6euo94a3xlk` | 请求 Northland，实际返回 Lylo Christchurch Airport，地区匹配异常；详情精确地址／坐标已取得，11 个房型容量均未知；UNIT_IDENTITY_NOT_PUBLIC，未抓报价 |
+
+样本核对补充：Booking 请求 Northland，样本为 The Sands Hotel Hokianga
+（URL identity `copthorne-resort-hokianga`）；Airbnb／Expedia／Bookabach／Agoda
+请求 Canterbury，Airbnb 样本 `1575788832170495266`、Bookabach 样本 `9853129`。
+Trip.com 请求 Northland 却返回 Christchurch 的 `6141231`；其详情能读取不代表
+搜索地区匹配通过，后续须同时修复／验证地区匹配和物理容量依据。本轮统一未来日期为
+2026-10-08–09、两成人、一房、NZD，每渠道最多一个候选房源，属于单样本链路验证，
+不证明全国覆盖或同一房源跨平台匹配。
+
+本轮六个新 Job 共十个 Argus 执行、18 份页面证据，全部证据 SHA-256 校验通过，
+十个结果均 ACK 后读回 HTTP 410；Agoda 无页面证据的限制保留，不能视作取证完整。
+Booking 旧完整链路的六份证据及三个 PURGED 结果另行复核通过；最新容量修复再次
+以生产保留 HTML、无网络浏览器重放通过，同一房型容量由误读的 1 修正为 2。
+新 Booking 列表身份指纹匹配既有有效详情，验证实际跳过未变化详情；本地真实实体仍为
+一 Property、一 SellableUnit、一 Listing，RateObservation 追加为两条，未清空历史或
+生成演示数据。Booking 当日六次预算用完，没有额外详情请求。
+
+六来源和六条本地日计划均已关闭；Argus 并发 1、无活跃抓取、接管、挑战或待执行任务。
+本轮未操作 Synix 源码、容器、账号或 Profile。共享服务观察中 33 个容器身份／镜像／
+启动时间一致；同期 `synix-api-1` 发生同镜像容器重建，当前 running、restart=0，
+操作者未在本轮核实，因此不把“全部共享容器未变化”列为验证通过项。
+结论仅为 Booking 的本地完整链路通过，其余五个来源未通过完整验收；本地结果不计入
+生产 D-039 门槛，不改变生产六 OTA 停采状态。生产版本与未发布容量修复见下节。
 
 ## 2026-10-01 本地可用性验证后发布及生产复核
 
@@ -47,7 +378,7 @@ Argus `argus-release-20261001-3` / `f61b8c11f72181beabd5abe3662b8d3f399a5d70`
 本地类型检查、五项 Booking 无网络浏览器回归和六渠道费用范围回归通过。
 生产保留 HTML 无网络重放确认同一房型 ID、容量 2、正确名称及输出合同，无额外外站访问。
 该新增修复尚未构建／部署；因用户要求每系统本轮只构建一次，额外一次 Argus 构建待确认，
-Tymra 无需重建。当前新西兰预算日 Booking 已用四次执行，余两次，不足完整三执行重试。
+Tymra 无需重建。当前新西兰预算日生产 Booking 已用四次执行，余两次，不足完整三执行重试。
 六 OTA 日计划继续关闭，77 条既有公开计划保留；生产真实房源及价格仍为零。
 
 ## 2026-09-30 六 OTA 生产试采（进行中）

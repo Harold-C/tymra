@@ -131,8 +131,6 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         try {
           await new WorkerService(environment).collectProductionOta(payload, job.id);
           await acknowledgePersistedArgusResults(environment, job.id);
-          const runs = await prisma.collectionRun.findMany({ where: { jobId: job.id } });
-          for (const run of runs) await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: { ...asObject(run.scope), deliveryVerified: true } as Prisma.InputJsonValue } });
         } catch (error) {
           if (error instanceof DeferredJobError) throw error;
           await pauseProductionOta(payload.sourceId, environment.NODE_ENV);

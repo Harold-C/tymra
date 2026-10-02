@@ -54,6 +54,13 @@ describe("durable physical-unit panel prices", () => {
     await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("complete mandatory fees");
     expect(mock.observation).not.toHaveBeenCalled();
   });
+  it("distinguishes an unavailable exact stay from incomplete mandatory fees", async () => {
+    Object.assign(rate, { availabilityStatus: "UNAVAILABLE", restrictionReason: "These dates are not available", basePriceMinor: null,
+      mandatoryFeesMinor: null, taxesMinor: null, totalPriceMinor: null, priceStatus: "UNAVAILABLE" });
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toMatchObject({ code: "NO_AVAILABLE_PUBLIC_RATE" });
+    expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: "NO_AVAILABLE_PUBLIC_RATE" });
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
   it("does not accept a historical or future observed timestamp as a current production price", async () => {
     rate.collectedAt = "2026-08-01T00:00:00Z";
     await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("current day");
