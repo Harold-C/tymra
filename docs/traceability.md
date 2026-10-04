@@ -1,6 +1,70 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-04 (All six OTA sources have two whole local successes; Expedia verified with the same default public profile, versioned detail reuse and COMPLETE future NZD quotes; no push or production deployment)
+Last updated: 2026-10-05 (OTA source pushed; fixed candidates, compatibility and local restore gates passed; target preflight and fresh cutover snapshots remain; no production cutover)
+
+## 2026-10-04–05 OTA 发布前准备（本地门禁完成，生产核验待补）
+
+用户授权完成所有生产发布前工作，并要求不影响 Synix。正式代码候选已提交并 push：
+Tymra `56d148b179336c06dd5ad8bc40b1a1a45e33bc4c`，Argus
+`370e6717cde9790c7585430bc65772f187812f65`。Argus 已合入生产
+`5c869ae` 的登录排队、Airbnb 房源批次、状态解析及 Booking SMS 修复；相对主线
+`9a8a031`，私有后台实现与契约没有差异。公共 CAPTCHA 成功恢复的共享 Job 分支
+明确排除 `account_id`，其它账号／主机冷却和预算保留，70 项兼容检查通过。
+
+[Tymra 完整 CI](https://github.com/Harold-C/tymra/actions/runs/37196529329)通过：
+Web／域模型等 238 项通过、5 项条件入口跳过，Worker 332 项全部通过，数据库集成
+123 项通过、6 项 OTA 专用隔离库入口跳过；117 页 Web 和 Worker 编译通过。
+该六项入口已在专用 `_offline_test` 数据库另行执行，全部通过，验证每个来源的
+两轮持久化、详情复用和 ACK，属于合成合同测试，不是实站证据。
+
+Tymra 固定 linux/amd64 候选镜像为
+`sha256:1d8330695ba2e20fc9e7744f06a77f5a7dd3909121a7d8a457730d636f5fbda9`，
+OCI revision 与代码候选一致，源码 tar SHA-256 为
+`d86bdeb199628855b5cf7bd0523394bab5479ed11e96353cc27fd335351ba3cf`。
+同一镜像的 332 项 Worker 测试通过；测试工具只在一次性容器中使用 root 写临时
+配置，正式 Web／migration 保持 node 用户。Web 的正确管理 Host 启动检查返回 200，
+编译 CLI 在 production 配置模式下完成六来源只读健康查询，未执行来源抓取。
+最终镜像导出 SHA-256 为
+`319c983f327ce21803c5755228b266634baa3ad1da0f06645470c2f745ea6b75`，已回读匹配。
+
+独立复制本地已验证数据库，模拟旧 schema 后，使用该固定镜像执行
+`20261003003000_argus_delivery_verification`。新增列 nullable，旧执行值为 null；
+80 张业务表的记录数及完整行摘要保持一致，完成批次和历史未修改。
+此演练没有使用生产数据库，不能写成生产备份或生产 migration 已通过。
+
+Argus [完整固定镜像门禁](https://github.com/Harold-C/argus/actions/runs/37196577737)
+通过；源码 PostgreSQL／覆盖率层通过 895 项，157 项 Chrome 条件入口由固定
+镜像层补验，零失败；行／分支／函数覆盖率 75.92%／81.98%／85.32%。
+固定镜像浏览器层 1,061 项通过、18 项条件跳过：13 项数据库入口已在源码
+PostgreSQL 层执行，另 5 项公共采集入口因发布环境未设置 capture 测试标记而跳过。
+这 5 项已在同一最终镜像、断网容器和独立 `/data` tmpfs 中补验，全通过、零跳过，
+进程正常退出。发布 workflow 同时补齐该标记与隔离目录，避免以后再次静默跳过；
+这项门禁修正不改变候选应用代码或已构建镜像。
+合成 PostgreSQL／profile／证据配对恢复及运行时故障恢复门禁也通过。
+
+Argus [同一镜像导出](https://github.com/Harold-C/argus/actions/runs/37198277222)
+通过，固定 registry 引用为
+`ghcr.io/harold-c/argus@sha256:90f332b857178c1694b1d8b63d183b3f9920ef773bfde5f0fc79eeb4de0602a3`。
+源码标识、压缩包校验、12 层 RootFS 及全部执行配置已回读匹配；仅装入本地，
+没有在生产载入或切换。候选保留在已有 Argus
+`runtime/production-releases/argus-release-20261004-3`；镜像发布或导出不代表生产部署。
+
+现有 Argus 加密真实备份以只读方式挂载后，在本地独立数据库／卷完成恢复。
+623 个历史 Job、2 个账号、41,396 项私有文件的行／内容／权限／所有者摘要匹配；
+4 项跨账号访问拒绝、3 个原始交付哈希与 2 个离线 profile 打开检查通过。
+只删除本次演练资源，原备份、实际 profile 和生产服务保留。此备份早于当前生产
+任务，不是新的切换快照；离线打开 profile 也不是当前实站登录验证。
+
+Tymra 生产主机现有 SSH 通路连接超时，另一条现有网络路径也未能连接，Harold
+正在恢复通路。生产版本、配置、migration 状态、最新备份和隔离恢复、回退镜像
+可用性均待当前核验。Argus 生产浏览器、PostgreSQL 和 tunnel 的容器 ID、镜像、
+挂载与启动时间均保持原值，浏览器健康且零重启；只读运行核对仍有一个 RUNNING Job。
+没有暂停、排空或关闭共享入口，新的切换配对快照须在不影响 Synix 的发布窗口完成。
+这些生产门禁未完成前不称为已可发布。后续实际发布仍按 Argus→Tymra，保留既有公开来源
+计划，逐 OTA 两次有界生产试采及 D-039 门槛通过后才分别启用。
+本次未切换生产、未执行生产 migration、未启用 OTA Scheduler，Synix 未修改。
+
+下列 2026-10-04／03 章节保留原时点本地结果，不覆盖本节的提交和发布准备状态。
 
 ## 2026-10-04 Expedia 同一 profile 完整本地验证
 
@@ -1993,4 +2057,4 @@ the migrated workspace or a production release; current blockers are recorded at
 | Production fixture guard | Production config rejects both demo and fixture provider modes | verified |
 | External live OTA collection | Tymra accepts strict public `resolve_listing`, `discover_listings` and `collect_rates` contracts for the six active brands and routes each source only to its public connector; address-first checks synchronously resolve and collect the first usable comparable, preserve provider brand/family and never fall back to fixtures | 2026-08-12 Pro-member live E2E passed for direct Bookabach URL (`NZD 591`, two nights) and LINZ address benchmark (`NZD 250`, two nights), both non-demo `PUBLISHED`, `priceResultStatus=COMPLETED`, one observed source and recommendation `NOT_AVAILABLE`; direct URL and address used distinct slots because they were distinct physical properties. Partner APIs remain deferred |
 | Nationwide live panel | Schema, schedules and coverage operations exist; real 1,000-1,500 units require live catalog sources | external prerequisite |
-| Quality baseline | Lint and workspace typecheck pass; current aggregate evidence is 218 Web/domain/provider/database unit tests, 135 Worker tests, 105 isolated PostgreSQL integration tests, a 114-page Next.js build and four Worker entrypoint builds; Next.js reports only LinkeDOM's unused optional-canvas warning | verified |
+| Quality baseline | Candidate `56d148b`: lint/workspace types and full CI pass; 238 Web/domain/provider unit checks pass (5 conditional skips), 332 Worker checks pass, 123 PostgreSQL integrations pass (6 dedicated OTA entries separately pass in their isolated database), 117 Web pages and four Worker entrypoints build; exact image Worker/startup/compiled caller and local additive migration checks pass | local/candidate verified; production preflight pending |
