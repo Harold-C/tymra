@@ -143,6 +143,16 @@ afterEach(async () => {
 });
 
 describe("durable Argus orchestration", () => {
+  it("does not apply the production daily budget to explicit development captures", async () => {
+    mocks.executionFind.mockResolvedValue(null);
+    mocks.executionCount.mockResolvedValue(1000);
+    mocks.submit.mockResolvedValue({ ok: true, job: { job_id: "local-argus-1", status: "QUEUED" } });
+    mocks.executionUpsert.mockImplementation(async ({ create }) => ({ id: "local-execution-1", ...create }));
+    await expect(captureBrowserTaskWithDurableArgus({ ...environment, NODE_ENV: "development" },
+      { ...input, connectorId: "booking-public", workflowId: "discover_listings", url: "https://www.booking.com/searchresults.html" }, context)).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.executionCount).not.toHaveBeenCalled();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+  });
   it.each([[6, 0, 0], [0, 3, 0], [0, 0, 1]])("blocks a new production OTA submission at source/job/concurrency limits %j", async (sourceCount, jobCount, activeCount) => {
     mocks.executionCount.mockReset();
     mocks.executionFind.mockResolvedValue(null);

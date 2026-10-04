@@ -78,7 +78,7 @@ export async function enqueueProductionOtaTrialTransaction(tx: Prisma.Transactio
 }
 export async function pauseProductionOta(sourceId: string, nodeEnv: string) {
   requireOtaSource(sourceId);
-  if (nodeEnv !== "production") throw new Error("OTA production pause requires production");
+  if (!["production", "development"].includes(nodeEnv)) throw new Error("OTA pause requires a live production or development environment");
   await prisma.$transaction([
     prisma.scheduleDefinition.updateMany({ where: { key: `pilot-ota-${sourceId}-daily` }, data: { enabled: false, nextRunAt: null } }),
     prisma.dataSource.updateMany({ where: { key: sourceId, metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: { enabled: false, lifecycle: "SUSPENDED", healthStatus: "DEGRADED", lastReviewedAt: new Date() } }),

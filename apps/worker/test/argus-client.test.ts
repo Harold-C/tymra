@@ -653,16 +653,18 @@ describe("Argus async Job client", () => {
     assert.deepEqual({ nightlyPriceMinor: rate.nightlyPriceMinor, totalPriceMinor: rate.totalPriceMinor, priceStatus: rate.priceStatus, rateFence: rate.rateFence }, { nightlyPriceMinor: 26_900, totalPriceMinor: null, priceStatus: "PARTIAL", rateFence: "PUBLIC_SIGNED_OUT" });
   });
 
-  it("serializes the optional Trip identity stay without making a rate request", async () => {
+  it.each([
+    ["trip-public", "trip", "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/"],
+    ["expedia-public", "expedia", "https://www.expedia.co.nz/Christchurch-Hotels-Fixture.h12345.Hotel-Information"],
+  ] as const)("serializes the optional %s identity stay without making a rate request", async (connectorId, provider, url) => {
     let requestBody: Record<string, unknown> | undefined;
-    const url = "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/";
     server = jobServer(async request => {
       requestBody = JSON.parse(await body(request)) as Record<string, unknown>;
-      return otaResolveListingResult({ traceId: "trip-identity-serialization", connectorId: "trip-public", provider: "trip", url });
+      return otaResolveListingResult({ traceId: "dated-identity-serialization", connectorId, provider, url });
     });
     const environment = await listenEnvironment();
     const response = await captureBrowserTaskWithArgus(environment, {
-      traceId: "trip-identity-serialization", connectorId: "trip-public", workflowId: "resolve_listing",
+      traceId: "dated-identity-serialization", connectorId, workflowId: "resolve_listing",
       url,
       identityStay: { checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" },
     });

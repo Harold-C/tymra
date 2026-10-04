@@ -3168,7 +3168,9 @@ export class WorkerService {
   }
 
   async collectProductionOta(payload: unknown, parentJobId: string) {
-    if (!isProductionOtaPayload(payload) || this.environment.NODE_ENV !== "production" || this.environment.PROVIDER_MODE !== "live" || this.environment.PUBLIC_COLLECTION_MODE !== "live") throw new Error("Bounded OTA collection requires the exact production live contract");
+    // Local live validation uses the same bounded business contract. Development
+    // captures opt into Argus technical validation; production keeps its budget.
+    if (!isProductionOtaPayload(payload) || !["production", "development"].includes(this.environment.NODE_ENV) || this.environment.PROVIDER_MODE !== "live" || this.environment.PUBLIC_COLLECTION_MODE !== "live") throw new Error("Bounded OTA collection requires the exact live contract");
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: payload.sourceId } });
     if (!otaSourceApproved(source) || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw new Error("OTA source is not approved for a bounded public trial");
     const catalog = await this.refreshCatalog("new-zealand", parentJobId, { sourceId: source.id });
@@ -3244,7 +3246,10 @@ export class WorkerService {
         for (let candidate of extraction.listings.slice(0, bounded ? 1 : 10)) {
           if (candidate.provider !== target.dataSource.key) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Discovery returned another provider", 422);
           const { observedAt: _observedAt, fieldSources: _fieldSources, ...identityInput } = candidate;
-          const inputHash = stableHash(JSON.stringify({ parserVersion: OTA_IDENTITY_PARSER_VERSION, identity: identityInput }));
+          const parserVersion = candidate.provider === "agoda" ? `${OTA_IDENTITY_PARSER_VERSION}-agoda-city-2`
+            : candidate.provider === "trip" ? `${OTA_IDENTITY_PARSER_VERSION}-trip-city-1`
+              : candidate.provider === "expedia" ? `${OTA_IDENTITY_PARSER_VERSION}-expedia-headline-1` : OTA_IDENTITY_PARSER_VERSION;
+          const inputHash = stableHash(JSON.stringify({ parserVersion, identity: identityInput }));
           let resolvedAt: string | null = null;
           if (bounded && otaIdentityRequiresDetail(candidate)) {
             const existing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false, listingStatus: "ACTIVE" }, orderBy: { lastConfirmedAt: "desc" } });
@@ -3255,7 +3260,7 @@ export class WorkerService {
               resolvedAt = cache.resolvedAt;
             } else {
               const detailTrace = durableArgusTraceId(catalogJobId, connectorId, "resolve_listing", candidate.canonicalUrl);
-              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1, ...(connectorId === "trip-public" ? { identityStay: { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const } : {}) }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
+              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1, ...(["trip-public", "expedia-public"].includes(connectorId) ? { identityStay: { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const } : {}) }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
               if (detail.ok) await this.persistArgusEvidence(target.dataSourceId, run.id, detail.payload, connectorId, candidate.canonicalUrl);
               if (!detail.ok || detail.payload.status !== "success") throw new WorkerRequestError(otaCollectionFailureCode(detail.ok ? { captureStatus: detail.payload.status, errorCategory: detail.payload.error?.category } : { httpStatus: detail.httpStatus }), detail.ok ? detail.payload.error?.message ?? "Listing resolution failed" : detail.message, 503);
               const resolved = otaResolveListingExtractionSchema.parse(detail.payload.extracted);
