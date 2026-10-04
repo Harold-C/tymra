@@ -1,8 +1,52 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (OTA source pushed; fixed candidates, compatibility and local restore gates passed; target preflight and fresh cutover snapshots remain; no production cutover)
+Last updated: 2026-10-05 (fixed OTA code deployed to production; fresh paired restore, additive migration and production readback passed; per-source OTA acceptance remains)
 
-## 2026-10-04–05 OTA 发布前准备（本地门禁完成，生产核验待补）
+## 2026-10-05 OTA 固定代码已发布到生产
+
+Harold 恢复 SSH 后明确授权生产发布，并要求不影响 Synix。先核实发现 Argus 已在
+当日早上发布私有修复 `bec807f`，因此未部署旧 OTA 候选 `370e671`；从已含该修复的
+main `ef21050e8336c81a5def929fd9ec3a7fc891cea9` 重新冻结
+`argus-release-20261005-2`。私有后台实现／契约与当前生产基线无差异。
+Argus 完整发布和导出通过：源码层 899 项通过、157 项 Chrome 条件入口由镜像层
+补验；最终镜像 1,070 项通过、13 项 PostgreSQL 入口已在源码层执行，各层零失败。
+合成配对恢复、运行及故障恢复通过；完整事实在 Argus current-state。
+
+生产切换顺序为 Argus → Tymra。Argus 使用新鲜加密配对快照完成隔离恢复：
+708 个 Job、2 个账号、42,889 项私有文件／目录／链接摘要、权限及属主匹配，
+所有权拒绝、交付哈希和离线 Profile 打开检查通过。仅在 Synix 调用队列与共享
+Argus 活动任务、接管、挑战均为零时备份／切换；未中断进行中的 Job。
+原生产数据库、卷、Profile、客户端配置和 tunnel 保留，Synix 应用未修改。
+离线 Profile 与后台账号 API 读取不证明实站登录。
+
+Tymra 固定功能提交仍为 `56d148b179336c06dd5ad8bc40b1a1a45e33bc4c`，沿用下节
+已验证的同一镜像和源码归档。生产主机实际加载镜像为
+`sha256:1f2205f85ade5d473c61f9753a8724fbd17a503941a44cfa40aab44aa46dfd72`；
+该 Config 标识与本地 OCI 标识不同，RootFS 和执行 Config 已逐项核对等价。
+发布目录为 `/srv/apps/tymra/releases/ota-public-20261005-v1`。
+新鲜生产备份 `/srv/apps/tymra/backups/ota-public-20261005-predeploy` 已在独立数据库／
+卷恢复，并用最终镜像演练 nullable `deliveryVerifiedAt` migration；80 张业务表完整
+行摘要、413 份证据内容／权限／属主均匹配，演练资源已移除。
+正式升级仅执行 `20261003003000_argus_delivery_verification`，旧执行值保持 null，
+同样核对全部业务摘要及证据；没有用开发库、seed 或旧备份覆盖生产。
+
+`2026-10-04T22:22:35Z`（新西兰 2026-10-05 11:22）生产读回：Web／Worker／API／
+Scheduler 全部为同一最终镜像、运行且重启 0，Web／API healthy；管理 HTTPS 页面
+200 且保留 noindex，Worker readiness 200，Tymra 原 scoped 客户端读取所属 Job 200。
+未授予的 runtime scope 和未认证访问继续拒绝，没有扩大客户端权限。
+PostgreSQL、Redis、共享 ingress 和 Spicy Maggie 网站容器均未替换；生产环境、
+证据挂载、限速及预算保持原值。旧固定镜像 `74b13711…` 和受保护配置／备份保留；
+兼容回退只切应用镜像，新增 nullable 列可保留，不覆盖后续业务写入。
+
+实际现有公开计划为 71 条启用，本轮未更改任何来源或计划。六个 OTA 来源及
+定期计划仍关闭，生产健康报告尚无正向房源／完整报价证据；Booking／Expedia
+旧失败也仍在滚动窗口内。代码部署不等于六来源生产采集验收。下一步按非办公
+时段串行试采，每来源每日最多六次执行，每 Job 一列表、最多一必要详情和一报价；
+新的两次精确成功、持久化证据／ACK 及 D-039 滚动门槛全部满足后才能逐项启用。
+不清空失败历史或以本地成功代替生产门槛。收据保留在已有
+`runtime/release-candidates/ota-20261004-preproduction`。
+
+## 2026-10-04–05 OTA 发布前准备（历史快照，后续生产事实以上节为准）
 
 用户授权完成所有生产发布前工作，并要求不影响 Synix。正式代码候选已提交并 push：
 Tymra `56d148b179336c06dd5ad8bc40b1a1a45e33bc4c`，Argus
@@ -62,7 +106,7 @@ Tymra 生产主机现有 SSH 通路连接超时，另一条现有网络路径也
 没有暂停、排空或关闭共享入口，新的切换配对快照须在不影响 Synix 的发布窗口完成。
 这些生产门禁未完成前不称为已可发布。后续实际发布仍按 Argus→Tymra，保留既有公开来源
 计划，逐 OTA 两次有界生产试采及 D-039 门槛通过后才分别启用。
-本次未切换生产、未执行生产 migration、未启用 OTA Scheduler，Synix 未修改。
+该准备阶段未切换生产、未执行生产 migration、未启用 OTA Scheduler，Synix 未修改。
 
 下列 2026-10-04／03 章节保留原时点本地结果，不覆盖本节的提交和发布准备状态。
 
