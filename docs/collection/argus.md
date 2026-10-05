@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-09-30 (bounded public OTA production contract)
+Last updated: 2026-10-05 (bounded public OTA production contract and expiring manual diagnostics)
 
 ## Bounded OTA production pilots
 
@@ -13,6 +13,13 @@ Tymra OTA Job can be active. Each Job allows one regional listing discovery, at 
 detail and one exact-unit future-stay price. New submissions share a lock, allow at most three
 executions per Job and six per source per New Zealand day, and keep the shared Argus concurrency unchanged.
 Waiting for Argus preserves the same run and query; failures suspend only this source and its plan.
+An explicitly authorized manual trial can temporarily waive only the six-per-day submission budget.
+Its source metadata must contain `productionOtaDiagnosticBudgetWaiver` with version
+`ota-manual-diagnostics-v1`, `authorizedAt` and `expiresAt`; the window cannot exceed 24 hours.
+The waiver applies only to `ota-trial:` Jobs while the window is active. Daily counters still include
+every execution. Normal schedules, per-Job bounds, single-source concurrency, source pacing,
+challenge handling and complete evidence/price activation gates retain their usual controls.
+Removing the metadata or reaching expiry restores the daily limit without a service restart.
 An access challenge cancels only the bounded pilot's own Argus Job and waits for its terminal
 cancellation to release shared browser capacity; customer/manual workflows retain their existing handling.
 

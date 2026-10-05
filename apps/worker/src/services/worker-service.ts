@@ -3169,7 +3169,8 @@ export class WorkerService {
 
   async collectProductionOta(payload: unknown, parentJobId: string) {
     // Local live validation uses the same bounded business contract. Development
-    // captures opt into Argus technical validation; production keeps its budget.
+    // captures opt into Argus technical validation. Production uses the normal
+    // budget unless an operator has authorized an expiring manual-trial waiver.
     if (!isProductionOtaPayload(payload) || !["production", "development"].includes(this.environment.NODE_ENV) || this.environment.PROVIDER_MODE !== "live" || this.environment.PUBLIC_COLLECTION_MODE !== "live") throw new Error("Bounded OTA collection requires the exact live contract");
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: payload.sourceId } });
     if (!otaSourceApproved(source) || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw new Error("OTA source is not approved for a bounded public trial");

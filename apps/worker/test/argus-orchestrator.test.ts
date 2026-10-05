@@ -163,6 +163,23 @@ describe("durable Argus orchestration", () => {
     expect(result).toMatchObject({ ok: false, httpStatus: 429 });
     assert.equal(mocks.submit.mock.calls.length, 0);
   });
+  it.each([[100, 0, 0, true], [100, 3, 0, false], [100, 0, 1, false]])("waives only the manual daily quota while retaining job and shared concurrency limits %j", async (sourceCount, jobCount, activeCount, accepted) => {
+    mocks.executionCount.mockReset();
+    mocks.executionFind.mockResolvedValue(null);
+    mocks.parentFind.mockResolvedValue({ status: "RUNNING", payload: productionOtaPayload("booking"), idempotencyKey: "ota-trial:booking:1" });
+    mocks.sourceFind.mockResolvedValue({ key: "booking", providerType: "OTA", sourceType: "OTA", enabled: true, isDemo: false, environments: ["PRODUCTION"], concurrencyLimit: 1, dailyBudget: 6, metadata: { productionOta: OTA_PILOT_VERSION, productionOtaDiagnosticBudgetWaiver: { version: "ota-manual-diagnostics-v1", authorizedAt: new Date(Date.now() - 1000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString() } }, accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY" });
+    mocks.executionCount.mockResolvedValueOnce(sourceCount).mockResolvedValueOnce(jobCount).mockResolvedValueOnce(activeCount);
+    mocks.submit.mockResolvedValue({ ok: true, job: { job_id: "diagnostic-argus-1", status: "QUEUED" } });
+    mocks.executionUpsert.mockImplementation(async ({ create }) => ({ id: "diagnostic-execution-1", ...create }));
+    const promise = captureBrowserTaskWithDurableArgus({ ...environment, NODE_ENV: "production" }, { ...input, connectorId: "booking-public", workflowId: "discover_listings", url: "https://www.booking.com/searchresults.html" }, context);
+    if (accepted) {
+      await expect(promise).rejects.toBeInstanceOf(DeferredJobError);
+      expect(mocks.submit).toHaveBeenCalledOnce();
+    } else {
+      expect(await promise).toMatchObject({ ok: false, httpStatus: 429 });
+      expect(mocks.submit).not.toHaveBeenCalled();
+    }
+  });
   it("submits once, persists the remote ID, enqueues a poller and releases the parent", async () => {
     mocks.executionFind.mockResolvedValue(null);
     mocks.submit.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "QUEUED" } });

@@ -22,7 +22,7 @@ import {
 import { DeferredJobError } from "../jobs/deferred-job";
 import { nzStartOfDay } from "@tymra/domain";
 import { ACTIVE_OTA_SOURCE_KEYS } from "../operations/ota-health";
-import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved } from "../operations/production-ota";
+import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, productionOtaDailyBudgetWaivedForTrial } from "../operations/production-ota";
 import { withRedisLockWait } from "@tymra/queue";
 
 const pollDelayMs = 1_000;
@@ -68,7 +68,8 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
       if (!isProductionOtaPayload(parent.payload) || parent.payload.sourceId !== source.key || !otaSourceApproved(source)) return { ok: false, httpStatus: 403, message: "Unapproved production OTA capture" };
       const count = await prisma.argusExecution.count({ where: { dataSourceId: source.id, submittedAt: { gte: nzStartOfDay(new Date()) } } });
       const jobCount = await prisma.argusExecution.count({ where: { parentJobId: context.parentJobId } });
-      if (count >= OTA_DAILY_EXECUTION_BUDGET || jobCount >= 3) return { ok: false, httpStatus: 429, message: "Bounded OTA execution budget exhausted" };
+      const dailyBudgetWaived = productionOtaDailyBudgetWaivedForTrial(source.metadata, parent.idempotencyKey);
+      if ((!dailyBudgetWaived && count >= OTA_DAILY_EXECUTION_BUDGET) || jobCount >= 3) return { ok: false, httpStatus: 429, message: "Bounded OTA execution budget exhausted" };
       const active = await prisma.argusExecution.count({ where: { connectorId: { in: ACTIVE_OTA_SOURCE_KEYS.map((key) => `${key}-public`) }, status: { in: ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] } } });
       if (active) return { ok: false, httpStatus: 429, message: "Another Tymra OTA execution is active" };
     }

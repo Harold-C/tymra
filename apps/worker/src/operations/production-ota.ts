@@ -8,6 +8,16 @@ import type { z } from "zod";
 
 export const OTA_PILOT_VERSION = "ota-bounded-production-v1";
 export const OTA_DAILY_EXECUTION_BUDGET = 6;
+export const OTA_DIAGNOSTIC_BUDGET_WAIVER_VERSION = "ota-manual-diagnostics-v1";
+export function productionOtaDailyBudgetWaivedForTrial(metadata: unknown, idempotencyKey: string | null | undefined, now = new Date()): boolean {
+  if (!idempotencyKey?.startsWith("ota-trial:") || !metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const waiver = (metadata as Record<string, unknown>).productionOtaDiagnosticBudgetWaiver;
+  if (!waiver || typeof waiver !== "object" || Array.isArray(waiver)) return false;
+  const record = waiver as Record<string, unknown>;
+  if (record.version !== OTA_DIAGNOSTIC_BUDGET_WAIVER_VERSION || typeof record.authorizedAt !== "string" || typeof record.expiresAt !== "string") return false;
+  const start = Date.parse(record.authorizedAt), end = Date.parse(record.expiresAt), current = now.getTime();
+  return Number.isFinite(start) && Number.isFinite(end) && start <= current && current < end && end - start <= 24 * 60 * 60_000;
+}
 export function otaIdentityRequiresDetail(identity: { address: string | null; countryCode: string | null; latitude: number | null; longitude: number | null; warnings: string[]; units: { externalId: string; unitType: string; capacity: number | null }[] } & Partial<z.infer<typeof otaListingIdentitySchema>>) {
   if (identity.provider && identity.sourceListingId && identity.canonicalUrl && isSourceScopedRentalIdentity(identity as z.infer<typeof otaListingIdentitySchema>)) return false;
   return identity.countryCode !== "NZ" || !identity.address || identity.latitude === null || identity.longitude === null

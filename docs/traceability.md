@@ -1,6 +1,18 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (Bookabach fixes deployed; one complete bounded production job passed, six OTA automatic plans remain disabled)
+Last updated: 2026-10-05 (operator authorized temporary production OTA daily-budget waiver and six-source launch; implementation validated, rollout in progress)
+
+## 2026-10-05 临时解除生产手动调试额度，推进六 OTA 上线
+
+用户明确授权临时取消生产每日六次额度并调试上线六个 OTA，取代下节“等下一预算日”
+的接续限制。新增有到期时间的来源级手动试采豁免：只对 `ota-trial:` 父 Job 生效，
+窗口最多 24 小时，执行计数及原历史全部保留；自动计划仍使用每日六次额度。
+每父 Job 最多三次执行、只尝试一次、共享并发一、来源间隔／挑战冷却和完整报价、
+证据／交付／ACK／启用门槛保留，不修改 Argus 或 Synix 的私有配置／Profile。
+
+57 项预算豁免、真实提交边界和生产 OTA 门槛定向检查及 Worker 类型检查通过。
+当前是代码验证和发布准备，尚未将豁免写入生产；实际发布、来源结果及计划启用
+将在本节据生产读回更新，不能从用户授权或局部测试宣称六来源已上线。
 
 ## 2026-10-05 Bookabach 修复已发布，一次完整生产复测成功
 
