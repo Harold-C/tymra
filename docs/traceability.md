@@ -1,6 +1,81 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (fixed OTA code deployed to production; fresh paired restore, additive migration and production readback passed; per-source OTA acceptance remains)
+Last updated: 2026-10-05 (Bookabach product price summary and UNKNOWN classification fixed locally; offline replay and targeted checks passed, release gates and production retest pending)
+
+## 2026-10-05 Bookabach 报价与 UNKNOWN 分类修复候选
+
+用户要求进行下一步。Argus 只补充可见 `product-price-summary` 报价组件，原来的
+当前价唯一性、隐藏组件过滤、费用同报价区域及匿名精确住宿上下文保护保留。
+Tymra 有界面板报价遇到 `availabilityStatus=UNKNOWN` 时，明确报
+`PUBLIC_RATE_AVAILABILITY_UNKNOWN`，不再将它描述为不可售；明确不可售／限制、
+未知税费及完整正向报价门槛继续适用。原生产失败历史保留，未改业务结果为成功。
+
+两端新回归先重现原缺陷再通过。Argus 12 项隔离 Chrome／合同和类型检查通过；
+Tymra 17 项面板持久化／价格检查及 Worker 类型检查通过。原生产 HTML 去除脚本、
+阻断全部外部请求后离线重放，实际提取 NZ$108、AVAILABLE、BUNDLED 及含税费；
+费用分项仍 null，促销／押金提示保留。重放不消耗生产来源预算，也不计入生产
+启用成功次数。完整 CI／固定镜像、备份恢复及一次有界生产复测仍待完成。
+当前生产仍是下节的失败终态、六来源／计划关闭，Synix 私有路径未修改。
+
+## 2026-10-05 用户要求立即执行一次 Bookabach 生产抓取
+
+用户明确要求现在直接抓取一次，因此将此前唯一待执行 Job
+`cmuugoskc0000o5bvbnod1uj4` 从 17:00 NZ 提前到 `2026-10-05T00:00:00.892Z`
+（13:00 NZ），没有另建任务、扩大次数或更改自动计划的办公时段规则。
+先等当时 Synix 的运行任务自然结束，确认共享 Argus 无活动任务／接管／挑战，
+保存该 Job 与来源／计划快照后，只修改它的执行时间；原 Worker 完成正式执行。
+
+单次采集实际使用三个 Argus 执行：Canterbury 列表、必要详情、精确日期报价；
+对应页面均 HTTP 200，抓到并保存一个非演示来源房源
+`bookabach:20312372`（Great Price Luxury - Master Ensuite | Garden View，Rolleston）。
+公开大概位置及容量 3 已保存，精确地址／坐标仍未知，不用于精确跨平台归并。
+
+报价样本为 2026-10-12–13、一晚、2 位住客、1 个住宿单位、NZD、未登录。
+生产保存的截图及 DOM 明确显示 `Your dates are available`、当前价 NZ$108、
+`for 1 home` 和 `includes taxes & fees`。但 Argus 结构化快照中的
+`totalPriceText`／`feeInclusionText` 均为空，输出 `availabilityStatus=UNKNOWN`，
+未保存 RateObservation。Tymra 将 UNKNOWN 也归入 `NO_AVAILABLE_PUBLIC_RATE`，
+错误描述为不可售；该描述不符合页面证据。已更正对外说明，保留原始失败记录；
+这是可见价格提取及未知状态分类的问题，不能将此次记为完整报价验收通过。
+
+Job 于 `2026-10-05T00:02:00.009Z`（13:02 NZ）以 `DEAD_LETTER` 结束，实际尝试
+一次、最大尝试一次。失败处理只暂停 Bookabach；六个 OTA 来源及定期计划再次
+全部关闭，没有 17:00 的额外试采或活跃 OTA Job。其他五来源、五个 OTA 计划及
+所有非 OTA 来源／计划完整摘要不变，Bookabach 已关闭计划只更新了处理时间戳；
+71 条公开计划保留。没有修改、重启或取消 Synix／共享 Argus 的工作。
+
+六份 HTML／截图已复制到生产持久证据目录，逐份内容哈希复核通过，无 parserFailure
+标记；三个 Argus 执行均保存交付确认，所属 Job 读取 HTTP 200、ACK 后结果读取
+HTTP 410/PURGED 已独立复核。这些交付成功不代替完整报价成功。预算实际消耗
+Bookabach 当日三次执行，没有重试。受保护前快照、操作／终态／交付收据与实际
+报价页证据留在既有发布目录及 `runtime/release-candidates/ota-20261004-preproduction`。
+下一步先用本次保存页面离线修复 Bookabach 价格区域提取与 Tymra UNKNOWN 错误
+分类，再发布候选并按预算重新验收；尚未进行这些修复或开启任何 OTA 自动计划。
+
+## 2026-10-05 OTA 生产启用尝试与首轮排队（执行结果以上节为准）
+
+用户授权尝试在生产启用六个 OTA。先核对四服务仍运行固定提交 `56d148b`、
+同一发布镜像、零重启，生产 live 模式和预算正确；没有活跃 OTA Job，当日六来源
+各零次 Argus 执行。实际逐项调用 `ota:production:enable`，六项均被来源启用门槛
+拒绝，没有打开定期计划。独立健康报告显示六来源均缺新的正向房源／完整报价；
+Booking／Expedia 的历史失败仍在滚动窗口内，记录及门槛保留。
+
+随后只将 Bookabach 恢复为 PILOT 试采状态，创建正式生产 Job
+`cmuugoskc0000o5bvbnod1uj4`。数据库读回为 `PENDING`、尝试数 0、最大尝试数 1，
+`runAt=2026-10-05T04:00:00Z`，即当天新西兰时间 17:00；遵循工作日办公时段顺延，
+排队读回时尚未发起站点采集。这是单次试采排队，不是来源自动计划启用或采集成功。
+合同限定一地区列表、一房源、最多一必要详情和一精确未来报价，每 Job 最多三个
+Argus 执行、每来源新西兰日最多六次、共享并发一；其他来源不并行排队。
+
+写后核对：仅 Bookabach 来源启用用于该试采，其余五来源不变；六个 OTA 定期
+计划全部关闭，唯一活跃 OTA Job 为上述待执行任务。71 条既有公开计划以及所有
+非 OTA 来源／计划完整摘要保持一致。没有切换共享 Argus 或修改 Synix；Argus
+读回无活动任务、接管或挑战，总 Job 数仍为 708。启用前快照、六次拒绝和试采
+收据保留在生产发布目录及已有 `runtime/release-candidates/ota-20261004-preproduction`。
+
+待首轮实际完成后核对业务入库、完整未来报价、证据哈希、交付确认和 ACK，再在
+预算内串行安排第二轮及其余来源。每来源两次精确成功和 D-039 滚动门槛全部
+满足后才启用该来源计划；本次未绕过门槛，不能宣称六来源生产验收完成。
 
 ## 2026-10-05 OTA 固定代码已发布到生产
 
@@ -38,8 +113,8 @@ PostgreSQL、Redis、共享 ingress 和 Spicy Maggie 网站容器均未替换；
 证据挂载、限速及预算保持原值。旧固定镜像 `74b13711…` 和受保护配置／备份保留；
 兼容回退只切应用镜像，新增 nullable 列可保留，不覆盖后续业务写入。
 
-实际现有公开计划为 71 条启用，本轮未更改任何来源或计划。六个 OTA 来源及
-定期计划仍关闭，生产健康报告尚无正向房源／完整报价证据；Booking／Expedia
+发布读回时，实际公开计划为 71 条启用，本次发布未更改任何来源或计划。六个 OTA
+来源及定期计划当时仍关闭，生产健康报告尚无正向房源／完整报价证据；Booking／Expedia
 旧失败也仍在滚动窗口内。代码部署不等于六来源生产采集验收。下一步按非办公
 时段串行试采，每来源每日最多六次执行，每 Job 一列表、最多一必要详情和一报价；
 新的两次精确成功、持久化证据／ACK 及 D-039 滚动门槛全部满足后才能逐项启用。

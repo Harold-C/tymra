@@ -3436,6 +3436,7 @@ export class WorkerService {
       const price = publicOtaPrice(rate, 1);
       if (boundedSourceId && (Date.parse(rate.collectedAt) < Date.now() - 24 * 3_600_000 || Date.parse(rate.collectedAt) > Date.now() + 60_000)) throw new WorkerRequestError("STALE_RATE", "Production trial rate was not observed within the current day", 422);
       if (available && !price) throw new WorkerRequestError("NO_EXPLICIT_PRICE", "Available panel rate has no explicit public price", 422);
+      if (boundedSourceId && rate.availabilityStatus === "UNKNOWN") throw new WorkerRequestError("PUBLIC_RATE_AVAILABILITY_UNKNOWN", "Public availability for the exact stay could not be verified", 422);
       if (boundedSourceId && !available) throw new WorkerRequestError("NO_AVAILABLE_PUBLIC_RATE", "The exact-unit public stay is unavailable; a positive production acceptance sample is still required", 422);
       if (boundedSourceId && (!available || !price || price.feeCompleteness !== "COMPLETE" || price.amountMinor <= 0)) throw new WorkerRequestError("NO_COMPLETE_PUBLIC_TOTAL", "Bounded production acceptance requires an available explicit total with complete mandatory fees", 422);
       const observation = await prisma.rateObservation.upsert({

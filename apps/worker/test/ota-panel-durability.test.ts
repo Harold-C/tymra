@@ -61,6 +61,15 @@ describe("durable physical-unit panel prices", () => {
     expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: "NO_AVAILABLE_PUBLIC_RATE" });
     expect(mock.observation).not.toHaveBeenCalled();
   });
+  it.each([null, 24000])("keeps UNKNOWN availability distinct from unavailable, even with total %s", async (totalPriceMinor) => {
+    Object.assign(rate, { availabilityStatus: "UNKNOWN", restrictionReason: null, basePriceMinor: null,
+      mandatoryFeesMinor: null, taxesMinor: null, totalPriceMinor, priceStatus: totalPriceMinor === null ? "UNAVAILABLE" : "PARTIAL" });
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toMatchObject({
+      code: "PUBLIC_RATE_AVAILABILITY_UNKNOWN", message: "Public availability for the exact stay could not be verified",
+    });
+    expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: "PUBLIC_RATE_AVAILABILITY_UNKNOWN" });
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
   it("does not accept a historical or future observed timestamp as a current production price", async () => {
     rate.collectedAt = "2026-08-01T00:00:00Z";
     await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toThrow("current day");
