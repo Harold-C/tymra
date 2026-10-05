@@ -1,8 +1,8 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (five OTA schedules enabled; Agoda restriction text scope repair deployed; new production trials await shared browser availability)
+Last updated: 2026-10-06 (five OTA schedules enabled; Agoda restriction text scope repair deployed and passed two new production trials; independent version window decision pending)
 
-## 2026-10-06 Booking 已启用，Agoda 限制文字修复已发布，新版本复测待共享空闲
+## 2026-10-06 Booking 已启用，Agoda 限制文字修复及两轮生产复测通过
 
 共享服务和 Synix 调用方空闲后，Argus `c218f3f`／`argus-release-20261005-11`
 及 Tymra `f6ff386` 已按顺序部署；沿用下节已通过完整门禁的固定镜像，没有重新
@@ -83,19 +83,28 @@ RootFS 和完整执行配置匹配。新鲜配对备份以最终镜像实际隔�
 健康、重启零，PG／tunnel、配置／挂载及私有实现保持。HTTPS 六公开连接器的
 列表／详情／报价流程、私有属主读取及跨客户端拒绝通过，Synix Live／UAT 十个
 容器身份、镜像、版本、健康和重启数一致；所属明文传输目录已移除。
-发布后 Synix 新任务进入共享浏览器，保护检查在任何生产写入前阻止 Agoda
-第八／九轮复测准备，未取消或中断私有任务。市场统计使用每个房源的最新观察值；
-须以新版本真实观察核对限制原因，不改写原两轮报价及其原始证据。
+发布后 Synix 新任务进入共享浏览器，保护检查在任何生产写入前先阻止复测准备；
+任务自然结束后继续，没有取消或中断私有任务。第八／九轮
+`cmuvlkn5f0000nznlsryt66pm`、`cmuvlnyzd0000nzpv2120586o` 均一次尝试完整成功，
+各两次执行（列表／报价），复用同日期已核实详情。LyLo Christchurch Airport
+Family Ensuite Room 容量 3，原 2026-10-13–14、2 成人、一单位、匿名 NZD 329
+AVAILABLE／COMPLETE 报价均入库。数据库 restrictionReason 和 minimumStay 均为
+null，新解析失败为零；八份本地证据逐份哈希、四次持久交付、摘要 200／ACK 后
+410、旧 Job 行保持全部通过。前两条报价的原“sold out”值、R5 两项解析失败
+及原 R4 窗口独立读回保持。市场统计使用最新观察值，新输入不再带无关限制原因；
+没有改写原两轮报价及其原始证据。
 原 R4 窗口和旧失败保留；其中的新解析失败仍阻止正式启用。新增独立修复版本
 窗口的规则调整待用户决定，零解析错误及最近两次精确完整成功门槛继续保留。
+现行代码只支持一个不可移动窗口，不能以删除或覆盖原窗口／失败标记代替新规则。
+Agoda 自动计划仍关闭；当前五条正常 OTA 计划保持。
 
 本轮 Argus 限制归属修复收据在 `runtime/production-releases/argus-release-20261006-3`，
 人数修复在 `argus-release-20261006-2`，
 日期修复在 `argus-release-20261006-1`，先前房型修复在 `argus-release-20261005-11`；
 Tymra 发布收据沿用 `runtime/release-candidates/ota-launch-20261005-v3`，前次备份的验证收据
 保留为 `first-*`。生产父 Job、验收窗口和启用收据仍在既有 `ota-launch-20261005-v1`
-目录；目录日期不代表本轮验证日期。原手动试采豁免已移除；仅为 Agoda 短期恢复
-手动复测豁免的尝试被共享任务检查拒绝，当前未重新启用，不重置已有执行计数。自动计划
+目录；目录日期不代表本轮验证日期。原手动豁免已移除；沿用原授权，仅为 Agoda
+短期恢复手动豁免完成四次有界执行，结束后已撤回，当日累计十二次、计数保持。自动计划
 每日六次预算及 Argus 每来源每日十二次额度、节奏／挑战保护保持。
 
 ## 2026-10-05 公开房型身份修复候选及生产诊断（历史，最新见上节）
