@@ -1,8 +1,8 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (Bookabach product price summary and UNKNOWN classification fixed locally; offline replay and targeted checks passed, release gates and production retest pending)
+Last updated: 2026-10-05 (Bookabach fixes pushed; fixed images and restore gates passed, production cutover waits for active Synix work to finish)
 
-## 2026-10-05 Bookabach 报价与 UNKNOWN 分类修复候选
+## 2026-10-05 Bookabach 修复已推送，生产切换等待 Synix 空闲
 
 用户要求进行下一步。Argus 只补充可见 `product-price-summary` 报价组件，原来的
 当前价唯一性、隐藏组件过滤、费用同报价区域及匿名精确住宿上下文保护保留。
@@ -14,8 +14,49 @@ Tymra 有界面板报价遇到 `availabilityStatus=UNKNOWN` 时，明确报
 Tymra 17 项面板持久化／价格检查及 Worker 类型检查通过。原生产 HTML 去除脚本、
 阻断全部外部请求后离线重放，实际提取 NZ$108、AVAILABLE、BUNDLED 及含税费；
 费用分项仍 null，促销／押金提示保留。重放不消耗生产来源预算，也不计入生产
-启用成功次数。完整 CI／固定镜像、备份恢复及一次有界生产复测仍待完成。
-当前生产仍是下节的失败终态、六来源／计划关闭，Synix 私有路径未修改。
+启用成功次数。
+
+功能候选已 push：Tymra `a032fb5e7854a746fdcd1e9068c020edf7a9639b`、Argus
+`6df86010a98f1fb532bce60f6f441433c5fc6de0` / `argus-release-20261005-3`。
+[Tymra 完整 CI](https://github.com/Harold-C/tymra/actions/runs/37249811967)通过：
+Web／域模型 238 通过、5 条件入口跳过；Worker 334 全部通过；数据库集成 123
+通过、6 条专用离线库入口仍由此前独立验证覆盖，117 页 Web／Worker 编译通过。
+[Argus 完整发布](https://github.com/Harold-C/argus/actions/runs/37249837499)及
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37251665632)通过：源码／
+PostgreSQL 层 899 通过、158 条 Chrome 条件入口由镜像补验；镜像层 1,071 通过、
+13 条 PostgreSQL 入口已由源码层执行，各层零失败。合成配对恢复、运行和故障恢复通过。
+
+Argus 固定 registry 为
+`ghcr.io/harold-c/argus@sha256:2a77b9747a64dffc0997d7083ac39dca2c2b2cbe2bc258704859ec0945ffdd78`，
+加载候选为 `sha256:a0d6d061de9c0025482e6c0a713a4df15863d93cc0af8f1f714904c85253b738`。
+源码、归档、12 层 RootFS、完整执行配置及未设置的默认字段均匹配。
+相对生产 `ef21050` 仅 Bookabach 快照、对应测试及状态文档变化，私有 `bec807f`
+仍在候选中，私有实现／合同没有差异，未修改配置或移用 Profile。
+
+Tymra 最终正确候选已加载到 `/srv/apps/tymra/releases/bookabach-20261005-v3`，
+镜像 `sha256:09922cfdb6746b1a69b45982343f1ece7a4eb8c1c81127e6255fa4f2d017d4ca`。
+本地 OCI 标识不同，20 层内容及执行 Config 已匹配；归档 SHA-256
+`cee0c6e5ad9a337e30e0607bde314adef7ceca27ac380856113a8ddff00e6bfc`。
+本轮初始打包的解包权限导致运行用户不可读，v1/v2 均未切换；修正为保留 Git 归档
+权限后，node 用户 Prisma／编译 CLI 启动检查通过。既有 schema 已含 nullable
+`deliveryVerifiedAt`，本轮没有新 migration，不清空三条已验证交付。
+新鲜备份 `/srv/apps/tymra/backups/bookabach-20261005-predeploy` 用最终镜像恢复通过：
+80 张业务表全部行摘要、419 份证据内容／权限／属主匹配，六来源只读健康 CLI 通过，
+演练数据库、卷及临时配置已移除。恢复前后没有修改生产业务数据。
+
+Argus 第一份新鲜加密配对备份已用最终镜像隔离恢复：722 个 Job、2 个账号、
+43,762 项私有条目摘要／权限／属主匹配，4 次所有权拒绝、3 份交付哈希和两个离线
+Profile 打开通过；加密备份已封存、明文传输目录已移除，离线检查不证明实站登录。
+准备切换时 Synix 有新任务，守卫在关闭服务前拒绝操作；后续共享运行时确有
+`synix-prod` 运行 Job，原服务保留，未取消或重启私有任务。现有配对备份因此不能
+充当接下来切换的最新数据依据；必须等 Synix 任务自然结束，重新配对备份／恢复及
+摘要核对后再切换。第二份加密目的地已准备，不代表已完成新快照。
+
+当前生产仍运行 `ef21050` / `56d148b`，Bookabach 原失败记录、零完整报价与当日
+三次执行不变，六来源／计划关闭，71 条公开计划保留。尚未部署本节候选或新建
+生产复测 Job。候选与收据分别保存在 Argus 标签发布目录和
+`runtime/release-candidates/bookabach-20261005-v3`；剩余按 Argus→Tymra 切换及一次
+有界复测，仍需两次完整生产成功、证据／ACK 与 D-039 才能启用计划。
 
 ## 2026-10-05 用户要求立即执行一次 Bookabach 生产抓取
 
@@ -49,8 +90,8 @@ Job 于 `2026-10-05T00:02:00.009Z`（13:02 NZ）以 `DEAD_LETTER` 结束，实�
 HTTP 410/PURGED 已独立复核。这些交付成功不代替完整报价成功。预算实际消耗
 Bookabach 当日三次执行，没有重试。受保护前快照、操作／终态／交付收据与实际
 报价页证据留在既有发布目录及 `runtime/release-candidates/ota-20261004-preproduction`。
-下一步先用本次保存页面离线修复 Bookabach 价格区域提取与 Tymra UNKNOWN 错误
-分类，再发布候选并按预算重新验收；尚未进行这些修复或开启任何 OTA 自动计划。
+当时的下一步是用本次保存页面修复价格提取与 UNKNOWN 分类；修复和候选门禁已由
+本页最新章节更新，生产切换／复测仍未完成，没有开启 OTA 自动计划。
 
 ## 2026-10-05 OTA 生产启用尝试与首轮排队（执行结果以上节为准）
 
