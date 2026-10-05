@@ -1,8 +1,21 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (five OTA schedules enabled; Agoda restriction text scope repair deployed and passed two new production trials; independent version window decision pending)
+Last updated: 2026-10-06 (Agoda automatic enablement authorised; linked version acceptance candidate validated locally; production publication and enablement in progress)
 
-## 2026-10-06 Booking 已启用，Agoda 限制文字修复及两轮生产复测通过
+## 2026-10-06 Agoda 自动计划启用准备
+
+用户在下节双轮生产复测通过后明确要求开启 Agoda 自动计划，继续执行独立修复版本
+验收窗口方案。候选新增 `ota:production:acceptance-version`，必须显式指明前一个
+固定父 Job；原 `productionOtaRepairAcceptance` 保持，后续版本只追加到
+`productionOtaRepairAcceptanceVersions`。拒绝缺失／错链的旧窗口、重复代码版本、
+倒退起点及未经显式版本操作的覆盖；健康、启用和预检使用同一最新窗口，原失败和
+30 天历史指标继续保留。43 项定向检查及 Worker 类型检查通过。
+生产当前仍为 Tymra `f6ff386`、Argus `21310f8`；五个 OTA 自动计划和 71 条公开
+计划保持，Agoda 尚未启用。完成完整 CI、固定镜像、新鲜配对备份实际恢复及生产
+读回后，以第八轮 `cmuvlkn5f0000nznlsryt66pm` 冻结本次 Argus 修复版本的起点，
+再通过正式启用 CLI。无需修改或重启 Argus／Synix。
+
+## 2026-10-06 Booking 已启用，Agoda 限制文字修复及两轮生产复测通过（上轮记录）
 
 共享服务和 Synix 调用方空闲后，Argus `c218f3f`／`argus-release-20261005-11`
 及 Tymra `f6ff386` 已按顺序部署；沿用下节已通过完整门禁的固定镜像，没有重新

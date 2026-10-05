@@ -26,6 +26,28 @@ describe("OTA operational health", () => {
   ])("rejects a malformed or future repair boundary %j", changed => {
     expect(() => otaHealthEvidenceWindowStart({ productionOtaRepairAcceptance: { ...acceptance, ...changed } }, new Date(0), now)).toThrow("Invalid OTA repair acceptance window");
   });
+  const repairedVersion = {
+    ...acceptance, startingJobId: "cmuvlkn5f0000nznlsryt66pm", previousStartingJobId: acceptance.startingJobId,
+    startedAt: "2026-08-06T04:00:00.000Z", authorizedAt: "2026-08-06T05:00:00.000Z", argusRevision: "c".repeat(40),
+  };
+  it("uses the separately frozen repaired version while retaining the original window", () => {
+    const metadata = { productionOtaRepairAcceptance: acceptance, productionOtaRepairAcceptanceVersions: [repairedVersion] };
+    const before = structuredClone(metadata);
+    expect(otaRepairAcceptanceWindow(metadata, now)).toEqual(repairedVersion);
+    expect(otaHealthEvidenceWindowStart(metadata, new Date("2026-07-08"), now)).toEqual(new Date(repairedVersion.startedAt));
+    expect(metadata).toEqual(before);
+  });
+  it.each([
+    { previousStartingJobId: "cmuvlnyzd0000nzpv2120586o" },
+    { argusRevision: acceptance.argusRevision },
+    { startedAt: acceptance.startedAt },
+    { authorizedAt: "2026-08-08T00:00:00.000Z" },
+  ])("rejects an unlinked, repeated or invalid repaired version %j", changed => {
+    expect(() => otaRepairAcceptanceWindow({ productionOtaRepairAcceptance: acceptance, productionOtaRepairAcceptanceVersions: [{ ...repairedVersion, ...changed }] }, now)).toThrow("Invalid OTA repair acceptance");
+  });
+  it("rejects a version without its preserved original window", () => {
+    expect(() => otaRepairAcceptanceWindow({ productionOtaRepairAcceptanceVersions: [repairedVersion] }, now)).toThrow("Invalid OTA repair acceptance");
+  });
   it("preserves actionable Argus failure categories", () => {
     expect(otaCollectionFailureCode({ httpStatus: 429 })).toBe("RATE_LIMITED");
     expect(otaCollectionFailureCode({ httpStatus: 504 })).toBe("TIMEOUT");

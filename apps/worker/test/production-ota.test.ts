@@ -40,6 +40,53 @@ describe("production OTA pilot acceptance", () => {
     await expect(beginProductionOtaRepairAcceptance("booking", startingJobId, { ...revisions, argusRevision: "c".repeat(40) }, "production")).rejects.toThrow("cannot be moved");
     expect(mock.updateSource).not.toHaveBeenCalled();
   });
+  const previousJobId = "cmuv75n200000nz46nhskb1ke";
+  const versionJobId = "cmuvlkn5f0000nznlsryt66pm";
+  const versionRevisions = { ...revisions, argusRevision: "c".repeat(40) };
+  const priorWindow = () => ({
+    version: OTA_REPAIR_ACCEPTANCE_VERSION, startingJobId: previousJobId,
+    startedAt: new Date(Date.now() - 360_000).toISOString(), authorizedAt: new Date(Date.now() - 240_000).toISOString(), ...revisions,
+  });
+  it("appends an explicitly linked new revision without overwriting the original window or history", async () => {
+    const original = priorWindow();
+    const metadata = { ...source.metadata, productionOtaRepairAcceptance: original };
+    mock.source.mockResolvedValue({ ...source, metadata });
+    const result = await beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production", previousJobId);
+    expect(result.mutationPerformed).toBe(true);
+    expect(result.acceptanceWindow).toMatchObject({ startingJobId: versionJobId, previousStartingJobId: previousJobId, ...versionRevisions });
+    expect(mock.updateSource.mock.calls[0][0].data.metadata).toEqual({ ...metadata, productionOtaRepairAcceptanceVersions: [result.acceptanceWindow] });
+    expect(metadata.productionOtaRepairAcceptance).toEqual(original);
+    expect(mock.updateSchedule).not.toHaveBeenCalled();
+    expect(mock.parserCount).not.toHaveBeenCalled();
+  });
+  it("rejects a version append without its exact predecessor, changed code or later trial", async () => {
+    const original = priorWindow();
+    mock.source.mockResolvedValue({ ...source, metadata: { ...source.metadata, productionOtaRepairAcceptance: original } });
+    await expect(beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production")).rejects.toThrow("cannot be moved");
+    await expect(beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production", versionJobId)).rejects.toThrow("current frozen window");
+    await expect(beginProductionOtaRepairAcceptance("booking", versionJobId, revisions, "production", previousJobId)).rejects.toThrow("Invalid OTA repair acceptance versions");
+    const job = await mock.startingJob();
+    mock.startingJob.mockResolvedValue({ ...job, createdAt: new Date(original.startedAt) });
+    await expect(beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production", previousJobId)).rejects.toThrow("Invalid OTA repair acceptance versions");
+    expect(mock.updateSource).not.toHaveBeenCalled();
+  });
+  it("requires the original window and makes an exact version retry idempotent", async () => {
+    await expect(beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production", previousJobId)).rejects.toThrow("preserved original");
+    const job = await mock.startingJob();
+    const current = { version: OTA_REPAIR_ACCEPTANCE_VERSION, startingJobId: versionJobId, previousStartingJobId: previousJobId, startedAt: job.createdAt.toISOString(), authorizedAt: new Date().toISOString(), ...versionRevisions };
+    mock.source.mockResolvedValue({ ...source, metadata: { ...source.metadata, productionOtaRepairAcceptance: priorWindow(), productionOtaRepairAcceptanceVersions: [current] } });
+    expect((await beginProductionOtaRepairAcceptance("booking", versionJobId, versionRevisions, "production", previousJobId)).mutationPerformed).toBe(false);
+    expect(mock.updateSource).not.toHaveBeenCalled();
+  });
+  it("uses the new version for enablement but still rejects any parser failure in that version", async () => {
+    const current = { version: OTA_REPAIR_ACCEPTANCE_VERSION, startingJobId: versionJobId, previousStartingJobId: previousJobId, startedAt: new Date(Date.now() - 60_000).toISOString(), authorizedAt: new Date().toISOString(), ...versionRevisions };
+    mock.source.mockResolvedValue({ ...source, metadata: { ...source.metadata, productionOtaRepairAcceptance: priorWindow(), productionOtaRepairAcceptanceVersions: [current] } });
+    await enableProductionOtaSchedule("booking", "production");
+    expect(mock.parserCount).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ createdAt: { gte: new Date(current.startedAt) } }) }));
+    mock.parserCount.mockResolvedValue(1);
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("parser failure rate");
+    expect(mock.updateSchedule).toHaveBeenCalledOnce();
+  });
   it("rejects unreviewed source revisions, cross-source jobs, old jobs and active automatic plans", async () => {
     await expect(beginProductionOtaRepairAcceptance("booking", startingJobId, revisions, "development")).rejects.toThrow("requires production");
     await expect(beginProductionOtaRepairAcceptance("booking", startingJobId, { ...revisions, tymraRevision: "unknown" }, "production")).rejects.toThrow("exact job");

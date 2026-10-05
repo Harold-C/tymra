@@ -652,6 +652,18 @@ release preflight use the same effective window. All thresholds above remain; au
 enablement additionally requires the latest two exact complete successful parents inside this
 window, positive complete future rates and retained evidence with verified delivery/ACK.
 
+**2026-10-06 additional repaired version:** Harold instructed enabling Agoda after the new
+Argus repair passed two exact production trials. A separately confirmed
+`ota:production:acceptance-version` action may append a window for changed Tymra/Argus revisions
+at that version's first exact bounded parent, naming the previous frozen starting job.
+`productionOtaRepairAcceptance` is retained unchanged; later windows are kept in the ordered
+`productionOtaRepairAcceptanceVersions` array. Each version must link to its predecessor,
+start after it, and use a revision pair not previously accepted. The latest linked window
+is used consistently for health, activation and preflight; all older windows, failures and
+rolling 30-day metrics remain. No window is moved automatically, and the original freeze
+command still rejects an overwrite. Zero parser failures and two recent exact complete parents,
+durable local evidence and verified delivery/ACK remain mandatory.
+
 ## D-040 Treat Development Collection As Explicit Technical Validation
 
 **Status:** Implemented.

@@ -100,11 +100,13 @@ export async function beginProductionOtaRepairAcceptance(
   startingJobId: string,
   revisions: { tymraRevision: string; argusRevision: string },
   nodeEnv: string,
+  previousStartingJobId?: string,
 ) {
   requireOtaSource(sourceId);
   if (nodeEnv !== "production") throw new Error("OTA repair acceptance requires production");
   if (!/^[a-z0-9]{20,40}$/u.test(startingJobId)
-    || !/^[a-f0-9]{40}$/u.test(revisions.tymraRevision) || !/^[a-f0-9]{40}$/u.test(revisions.argusRevision)) {
+    || !/^[a-f0-9]{40}$/u.test(revisions.tymraRevision) || !/^[a-f0-9]{40}$/u.test(revisions.argusRevision)
+    || (previousStartingJobId !== undefined && !/^[a-z0-9]{20,40}$/u.test(previousStartingJobId))) {
     throw new Error("OTA repair acceptance requires an exact job and source revisions");
   }
   return prisma.$transaction(async (tx) => {
@@ -121,18 +123,29 @@ export async function beginProductionOtaRepairAcceptance(
     }
     const existing = otaRepairAcceptanceWindow(source.metadata, now);
     if (existing) {
-      if (existing.startingJobId !== startingJobId || existing.startedAt !== job.createdAt.toISOString()
-        || existing.tymraRevision !== revisions.tymraRevision || existing.argusRevision !== revisions.argusRevision) {
-        throw new Error("An existing repair acceptance window cannot be moved or overwritten");
+      if (existing.startingJobId === startingJobId && existing.startedAt === job.createdAt.toISOString()
+        && existing.tymraRevision === revisions.tymraRevision && existing.argusRevision === revisions.argusRevision) {
+        return { sourceId, acceptanceWindow: existing, mutationPerformed: false };
       }
-      return { sourceId, acceptanceWindow: existing, mutationPerformed: false };
+      if (previousStartingJobId === undefined) throw new Error("An existing repair acceptance window cannot be moved or overwritten");
+      if (previousStartingJobId !== existing.startingJobId) throw new Error("Repair version must name the current frozen window");
+    } else if (previousStartingJobId !== undefined) {
+      throw new Error("Repair version requires a preserved original acceptance window");
     }
     const acceptanceWindow = {
       version: OTA_REPAIR_ACCEPTANCE_VERSION, startingJobId, startedAt: job.createdAt.toISOString(),
       authorizedAt: now.toISOString(), ...revisions,
+      ...(previousStartingJobId === undefined ? {} : { previousStartingJobId }),
     };
+    const metadata = source.metadata as Record<string, Prisma.InputJsonValue>;
+    const updatedMetadata = existing ? {
+      ...metadata,
+      productionOtaRepairAcceptanceVersions: [...(metadata.productionOtaRepairAcceptanceVersions as Prisma.InputJsonValue[] | undefined ?? []), acceptanceWindow],
+    } : { ...metadata, productionOtaRepairAcceptance: acceptanceWindow };
+    // Validate the append before writing; every previous boundary and its failures remain retained.
+    otaRepairAcceptanceWindow(updatedMetadata, now);
     await tx.dataSource.update({ where: { id: source.id }, data: {
-      metadata: { ...(source.metadata as Record<string, Prisma.InputJsonValue>), productionOtaRepairAcceptance: acceptanceWindow },
+      metadata: updatedMetadata,
       lastReviewedAt: now,
     } });
     return { sourceId, acceptanceWindow, mutationPerformed: true };

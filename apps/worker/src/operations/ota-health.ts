@@ -65,12 +65,38 @@ export type OtaRepairAcceptanceWindow = {
   authorizedAt: string;
   tymraRevision: string;
   argusRevision: string;
+  previousStartingJobId?: string;
 };
 
 export function otaRepairAcceptanceWindow(metadata: unknown, now = new Date()): OtaRepairAcceptanceWindow | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const value = (metadata as Record<string, unknown>).productionOtaRepairAcceptance;
-  if (value === undefined) return null;
+  const meta = metadata as Record<string, unknown>;
+  const value = meta.productionOtaRepairAcceptance;
+  const versions = meta.productionOtaRepairAcceptanceVersions;
+  if (value === undefined) {
+    if (versions !== undefined) throw new Error("Invalid OTA repair acceptance versions");
+    return null;
+  }
+  let current = readOtaRepairAcceptanceWindow(value, now);
+  if (versions === undefined) return current;
+  if (!Array.isArray(versions) || versions.length === 0) throw new Error("Invalid OTA repair acceptance versions");
+  const revisions = new Set([`${current.tymraRevision}:${current.argusRevision}`]);
+  for (const value of versions) {
+    const next = readOtaRepairAcceptanceWindow(value, now);
+    const revision = `${next.tymraRevision}:${next.argusRevision}`;
+    if (next.previousStartingJobId !== current.startingJobId || next.startingJobId === current.startingJobId
+      || Date.parse(next.startedAt) <= Date.parse(current.startedAt)
+      || Date.parse(next.startedAt) < Date.parse(current.authorizedAt)
+      || Date.parse(next.authorizedAt) < Date.parse(current.authorizedAt) || revisions.has(revision)) {
+      throw new Error("Invalid OTA repair acceptance versions");
+    }
+    revisions.add(revision);
+    current = next;
+  }
+  return current;
+}
+
+function readOtaRepairAcceptanceWindow(value: unknown, now: Date): OtaRepairAcceptanceWindow {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid OTA repair acceptance window");
   const record = value as Record<string, unknown>;
   const startedAt = typeof record.startedAt === "string" ? Date.parse(record.startedAt) : NaN;

@@ -30,6 +30,13 @@ switch (command) {
     }, environment.NODE_ENV));
     break;
   }
+  case "ota:production:acceptance-version": {
+    if (option(args, "--confirm") !== "FREEZE_OTA_REPAIR_VERSION") throw new Error("Freezing a new repair version requires --confirm FREEZE_OTA_REPAIR_VERSION");
+    print(await beginProductionOtaRepairAcceptance(requiredOption(args, "--source"), requiredOption(args, "--starting-job"), {
+      tymraRevision: requiredOption(args, "--tymra-revision"), argusRevision: requiredOption(args, "--argus-revision"),
+    }, environment.NODE_ENV, requiredOption(args, "--previous-starting-job")));
+    break;
+  }
   case "ota:production:prepare":
   case "ota:production:trial":
   case "ota:production:enable":

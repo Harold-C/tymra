@@ -50,3 +50,12 @@ it("blocks a new parser failure without silently moving the accepted start", asy
   expect(value!.historicalMetrics.parsingFailures).toBe(4);
   expect(value!.acceptanceWindow).toEqual(acceptance);
 });
+it("uses an appended repaired version and continues reporting the unchanged rolling history", async () => {
+  const original = { ...acceptance, startedAt: new Date(now.getTime() - 120_000).toISOString(), authorizedAt: new Date(now.getTime() - 90_000).toISOString() };
+  const current = { ...acceptance, startingJobId: "cmuvlkn5f0000nznlsryt66pm", previousStartingJobId: original.startingJobId, argusRevision: "c".repeat(40) };
+  const metadata = { productionOtaRepairAcceptance: original, productionOtaRepairAcceptanceVersions: [current] };
+  mock.sources.mockResolvedValue([{ ...source, metadata }]);
+  const [value] = await report();
+  expect(value).toMatchObject({ parsingFailures: 0, acceptanceWindow: current, historicalMetrics: { parsingFailures: 3 }, releaseGate: { ready: true } });
+  expect(metadata.productionOtaRepairAcceptance).toEqual(original);
+});
