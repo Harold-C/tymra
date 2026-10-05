@@ -156,7 +156,7 @@ import {
   ticketekListingExtractionSchema,
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
-import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaArtifactIsParserFailure, otaCollectionFailureCode, otaReleaseGate } from "../operations/ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaArtifactIsParserFailure, otaCollectionFailureCode, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow } from "../operations/ota-health";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays } from "../operations/production-public-pilot";
 import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import {
@@ -3075,41 +3075,52 @@ export class WorkerService {
 
   async otaHealth(windowDays = 30) {
     const boundedWindowDays = Math.min(90, Math.max(1, Math.trunc(windowDays)));
-    const cutoff = new Date(Date.now() - boundedWindowDays * 86_400_000);
+    const now = new Date();
+    const historicalCutoff = new Date(now.getTime() - boundedWindowDays * 86_400_000);
     const sources = await prisma.dataSource.findMany({
       where: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] } },
       orderBy: { key: "asc" },
     });
     return Promise.all(sources.map(async (source) => {
-      const [runs, executions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListing, latestRate] = await Promise.all([
-        prisma.collectionRun.findMany({
-          where: { dataSourceId: source.id, createdAt: { gte: cutoff }, isDemo: false },
-          select: { status: true, successCount: true, failureCount: true, errorCode: true, scope: true, finishedAt: true },
-        }),
-        prisma.argusExecution.findMany({
-          where: { dataSourceId: source.id, submittedAt: { gte: cutoff } },
-          select: { status: true, result: true, errorCategory: true, submittedAt: true, completedAt: true },
-        }),
-        prisma.listing.count({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } } }),
-        prisma.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
-        prisma.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } }),
-        prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } }, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
-        prisma.rateObservation.findFirst({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
-      ]);
-      const metrics = calculateOtaHealthMetrics({
-        key: source.key,
-        enabled: source.enabled,
-        lifecycle: source.lifecycle,
-        operationalStatus: source.operationalStatus,
-        runs,
-        executions,
-        positiveListingCount,
-        positiveRateCount,
-        parserArtifactFailures,
-        latestListingAt: latestListing?.lastConfirmedAt ?? null,
-        latestRateAt: latestRate?.collectedAt ?? null,
-      });
-      return { ...metrics, windowDays: boundedWindowDays, releaseGate: otaReleaseGate(metrics) };
+      const readMetrics = async (cutoff: Date) => {
+        const [runs, executions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListing, latestRate] = await Promise.all([
+          prisma.collectionRun.findMany({
+            where: { dataSourceId: source.id, createdAt: { gte: cutoff }, isDemo: false },
+            select: { status: true, successCount: true, failureCount: true, errorCode: true, scope: true, finishedAt: true },
+          }),
+          prisma.argusExecution.findMany({
+            where: { dataSourceId: source.id, submittedAt: { gte: cutoff } },
+            select: { status: true, result: true, errorCategory: true, submittedAt: true, completedAt: true },
+          }),
+          prisma.listing.count({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } } }),
+          prisma.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
+          prisma.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } }),
+          prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } }, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
+          prisma.rateObservation.findFirst({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
+        ]);
+        return calculateOtaHealthMetrics({
+          key: source.key,
+          enabled: source.enabled,
+          lifecycle: source.lifecycle,
+          operationalStatus: source.operationalStatus,
+          runs,
+          executions,
+          positiveListingCount,
+          positiveRateCount,
+          parserArtifactFailures,
+          latestListingAt: latestListing?.lastConfirmedAt ?? null,
+          latestRateAt: latestRate?.collectedAt ?? null,
+        });
+      };
+      const historicalMetrics = await readMetrics(historicalCutoff);
+      const acceptanceWindow = otaRepairAcceptanceWindow(source.metadata, now);
+      const cutoff = otaHealthEvidenceWindowStart(source.metadata, historicalCutoff, now);
+      const metrics = cutoff.getTime() === historicalCutoff.getTime() ? historicalMetrics : await readMetrics(cutoff);
+      return {
+        ...metrics, windowDays: boundedWindowDays, evidenceWindowStartedAt: cutoff,
+        acceptanceWindow, historicalWindowDays: boundedWindowDays, historicalMetrics,
+        releaseGate: otaReleaseGate(metrics, now),
+      };
     }));
   }
 

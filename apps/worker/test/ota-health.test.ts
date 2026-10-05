@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate } from "../src/operations/ota-health";
+import { calculateOtaHealthMetrics, otaCollectionFailureCode, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow, OTA_REPAIR_ACCEPTANCE_VERSION } from "../src/operations/ota-health";
 
 const now = new Date("2026-08-07T00:00:00.000Z");
 
 describe("OTA operational health", () => {
+  const acceptance = {
+    version: OTA_REPAIR_ACCEPTANCE_VERSION, startedAt: "2026-08-06T00:00:00.000Z", authorizedAt: "2026-08-06T01:00:00.000Z",
+    startingJobId: "cmuupnz9x0000ph5zhslv462d", tymraRevision: "a".repeat(40), argusRevision: "b".repeat(40),
+  };
+  it("uses only an explicit frozen repair boundary and keeps the rolling limit as the window ages", () => {
+    const cutoff = new Date("2026-07-08T00:00:00.000Z");
+    expect(otaHealthEvidenceWindowStart({}, cutoff, now)).toBe(cutoff);
+    const metadata = { productionOtaRepairAcceptance: acceptance };
+    expect(otaRepairAcceptanceWindow(metadata, now)).toEqual(acceptance);
+    expect(otaHealthEvidenceWindowStart(metadata, cutoff, now).toISOString()).toBe(acceptance.startedAt);
+    const laterCutoff = new Date("2026-09-01T00:00:00.000Z");
+    expect(otaHealthEvidenceWindowStart(metadata, laterCutoff, new Date("2026-10-01T00:00:00.000Z"))).toEqual(laterCutoff);
+    expect(metadata.productionOtaRepairAcceptance).toEqual(acceptance);
+  });
+  it.each([
+    { version: "unknown" }, { startingJobId: "other" }, { tymraRevision: "unknown" }, { argusRevision: "unknown" },
+    { startedAt: "invalid" }, { authorizedAt: "invalid" }, { startedAt: "2026-08-08T00:00:00.000Z" },
+    { authorizedAt: "2026-08-08T00:00:00.000Z" },
+  ])("rejects a malformed or future repair boundary %j", changed => {
+    expect(() => otaHealthEvidenceWindowStart({ productionOtaRepairAcceptance: { ...acceptance, ...changed } }, new Date(0), now)).toThrow("Invalid OTA repair acceptance window");
+  });
   it("preserves actionable Argus failure categories", () => {
     expect(otaCollectionFailureCode({ httpStatus: 429 })).toBe("RATE_LIMITED");
     expect(otaCollectionFailureCode({ httpStatus: 504 })).toBe("TIMEOUT");

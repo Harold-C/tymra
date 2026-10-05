@@ -1,6 +1,6 @@
 import { prisma, Prisma } from "@tymra/db";
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
-import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate } from "./ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow, OTA_REPAIR_ACCEPTANCE_VERSION } from "./ota-health";
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isSourceScopedRentalIdentity } from "./ota-catalog-identity";
 import type { otaListingIdentitySchema } from "@tymra/providers";
@@ -95,13 +95,57 @@ export async function pauseProductionOta(sourceId: string, nodeEnv: string) {
   ]);
   return { sourceId, scheduleEnabled: false, mutationPerformed: true };
 }
+export async function beginProductionOtaRepairAcceptance(
+  sourceId: string,
+  startingJobId: string,
+  revisions: { tymraRevision: string; argusRevision: string },
+  nodeEnv: string,
+) {
+  requireOtaSource(sourceId);
+  if (nodeEnv !== "production") throw new Error("OTA repair acceptance requires production");
+  if (!/^[a-z0-9]{20,40}$/u.test(startingJobId)
+    || !/^[a-f0-9]{40}$/u.test(revisions.tymraRevision) || !/^[a-f0-9]{40}$/u.test(revisions.argusRevision)) {
+    throw new Error("OTA repair acceptance requires an exact job and source revisions");
+  }
+  return prisma.$transaction(async (tx) => {
+    const source = await tx.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
+    if (!otaSourceApproved({ ...source, enabled: true }) || source.operationalStatus === "BLOCKED") throw new Error("Source is not an isolated public OTA pilot");
+    const schedule = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: `pilot-ota-${sourceId}-daily` } });
+    if (!isProductionOtaSchedule(schedule) || schedule.enabled) throw new Error("Disable the source schedule before beginning repair acceptance");
+    const job = await tx.job.findUniqueOrThrow({ where: { id: startingJobId } });
+    const now = new Date();
+    if (job.sourceId !== sourceId || job.queueName !== "ota-production" || !isProductionOtaPayload(job.payload)
+      || job.maxAttempts !== 1 || job.attemptCount > 1 || job.createdAt > now
+      || job.createdAt.getTime() < now.getTime() - 7 * 86_400_000) {
+      throw new Error("Repair acceptance must start at a recent exact bounded job for this source");
+    }
+    const existing = otaRepairAcceptanceWindow(source.metadata, now);
+    if (existing) {
+      if (existing.startingJobId !== startingJobId || existing.startedAt !== job.createdAt.toISOString()
+        || existing.tymraRevision !== revisions.tymraRevision || existing.argusRevision !== revisions.argusRevision) {
+        throw new Error("An existing repair acceptance window cannot be moved or overwritten");
+      }
+      return { sourceId, acceptanceWindow: existing, mutationPerformed: false };
+    }
+    const acceptanceWindow = {
+      version: OTA_REPAIR_ACCEPTANCE_VERSION, startingJobId, startedAt: job.createdAt.toISOString(),
+      authorizedAt: now.toISOString(), ...revisions,
+    };
+    await tx.dataSource.update({ where: { id: source.id }, data: {
+      metadata: { ...(source.metadata as Record<string, Prisma.InputJsonValue>), productionOtaRepairAcceptance: acceptanceWindow },
+      lastReviewedAt: now,
+    } });
+    return { sourceId, acceptanceWindow, mutationPerformed: true };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
 export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: string) {
   requireOtaSource(sourceId);
   if (nodeEnv !== "production") throw new Error("OTA production schedules require production");
   return prisma.$transaction(async (tx) => {
     const source = await tx.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
     if (!otaSourceApproved(source)) throw new Error("Source is not an approved enabled public OTA pilot");
-    const cutoff = new Date(Date.now() - 30 * 86_400_000);
+    const now = new Date();
+    const cutoff = otaHealthEvidenceWindowStart(source.metadata, new Date(now.getTime() - 30 * 86_400_000), now);
     const recentRuns = await tx.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false, createdAt: { gte: cutoff } } });
     const recentExecutions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: cutoff } } });
     const parserArtifactFailures = await tx.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } });
@@ -109,11 +153,12 @@ export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: str
     const positiveRateCount = await tx.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
     const metrics = calculateOtaHealthMetrics({ key: source.key, enabled: true, lifecycle: "PILOT", operationalStatus: "HEALTHY", runs: recentRuns, executions: recentExecutions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListingAt: null, latestRateAt: null });
     // Actual listing/price counts are checked for each exact trial below. This check
-    // additionally retains D-039's rolling parser/challenge/policy failure thresholds.
+    // retains D-039's thresholds after an explicitly frozen repair boundary. Without
+    // a boundary it uses the original rolling 30 days; no failure record is changed.
     const gate = otaReleaseGate(metrics);
     if (!gate.ready) throw new Error(`OTA source health gate: ${gate.failures.join("; ")}`);
     const jobs = await tx.job.findMany({ where: { sourceId, queueName: "ota-production" }, orderBy: { createdAt: "desc" }, take: 2 });
-    if (jobs.length !== 2 || jobs.some((job) => !isProductionOtaPayload(job.payload) || job.status !== "SUCCEEDED" || job.attemptCount !== 1 || job.maxAttempts !== 1 || job.createdAt.getTime() < Date.now() - 7 * 86_400_000)) throw new Error("The latest two exact bounded OTA jobs must have succeeded once within seven days");
+    if (jobs.length !== 2 || jobs.some((job) => !isProductionOtaPayload(job.payload) || job.status !== "SUCCEEDED" || job.attemptCount !== 1 || job.maxAttempts !== 1 || job.createdAt < cutoff || job.createdAt.getTime() < Date.now() - 7 * 86_400_000)) throw new Error("The latest two exact bounded OTA jobs must have succeeded once within seven days and inside the acceptance window");
     for (const job of jobs) {
       const runs = await tx.collectionRun.findMany({ where: { jobId: job.id, dataSourceId: source.id, isDemo: false } });
       if (runs.length !== 2 || runs.some((r) => r.status !== "SUCCEEDED" || r.successCount < 1 || r.failureCount !== 0 || !r.finishedAt)) throw new Error("Both discovery and exact-unit rate must succeed in each trial");
@@ -133,7 +178,7 @@ export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: str
     const schedule = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: `pilot-ota-${sourceId}-daily` } });
     if (!isProductionOtaSchedule(schedule)) throw new Error("OTA schedule contract differs from approved bounds");
     const nextRunAt = nextCollectionOutsideOfficeHours(new Date(Date.now() + 86_400_000 + ACTIVE_OTA_SOURCE_KEYS.indexOf(sourceId as typeof ACTIVE_OTA_SOURCE_KEYS[number]) * 30 * 60_000));
-    await tx.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "HEALTHY", healthStatus: "HEALTHY", lastSuccessAt: new Date(), healthSummary: { approvedJobs: jobs.map((job) => job.id), policyVersion: OTA_PILOT_VERSION } } });
+    await tx.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "HEALTHY", healthStatus: "HEALTHY", lastSuccessAt: new Date(), healthSummary: { approvedJobs: jobs.map((job) => job.id), policyVersion: OTA_PILOT_VERSION, acceptanceWindow: otaRepairAcceptanceWindow(source.metadata, now), evidenceWindowStartedAt: cutoff.toISOString() } } });
     await tx.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: true, nextRunAt } });
     return { sourceId, nextRunAt, acceptedJobs: jobs.map((job) => job.id), mutationPerformed: true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

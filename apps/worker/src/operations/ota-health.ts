@@ -57,6 +57,40 @@ export type OtaHealthInput = {
 
 export type OtaHealthMetrics = ReturnType<typeof calculateOtaHealthMetrics>;
 
+export const OTA_REPAIR_ACCEPTANCE_VERSION = "ota-repaired-acceptance-v1";
+export type OtaRepairAcceptanceWindow = {
+  version: typeof OTA_REPAIR_ACCEPTANCE_VERSION;
+  startedAt: string;
+  startingJobId: string;
+  authorizedAt: string;
+  tymraRevision: string;
+  argusRevision: string;
+};
+
+export function otaRepairAcceptanceWindow(metadata: unknown, now = new Date()): OtaRepairAcceptanceWindow | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>).productionOtaRepairAcceptance;
+  if (value === undefined) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid OTA repair acceptance window");
+  const record = value as Record<string, unknown>;
+  const startedAt = typeof record.startedAt === "string" ? Date.parse(record.startedAt) : NaN;
+  const authorizedAt = typeof record.authorizedAt === "string" ? Date.parse(record.authorizedAt) : NaN;
+  if (record.version !== OTA_REPAIR_ACCEPTANCE_VERSION
+    || !Number.isFinite(startedAt) || !Number.isFinite(authorizedAt)
+    || startedAt > authorizedAt || authorizedAt > now.getTime()
+    || !/^[a-z0-9]{20,40}$/u.test(String(record.startingJobId ?? ""))
+    || !/^[a-f0-9]{40}$/u.test(String(record.tymraRevision ?? ""))
+    || !/^[a-f0-9]{40}$/u.test(String(record.argusRevision ?? ""))) {
+    throw new Error("Invalid OTA repair acceptance window");
+  }
+  return record as OtaRepairAcceptanceWindow;
+}
+
+export function otaHealthEvidenceWindowStart(metadata: unknown, historicalCutoff: Date, now = new Date()) {
+  const acceptance = otaRepairAcceptanceWindow(metadata, now);
+  return acceptance ? new Date(Math.max(historicalCutoff.getTime(), Date.parse(acceptance.startedAt))) : historicalCutoff;
+}
+
 export function otaCollectionFailureCode(input: {
   httpStatus?: number;
   captureStatus?: string;

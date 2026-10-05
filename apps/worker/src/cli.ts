@@ -16,13 +16,20 @@ import { enableRollingLincolnSchedule, enqueueRollingLincolnTrial, prepareRollin
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
 import { getArgusHealth } from "./clients/argus-client";
 import { prepareFirstPublicSchedules } from "./operations/production-public-schedules";
-import { prepareProductionOta, enqueueProductionOtaTrial, enableProductionOtaSchedule, pauseProductionOta } from "./operations/production-ota";
+import { prepareProductionOta, enqueueProductionOtaTrial, enableProductionOtaSchedule, pauseProductionOta, beginProductionOtaRepairAcceptance } from "./operations/production-ota";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
 const [command, ...args] = process.argv.slice(2);
 
 switch (command) {
+  case "ota:production:acceptance-window": {
+    if (option(args, "--confirm") !== "FREEZE_OTA_REPAIR_ACCEPTANCE") throw new Error("Freezing repair acceptance requires --confirm FREEZE_OTA_REPAIR_ACCEPTANCE");
+    print(await beginProductionOtaRepairAcceptance(requiredOption(args, "--source"), requiredOption(args, "--starting-job"), {
+      tymraRevision: requiredOption(args, "--tymra-revision"), argusRevision: requiredOption(args, "--argus-revision"),
+    }, environment.NODE_ENV));
+    break;
+  }
   case "ota:production:prepare":
   case "ota:production:trial":
   case "ota:production:enable":

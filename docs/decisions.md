@@ -640,6 +640,18 @@ The Worker exposes a read-only `/worker/ota-health` endpoint and `ota:health` CL
 `release:preflight --sources` fails closed when OTA evidence is missing or outside the thresholds.
 Automatic scheduling remains disabled in development.
 
+**2026-10-05 repair reacceptance:** Harold explicitly approved a separate repaired-version
+acceptance window for relaunch. The default remains the rolling 30-day window. An operator may
+freeze a source-specific boundary at the first exact bounded job of the repaired version using
+`ota:production:acceptance-window`; the boundary records that job, its creation time, both source
+revisions and authorisation time. Existing boundaries cannot be moved or overwritten to exclude
+later failures. The effective window is the later of that boundary and the rolling cutoff.
+All runs, executions, artifacts and failure flags remain unchanged; `ota:health` exposes the
+original rolling-window metrics separately as `historicalMetrics`. Source health, activation and
+release preflight use the same effective window. All thresholds above remain; automatic OTA
+enablement additionally requires the latest two exact complete successful parents inside this
+window, positive complete future rates and retained evidence with verified delivery/ACK.
+
 ## D-040 Treat Development Collection As Explicit Technical Validation
 
 **Status:** Implemented.
