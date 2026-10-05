@@ -1,24 +1,48 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (Agoda automatic enablement authorised; linked version acceptance candidate validated locally; production publication and enablement in progress)
+Last updated: 2026-10-06 (Agoda production automatic schedule enabled; all six OTA plans healthy and enabled; first natural schedule cycle not yet observed)
 
-## 2026-10-06 Agoda 自动计划启用准备
+## 2026-10-06 Agoda 自动计划已启用，六个 OTA 计划开启
 
 用户在下节双轮生产复测通过后明确要求开启 Agoda 自动计划，继续执行独立修复版本
 验收窗口方案。候选新增 `ota:production:acceptance-version`，必须显式指明前一个
 固定父 Job；原 `productionOtaRepairAcceptance` 保持，后续版本只追加到
 `productionOtaRepairAcceptanceVersions`。拒绝缺失／错链的旧窗口、重复代码版本、
 倒退起点及未经显式版本操作的覆盖；健康、启用和预检使用同一最新窗口，原失败和
-30 天历史指标继续保留。独立窗口候选的完整 CI 已通过；隔离恢复保持 80 张业务表、
-525 份证据和 55 条已有交付确认。但正式启用发现详情缓存仍保留第六轮观察时间，
-原 positiveListingCount 查询误将第八／九轮成功发现判为零；未切换生产或启用计划。
-补充共用证据查询，只允许七天内的非演示身份通过本窗口成功发现的精确父 Job
-关联计入，拒绝失败、空结果、过期／不关联身份，保留原观察时间。56 项定向检查
-及 Worker 类型检查通过；更新候选需完成完整 CI、固定镜像和隔离启用验证。
-生产当前仍为 Tymra `f6ff386`、Argus `21310f8`；五个 OTA 自动计划和 71 条公开
-计划保持，Agoda 尚未启用。完成完整 CI、固定镜像、新鲜配对备份实际恢复及生产
-读回后，以第八轮 `cmuvlkn5f0000nznlsryt66pm` 冻结本次 Argus 修复版本的起点，
-再通过正式启用 CLI。无需修改或重启 Argus／Synix。
+30 天历史指标继续保留。
+
+第一候选 `8ba90d4` 的完整 CI 及数据／证据恢复通过，但隔离正式启用发现详情缓存
+仍保留第六轮观察时间，原 positiveListingCount 查询误将第八／九轮成功发现判为
+零，因此没有发布该候选。最终 `5af32df` 使用共用证据查询，只允许七天内的非演示
+身份通过本窗口成功发现的精确父 Job 关联计入，拒绝失败、空结果、过期／不关联
+身份，保留原观察时间。56 项定向检查及 Worker 类型检查通过；
+[完整 CI](https://github.com/Harold-C/tymra/actions/runs/37363442645) Web／域模型
+238、Worker 389、数据库集成 123 项通过，5／6 条既有条件跳过及其原验收边界
+保持，117 页编译完成。固定镜像全部 20 层 RootFS 和完整执行配置匹配，实际镜像
+`sha256:7f88ff04666228d857d278a7dcfb81f1a5c2f7217df1eeee639e7377b9563fee`。
+
+新鲜 `/srv/apps/tymra/backups/agoda-version-20261006-v2-predeploy` 用最终镜像隔离
+恢复，80 张业务表、525 份证据及权限／属主、55 条已有交付确认匹配。编译后的
+窗口追加、相同操作的无写入重试及正式启用通过，精确接受第八／九轮父 Job；原
+窗口、历史行及其他来源／计划保持，隔离资源已移除，没有外部采集。只替换 Tymra
+四个应用服务，没有新 migration；配置／挂载、数据库／Redis 和无关容器保持。
+`2026-10-05T19:38:58Z` 生产读回核对业务／证据摘要、HTTPS 管理页、Worker readiness、
+Argus 调用方认证和权限隔离通过，应用运行正常、重启零。
+
+`2026-10-05T19:39:42Z` 正式追加窗口，以第八轮 `cmuvlkn5f0000nznlsryt66pm` 的
+`2026-10-05T18:42:46.707Z` 为起点，记录实际采集版本 Tymra `f6ff386`／Argus
+`21310f8`；当前 Tymra 运行版本为 `5af32df`。原 R4 窗口及 R5 两项解析失败标记、
+全部 Job／Run／Execution／证据／报价保持，第八／九轮精确完整成功及零新解析
+错误通过正式 CLI 门槛。Agoda 转为 HEALTHY，自动计划已开启，下一计划为
+NZ `2026-10-07 17:00`（UTC `2026-10-07T04:00Z`）。六个 OTA 来源及六条自动
+计划均正常开启，原 71 条公开计划和其余五个 OTA 计划保持。正常每日六次预算、
+并发一、Argus 每来源每日十二次额度保持；无手动豁免，当日 Agoda 十二次计数
+没有重置。本轮没有新增抓取，自然自动周期尚未发生。
+
+Synix Live／UAT 十个容器的身份、镜像、版本、健康和重启数核对一致；Argus 三个
+容器保持，浏览器仍为 `21310f8` 且健康，未修改其私有代码、配置或 Profile。
+发布／恢复／启用及最终计划收据统一在 `runtime/release-candidates/agoda-version-20261006-v2`；
+第一候选及首次隔离拒绝证据保留在 `agoda-version-20261006-v1`。
 
 ## 2026-10-06 Booking 已启用，Agoda 限制文字修复及两轮生产复测通过（上轮记录）
 
