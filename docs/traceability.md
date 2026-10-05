@@ -1,8 +1,104 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (four OTA schedules enabled; repaired-version acceptance window deployed; Agoda and Booking production verification pending)
+Last updated: 2026-10-06 (five OTA schedules enabled; Agoda restriction text scope repair deployed; new production trials await shared browser availability)
 
-## 2026-10-05 公开房型身份修复候选及最新生产诊断
+## 2026-10-06 Booking 已启用，Agoda 限制文字修复已发布，新版本复测待共享空闲
+
+共享服务和 Synix 调用方空闲后，Argus `c218f3f`／`argus-release-20261005-11`
+及 Tymra `f6ff386` 已按顺序部署；沿用下节已通过完整门禁的固定镜像，没有重新
+构建或新增生产 migration。Synix 的待人工任务先自然到期，没有取消私有任务。
+Argus 最新加密配对备份用最终镜像本机隔离恢复：807 个 Job、2 个账号、48,777 项
+私有条目及权限／属主匹配，四项所有权拒绝、三份 wire 哈希、两个离线 Profile
+打开通过；不代表实站认证。仅切换 browser 服务，PostgreSQL／tunnel、环境／挂载
+及私有实现保持，健康、重启零；HTTPS 六公开连接器的列表／详情／报价流程、私有属主读取及跨客户端
+拒绝通过。加密备份 `argus-prod-20261006-ota-physical-units-predeploy.sparseimage`
+已封存，所属明文传输目录已移除，生产 Profile 和卷保留。
+
+Tymra 新鲜 `/srv/apps/tymra/backups/ota-launch-20261006-physical-units-predeploy`
+以 `f6ff386` 固定镜像隔离恢复，80 张业务表、491 份证据及 38 条已有交付确认
+保持。只替换四个应用服务，数据库／Redis／无关容器及配置保持，重启零；
+`2026-10-05T11:57:23Z` 生产读回中业务／证据摘要、HTTPS 管理页、Worker readiness、
+Argus 调用方认证及权限隔离通过。Synix 应用、私有代码／配置／Profile 未修改。
+
+Booking `cmuv7ef5m0000nz6vcck2df25`、`cmuv7tu7t0000nz95q641tkv2` 均一次尝试
+完整成功，分别三次／两次执行，保存 Fable Terrace Downs（Windwhistle，Canterbury）
+2 Bedroom Villa 的公开绑定容量 4，以及 2026-10-13–14、2 成人、一单位、匿名
+NZD 539 AVAILABLE／COMPLETE 非演示报价。十份本地证据逐份哈希、五次持久化
+交付及所属摘要 200／ACK 后结果 410 已独立核验，旧 Job 行保持。
+固定修复验收窗口从首个父 Job `2026-10-05T12:06:01.785Z` 开始，记录 Tymra
+`f6ff386`／Argus `c218f3f`，旧失败、30 天原指标及其他计划不改写。正式启用 CLI
+已通过，下一自动计划为 NZ `2026-10-07 01:32`。目前五来源正常启用，71 条公开
+计划保持；自然自动周期尚未发生，不能将启用等同于已观察到自动抓取成功。
+
+Agoda 第四轮 `cmuv75n200000nz46nhskb1ke` 在正常 Christchurch 列表上保留了
+10 月 12–14 日，目标为 13–14 日，以 INTERNAL_ERROR／SOURCE_UNAVAILABLE
+失败；未保存房源／报价。两份证据及一次交付／ACK 保留，解析失败标记为 false。
+其固定窗口从该失败父 Job `2026-10-05T11:59:12.120Z` 开始，仍记录 `f6ff386`／
+`c218f3f`，不移到后续成功之后。离线浏览器已复现搜索栏日期摘要与日历格共享
+`data-date` 导致点错；Argus `8c2ff14` 限定日历范围，并在提交前验证日期，
+失败返回固定 AGODA_STAY_CONTEXT_CHANGED，保持原入住及完整报价门槛。
+完整门禁源码 915、固定镜像 1,103 项通过，各层零失败，条件入口相互覆盖，配对
+恢复及运行／故障恢复通过。新鲜加密快照实际恢复 820 Job／2 账号／49,400 私有
+条目；旧 813 Job 快照因 Synix 自然推进七个 Job 而未用于切换。`2026-10-05T13:23Z`
+在共享及 Synix 调用方空闲时发布 Tag 1 并读回，PG／tunnel、私有基线、配置／
+Profile 和 Synix Live／UAT 十个应用容器保持，HTTPS 权限隔离通过；Tymra 仍为 `f6ff386`。
+
+第五轮 `cmuvadl510000nzcp4aba99da` 的 Christchurch 列表已按原 13–14 日成功。
+LyLo Christchurch Airport 正常详情却在身份阶段以 PARSING_ERROR 失败，未入库
+房源／报价；四份持久证据、两次交付、所属摘要 200／ACK 后 410 及旧 Job 行保持
+均已核验，详情的两项 parserFailure=true 保留。公开弹层确认报价旁的“3 adults”
+表示优惠最大容纳人数，旧实现误作报价人数。Argus 已发布版本 `8f0204a` 分别记录
+容量和可见搜索人数，仍拒绝不足容量、无法核实或矛盾人数、儿童／多单位的未核实
+映射及显式三人报价。28 项定向回归、类型检查及原生产 HTML 无网络重放通过，
+家庭房容量 3、搜索人数 2，单人 Pod 排除。完整门禁源码 916、固定镜像 1,105 项
+通过，各层零失败，条件入口相互覆盖，配对恢复及运行／故障恢复通过。Tag 2
+固定导出的 12 层 RootFS 和完整执行配置匹配；新鲜生产备份以该镜像实际恢复
+822 Job／2 账号／49,626 私有条目及权限／属主、四项所有权拒绝、三份 wire 哈希、
+两个离线 Profile 打开。共享和 Synix 调用方空闲后切换，实际镜像
+`sha256:389bf85fd44b3e594a194680f3b14ee87aebd69d3923e28297fa7a5f33a150d1`
+健康、重启零；PG／tunnel、配置、挂载及私有实现保持，Synix Live／UAT 十个
+容器身份、镜像、版本、健康和重启数一致，HTTPS 权限隔离通过。加密备份和
+恢复收据保留，仅移除所属明文传输目录。
+
+第六／七轮 `cmuvd2qd00000nzh8dtpwlsgm`、`cmuvd9acd0000nzj32dswzoup` 均一次
+尝试完整成功，分别三次／两次执行，第二轮复用同日期的已核实详情。保存
+LyLo Christchurch Airport（`agoda:1249309`）的 Family Ensuite Room，绑定容量 3、
+地址 5 Peter Leeming Rd 及同房源公开坐标；原 2026-10-13–14、2 成人、一单位、
+匿名 NZD 329 AVAILABLE／COMPLETE 报价两次入库。十份证据哈希、五次交付及
+所属摘要 200／ACK 后 410、旧 Job 行均已核验，无新解析失败。但可售报价的
+restrictionReason 继承了页面其他房型的“sold out”；现行市场统计会将非空限制
+原因计为受限。Argus 已发布 `21310f8` 只修正公开可售报价的限制归属，并将
+最低入住限制绑定同房型；真正不可售原因继续保留。旧实现回归重现、修复后的
+17 项检查及类型检查通过。[完整门禁](https://github.com/Harold-C/argus/actions/runs/37329293921)
+源码 917、固定镜像 1,106 项通过，各层零失败，172 条 Chrome／13 条 PostgreSQL
+条件入口相互覆盖，配对恢复及运行／故障恢复通过。
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37333303412)的全部 12 层
+RootFS 和完整执行配置匹配。新鲜配对备份以最终镜像实际隔离恢复 827 Job、
+2 账号、49,935 项私有条目及权限／属主，四项所有权拒绝、三份 wire 哈希和两个
+离线 Profile 打开通过；不证明实站认证。加密备份
+`argus-prod-20261006-agoda-restriction-predeploy.sparseimage` 已封存，SHA-256
+`486ff6aa6d360dbaf50cb6ffef50e9317162cc84c27887d82b9de4f1a131d878`。
+在共享及 Synix 调用方空闲时完成 Tag 3 切换，实际镜像
+`sha256:1d91f3609347071c4bc8f29f2eb77b015df19688221a06c87b0a9a921938c93a`
+健康、重启零，PG／tunnel、配置／挂载及私有实现保持。HTTPS 六公开连接器的
+列表／详情／报价流程、私有属主读取及跨客户端拒绝通过，Synix Live／UAT 十个
+容器身份、镜像、版本、健康和重启数一致；所属明文传输目录已移除。
+发布后 Synix 新任务进入共享浏览器，保护检查在任何生产写入前阻止 Agoda
+第八／九轮复测准备，未取消或中断私有任务。市场统计使用每个房源的最新观察值；
+须以新版本真实观察核对限制原因，不改写原两轮报价及其原始证据。
+原 R4 窗口和旧失败保留；其中的新解析失败仍阻止正式启用。新增独立修复版本
+窗口的规则调整待用户决定，零解析错误及最近两次精确完整成功门槛继续保留。
+
+本轮 Argus 限制归属修复收据在 `runtime/production-releases/argus-release-20261006-3`，
+人数修复在 `argus-release-20261006-2`，
+日期修复在 `argus-release-20261006-1`，先前房型修复在 `argus-release-20261005-11`；
+Tymra 发布收据沿用 `runtime/release-candidates/ota-launch-20261005-v3`，前次备份的验证收据
+保留为 `first-*`。生产父 Job、验收窗口和启用收据仍在既有 `ota-launch-20261005-v1`
+目录；目录日期不代表本轮验证日期。原手动试采豁免已移除；仅为 Agoda 短期恢复
+手动复测豁免的尝试被共享任务检查拒绝，当前未重新启用，不重置已有执行计数。自动计划
+每日六次预算及 Argus 每来源每日十二次额度、节奏／挑战保护保持。
+
+## 2026-10-05 公开房型身份修复候选及生产诊断（历史，最新见上节）
 
 Argus `dca5cc0`／`argus-release-20261005-9` 已发布，完整源码 913 通过、固定镜像
 1,096 通过、各层零失败，配对恢复及运行／故障恢复通过。实际镜像
@@ -12,7 +108,8 @@ Argus `dca5cc0`／`argus-release-20261005-9` 已发布，完整源码 913 通过
 Docker／磁盘故障未完成，没有计为通过；恢复后仅本轮遗留的隔离资源已清理。
 
 Agoda 第三轮 `cmuuwerbo0000rvcdab0osh7w` 的列表及报价区正常，但无日期详情
-缓存选中了 3 人家庭房，目标 2 人，报价被人数校验排除，未保存完整价格。
+缓存选中了最大人数显示为 3 的家庭房，目标 2 人；当时该容量被误作报价人数而
+排除，未保存完整价格。容量语义后来由公开说明弹层确认，最新修复见上节。
 Booking `cmuuwjgzf0000rvf8emhb4oqg` 搜索及详情成功，公开 `RoomDetails` 中
 房型 ID 对应真实最大人数；原解析只看可见 UI，容量未知，且 Coleridge Road
 误作城市，以 UNIT_IDENTITY_NOT_PUBLIC 结束。两父 Job 一次尝试，四次执行、
