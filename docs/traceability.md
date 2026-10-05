@@ -1,8 +1,8 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (Bookabach fixes pushed; fixed images and restore gates passed, production cutover waits for active Synix work to finish)
+Last updated: 2026-10-05 (Bookabach fixes deployed; one complete bounded production job passed, six OTA automatic plans remain disabled)
 
-## 2026-10-05 Bookabach 修复已推送，生产切换等待 Synix 空闲
+## 2026-10-05 Bookabach 修复已发布，一次完整生产复测成功
 
 用户要求进行下一步。Argus 只补充可见 `product-price-summary` 报价组件，原来的
 当前价唯一性、隐藏组件过滤、费用同报价区域及匿名精确住宿上下文保护保留。
@@ -26,14 +26,14 @@ Web／域模型 238 通过、5 条件入口跳过；Worker 334 全部通过；�
 PostgreSQL 层 899 通过、158 条 Chrome 条件入口由镜像补验；镜像层 1,071 通过、
 13 条 PostgreSQL 入口已由源码层执行，各层零失败。合成配对恢复、运行和故障恢复通过。
 
-Argus 固定 registry 为
+Argus 实际生产固定 registry 为
 `ghcr.io/harold-c/argus@sha256:2a77b9747a64dffc0997d7083ac39dca2c2b2cbe2bc258704859ec0945ffdd78`，
-加载候选为 `sha256:a0d6d061de9c0025482e6c0a713a4df15863d93cc0af8f1f714904c85253b738`。
+运行镜像为 `sha256:a0d6d061de9c0025482e6c0a713a4df15863d93cc0af8f1f714904c85253b738`。
 源码、归档、12 层 RootFS、完整执行配置及未设置的默认字段均匹配。
-相对生产 `ef21050` 仅 Bookabach 快照、对应测试及状态文档变化，私有 `bec807f`
+相对切换前生产 `ef21050` 仅 Bookabach 快照、对应测试及状态文档变化，私有 `bec807f`
 仍在候选中，私有实现／合同没有差异，未修改配置或移用 Profile。
 
-Tymra 最终正确候选已加载到 `/srv/apps/tymra/releases/bookabach-20261005-v3`，
+Tymra 最终正确镜像已从 `/srv/apps/tymra/releases/bookabach-20261005-v3` 发布，
 镜像 `sha256:09922cfdb6746b1a69b45982343f1ece7a4eb8c1c81127e6255fa4f2d017d4ca`。
 本地 OCI 标识不同，20 层内容及执行 Config 已匹配；归档 SHA-256
 `cee0c6e5ad9a337e30e0607bde314adef7ceca27ac380856113a8ddff00e6bfc`。
@@ -47,16 +47,41 @@ Tymra 最终正确候选已加载到 `/srv/apps/tymra/releases/bookabach-2026100
 Argus 第一份新鲜加密配对备份已用最终镜像隔离恢复：722 个 Job、2 个账号、
 43,762 项私有条目摘要／权限／属主匹配，4 次所有权拒绝、3 份交付哈希和两个离线
 Profile 打开通过；加密备份已封存、明文传输目录已移除，离线检查不证明实站登录。
-准备切换时 Synix 有新任务，守卫在关闭服务前拒绝操作；后续共享运行时确有
-`synix-prod` 运行 Job，原服务保留，未取消或重启私有任务。现有配对备份因此不能
-充当接下来切换的最新数据依据；必须等 Synix 任务自然结束，重新配对备份／恢复及
-摘要核对后再切换。第二份加密目的地已准备，不代表已完成新快照。
+准备切换时 Synix 有新任务，守卫在关闭服务前拒绝操作；随后等调用方及共享
+任务／接管／挑战自然空闲，没有取消、暂停或重启私有任务。重新制作最新配对
+快照并用同一最终镜像恢复：737 个 Job、2 个账号、44,355 项私有条目完整摘要、
+权限及属主一致，所有权拒绝、交付哈希及两个离线 Profile 检查通过。实际切换使用
+这份最新依据，不使用原 722 Job 快照越过数据变化守卫。第二份加密备份
+`argus-prod-20261005-bookabach-predeploy-2.sparseimage` 已封存卸载，SHA-256
+`3d104b6f363268b7b74ad615707effe2def446306d79ebca0fd781307c0c94b0`；所属明文
+传输目录及演练资源已移除，原生产配置、卷、Profile 和 Synix 应用保留。
 
-当前生产仍运行 `ef21050` / `56d148b`，Bookabach 原失败记录、零完整报价与当日
-三次执行不变，六来源／计划关闭，71 条公开计划保留。尚未部署本节候选或新建
-生产复测 Job。候选与收据分别保存在 Argus 标签发布目录和
-`runtime/release-candidates/bookabach-20261005-v3`；剩余按 Argus→Tymra 切换及一次
-有界复测，仍需两次完整生产成功、证据／ACK 与 D-039 才能启用计划。
+按 Argus→Tymra 完成切换。Argus 实际运行 `6df8601`、healthy、重启 0，
+PostgreSQL／tunnel 容器及环境／挂载保留；HTTPS registry、原私有账号属主读取和
+公开客户端跨账号拒绝核验通过。Tymra 四个应用均为 `a032fb5` 和上述同一镜像，
+运行且重启 0；`2026-10-05T02:19:40Z`（15:19 NZ）切换后读回中，80 张业务表
+摘要及 419 份证据与备份一致，已有三条交付确认保留，管理 HTTPS 页面／noindex、
+Worker readiness、所属 Argus Job 读取和权限拒绝核验通过。PostgreSQL、Redis、
+共享入口及 Spicy Maggie 网站容器未替换。两端兼容旧镜像、受保护回退配置和
+备份保留；回退只切应用镜像，不覆盖之后的业务写入。
+
+随后按用户立即复测授权，只创建并提前执行一个有界 Bookabach Job
+`cmuumhw9l0000o243lf9mpuh9`，沿用 Canterbury／`bookabach:20312372` 样本。
+版本化详情缓存复用，仅执行列表与精确报价两个 Argus Job；最大尝试一次，实际
+尝试一次，于 `2026-10-05T02:22:29.419Z`（15:22 NZ）以 `SUCCEEDED` 结束。
+两个 Run 均成功，保存一条非演示完整 RateObservation：2026-10-12–13、2 成人、
+1 个住宿单位、匿名、NZD 10800 minor（NZ$108）、AVAILABLE／COMPLETE。
+四份 HTML／截图逐份本地持久化及哈希复核通过，无 parserFailure；两个执行均保存
+交付确认，所属 Job 读取 200、ACK 后结果 410/PURGED 已独立核对。
+
+原失败 Job `cmuugoskc0000o5bvbnod1uj4` 完整记录不变。当日 Bookabach 共用 5/6
+次执行，余下一次不足以再运行最少两次执行的完整 Job，本日不再安排第二个完整
+复测或预先占用唯一活跃 OTA 名额。Bookabach 来源仅启用于 PILOT 手动试采，
+当前 operationalStatus 仍为 DEGRADED；其他五来源关闭，六 OTA 自动计划均关闭，
+无活跃 OTA Job，71 条公开计划及其他来源／计划摘要保持不变。一次完整成功不等于
+自动启用：后续须在新西兰下一预算日完成第二个精确完整成功 Job，并同时通过
+证据／ACK 和 D-039 门槛。收据分别保存在 Argus 标签发布目录及
+`runtime/release-candidates/bookabach-20261005-v3`。
 
 ## 2026-10-05 用户要求立即执行一次 Bookabach 生产抓取
 
@@ -91,7 +116,7 @@ HTTP 410/PURGED 已独立复核。这些交付成功不代替完整报价成功�
 Bookabach 当日三次执行，没有重试。受保护前快照、操作／终态／交付收据与实际
 报价页证据留在既有发布目录及 `runtime/release-candidates/ota-20261004-preproduction`。
 当时的下一步是用本次保存页面修复价格提取与 UNKNOWN 分类；修复和候选门禁已由
-本页最新章节更新，生产切换／复测仍未完成，没有开启 OTA 自动计划。
+本页最新章节更新；修复已发布并完成一次完整生产复测，OTA 自动计划仍未开启。
 
 ## 2026-10-05 OTA 生产启用尝试与首轮排队（执行结果以上节为准）
 
