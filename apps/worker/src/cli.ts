@@ -11,6 +11,7 @@ import { executeQueueHistoryAction, executeReleaseRollback } from "./operations/
 import { loadEventReconciliation } from "./operations/event-reconciliation";
 import { APPROVED_PUBLIC_CANARY_SOURCES, bootstrapProductionPublicCanary, validateSuspendedProductionPublicCanary } from "./operations/production-public-canary";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, enableProductionPublicPilot, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotSchedulePayload, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, zeroBusinessPublicPilotPassAccepted } from "./operations/production-public-pilot";
+import { preparePublicScheduleRecovery, enqueuePublicRecoveryTrial, enableRecoveredPublicSchedule } from "./operations/public-schedule-recovery";
 import { enableProductionProgressSchedule, enqueueProductionProgressTrial } from "./operations/production-progress-schedules";
 import { enableRollingLincolnSchedule, enqueueRollingLincolnTrial, prepareRollingLincolnAcceptance } from "./operations/rolling-lincoln-schedule";
 import { bootstrapProductionArgusMarketPilot, enableProductionArgusMarketPilot, nextArgusMarketPilotPass, rearmSuspendedProductionArgusMarketPilot } from "./operations/production-argus-market-pilot";
@@ -71,6 +72,14 @@ switch (command) {
   case "schedule:eventfinda:disable": print(await guardedSourceScheduleChange(["eventfinda"], false)); break;
   case "schedule:ticketmaster:enable": print(await guardedSourceScheduleChange(["ticketmaster"], true)); break;
   case "schedule:ticketmaster:disable": print(await guardedSourceScheduleChange(["ticketmaster"], false)); break;
+  case "schedule:public:recovery-prepare":
+  case "schedule:public:recovery-trial":
+  case "schedule:public:recovery-enable": {
+    if (option(args, "--confirm") !== "RESTORE_PUBLIC_SCHEDULE") throw new Error("Public recovery requires --confirm RESTORE_PUBLIC_SCHEDULE");
+    const action = command.endsWith("prepare") ? preparePublicScheduleRecovery : command.endsWith("trial") ? enqueuePublicRecoveryTrial : enableRecoveredPublicSchedule;
+    print(await action(requiredOption(args, "--source"), environment.NODE_ENV, requiredOption(args, "--revision")));
+    break;
+  }
   case "schedule:progress:enable": {
     if (option(args, "--confirm") !== "ENABLE_PROGRESS_SCHEDULE") throw new Error("Enabling a progressive schedule requires --confirm ENABLE_PROGRESS_SCHEDULE");
     print(await enableProductionProgressSchedule(requiredOption(args, "--source"), environment.NODE_ENV));

@@ -29,7 +29,55 @@ export function queenstownPassengerQueries(modelPayload: unknown) {
   const root = object(modelPayload);
   const section = array(object(root.exploration).sections).map(object).find((item) => item.displayName === "Pax Numbers");
   const visuals = array(section?.visualContainers).map(object);
-  const queries = visuals.flatMap((visual) => typeof visual.query === "string" && visual.query.includes("Metrics: Aero.Pax") && visual.query.includes("_Date.Calendar Year") && visual.query.includes("_Date.Short Month") ? [visual.query] : []);
+  const legacyQueries = visuals.flatMap((visual) => typeof visual.query === "string" && visual.query.includes("Metrics: Aero.Pax") && visual.query.includes("_Date.Calendar Year") && visual.query.includes("_Date.Short Month") ? [visual.query] : []);
+  const documentText = object(object(root.exploration).explorationContent).explorationDocument;
+  const document = typeof documentText === "string" ? object(JSON.parse(documentText)) : object(documentText);
+  const pages = array(object(document.pages).pages).map(object);
+  const pbirQueries = pages.filter((page) => object(page.content).displayName === "Pax Numbers").flatMap((page) => array(page.visualContainers).map(object).flatMap((container) => {
+    const content = object(container.content);
+    const visual = object(content.visual);
+    if (visual.visualType !== "pivotTable") return [];
+    const state = object(object(visual.query).queryState);
+    const projections = ["Rows", "Columns", "Values"].map((role) => array(object(state[role]).projections).map(object));
+    if (projections.some((items) => items.length !== 1)
+      || projections[0]?.[0]?.queryRef !== "_Date.Short Month"
+      || projections[1]?.[0]?.queryRef !== "_Date.Calendar Year"
+      || projections[2]?.[0]?.queryRef !== "Metrics: Aero.Pax") return [];
+    const from = new Map<string, string>();
+    const alias = (entity: string) => {
+      if (!from.has(entity)) from.set(entity, `s${from.size}`);
+      return from.get(entity)!;
+    };
+    function rebind(value: unknown, sources: Record<string, string> = {}): unknown {
+      if (Array.isArray(value)) return value.map((entry) => rebind(entry, sources));
+      const record = object(value);
+      if (!Object.keys(record).length) return value;
+      return Object.fromEntries(Object.entries(record).map(([key, entry]) => {
+        if (key === "SourceRef") {
+          const ref = object(entry);
+          const entity = typeof ref.Entity === "string" ? ref.Entity : typeof ref.Source === "string" ? sources[ref.Source] : undefined;
+          if (!entity) throw new Error("Queenstown Airport PBIR query has an unbound source");
+          return [key, { Source: alias(entity) }];
+        }
+        return [key, rebind(entry, sources)];
+      }));
+    }
+    const select = projections.map((items) => ({ ...object(rebind(items[0]!.field)), Name: items[0]!.queryRef }));
+    const where = array(object(content.filterConfig).filters).map(object).flatMap((item) => {
+      if (!item.filter) return [];
+      const filter = object(item.filter);
+      const sources = Object.fromEntries(array(filter.From).map(object).map((entry) => [String(entry.Name), String(entry.Entity)]));
+      if (!Array.isArray(filter.Where)) throw new Error("Queenstown Airport PBIR filter is unsupported");
+      return filter.Where.map((condition) => rebind(condition, sources));
+    });
+    const query = { Commands: [{ SemanticQueryDataShapeCommand: {
+      Query: { Version: 2, From: [...from].map(([Entity, Name]) => ({ Name, Entity, Type: 0 })), Select: select, Where: where },
+      Binding: { Version: 1, Primary: { Groupings: [{ Projections: [0, 2] }] }, Secondary: { Groupings: [{ Projections: [1] }] }, DataReduction: { DataVolume: 3, Primary: { Window: { Count: 100 } }, Secondary: { Top: { Count: 100 } } } },
+      ExecutionMetricsKind: 1,
+    } }] };
+    return [JSON.stringify(query)];
+  }));
+  const queries = legacyQueries.length ? legacyQueries : pbirQueries;
   const domestic = queries.find((query) => query.includes("\"Value\":\"'D'\""));
   const international = queries.find((query) => query.includes("\"Value\":\"'I'\""));
   const total = queries.find((query) => !query.includes("\"Value\":\"'D'\"") && !query.includes("\"Value\":\"'I'\""));
@@ -42,15 +90,22 @@ export function decodeQueenstownPassengerMatrix(payload: unknown): Map<string, n
   const result = object(array(object(payload).results)[0]);
   const data = object(object(result.result).data);
   const dataset = object(array(object(data.dsr).DS)[0]);
-  const years = array(object(array(dataset.SH)[0]).DM2).map((row) => finiteNumber(object(row).G1)).filter((value): value is number => value !== null);
+  const expressions = object(object(data.descriptor).Expressions);
+  const yearGroup = array(object(expressions.Secondary).Groupings).map(object).find((group) => array(group.Keys).some((key) => object(object(key).Source).Property === "Calendar Year"));
+  const monthGroup = array(object(expressions.Primary).Groupings).map(object).find((group) => array(group.Keys).some((key) => object(object(key).Source).Property === "Short Month"));
+  const yearMember = typeof yearGroup?.Member === "string" ? yearGroup.Member : "DM2";
+  const monthMember = typeof monthGroup?.Member === "string" ? monthGroup.Member : "DM1";
+  const years = array(array(dataset.SH).map(object).find((group) => Array.isArray(group[yearMember]))?.[yearMember]).map((row) => finiteNumber(object(row).G1)).filter((value): value is number => value !== null);
   const groups = array(dataset.PH).map(object);
-  const rows = array(groups.find((group) => Array.isArray(group.DM1))?.DM1).map(object);
+  const rows = array(groups.find((group) => Array.isArray(group[monthMember]))?.[monthMember]).map(object);
   const months = array(object(dataset.ValueDicts).D0).map((value) => String(value));
   if (!years.length || !rows.length || months.length < 12) throw new Error("Queenstown Airport passenger response has an unsupported matrix");
   const values = new Map<string, number>();
   for (const row of rows) {
-    const month = finiteNumber(row.G0);
-    if (month === null || month < 0 || month > 11 || !months[month]) continue;
+    const monthIndex = finiteNumber(row.G0);
+    if (monthIndex === null || monthIndex < 0 || !months[monthIndex]) continue;
+    const month = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].indexOf(months[monthIndex]!);
+    if (month < 0) continue;
     const cells = array(row.X).map(object);
     for (const [index, year] of years.entries()) {
       const count = finiteNumber(cells[index]?.M0);
@@ -82,12 +137,13 @@ class QueenstownAirportMonthlyAdapter implements PublicDataAdapter {
     sourceId: "queenstown_airport_monthly", sourceName: "Queenstown Airport monthly passengers", sourceType: "PUBLIC_DATA",
     supportedDomains: ["www.queenstownairport.co.nz", "app.powerbi.com", "wabi-australia-southeast-api.analysis.windows.net"],
     adapterKey: "public:queenstown-airport:monthly-passengers-powerbi-v1", accessMethod: "OFFICIAL_PUBLIC_HTML_POWERBI_JSON",
-    concurrencyLimit: 1, dailyBudget: 6, collectorVersion: "queenstown-airport-powerbi-fetch-v1", parserVersion: "queenstown-airport-monthly-matrix-v1",
+    concurrencyLimit: 1, dailyBudget: 6, collectorVersion: "queenstown-airport-powerbi-fetch-v1", parserVersion: "queenstown-airport-monthly-matrix-pbir-v2",
   };
 
   async discover(): Promise<string[]> { return [FACTS_URL]; }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
+    if (context.collectionLimits && context.collectionLimits.maxRequests < 6) throw new AdapterError("REQUEST_BUDGET_EXHAUSTED", "Queenstown Airport discovery, model and three passenger matrices require six requests", false);
     const facts = await fetchText(reference, context);
     let dashboardUrl: string;
     try { dashboardUrl = findQueenstownAirportDashboardUrl(facts.text, facts.url); }
@@ -101,16 +157,17 @@ class QueenstownAirportMonthlyAdapter implements PublicDataAdapter {
     let queries: ReturnType<typeof queenstownPassengerQueries>;
     try { queries = queenstownPassengerQueries(modelPayload); }
     catch (error) { throw parsing(error, "Queenstown Airport report query discovery failed"); }
-    const matrices = await Promise.all(([queries.domestic, queries.international, queries.total] as const).map(async (query) => {
+    const matrices: Map<string, number>[] = [];
+    for (const query of [queries.domestic, queries.international, queries.total]) {
       const response = await fetch(`${bootstrap.apiOrigin}/public/reports/querydata?synchronous=true`, {
         method: "POST", headers: { ...powerBiHeaders(bootstrap.resourceKey), "content-type": "application/json" },
         body: JSON.stringify({ version: "1.0.0", queries: [{ Query: query }], cancelQueries: [], modelId: queries.modelId }),
         signal: context.signal ?? AbortSignal.timeout(30_000),
       });
       if (!response.ok) throw unavailable(`query returned HTTP ${response.status}`, response.status);
-      try { return decodeQueenstownPassengerMatrix(await boundedJson(response, context.collectionLimits?.maxBytes ?? 5_000_000)); }
+      try { matrices.push(decodeQueenstownPassengerMatrix(await boundedJson(response, context.collectionLimits?.maxBytes ?? 5_000_000))); }
       catch (error) { throw parsing(error, "Queenstown Airport passenger matrix parsing failed"); }
-    }));
+    }
     const records = combineQueenstownPassengerMatrices(matrices[0], matrices[1], matrices[2]);
     if (!records.length) throw new AdapterError("PARSING_ERROR", "Queenstown Airport report has no consistent monthly passenger records", false);
     const maxRecords = context.collectionLimits?.maxRecords ?? records.length;

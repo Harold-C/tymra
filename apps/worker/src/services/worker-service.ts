@@ -1265,7 +1265,7 @@ export class WorkerService {
             ? context.christchurchScan.progress.pages.length
             : Math.max(1, records.reduce((sum, record) => sum + (record.networkRequestCount ?? 0), 0));
           if (productionCanary && counters.requests > effectiveBounds.maxRequests) {
-            throw new AdapterError("PARSING_ERROR", `${sourceId} exceeded the bounded public-pilot request limit`, false);
+            throw new AdapterError("REQUEST_BUDGET_EXHAUSTED", `${sourceId} exceeded the bounded public-pilot request limit`, false);
           }
           counters.requestsAvoided += records.reduce((sum, record) => sum + (record.networkRequestsAvoided ?? 0), 0);
           for (const record of records) {

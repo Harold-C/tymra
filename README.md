@@ -298,6 +298,19 @@ HTTPS verification endpoint, site key and provider secret. After configuring the
 intentionally invalid token and passes only when the provider rejects it. The command never prints the
 secret or subject hash.
 
+### Recovery of existing paused public plans
+
+The seven public sources diagnosed on 2026-10-06 use `schedule:public:recovery-prepare`,
+`schedule:public:recovery-trial`, and `schedule:public:recovery-enable`, each with
+`--source <key> --revision <40-character deployed revision> --confirm RESTORE_PUBLIC_SCHEDULE`.
+Preparation preserves the existing plan and failure history, sets a fixed revision checkpoint,
+and leaves automatic scheduling paused. Trials run serially with the exact current plan payload
+and one attempt. Enablement requires the latest two complete trials, retained evidence and verified
+browser delivery. Eventfinda and Ticketmaster keep their existing daily progress definitions;
+retired weekly definitions are not recreated. QueenstownNZ, Southland and Wellington Airport need
+two requests per trial; Queenstown Airport needs six serial requests and a twelve-request daily
+source budget for two acceptance passes. Normal weekly batches remain bounded to six requests.
+
 The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `pnpm cli release:preflight --sources <key>` and
 `pnpm cli release:canary-plan --sources <key>` before any canary. `pnpm cli release:canary-run` requires exactly one source,
 `--confirm RUN_BOUNDED_CANARY`, performs two passes and caps `--limit` at 2. Any stop condition requires

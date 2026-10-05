@@ -26,6 +26,11 @@ import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, 
 import { withRedisLockWait } from "@tymra/queue";
 
 const pollDelayMs = 1_000;
+const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"]);
+
+function publicQueueDeadline(environment: Environment, submittedAt: Date) {
+  return new Date(submittedAt.getTime() + (environment.ARGUS_PUBLIC_QUEUE_TIMEOUT_MS ?? 3_600_000));
+}
 
 type DurableCaptureContext = {
   parentJobId: string;
@@ -90,13 +95,15 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
         workflowId: input.workflowId,
         requestedUrl: input.url,
         status: submission.job.status === "RUNNING" ? "RUNNING" : "SUBMITTED",
-        deadlineAt: new Date(Date.now() + environment.ARGUS_JOB_POLL_TIMEOUT_MS),
+        deadlineAt: queueAwarePublicConnectors.has(input.connectorId)
+          ? publicQueueDeadline(environment, new Date())
+          : new Date(Date.now() + environment.ARGUS_JOB_POLL_TIMEOUT_MS),
       },
       update: {},
     });
   }
 
-  if ((execution.status === "COMPLETED" || execution.status === "FAILED") && execution.result) {
+  if ((execution.status === "COMPLETED" || execution.status === "FAILED") && execution.result && execution.errorCategory !== "TIMEOUT") {
     return mapArgusJobResult(execution.result as unknown as ArgusJobResult, input, environment);
   }
   if (execution.status === "FAILED" || execution.status === "CANCELLED") {
@@ -107,7 +114,7 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
     };
   }
   const boundedCapture = environment.NODE_ENV === "production" && ACTIVE_OTA_SOURCE_KEYS.some((key) => input.connectorId === `${key}-public`);
-  if (execution.deadlineAt <= new Date() && !boundedCapture) {
+  if (execution.deadlineAt <= new Date() && !boundedCapture && !queueAwarePublicConnectors.has(input.connectorId)) {
     await cancelArgusJob(environment, execution.argusJobId);
     await prisma.argusExecution.update({
       where: { id: execution.id },
@@ -133,7 +140,7 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
   });
   throw new DeferredJobError(
     `Waiting for Argus job ${execution.argusJobId}`,
-    boundedCapture && execution.deadlineAt <= new Date() ? new Date(Date.now() + 30_000) : execution.deadlineAt,
+    (boundedCapture || queueAwarePublicConnectors.has(input.connectorId)) && execution.deadlineAt <= new Date() ? new Date(Date.now() + 30_000) : execution.deadlineAt,
   );
 }
 
@@ -162,7 +169,8 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   }
 
   const parent = await prisma.job.findUnique({ where: { id: execution.parentJobId }, select: { status: true, payload: true } });
-  if (!parent || parent.status === "CANCELLED") {
+  const queueAware = queueAwarePublicConnectors.has(execution.connectorId);
+  if ((!parent || parent.status === "CANCELLED") && !queueAware) {
     await cancelArgusJob(environment, execution.argusJobId);
     await settleCancelledCollectionRun(execution.parentJobId);
     await prisma.argusExecution.update({
@@ -176,7 +184,7 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     catch { throw new DeferredJobError("Bounded OTA cancellation is not yet confirmed", new Date(Date.now() + 30_000)); }
     const released = await getArgusJob(environment, execution.argusJobId);
     if (!released.ok || !isTerminalArgusJobStatus(released.job.status)) throw new DeferredJobError("Waiting for bounded OTA shared-session release", new Date(Date.now() + 30_000));
-  } else if (execution.deadlineAt <= new Date()) {
+  } else if (execution.deadlineAt <= new Date() && !queueAware) {
     await cancelArgusJob(environment, execution.argusJobId);
     await prisma.argusExecution.update({
       where: { id: execution.id },
@@ -195,6 +203,11 @@ export async function pollArgusExecution(environment: Environment, executionId: 
 
   const statusResponse = await getArgusJob(environment, execution.argusJobId);
   if (!statusResponse.ok) {
+    if (queueAware && (execution.deadlineAt <= new Date() || execution.status === "CANCEL_REQUESTED")) {
+      await prisma.argusExecution.update({ where: { id: execution.id }, data: { status: "CANCEL_REQUESTED", errorCategory: "TIMEOUT", errorMessage: execution.errorMessage ?? "Argus public deadline expired; cancellation pending", lastPolledAt: new Date() } });
+      try { await cancelArgusJob(environment, execution.argusJobId, true); } catch { /* Retry confirmation without submitting another capture. */ }
+      throw new DeferredJobError("Waiting for public capture cancellation confirmation", new Date(Date.now() + 30_000));
+    }
     await prisma.argusExecution.update({
       where: { id: execution.id },
       data: {
@@ -208,6 +221,29 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   }
 
   const remoteStatus = statusResponse.job.status;
+  let deadlineAt = execution.deadlineAt;
+  if (queueAware && !isTerminalArgusJobStatus(remoteStatus)) {
+    const startedAt = Date.parse(statusResponse.job.started_at ?? "");
+    const queueDeadline = publicQueueDeadline(environment, execution.submittedAt);
+    deadlineAt = Number.isFinite(startedAt) && startedAt <= queueDeadline.getTime()
+      ? new Date(Math.min(startedAt + environment.ARGUS_JOB_POLL_TIMEOUT_MS, queueDeadline.getTime() + environment.ARGUS_JOB_POLL_TIMEOUT_MS))
+      : queueDeadline;
+    if (deadlineAt <= new Date() || execution.status === "CANCEL_REQUESTED" || !parent || parent.status === "CANCELLED") {
+      const parentCancelled = !parent || parent.status === "CANCELLED";
+      const message = parentCancelled ? "Parent collection was cancelled" : Number.isFinite(startedAt) && startedAt <= queueDeadline.getTime() ? "Argus public execution timed out" : "Argus public queue waiting timed out";
+      await prisma.argusExecution.update({ where: { id: execution.id }, data: { status: "CANCEL_REQUESTED", deadlineAt, errorCategory: parentCancelled ? "CANCELLED" : "TIMEOUT", errorMessage: message, lastPolledAt: new Date() } });
+      try { await cancelArgusJob(environment, execution.argusJobId, true); }
+      catch { throw new DeferredJobError("Public capture cancellation is not yet accepted", new Date(Date.now() + 30_000)); }
+      const released = await getArgusJob(environment, execution.argusJobId);
+      if (!released.ok || !isTerminalArgusJobStatus(released.job.status)) {
+        throw new DeferredJobError("Waiting for this public capture to release its own session", new Date(Date.now() + 30_000));
+      }
+      await prisma.argusExecution.update({ where: { id: execution.id }, data: { status: parentCancelled ? "CANCELLED" : "FAILED", deadlineAt, errorCategory: parentCancelled ? "CANCELLED" : "TIMEOUT", errorMessage: message, retryable: !parentCancelled, lastPolledAt: new Date(), completedAt: new Date() } });
+      await settleCancelledCollectionRun(execution.parentJobId);
+      await wakeParent(execution.parentJobId);
+      return;
+    }
+  }
   if (!isTerminalArgusJobStatus(remoteStatus)) {
     const waitingForManual = remoteStatus === "WAITING_FOR_MANUAL";
     const action = statusResponse.job.operator_action;
@@ -231,7 +267,8 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     await prisma.argusExecution.update({
       where: { id: execution.id },
       data: {
-        status: waitingForManual ? "WAITING_FOR_MANUAL" : remoteStatus === "CANCEL_REQUESTED" ? "CANCEL_REQUESTED" : "RUNNING",
+        status: waitingForManual ? "WAITING_FOR_MANUAL" : remoteStatus === "CANCEL_REQUESTED" ? "CANCEL_REQUESTED" : queueAware && remoteStatus === "QUEUED" ? "SUBMITTED" : "RUNNING",
+        ...(queueAware ? { deadlineAt } : {}),
         ...(waitingForManual ? { result: statusResponse.job as unknown as Prisma.InputJsonValue } : {}),
         lastPolledAt: new Date(),
         errorCategory: execution.errorCategory === "ACCESS_CHALLENGE" ? "ACCESS_CHALLENGE" : null,
@@ -239,12 +276,13 @@ export async function pollArgusExecution(environment: Environment, executionId: 
         retryable: execution.errorCategory === "ACCESS_CHALLENGE" ? false : null,
       },
     });
-    throw new DeferredJobError(`Argus job ${execution.argusJobId} is ${remoteStatus}`, nextPoll(execution.deadlineAt));
+    throw new DeferredJobError(`Argus job ${execution.argusJobId} is ${remoteStatus}`,
+      queueAware && remoteStatus === "QUEUED" ? new Date(Math.min(deadlineAt.getTime(), Date.now() + 30_000)) : nextPoll(deadlineAt));
   }
 
   const resultResponse = await getArgusJobResult(environment, execution.argusJobId);
   if (!resultResponse.ok) {
-    throw new DeferredJobError(resultResponse.message, nextPoll(execution.deadlineAt));
+    throw new DeferredJobError(resultResponse.message, queueAware && execution.deadlineAt <= new Date() ? new Date(Date.now() + 30_000) : nextPoll(execution.deadlineAt));
   }
   const job = resultResponse.job;
   const terminalStatus = job.status === "CANCELLED"
@@ -259,10 +297,10 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   await prisma.argusExecution.update({
     where: { id: execution.id },
     data: {
-      status: terminalStatus,
+      status: queueAware && execution.errorCategory === "TIMEOUT" ? "FAILED" : terminalStatus,
       result: job as unknown as Prisma.InputJsonValue,
-      errorCategory: execution.errorCategory === "ACCESS_CHALLENGE" ? "ACCESS_CHALLENGE" : job.error?.category ?? safeItemCategory,
-      errorMessage: execution.errorCategory === "ACCESS_CHALLENGE" ? "Bounded public OTA challenge cancelled and session released" : job.error?.message ?? null,
+      errorCategory: queueAware && execution.errorCategory === "TIMEOUT" ? "TIMEOUT" : execution.errorCategory === "ACCESS_CHALLENGE" ? "ACCESS_CHALLENGE" : job.error?.category ?? safeItemCategory,
+      errorMessage: queueAware && execution.errorCategory === "TIMEOUT" ? execution.errorMessage : execution.errorCategory === "ACCESS_CHALLENGE" ? "Bounded public OTA challenge cancelled and session released" : job.error?.message ?? null,
       retryable: job.error?.retryable ?? matchingItem?.result?.error?.retryable ?? null,
       lastPolledAt: new Date(),
       completedAt: new Date(),

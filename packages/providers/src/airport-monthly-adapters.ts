@@ -73,6 +73,7 @@ class WellingtonAirportMonthlyAdapter implements PublicDataAdapter {
   async discover(): Promise<string[]> { return [WELLINGTON_AIRPORT_TRAFFIC_URL]; }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
+    if (context.collectionLimits && context.collectionLimits.maxRequests < 2) throw new AdapterError("REQUEST_BUDGET_EXHAUSTED", "Wellington Airport page and workbook require two requests", false);
     const page = await fetch(reference, { headers: requestHeaders("text/html,application/xhtml+xml"), signal: context.signal ?? AbortSignal.timeout(30_000) });
     if (!page.ok) throw sourceError(`traffic page returned HTTP ${page.status}`, page.status);
     const html = await boundedText(page, context.collectionLimits?.maxBytes ?? 5_000_000);

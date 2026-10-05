@@ -143,6 +143,56 @@ afterEach(async () => {
 });
 
 describe("durable Argus orchestration", () => {
+  it.each(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"])("allows %s to wait in the shared queue beyond its execution timeout", async (connectorId) => {
+    const submittedAt = new Date(Date.now() - 240_000);
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId, submittedAt, deadlineAt: new Date(submittedAt.getTime() + 180_000) });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "QUEUED", started_at: null } });
+    await expect(pollArgusExecution(environment, "execution-1")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.executionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "SUBMITTED", deadlineAt: new Date(submittedAt.getTime() + 3_600_000) }) }));
+  });
+
+  it("derives the execution deadline from Argus start time without extending it on each poll", async () => {
+    const started = new Date(Date.now() - 60_000);
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "eventfinda-public", submittedAt: new Date(Date.now() - 300_000) });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "RUNNING", started_at: started.toISOString() } });
+    for (let i = 0; i < 2; i++) await expect(pollArgusExecution(environment, "execution-1")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.executionUpdate.mock.calls.map(([value]) => value.data.deadlineAt)).toEqual([new Date(started.getTime() + 180_000), new Date(started.getTime() + 180_000)]);
+  });
+
+  it.each(["queue", "execution", "late-start"])("cancels only the expired public capture and confirms release: %s", async (phase) => {
+    const submittedAt = new Date(Date.now() - (phase === "execution" ? 500_000 : 3_700_000));
+    const started_at = phase === "queue" ? null : new Date(Date.now() - (phase === "execution" ? 240_000 : 1_000)).toISOString();
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "ticketmaster-public", submittedAt });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: phase === "queue" ? "QUEUED" : "RUNNING", started_at } }).mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: "CANCELLED" } });
+    await pollArgusExecution(environment, "execution-1");
+    expect(mocks.cancel).toHaveBeenCalledWith(environment, "argus-1", true);
+    expect(mocks.executionUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({ status: "FAILED", errorCategory: "TIMEOUT" });
+    expect(mocks.parentUpdateMany).toHaveBeenCalled();
+  });
+
+  it("does not retry an expired public poll immediately when cancellation is unconfirmed", async () => {
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "sporty-school-sport-public", submittedAt: new Date(Date.now() - 3_700_000), deadlineAt: new Date(Date.now() - 1_000) });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValue({ ok: false, httpStatus: 503, message: "unavailable" });
+    await expect(pollArgusExecution(environment, "execution-1")).rejects.toSatisfy((error: DeferredJobError) => error.resumeAt.getTime() > Date.now() + 20_000);
+    expect(mocks.cancel).toHaveBeenCalledWith(environment, "argus-1", true);
+    expect(mocks.parentUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("retains a public timeout when its cancellation becomes terminal", async () => {
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "eventfinda-public", submittedAt: new Date(), status: "CANCEL_REQUESTED", errorCategory: "TIMEOUT", errorMessage: "queue deadline expired" });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING" });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "CANCELLED" } });
+    mocks.getResult.mockResolvedValue({ ok: true, job: { ...completedJob(), status: "CANCELLED" } });
+    await pollArgusExecution(environment, "execution-1");
+    expect(mocks.executionUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({ status: "FAILED", errorCategory: "TIMEOUT", errorMessage: "queue deadline expired" });
+  });
+
   it("does not apply the production daily budget to explicit development captures", async () => {
     mocks.executionFind.mockResolvedValue(null);
     mocks.executionCount.mockResolvedValue(1000);

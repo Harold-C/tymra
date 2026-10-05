@@ -84,6 +84,7 @@ class QueenstownNzEventsAdapter implements PublicDataAdapter {
   async discover(): Promise<string[]> { return [QUEENSTOWN_EVENTS_URL]; }
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
     assertHost(reference, this.metadata.supportedDomains);
+    if (context.collectionLimits && context.collectionLimits.maxRequests < 2) throw new AdapterError("REQUEST_BUDGET_EXHAUSTED", "QueenstownNZ discovery and data require two requests", false);
     const maxRequests = Math.max(2, context.collectionLimits?.maxRequests ?? 3);
     const maxRecords = context.collectionLimits?.maxRecords ?? 500;
     const landing = await sourceFetch(reference, context, "text/html,application/xhtml+xml");
@@ -148,6 +149,7 @@ class SouthlandNzEventsAdapter implements PublicDataAdapter {
   async discover(): Promise<string[]> { return [SOUTHLAND_EVENTS_URL]; }
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
     assertHost(reference, this.metadata.supportedDomains);
+    if (context.collectionLimits && context.collectionLimits.maxRequests < 2) throw new AdapterError("REQUEST_BUDGET_EXHAUSTED", "Great South token and data require two requests", false);
     const maxRequests = Math.max(2, context.collectionLimits?.maxRequests ?? 3);
     const maxRecords = context.collectionLimits?.maxRecords ?? 500;
     const tokenResponse = await sourceFetch(new URL("/plugins/core/get_simple_token/", reference).href, context, "text/plain");

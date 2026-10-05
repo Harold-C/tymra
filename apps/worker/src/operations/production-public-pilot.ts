@@ -44,6 +44,8 @@ export function publicPilotRange(sourceId: string, now: Date) {
 }
 
 export function publicPilotRequestLimit(sourceId: string) {
+  if (sourceId === "queenstown_airport_monthly") return 6;
+  if (["queenstownnz_events", "southlandnz_events", "wellington_airport_monthly"].includes(sourceId)) return 2;
   if (sourceId === "ski_seasons_nz") return 3;
   if (["rto_calendars", "christchurch_sports", "christchurch_council_events", "council_calendars", "canterbury_major_annual_events"].includes(sourceId)) return 3;
   if (["christchurch_cruise", "metservice", "venues_otautahi_events"].includes(sourceId) || argusPublicMarketSource(sourceId)?.kind === "venue") return 2;

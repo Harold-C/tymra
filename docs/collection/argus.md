@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-10-05 (bounded public OTA production contract and expiring manual diagnostics)
+Last updated: 2026-10-06 (bounded public queue wait and execution deadlines)
 
 ## Bounded OTA production pilots
 
@@ -101,14 +101,20 @@ ARGUS_API_BASE_URL=https://api.argus.test
 ARGUS_API_TOKEN=<the same independent random token configured in Argus>
 ARGUS_TIMEOUT_MS=60000
 ARGUS_JOB_POLL_TIMEOUT_MS=180000
+ARGUS_PUBLIC_QUEUE_TIMEOUT_MS=3600000
 ARGUS_EVIDENCE_ROOT=./data/argus-evidence
 MKCERT_ROOT_CA_PATH=<the rootCA.pem below `mkcert -CAROOT`>
 ```
 
 The token must contain at least 32 characters and include the Argus Job and `evidence:read` scopes.
 Do not reuse `CRON_SECRET` or another application secret.
-`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. `ARGUS_JOB_POLL_TIMEOUT_MS` separately
-covers queueing plus execution and must be greater than the capture deadline.
+`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. For Eventfinda, Ticketmaster and
+Sporty School Sport durable Jobs, `ARGUS_PUBLIC_QUEUE_TIMEOUT_MS` bounds queue waiting separately
+(default one hour, configurable from ten minutes to six hours). Queued status checks are thirty
+seconds apart. Once Argus reports its persisted `started_at`, `ARGUS_JOB_POLL_TIMEOUT_MS` bounds
+execution from that immutable time and must exceed the capture deadline. Repeated polling and
+Worker restarts do not extend execution time. Other connectors, including OTA, retain their existing
+submission-to-result deadline. Shared Argus concurrency and private sessions are unchanged.
 
 ## Durable execution state
 
@@ -120,8 +126,9 @@ covers queueing plus execution and must be greater than the capture deadline.
   attempts rather than status checks.
 - Cancelling the parked parent causes the poller to call `DELETE /v1/jobs/{jobId}`. The local parent
   remains authoritative even if that best-effort network request fails.
-- A polling deadline marks the execution failed with `TIMEOUT`, requests remote cancellation and
-  wakes the parent so normal source failure handling can finish the `CollectionRun`.
+- A polling deadline requests cancellation of this execution. The three queue-aware public
+  connectors confirm terminal release before waking the parent with `TIMEOUT`; pending cancellation
+  is checked after thirty seconds. Normal source failure handling then finishes the `CollectionRun`.
 
 Direct browser CLI calls without a database Job retain the synchronous compatibility path. Scheduled
 and manually queued browser captures, including Eventfinda listings/details, Ticketmaster

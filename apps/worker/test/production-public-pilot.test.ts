@@ -8,6 +8,11 @@ import { isArgusPilotEvidencePath, isLegacyChristchurchCouncilDirectPilot, isLeg
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("direct-public production pilot", () => {
+  it("bounds multi-step native collectors by the requests they actually require", () => {
+    for (const source of ["queenstownnz_events", "southlandnz_events", "wellington_airport_monthly"]) expect(publicPilotRequestLimit(source)).toBe(2);
+    expect(publicPilotRequestLimit("queenstown_airport_monthly")).toBe(6);
+    expect(publicPilotRequestLimit("public_holidays_nz")).toBe(1);
+  });
   it("accepts distinct MetService alerts from one feed only with matching hashed source evidence", () => {
     const hashed = (payload: unknown) => ({ payload, contentHash: createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex") });
     const urls = ["https://alerts.metservice.com/a.xml", "https://alerts.metservice.com/b.xml"];

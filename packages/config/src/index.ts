@@ -25,6 +25,7 @@ export const environmentSchema = z
     ARGUS_API_TOKEN: z.string().min(32),
     ARGUS_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(60_000).default(60_000),
     ARGUS_JOB_POLL_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(600_000).default(180_000),
+    ARGUS_PUBLIC_QUEUE_TIMEOUT_MS: z.coerce.number().int().min(600_000).max(21_600_000).default(3_600_000),
     ARGUS_EVIDENCE_ROOT: z.string().min(1).default("/argus-evidence"),
     EVENTFINDA_MIN_DELAY_MS: z.coerce.number().int().min(2_000).max(30_000).default(12_000),
     EVENTFINDA_DELAY_JITTER_MS: z.coerce.number().int().min(0).max(10_000).default(6_000),

@@ -1,8 +1,66 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (Agoda production automatic schedule enabled; all six OTA plans healthy and enabled; first natural schedule cycle not yet observed)
+Last updated: 2026-10-06 (seven paused public source repairs validated locally; production release and recovery acceptance pending)
 
-## 2026-10-06 Agoda 自动计划已启用，六个 OTA 计划开启
+## 2026-10-06 七个暂停公开来源修复与恢复验收（进行中）
+
+用户授权必要本地调试、调整有界限制并恢复生产。候选只修改 Tymra：Eventfinda、
+Ticketmaster、Sporty School Sport 分别约束排队及实际执行；默认排队一小时，每
+三十秒检查一次，开始后仍按 Argus 的固定 started_at 计算原三分钟执行期限。
+超时仅取消本任务并确认终止；共享并发、Synix 私有执行及 OTA 原规则保持。
+
+QueenstownNZ／Southland 活动及 Wellington 月报的最小请求合同修正为两次，
+Queenstown 月报为六次；不足额度在请求前拒绝，分类为 REQUEST_BUDGET_EXHAUSTED。
+本地取得当前 Queenstown Power BI 模型，确认查询已转到 PBIR explorationDocument；
+新增字段／筛选绑定、按响应 descriptor 选择矩阵及月份字典映射，保留国内／国际
+和总量一致性检查，不给尚未公布的月份补零。三项查询串行执行。
+四个直连来源本地实抓分别通过：活动各两条、机场月报各两条，实际请求数 2／2／2／6。
+
+新增限定这七来源的 recovery prepare／trial／enable CLI。修复版本起点固定，旧
+失败不改写；复验使用原计划精确 payload、一次尝试、串行执行。最近两次完整
+成功及证据／浏览器交付通过后才恢复原定义，不重建已删除周计划。Queenstown
+月报来源每日预算至少十二次以容纳两个六请求验收批次；自动周计划仍每批六次。
+当前已通过 lint、完整类型检查、244 项 Web／域模型及 399 项 Worker 单元检查；
+独立测试数据库中的八项恢复门槛与完整 131 项数据库／API／Worker 集成检查通过，
+六条既有条件跳过保留。固定镜像、生产备份实际恢复、生产复验及最终启用尚待完成。过程收据沿用
+`runtime/release-candidates/public-recovery-20261006`，实际生产结论以本节后续读回为准。
+
+## 2026-10-06 退役周计划删除与七个暂停公开来源复核（上轮诊断记录）
+
+用户明确要求删除已被每日进度计划替代的两条周定义，并检查七个暂停来源。
+已仅删除 `pilot-public-eventfinda-weekly`、`pilot-public-ticketmaster-weekly`；
+每日定义保留。数据库没有指向 ScheduleDefinition 的外键，旧父 Job、Run、
+Execution、原始证据及业务历史均保留。精确行备份和恢复 SQL 位于生产受保护目录
+`/srv/apps/tymra/backups/retired-public-schedules-20261006`；目录权限 0700、文件
+0600。删除前后所有其他计划逐行匹配，来源及九张历史／业务表摘要保持；恢复行
+通过当前数据库类型转换读回验证，未执行生产恢复写入。
+
+计划表从 86 条减为 84 条：71 条公开与六条 OTA 计划启用、七条现行公开计划
+暂停。全部启用定义保留 nextRunAt；Scheduler 正常运行，高频计划仍关闭。
+
+| 暂停来源 | 最近失败与核实原因 | 尚需处理 |
+| --- | --- | --- |
+| Eventfinda | 10 月 2 日 UTC 全国第一页成功，续页 `/page/18` 的 Argus Job 未开始即被取消；attempts=0、started_at=null，Tymra 从提交开始计算的 180 秒轮询期限先耗尽 | 协调共享排队与执行期限，恢复受限进度复验 |
+| Ticketmaster | 9 月 29 日 UTC 奥克兰列表任务未开始即被取消；attempts=0、started_at=null，同一轮询等待期限问题 | 同上；这次没有访问来源页面，不能据此判为登录或限流 |
+| School Sport NZ | 10 月 3 日 UTC Sporty 列表任务未开始即被取消；attempts=0、started_at=null，同一轮询等待期限问题 | 同上，保留 Christchurch 范围及私有执行隔离 |
+| QueenstownNZ 活动 | 10 月 3 日 UTC 适配器返回后计数为两次请求，周 pilot 只允许一次，内部守卫抛出 PARSING_ERROR | 首页加公开数据接口必须纳入同一有界请求合同 |
+| Southland 活动 | 10 月 3 日 UTC 获取公开 token 加数据接口为两次请求，周 pilot 只允许一次，同一内部守卫失败 | 统一适配器与计划的最小请求数，保留分页上限 |
+| Wellington 机场月报 | 10 月 3 日 UTC 页面发现加工作簿下载为两次请求，周 pilot 只允许一次，同一内部守卫失败 | 纳入两次必要请求；月报仍按历史趋势背景使用 |
+| Queenstown 机场月报 | 10 月 3 日 UTC Power BI 模型返回后找不到解析器预期的国内／国际／总量查询；当前代码依赖固定 Pax Numbers 页名和查询字段 | 失败响应未保存，具体结构差异未核实；正常链路需要六次请求，周 pilot 也只给一次，恢复解析后仍会触发额度冲突 |
+
+上述三项超时的 Argus 记录分别为 `job_e6259aeaceec25a3808ba9dc2b29ecc5`、
+`job_9c53875bffb96224a9bcf03415706be0`、`job_a7e577263995919a802a4b638d9115f0`。
+三者均为 CANCELLED、零执行尝试、无页面结果；不能把排队超时解释为网站挑战。
+三个请求额度冲突发生在原始记录落库之前，所以该次失败没有保存响应，亦不能
+简单归为来源页面解析损坏。Queenstown 机场的模型发现失败需要额外响应证据，
+不根据旧成功记录宣称当前外部结构已确认。
+
+七来源均 enabled=false、lifecycle=SUSPENDED，旧 HEALTHY 字段不能表示正在
+采集。现行失败处理会关闭相应计划与来源，本次没有恢复它们、追加外部抓取、
+修改采集代码或重启 Argus／Synix。删除、诊断、三项 Argus Job 读回及最终核对
+收据沿用 `runtime/release-candidates/agoda-version-20261006-v2`。
+
+## 2026-10-06 Agoda 自动计划已启用，六个 OTA 计划开启（上轮记录）
 
 用户在下节双轮生产复测通过后明确要求开启 Agoda 自动计划，继续执行独立修复版本
 验收窗口方案。候选新增 `ota:production:acceptance-version`，必须显式指明前一个

@@ -220,6 +220,7 @@ type ArgusCaptureResult = {
 export type ArgusJobSummary = {
   job_id: string;
   status: "QUEUED" | "RUNNING" | "WAITING_FOR_MANUAL" | "COMPLETED" | "COMPLETED_WITH_WARNINGS" | "FAILED" | "CANCEL_REQUESTED" | "CANCELLED";
+  started_at?: string | null;
   operator_action?: {
     required: true;
     type: "novnc_handoff";
