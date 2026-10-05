@@ -13,19 +13,19 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("OTA discovery request contract", () => {
-  it.each(["trip", "booking"])("uses the original discovery stay only for Trip dated physical-unit resolution (%s)", async (key) => {
+  it.each(["trip", "agoda", "booking"])("uses the original stay for dated room providers and keeps Booking dateless (%s)", async (key) => {
     const source = { id: "source", key, enabled: true };
     mock.sources.mockResolvedValue([source]);
     mock.target.mockResolvedValue([{ id: "target", dataSourceId: source.id, dataSource: source, url: otaDiscoveryUrlForSource(key, "Canterbury, New Zealand"), metadata: { query: "Canterbury, New Zealand", regionKey: "canterbury" } }]);
     mock.listing.mockResolvedValue(null);
-    const candidate = { provider: key, ...(key === "trip" ? { providerBrand: "TRIP_COM", providerFamily: "TRIP_COM" } : {}), sourceListingId: "hotel", providerPropertyId: "hotel", canonicalUrl: key === "trip" ? "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/" : "https://www.booking.com/hotel/nz/fixture.html", canonicalName: "Fixture hotel", address: null, city: "Christchurch", region: "Canterbury", territorialAuthority: null, postcode: null, countryCode: "NZ", latitude: null, longitude: null, propertyType: "Hotel", units: [{ externalId: "summary", officialName: "Search summary", unitType: "Search summary (not sellable)", capacity: null, bedrooms: null, bathrooms: null, bedTypes: [], amenities: [], entireOrShared: "PRIVATE" }], observedAt: "2026-09-30T12:00:00Z", fieldSources: {}, warnings: [], quality: "partial" };
+    const candidate = { provider: key, ...(key === "trip" ? { providerBrand: "TRIP_COM", providerFamily: "TRIP_COM" } : {}), sourceListingId: "hotel", providerPropertyId: "hotel", canonicalUrl: key === "trip" ? "https://nz.trip.com/hotels/christchurch-hotel-detail-123/fixture/" : key === "agoda" ? "https://www.agoda.com/fixture/hotel/christchurch-nz.html" : "https://www.booking.com/hotel/nz/fixture.html", canonicalName: "Fixture hotel", address: null, city: "Christchurch", region: "Canterbury", territorialAuthority: null, postcode: null, countryCode: "NZ", latitude: null, longitude: null, propertyType: "Hotel", units: [{ externalId: "summary", officialName: "Search summary", unitType: "Search summary (not sellable)", capacity: null, bedrooms: null, bathrooms: null, bedTypes: [], amenities: [], entireOrShared: "PRIVATE" }], observedAt: "2026-09-30T12:00:00Z", fieldSources: {}, warnings: [], quality: "partial" };
     mock.capture.mockResolvedValueOnce({ ok: true, payload: { status: "success", extracted: { data_schema: "ota-public.discover_listings", schema_version: "1.0.0", provider: key, query: "Canterbury, New Zealand", listings: [candidate], observedAt: candidate.observedAt, warnings: [], quality: "partial" } } }).mockRejectedValueOnce(new DeferredJobError("Waiting for detail", new Date()));
     const service = new WorkerService({ NODE_ENV: "production" } as Environment);
     Object.assign(service, { persistArgusEvidence: vi.fn() });
     await expect(service.refreshCatalog("new-zealand", "job", { sourceId: source.id })).rejects.toBeInstanceOf(DeferredJobError);
     const detail = mock.capture.mock.lastCall?.[1];
     expect(detail).toMatchObject({ connectorId: `${key}-public`, workflowId: "resolve_listing", maxRecords: 1 });
-    if (key === "trip") expect(detail.identityStay).toEqual({ checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
+    if (["trip", "agoda"].includes(key)) expect(detail.identityStay).toEqual({ checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
     else expect(detail.identityStay).toBeUndefined();
   });
   it.each(["PARSING_ERROR", "RATE_LIMITED", "TIMEOUT", "CAPTCHA_REQUIRED"])("keeps %s evidence without labelling every failed capture a parser failure", async (category) => {

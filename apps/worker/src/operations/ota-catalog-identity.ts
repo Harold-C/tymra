@@ -7,6 +7,13 @@ type Identity = z.infer<typeof otaListingIdentitySchema>;
 // cannot reuse details produced by the superseded parser.
 export const OTA_IDENTITY_PARSER_VERSION = "ota-public-identity-20261003";
 
+/** Pick the smallest physical unit that fits the bounded public stay. */
+export function selectBoundedOtaUnits(units: Identity["units"], adults: number): Identity["units"] {
+  return units.filter(unit => unit.capacity !== null && unit.capacity >= adults)
+    .sort((left, right) => left.capacity! - right.capacity!
+      || (left.externalId < right.externalId ? -1 : left.externalId > right.externalId ? 1 : 0)).slice(0, 1);
+}
+
 /** Public rental previews establish a source identity, never an exact-address match. */
 export function isSourceScopedRentalIdentity(identity: Identity): boolean {
   if (identity.address && identity.latitude !== null && identity.longitude !== null) return false;

@@ -194,7 +194,7 @@ import { evaluateOperationalAlerts } from "../operations/operational-alerts";
 import { discoverAndCollectAddressOtaComparables } from "./ota-pricing-orchestrator";
 import { publicOtaPrice } from "./ota-price";
 import { isProductionOtaPayload, otaIdentityRequiresDetail, otaSourceApproved } from "../operations/production-ota";
-import { isSourceScopedRentalIdentity, OTA_IDENTITY_PARSER_VERSION } from "../operations/ota-catalog-identity";
+import { isSourceScopedRentalIdentity, OTA_IDENTITY_PARSER_VERSION, selectBoundedOtaUnits } from "../operations/ota-catalog-identity";
 import { otaDiscoveryGeography, otaObservedRegion } from "../operations/ota-discovery-geography";
 
 export { publicOtaPrice } from "./ota-price";
@@ -3258,10 +3258,14 @@ export class WorkerService {
         for (let candidate of extraction.listings.slice(0, bounded ? 1 : 10)) {
           if (candidate.provider !== target.dataSource.key) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Discovery returned another provider", 422);
           const { observedAt: _observedAt, fieldSources: _fieldSources, ...identityInput } = candidate;
-          const parserVersion = candidate.provider === "agoda" ? `${OTA_IDENTITY_PARSER_VERSION}-agoda-city-2`
+          const identityStay = ["trip-public", "expedia-public", "agoda-public"].includes(connectorId)
+            ? { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const : undefined;
+          const parserVersion = candidate.provider === "agoda" ? `${OTA_IDENTITY_PARSER_VERSION}-agoda-dated-rooms-3`
+            : candidate.provider === "booking" ? `${OTA_IDENTITY_PARSER_VERSION}-booking-room-state-1`
             : candidate.provider === "trip" ? `${OTA_IDENTITY_PARSER_VERSION}-trip-city-1`
               : candidate.provider === "expedia" ? `${OTA_IDENTITY_PARSER_VERSION}-expedia-headline-1` : OTA_IDENTITY_PARSER_VERSION;
-          const inputHash = stableHash(JSON.stringify({ parserVersion, identity: identityInput }));
+          const inputHash = stableHash(JSON.stringify({ parserVersion, identity: identityInput,
+            ...(candidate.provider === "agoda" ? { identityStay } : {}) }));
           let resolvedAt: string | null = null;
           if (bounded && otaIdentityRequiresDetail(candidate)) {
             const existing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false, listingStatus: "ACTIVE" }, orderBy: { lastConfirmedAt: "desc" } });
@@ -3272,7 +3276,7 @@ export class WorkerService {
               resolvedAt = cache.resolvedAt;
             } else {
               const detailTrace = durableArgusTraceId(catalogJobId, connectorId, "resolve_listing", candidate.canonicalUrl);
-              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1, ...(["trip-public", "expedia-public"].includes(connectorId) ? { identityStay: { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const } : {}) }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
+              const detail = await captureBrowserTaskWithDurableArgus(this.environment, { traceId: detailTrace, connectorId, workflowId: "resolve_listing", url: candidate.canonicalUrl, maxRecords: 1, ...(identityStay ? { identityStay } : {}) }, { parentJobId: catalogJobId, collectionRunId: run.id, dataSourceId: target.dataSourceId });
               if (detail.ok) await this.persistArgusEvidence(target.dataSourceId, run.id, detail.payload, connectorId, candidate.canonicalUrl);
               if (!detail.ok || detail.payload.status !== "success") throw new WorkerRequestError(otaCollectionFailureCode(detail.ok ? { captureStatus: detail.payload.status, errorCategory: detail.payload.error?.category } : { httpStatus: detail.httpStatus }), detail.ok ? detail.payload.error?.message ?? "Listing resolution failed" : detail.message, 503);
               const resolved = otaResolveListingExtractionSchema.parse(detail.payload.extracted);
@@ -3290,7 +3294,8 @@ export class WorkerService {
           }
           const sourceScoped = isSourceScopedRentalIdentity(candidate);
           if (candidate.countryCode !== "NZ" || (!sourceScoped && (!candidate.address || candidate.latitude === null || candidate.longitude === null))) continue;
-          const units = candidate.units.filter((unit) => unit.capacity !== null && (!bounded || unit.capacity >= 2)).slice(0, bounded ? 1 : 50);
+          const units = bounded && candidate.provider === "agoda" ? selectBoundedOtaUnits(candidate.units, 2)
+            : candidate.units.filter(unit => unit.capacity !== null && (!bounded || unit.capacity >= 2)).slice(0, bounded ? 1 : 50);
           if (!units.length) continue;
           const existingListing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false }, select: { propertyId: true } });
           const nearby = existingListing || sourceScoped ? [] : await prisma.property.findMany({ where: { countryCode: "NZ", isDemo: false, status: "ACTIVE", mergedIntoId: null, latitude: { gte: candidate.latitude! - 0.001, lte: candidate.latitude! + 0.001 }, longitude: { gte: candidate.longitude! - 0.001, lte: candidate.longitude! + 0.001 } }, take: 20 });

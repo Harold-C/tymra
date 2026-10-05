@@ -1,6 +1,29 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-05 (three OTA schedules enabled; Expedia passed two production trials; repaired-version acceptance window and Booking entry fix being released)
+Last updated: 2026-10-05 (four OTA schedules enabled; repaired-version acceptance window deployed; Agoda and Booking production verification pending)
+
+## 2026-10-05 公开房型身份修复候选及最新生产诊断
+
+Argus `dca5cc0`／`argus-release-20261005-9` 已发布，完整源码 913 通过、固定镜像
+1,096 通过、各层零失败，配对恢复及运行／故障恢复通过。实际镜像
+`sha256:0580d13480c214f4c701cdaf82dcfdde8b922b90660f84bf5d53a88316844699`
+健康、重启零，保留 `7ecde96` 私有基线。最新快照用固定镜像在 ML Mini 隔离资源
+恢复，770 个 Job、2 账号、47,494 项文件及权限／属主匹配。最初本机恢复因
+Docker／磁盘故障未完成，没有计为通过；恢复后仅本轮遗留的隔离资源已清理。
+
+Agoda 第三轮 `cmuuwerbo0000rvcdab0osh7w` 的列表及报价区正常，但无日期详情
+缓存选中了 3 人家庭房，目标 2 人，报价被人数校验排除，未保存完整价格。
+Booking `cmuuwjgzf0000rvf8emhb4oqg` 搜索及详情成功，公开 `RoomDetails` 中
+房型 ID 对应真实最大人数；原解析只看可见 UI，容量未知，且 Coleridge Road
+误作城市，以 UNIT_IDENTITY_NOT_PUBLIC 结束。两父 Job 一次尝试，四次执行、
+八份证据、四次交付确认及 ACK 后 410 全部独立核验，原失败和证据保留。
+
+本轮候选按 Agoda 原入住日期解析实际可售房型，在缓存指纹中加入该日期，
+仅对 Agoda 有界采集选最小适配房型；Booking 更新公开绑定容量与道路城市判定。
+17 项 Tymra 定向检查和类型检查、15 项 Agoda 合同检查、Booking 新浏览器绑定
+检查通过。两份保留生产页面无网络重放得到 Agoda 三个 2 人房型与真实坐标，
+Booking Windwhistle 和容量 4／6；这不等于真实完整报价成功。完整最终候选门禁、
+发布与两个最新真实父 Job 的验收继续进行；四个已启用来源保持原计划。
 
 ## 2026-10-05 临时解除生产手动调试额度，推进六 OTA 上线
 
@@ -33,6 +56,7 @@ HTTPS 管理页／noindex、Worker readiness、Argus 调用方认证及最小权
 | Bookabach | `cmuumhw9l0000o243lf9mpuh9`、`cmuupkppz0000ph3as30e7d5f` | 108 | 2026-10-06 18:19 |
 | Airbnb | `cmuupnz9x0000ph5zhslv462d`、`cmuuprbjb0000ph880f2zxk95` | 299 | 2026-10-06 17:24 |
 | Trip | `cmuupzc1f0000phdpsz64624a`、`cmuuq61iz0000phggkt7jkjw3` | 107 | 2026-10-06 19:37 |
+| Expedia | `cmuur4kcd0000phm32h2jyhpb`、`cmuurbpuz0000phpdanf4o027` | 174 | 2026-10-06 19:27 |
 
 上表来源均通过正式启用 CLI。实际报价为 2026-10-12–13、2 成人、一单位、匿名，
 非演示、AVAILABLE／COMPLETE；每个新 Job 一次尝试、两到三次 Argus 执行。
@@ -46,31 +70,65 @@ Agoda Christchurch Job `cmuupu46x0000phbdhzwk76tk` 列表及必要详情成功�
 保留，来源恢复关闭，未伪造房源／报价。Argus 公开 Agoda 修复已通过 19 项隔离
 Chrome／合同检查、类型检查和原页面无外部请求离线重放；固定候选
 `33685d53f79ef8873d957ab23644a8823c5ba1bc`／`argus-release-20261005-5` 已 push，
-完整镜像门禁已通过；因新的 Booking 页面加载修复，最终公开候选将合并两项修复
-后重新冻结。尚未部署 Agoda 修复或取得修复后的生产成功。
+完整镜像门禁已通过；两项公开修复已合并为 `f45443a`／`argus-release-20261005-6`
+并完成发布。修复后 Agoda 的列表和详情身份已生产通过，完整报价仍有下述 UI 问题。
 
-共享 Argus 私有版本 `fc8c996`／`argus-release-20261005-4` 已由另一条授权工作发布，
-本轮独立核验实际运行镜像 `sha256:38f76992667398494ef230a9980528a61b4066e271f20f0771790508cb1d01ee`
-健康，调用方及共享任务空闲后才继续。启动守卫曾在私有发布短停期间拒绝操作，
-没有创建额外 Booking Job 或中断私有任务。最终公开候选继承该私有基线。
+共享 Argus 私有基线 `fc8c996`／`argus-release-20261005-4` 由另一条授权工作发布。
+本轮公开候选继承该实际基线，只在调用方及共享任务空闲时切换，现行运行
+`f45443a`，镜像 `sha256:84268d6b3b6460b4912c3785e5fa6cf25ad8272374077ba6629d2801816900e2`
+健康、重启零。完整门禁、固定导出和最新配对恢复通过：766 个 Job、2 个账号、
+47,001 项私有条目及权限／属主匹配。原环境／挂载、PostgreSQL／tunnel 保留，
+私有属主读取及公开客户端跨账号拒绝通过，Synix 应用未修改，无私有任务中断。
 
 Expedia `cmuur4kcd0000phm32h2jyhpb`、`cmuurbpuz0000phpdanf4o027` 均一次尝试
 完整成功，取得 `expedia:2755380` 的 2026-10-12–13、2 成人、一单位、匿名
 NZ$174 AVAILABLE／COMPLETE 报价，分别三次／两次执行、六份／四份证据。
 全部本地证据哈希、持久化交付及 ACK 后结果 410 独立通过，旧记录没有改写。
-启用仍被 9 月 30 日的历史解析失败标记挡住，当前计划未开启。
+最初启用被 9 月 30 日的历史解析失败标记挡住；按下述获准的固定修复验收窗口
+重新验收后，正式 CLI 已开启计划。30 天原始指标仍保留两项解析失败标记和
+33% 的历史解析失败率，新窗口为零解析失败；未修改旧 Job、Run、执行或证据。
 
 Booking `cmuuqzmrk0000phjrwe4u33zz` 一次尝试以 ACCESS_CHALLENGE 结束，
 实际保留的是 HTTP 202 空白页（blank_page），没有可见登录表单或验证码。
 两份证据及一次交付／ACK 通过，来源及计划关闭，冷却到 `2026-10-05T05:26:44Z`。
 隔离回归证明 commit 后的空白过渡页会令搜索被跳过，即使首页随后正常渲染；
 Argus 加入最多 20 秒、受总期限约束的首页就绪等待。真正 403／429／验证码仍停止，
-人工完成验证码后仅在原公开会话恢复搜索。测试不构成生产访问恢复证明。
+人工完成验证码后仅在原公开会话恢复搜索。后续生产首页已加载，完整工作流结果见下文。
+
+Agoda `cmuutlnw30000rv60uwe5xyt8` 复测列表和详情成功、房源入库，报价步骤 HTTP 200
+但只有酒店介绍和“VIEW THIS DEAL”控件，房型报价区未挂载，以 INTERNAL_ERROR／
+SOURCE_UNAVAILABLE 一次尝试结束，未保存完整报价。Booking
+`cmuutra7r0000rv8e6rg6aosa` 首页 HTTP 200、搜索表单已加载，但可选“登录享优惠”
+弹窗遮挡输入框，`destination-fill:failed`／NAVIGATION_ERROR；不是必须登录或
+验证码。共八份证据逐份哈希、四次持久化交付及 ACK 后结果 410 全部通过，旧记录
+不变，两来源及计划已自动关闭。Argus 追加明确房型跳转控件和命名可选弹窗关闭
+修复，64 项相关浏览器／解析合同检查及类型检查通过；Tag 9 发布与复测已完成，
+其最新结果见上节。
+后续固定候选为 `dca5cc086d83ef6672286736c388b91383563f34`／
+`argus-release-20261005-9`，
+[完整源码回归](https://github.com/Harold-C/argus/actions/runs/37270561494)已通过：
+913 通过、零失败，169 条 Chrome 条件入口已由固定镜像补验。候选继承独立私有
+`7ecde96` 发布代码，确认私有发布结束后在共享空闲及最新恢复通过时切换；
+相对此基线仅公开 UI、对应测试及状态文档变化。
 
 Harold 已明确批准修复版本的独立验收起点。Tymra 候选记录来源、首个精确父 Job、
 两端修复代码及授权时间，不自动移动起点；保留全部旧记录与 30 天历史指标，
 当前窗口继续要求零解析错误及原挑战／限流／空结果门槛，最新两个完整成功父 Job
-必须在窗口内。49 项定向检查及 Worker 类型检查通过，候选尚待完整发布门禁。
+必须在窗口内。49 项定向检查及 Worker 类型检查通过，功能候选
+`c8119952768c40e4fabf66ea6188429d7f37883c` 的
+[完整 CI](https://github.com/Harold-C/tymra/actions/runs/37265836406)通过：Web／域模型
+238 通过、5 条件入口跳过，Worker 363 通过，数据库集成 123 通过、6 条既有
+专用离线入口由此前独立验证覆盖，编译通过。实际生产镜像
+`sha256:9a97f342ba8f994eaf285d3dc4e6f5dc8b6d22b955bef4a4eb661695a64065c6`
+与固定源码、20 层 RootFS 及完整执行配置匹配，运行用户可读性通过。
+
+`/srv/apps/tymra/backups/ota-launch-20261005-window-predeploy` 用最终镜像隔离恢复
+并完成四应用切换，`2026-10-05T05:26:54Z` 读回中 80 张业务表、471 份证据和
+28 条已有交付确认完整保留，无新 migration。管理 HTTPS／noindex、Worker
+readiness、调用方及权限拒绝检查通过，数据库、Redis、共享入口及无关容器保留。
+Expedia 固定起点为 `2026-10-05T04:30:28.093Z` 的第一个完整父 Job，记录该次
+实际 Tymra `b7dd657`／Argus `fc8c996` 代码及授权时间，不将新门禁代码冒称为
+原采集版本。正式启用后共四条 OTA 计划，其他 71 条公开计划不变。
 Tymra 本轮未修改 Synix 私有实现、配置、Profile 或应用；六来源全部生产上线仍未完成。
 
 ## 2026-10-05 Bookabach 修复已发布，一次完整生产复测成功

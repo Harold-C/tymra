@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { otaListingIdentitySchema } from "@tymra/providers";
-import { isSourceScopedRentalIdentity } from "../src/operations/ota-catalog-identity";
+import { isSourceScopedRentalIdentity, selectBoundedOtaUnits } from "../src/operations/ota-catalog-identity";
 import { otaIdentityRequiresDetail } from "../src/operations/production-ota";
 import { otaDiscoveryGeography, otaObservedRegion } from "../src/operations/ota-discovery-geography";
 
@@ -15,6 +15,18 @@ function identity(provider: "airbnb" | "bookabach") {
       bedrooms: 2, bathrooms: 1, bedTypes: [], amenities: [], entireOrShared: "ENTIRE" }],
     observedAt: "2026-10-01T00:00:00.000Z", fieldSources: { units: "public physical unit summary" }, warnings: [], quality: "partial" });
 }
+
+it("selects a fitting physical unit consistently rather than the first larger room", () => {
+  const base = identity("airbnb").units[0]!;
+  const units = [{ ...base, externalId: "family", capacity: 3 }, { ...base, externalId: "unknown", capacity: null },
+    { ...base, externalId: "single", capacity: 1 }, { ...base, externalId: "twin", capacity: 2 },
+    { ...base, externalId: "queen", capacity: 2 }];
+  expect(selectBoundedOtaUnits(units, 2).map(unit => unit.externalId)).toEqual(["queen"]);
+  expect(selectBoundedOtaUnits([...units].reverse(), 2).map(unit => unit.externalId)).toEqual(["queen"]);
+  expect(selectBoundedOtaUnits(units, 3).map(unit => unit.externalId)).toEqual(["family"]);
+  expect(selectBoundedOtaUnits(units, 4)).toEqual([]);
+  expect(units[0]?.externalId).toBe("family");
+});
 
 it.each(["airbnb", "bookabach"] as const)("supports a stable %s source identity without manufacturing an exact address", provider => {
   const value = identity(provider);
