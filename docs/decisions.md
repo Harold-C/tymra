@@ -664,6 +664,13 @@ rolling 30-day metrics remain. No window is moved automatically, and the origina
 command still rejects an overwrite. Zero parser failures and two recent exact complete parents,
 durable local evidence and verified delivery/ACK remain mandatory.
 
+Unchanged detail identities may be reused by a fresh bounded discovery without changing their
+original observation time. Positive listing evidence also accepts an identity confirmed within
+seven days whose `productionOtaJobId` matches a completed positive national discovery run in the
+effective window. Failed, empty, incomplete or out-of-window runs and unassociated or expired
+identities cannot satisfy this path. Health and production enablement use the same source-scoped,
+non-demo query; original identity timestamps and historical metrics are retained.
+
 ## D-040 Treat Development Collection As Explicit Technical Validation
 
 **Status:** Implemented.

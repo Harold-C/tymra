@@ -9,7 +9,12 @@ Last updated: 2026-10-06 (Agoda automatic enablement authorised; linked version 
 固定父 Job；原 `productionOtaRepairAcceptance` 保持，后续版本只追加到
 `productionOtaRepairAcceptanceVersions`。拒绝缺失／错链的旧窗口、重复代码版本、
 倒退起点及未经显式版本操作的覆盖；健康、启用和预检使用同一最新窗口，原失败和
-30 天历史指标继续保留。43 项定向检查及 Worker 类型检查通过。
+30 天历史指标继续保留。独立窗口候选的完整 CI 已通过；隔离恢复保持 80 张业务表、
+525 份证据和 55 条已有交付确认。但正式启用发现详情缓存仍保留第六轮观察时间，
+原 positiveListingCount 查询误将第八／九轮成功发现判为零；未切换生产或启用计划。
+补充共用证据查询，只允许七天内的非演示身份通过本窗口成功发现的精确父 Job
+关联计入，拒绝失败、空结果、过期／不关联身份，保留原观察时间。56 项定向检查
+及 Worker 类型检查通过；更新候选需完成完整 CI、固定镜像和隔离启用验证。
 生产当前仍为 Tymra `f6ff386`、Argus `21310f8`；五个 OTA 自动计划和 71 条公开
 计划保持，Agoda 尚未启用。完成完整 CI、固定镜像、新鲜配对备份实际恢复及生产
 读回后，以第八轮 `cmuvlkn5f0000nznlsryt66pm` 冻结本次 Argus 修复版本的起点，

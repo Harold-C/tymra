@@ -139,6 +139,17 @@ describe("production OTA pilot acceptance", () => {
     expect(mock.source).toHaveBeenCalledWith({ where: { key: "booking" } });
     expect(mock.updateSource.mock.calls[0][0].where).toEqual({ id: source.id });
   });
+  it("uses the fresh discovery association for cached identities and rejects an unrelated association", async () => {
+    const runs = await mock.runs();
+    mock.runs.mockResolvedValue(runs.map((run: object) => ({ ...run, jobId: "job-1", createdAt: new Date(Date.now() - 30_000) })));
+    mock.listingCount.mockImplementation(query => query.where.OR?.some((branch: { OR?: { metadata: { equals: string } }[] }) =>
+      branch.OR?.some(link => link.metadata.equals === "job-1")) ? 1 : 0);
+    await enableProductionOtaSchedule("booking", "production");
+    expect(mock.updateSchedule).toHaveBeenCalledOnce();
+    mock.listingCount.mockResolvedValue(0);
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("no positive listing discovery evidence");
+    expect(mock.updateSchedule).toHaveBeenCalledOnce();
+  });
   it.each(["FAILED", "PARTIAL", "CANCELLED"])("rejects terminal %s jobs", async (status) => {
     const jobs = await mock.jobs(); jobs[0].status = status; mock.jobs.mockResolvedValue(jobs);
     await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("latest two");

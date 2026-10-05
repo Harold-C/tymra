@@ -157,6 +157,7 @@ import {
   type ArgusEventSourceId,
 } from "../collection/school-sport-ticketek";
 import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaArtifactIsParserFailure, otaCollectionFailureCode, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow } from "../operations/ota-health";
+import { positiveOtaListingEvidenceWhere } from "../operations/ota-listing-evidence";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays } from "../operations/production-public-pilot";
 import { deriveOtaMarketSignals, OTA_MARKET_SIGNAL_POLICY_VERSION, type OtaSignalObservation } from "../collection/ota-market-signals";
 import {
@@ -3083,19 +3084,20 @@ export class WorkerService {
     });
     return Promise.all(sources.map(async (source) => {
       const readMetrics = async (cutoff: Date) => {
-        const [runs, executions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListing, latestRate] = await Promise.all([
-          prisma.collectionRun.findMany({
-            where: { dataSourceId: source.id, createdAt: { gte: cutoff }, isDemo: false },
-            select: { status: true, successCount: true, failureCount: true, errorCode: true, scope: true, finishedAt: true },
-          }),
+        const runs = await prisma.collectionRun.findMany({
+          where: { dataSourceId: source.id, createdAt: { gte: cutoff }, isDemo: false },
+          select: { jobId: true, createdAt: true, status: true, successCount: true, failureCount: true, errorCode: true, scope: true, finishedAt: true },
+        });
+        const listingWhere = positiveOtaListingEvidenceWhere(source.id, cutoff, runs, now);
+        const [executions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListing, latestRate] = await Promise.all([
           prisma.argusExecution.findMany({
             where: { dataSourceId: source.id, submittedAt: { gte: cutoff } },
             select: { status: true, result: true, errorCategory: true, submittedAt: true, completedAt: true },
           }),
-          prisma.listing.count({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } } }),
+          prisma.listing.count({ where: listingWhere }),
           prisma.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
           prisma.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } }),
-          prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, lastConfirmedAt: { gte: cutoff }, metadata: { path: ["discoveredFor"], not: Prisma.AnyNull } }, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
+          prisma.listing.findFirst({ where: listingWhere, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
           prisma.rateObservation.findFirst({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
         ]);
         return calculateOtaHealthMetrics({

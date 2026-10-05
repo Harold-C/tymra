@@ -59,3 +59,14 @@ it("uses an appended repaired version and continues reporting the unchanged roll
   expect(value).toMatchObject({ parsingFailures: 0, acceptanceWindow: current, historicalMetrics: { parsingFailures: 3 }, releaseGate: { ready: true } });
   expect(metadata.productionOtaRepairAcceptance).toEqual(original);
 });
+
+it("counts valid cached details only when the fresh successful discovery job confirms the same listing", async () => {
+  const runs = freshRuns.map(run => ({ ...run, jobId: "fresh-job", createdAt: startedAt }));
+  mock.runs.mockResolvedValue(runs);
+  mock.listings.mockImplementation(query => query.where.OR?.some((branch: { OR?: { metadata: { equals: string } }[] }) =>
+    branch.OR?.some(link => link.metadata.equals === "fresh-job")) ? 1 : 0);
+  mock.latestListing.mockResolvedValue({ lastConfirmedAt: new Date(startedAt.getTime() - 60_000) });
+  expect((await report())[0]).toMatchObject({ positiveListingCount: 1, releaseGate: { ready: true } });
+  mock.runs.mockResolvedValue(runs.map(run => ({ ...run, scope: { operation: "OTA_PANEL_RATE" } })));
+  expect((await report())[0]).toMatchObject({ positiveListingCount: 0, releaseGate: { ready: false } });
+});
