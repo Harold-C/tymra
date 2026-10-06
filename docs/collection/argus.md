@@ -132,7 +132,8 @@ submission-to-result deadline. Shared Argus concurrency and private sessions are
   connectors confirm terminal release before waking the parent with `TIMEOUT`; pending cancellation
   is checked after thirty seconds. Normal source failure handling then finishes the `CollectionRun`.
 
-Direct browser CLI calls without a database Job retain the synchronous compatibility path. Scheduled
+Direct browser CLI calls without a database Job use a separate synchronous path; non-dry-run
+browser collection must use the queued path where its collector requires durable persistence. Scheduled
 and manually queued browser captures, including Eventfinda listings/details, Ticketmaster
 listings/required details, RBNZ, School Sport and Ticketek, use the durable Argus path. The Worker's
 direct Eventfinda/Ticketmaster page loader is an explicit test fixture, not the production transport.
@@ -162,7 +163,7 @@ to the host gateway, and Node trusts only the mounted mkcert development root CA
 verification.
 
 Argus is a cross-application service rather than a Tymra-owned component. Its development origins mirror
-the planned production `argus.nz` structure:
+the production `argus.nz` structure:
 
 - API: `https://api.argus.test`
 - human handoff: `https://connect.argus.test`
@@ -171,80 +172,54 @@ the planned production `argus.nz` structure:
 Tymra does not construct handoff URLs or depend on noVNC paths. Argus must return any complete,
 short-lived handoff URL through its handoff contract.
 
+## Additional source ownership
+
+Ordinary read-only HTTP that returns the required facts belongs to Tymra. Rendering, browser
+cookies, same-context navigation, challenge handling and screenshot evidence belong to Argus.
+Tymra owns business rules, source budgets, schedules, normalization, canonical identity and lineage.
+Argus health, readiness and authenticated connector inventory must be checked in the actual target
+environment; a registered schema in Tymra does not prove that runtime supports it.
+
+- School Sport uses `sporty-school-sport-public.collect_events@1.0.0` with separate national
+  and Canterbury source identities. Retain national raw rows before bounded regional filtering.
+  Administrative/unlocated rows remain raw; source organization cannot invent a Canterbury venue.
+  Region-level location does not establish city, venue or accommodation impact.
+- Ticketek uses `ticketek-public.collect_listing@1.0.0` and `collect_detail@1.0.0`.
+  Preserve listing facts if selective detail fails; classify challenge evidence instead of treating
+  an HTTP 200 challenge as an event or forcing a successful parser result.
+- Lincoln uses `lincoln-university-key-dates.collect_key_dates@1.0.0`; retain all source facts
+  but normalize only resolved demand-relevant dates under `christchurch_university_dates`.
+  Administrative or unresolved dates cannot become demand signals.
+- Dunedin, Auckland Airport monthly traffic and Ministry of Transport airline performance use
+  the fixed source contracts in [national coverage](nz-market-public-signal-coverage.md).
+  Named workbook downloads require the same byte/hash/copy gate as HTML and screenshots.
+- Official venues/universities use canonical event flow; live airport/cruise facts use
+  source-isolated transport-flow lineage. Capacity is not actual attendance/passenger count.
+  Missing facts and unsupported locations remain explicit coverage gaps.
+
+A finite Argus retention deadline is not automatically extended indefinitely by a missing ACK.
+Tymra must complete delivery within the actual contract, detect expired/missing objects and
+fail closed; never weaken hashes or infer successful retention from metadata alone.
+CAPTCHA handoff must use the exact expiring session/URL returned by Argus; non-CAPTCHA access
+challenges remain on the source cooldown path.
+
 ## Acceptance
 
-Use the existing bounded local acceptance commands with the scheduler disabled:
+Use [local acceptance](acceptance.md) and the corresponding source contract. Development
+scheduling stays disabled; dry-run may still submit an external browser Job. A bounded probe is:
 
 ```sh
-docker compose exec -T worker ./node_modules/.bin/tsx src/cli.ts \
-  collect:events --source ticketmaster --market new-zealand \
-  --phase discovery --max-pages 1 --limit 2 --local-acceptance
-
-docker compose exec -T worker ./node_modules/.bin/tsx src/cli.ts \
-  collect:events --source eventfinda --market new-zealand \
+pnpm cli collect:events --source eventfinda --market new-zealand \
   --phase discovery --max-pages 1 --limit 2 --local-acceptance --dry-run
-
-docker compose exec -T worker ./node_modules/.bin/tsx src/cli.ts \
-  collect:events --source fx_rates --market new-zealand \
-  --limit 2 --local-acceptance --dry-run
 ```
 
-Ticketmaster may be run twice to verify identity reuse and detail-request avoidance. Any challenge
-response must stop through Tymra's existing circuit/cooldown path without bypass attempts.
+Non-dry-run browser collection uses the durable queued entrypoint. Verify two-pass business
+persistence, stable identity, request limits, schema/version, all required local evidence bytes,
+ACK and remote purge. Cancellation, parked-parent restart and incomplete evidence have their own
+regression cases. Production trial/enable/recovery must use its guarded source-specific flow,
+never a local-acceptance flag.
 
-The 2026-07-29 RBNZ acceptance Job `job_3124f28748192ecf86e43f8ae7e6fd8a`
-completed in approximately 11.5 seconds with seven series, two evidence artifacts and no challenge.
-
-The durable orchestration acceptance on 2026-07-29 used Tymra Job
-`cms5wjbfz0000o42hpdgge5kz` and Argus Job `job_0514d3af653313918f6338daf5eb3bbd`.
-The parent was parked while the poller ran at approximately one-second intervals, then resumed with
-`attemptCount=1`; one `CollectionRun` completed with two bounded local-acceptance signals.
-Restart recovery was separately verified with Tymra Job `cms5wk5wy0000o44ablps29nb`: the Worker was
-restarted while Argus was running, after which the same one execution and one collection run resumed
-and completed successfully.
-
-The 2026-07-30 resume-boundary acceptance verified the fixes for queued dry runs, bounded detail
-batches and cancellation settlement:
-
-- Dry-run Job `cms635pas0000qw88e4763e75` completed with one Argus listing execution, 20 discoveries,
-  zero persisted targets/events and zero `RawArtifact` rows.
-- Historical pre-cutover Eventfinda Job `cms636ii30000qwcr2en9lh12` completed with exactly three Argus executions:
-  one listing and the two detail URLs persisted in `CollectionRun.scope.argusProgress`. Repeated parent
-  resumes did not select another detail batch; the final scope reported `requests=3` and
-  `detailsFetched=2`.
-- Cancellation Job `cms63d8so0000sv2hoevj3xhx` deliberately raced a completed Argus listing. The
-  parent remained `CANCELLED`, its only `CollectionRun` settled automatically as
-  `CANCELLED / JOB_CANCELLED`, and no detail execution was submitted.
-
-The 2026-08-01 ARGUS-023 acceptance verified that Tymra persists a bounded RBNZ result before sending
-the hash ACK, Argus purges the result and evidence, repeated ACK remains idempotent, and Tymra's two
-business signals remain available. See
-[`argus-023-acceptance-2026-08-01.md`](../evidence/argus-023-acceptance-2026-08-01.md).
-
-The 2026-08-02 Connector data Schema acceptance submitted one bounded RBNZ Job through the current
-Tymra source. Argus returned `rbnz-fx.collect_exchange_rates@1.0.0`; Tymra accepted and normalised two
-records with zero failures, while dry-run persistence remained empty. See
-[`argus-connector-schema-acceptance-2026-08-02.md`](../evidence/argus-connector-schema-acceptance-2026-08-02.md).
-
-The 2026-08-02 ARGUS-025～030 acceptance used one real OurAuckland listing and two detail Jobs. Both
-detail payloads passed `ourauckland-public.collect_detail@1.0.0`, Tymra normalised two events with no
-failures, and dry-run persistence remained empty. See
-[`argus-025-030-acceptance-2026-08-02.md`](../evidence/argus-025-030-acceptance-2026-08-02.md).
-
-## Historical local runtime snapshot (2026-08-05)
-
-This snapshot predates the [2026-09-13 workspace/runtime baseline](../traceability.md#historical-workspace-and-runtime-baseline-2026-09-13).
-It does not establish current Argus availability, readiness or scheduler state.
-
-On 2026-08-05 `https://api.argus.test/health` and `/readiness` returned HTTP 200. The current Tymra
-containers reached that origin with the shared development CA and service token; Tymra Web and Worker
-health/readiness also returned HTTP 200. Scheduler remained disabled with zero enabled schedule
-definitions.
-
-The fresh cross-service run completed two School Sport NZ passes (20 raw records, six promoted
-events) and two School Sport Canterbury passes (13 raw records, zero safely promotable events). Each
-second pass added zero source, canonical or lineage rows. After the Argus umbrella-detail parser
-fix, Ticketek completed two listing/detail passes (15 raw records and 11 events per pass), retained
-all listing/detail evidence locally before ACK, and added zero rows on pass two. See the
-[2026-08-05 task archive](../evidence/non-ota-collection-task-archive-2026-08-05.md) for Job IDs and
-hashes. This is development evidence, not production schedule activation.
+Dated ACK, schema, restart, public-source and six-OTA evidence is indexed in
+[evidence](../evidence/README.md). Previous Job IDs, private Browser Worker and direct-HTTP
+experiments are historical; active release and remaining natural-cycle checks are in
+[traceability](../traceability.md).

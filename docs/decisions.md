@@ -1,22 +1,16 @@
 # Tymra Product And Technical Decisions
 
-Last updated: 2026-09-29
+Last reviewed: 2026-10-07
 
-This file records current product and technical decisions. Decision history explains rationale but
-does not create migration or compatibility requirements; current scope and verification status are
-defined by the active product documents and `docs/traceability.md`.
+This file records durable choices and their rationale. Product details remain authoritative in
+[product](product/README.md); implementation, verification and release state belong in
+[traceability](traceability.md). Historical choices do not create compatibility requirements or
+authorize new operations. Decision IDs remain stable references to the choices, including superseded ones.
 
 ## D-001 Preserve The Existing Root Web Application (Superseded)
 
-**Decision:** Keep the compatible Next.js App Router application at the repository root and add
-`apps/worker` plus the required shared packages.
-
-**Reason:** The baseline says compatible existing code should be retained. Moving the current
-2,800-line visual implementation into `apps/web` would create migration churn without changing
-runtime boundaries or product behaviour. Root scripts still provide the exact required commands.
-
-**Superseded by:** D-034. The product behaviour remains unchanged, but the Web application now has
-the same explicit `apps/*` boundary as the other runnable processes.
+**Superseded by D-034.** The early root-level Web layout was replaced by explicit application
+directories. It creates no current runtime or migration requirement.
 
 ## D-002 Use A pnpm Workspace With PostgreSQL Persistence And Redis Coordination
 
@@ -53,11 +47,11 @@ attempt counter and deterministic idempotency key. Retry defaults are 1, 5 and 3
 
 ## D-006 Local Provider Modes
 
-**Decision:** `demo` uses deterministic fixtures and is allowed only in development/test. `manual`
-accepts validated CSV/JSON imports and only permits auto-publication when its registered source is
-enabled and operationally healthy, and all quality gates pass.
+**Decision:** Deterministic demo/fixture providers are limited to development/test. Manual import
+uses validated source data and permits publication only when its source and quality gates pass.
+Production must never substitute generated data for failed live collection.
 
-**Reason:** This implements the provider contract without inventing or scraping an OTA source.
+**Reason:** Repeatable development data and genuine observations must remain distinguishable.
 
 ## D-007 Local Email
 
@@ -85,20 +79,15 @@ use authenticated customer sessions and do not support durable bearer result lin
 **Reason:** This meets the 256-bit requirement, keeps short-lived secrets out of storage and prevents
 URL possession from granting durable report access.
 
-The host Web launcher additionally redacts verification route segments from Next.js development
-access logs because framework request logging occurs below the application logger.
-
 ## D-010 Local Domain And Service Lifetime
 
-**Decision:** Docker Compose is the reproducible and canonical full-stack environment. Web, Worker
-diagnostics and Mailpit join the shared Traefik `local` network; internal services remain on the
-project network. Docker restart policies plus a 60-second health-check LaunchAgent provide
-always-on development access and restore missing Compose services. Separate host Web and Worker
-LaunchAgents are legacy emergency fallbacks and must remain unloaded during normal operation.
+**Decision:** Docker Compose defines the reproducible full-stack environment and shared Traefik
+ingress. Check actual image, mounts, Compose identity and database before runtime work.
+Do not run duplicate host and container Web/Worker processes.
 
-**Reason:** One canonical runtime prevents duplicate workers and conflicting Web processes while
-ensuring `https://tymra.test` survives terminal and Codex sessions. The configured runtime path is
-explicit and health-checked.
+**Reason:** One selected runtime avoids duplicate jobs and conflicting processes. Host debugging
+uses explicit commands from the root README; the unused LaunchAgent templates and automatic
+recovery scripts were retired on 2026-10-07.
 
 ## D-013 Result Version Lifecycle
 
@@ -111,7 +100,7 @@ required operational correction workflow.
 
 ## D-014 Build And Runtime Separation
 
-**Decision:** Production builds use `.next-build`, while the always-on development server keeps
+**Decision:** Production builds use `.next-build`, while the selected development server keeps
 `.next`. Admin operations are explicitly `force-dynamic`.
 
 **Reason:** A build can run without corrupting the active development cache, and build-time static
@@ -134,9 +123,6 @@ text fallback until a formal SVG is supplied. Do not generate a replacement bran
 
 ## D-015 Two-Stage Customer Funnel
 
-**Status:** Product-approved; the two-stage flow is implemented, but current two-mode input and
-hidden-entry acceptance require fresh verification.
-
 **Decision:** Replace the email-first public flow with two stages: an anonymous low-cost rough result,
 followed by email verification and an authenticated formal Price Check. The rough result must provide
 real value while reserving exact dates, detailed comparable evidence and formal actions for the
@@ -147,29 +133,24 @@ provider collection anonymously creates uncontrolled cost and abuse exposure.
 
 ## D-016 Customer Identity Is Separate From Admin
 
-**Status:** Product-approved; implemented and locally verified.
+**Decision:** Customer accounts, password sign-in, sessions and guards remain separate from
+administrator identities. Purpose-bound Price Check verification may create or resume a customer;
+independent registration creates an unverified Free account. Neither grants Admin access.
 
-**Decision:** Introduce a passwordless customer identity such as `CustomerUser`. Verification may
-create or resume an `OPERATOR` customer account, but no public action can create, grant or elevate an
-`AdminUser`. Customer and Admin sessions, cookies, guards and authorization remain separate.
+**Reason:** Customer authentication and automatic account creation must never elevate operational
+authority. Authentication details are defined by [customer-funnel.md](product/customer-funnel.md).
 
-**Reason:** "Automatically becoming a user" must never imply automatic operational or administrator
-privileges.
+## D-017 Verify Anonymous Unlock Before Account Activation
 
-## D-017 Create Or Resume The Customer Only After Verification
+**Decision:** In the anonymous Price Check flow, email submission creates a pending verification
+request; successful single-use consumption creates or resumes the customer, binds the check,
+creates a session and enqueues formal work idempotently. Independent password registration is a
+separate flow and cannot start provider work until email verification.
 
-**Status:** Product-approved; implemented and locally verified.
-
-**Decision:** Email submission creates a pending verification request only. Successful one-time
-magic-link consumption creates or resumes the customer, binds the anonymous check, creates a session
-and removes the token from the URL. The operation is idempotent and transactionally consistent.
-
-**Reason:** This prevents unverified addresses from creating active accounts and gives one clear
-point at which identity, ownership and consent become effective.
+**Reason:** Verification is the boundary for account ownership transfer and costly collection;
+registration without a check must remain possible.
 
 ## D-018 Verify Before Formal Provider Cost
-
-**Status:** Product-approved; implemented and locally verified.
 
 **Decision:** Anonymous rough analysis uses validated cached or aggregate evidence. Formal provider
 collection is enqueued only after email verification or by an already authenticated eligible
@@ -180,9 +161,6 @@ consuming provider, Worker and storage resources.
 
 ## D-019 Authenticated Formal Reports
 
-**Status:** Product-approved; authenticated ownership is implemented, but obsolete bearer-result
-route removal and fresh route acceptance remain unverified.
-
 **Decision:** Formal reports are protected by customer sessions and server-side ownership checks.
 Durable bearer result tokens are not a supported customer access model; public sharing is deferred.
 No legacy result-link compatibility path is required.
@@ -191,8 +169,6 @@ No legacy result-link compatibility path is required.
 placing durable report authority in a URL.
 
 ## D-020 Minimal Conditional Email
-
-**Status:** Product-approved; implemented and locally verified.
 
 **Decision:** A normal flow sends one `VERIFY_AND_SIGN_IN` email. Publication starts a configurable
 two-minute notification grace period. The authenticated page records an idempotent acknowledgement
@@ -206,22 +182,16 @@ customer is already using.
 
 ## D-021 Layered Abuse And Quota Controls
 
-**Status:** Product-approved; cooldown, caching, idempotency and quota implemented. Interactive
-challenge escalation remains `not_implemented`.
+**Decision:** Apply configurable device, IP, email, Property, account and Benefit Group controls
+with allow, challenge and cooldown/reject outcomes. Device identity is a first-party random cookie,
+not invasive fingerprinting. IP alone cannot justify blocking. Quotas, claim uniqueness, payment
+HMAC subjects and retention follow [membership](product/membership-plans.md) and
+[funnel](product/customer-funnel.md) contracts.
 
-**Decision:** Apply configurable device, IP, email, property and customer controls with three outcomes:
-allow, challenge, and cooldown/reject. The device key is a first-party random cookie, not invasive
-fingerprinting. Reuse equivalent rough computation for six hours. During the pilot, recommend 5
-rough checks/device/hour, 10/IP/hour, 3 magic-link emails/address/hour, and formal quota of the
-included first check followed by 1/day and 5/rolling 30 days. IP alone is never the only blocking
-signal.
-
-**Reason:** Progressive controls protect cost and email reputation without unnecessarily blocking
-operators on shared hotel or office networks.
+**Reason:** Shared networks and duplicate identities require independent signals; a second table of
+quotas in this decision log would drift from the commercial contract.
 
 ## D-022 No Exclusive Property Claim
-
-**Status:** Product-approved; implemented and locally verified.
 
 **Decision:** Customers own Price Checks and reports, not the public property identity. Multiple
 customers may analyse the same property. PMS ownership verification, teams and organisation roles are
@@ -230,21 +200,16 @@ deferred.
 **Reason:** Exclusive claims require stronger business verification and support processes that are
 outside the current product scope.
 
-## D-023 Proposed Retention Defaults
+## D-023 Separate Retention By Data Purpose
 
-**Status:** Product-approved defaults implemented and locally verified; final privacy approval remains
-pending.
+**Decision:** Retention separates anonymous/verification/security data, member report history,
+billing obligations and raw browser evidence. Exact periods and remaining approval gates are owned
+by [customer-funnel.md](product/customer-funnel.md), [membership-plans.md](product/membership-plans.md)
+and [data-core.md](product/data-core.md). Customer plan history cannot extend raw evidence retention.
 
-**Decision:** Retain anonymous rough checks for seven days, unused verification requests for 24 hours,
-token security metadata for 30 days and privacy-preserving abuse records for 30-90 days. Active
-customer reports remain subject to account deletion and the final approved product retention policy.
-
-**Reason:** Short anonymous retention limits personal-data exposure while preserving enough security
-history to enforce cooldown and investigate abuse.
+**Reason:** Different data purposes need different lifecycles; one blanket retention period is unsafe.
 
 ## D-024 Real-State Motion
-
-**Status:** Product-approved; implemented and verified with desktop/mobile reduced-motion automation.
 
 **Decision:** The rough-result experience may use expressive motion, but each progress stage maps to a
 real server state or completed subtask. Ready results are not artificially delayed, reduced motion is
@@ -254,9 +219,6 @@ complete, and animation failure cannot block the result.
 accessibility and reliability.
 
 ## D-025 Supported OTA Link Or New Zealand Address With Explicit Target Mode
-
-**Status:** Product-approved current contract; implementation and fresh two-mode acceptance require
-audit.
 
 **Decision:** The anonymous new-visitor flow accepts either a valid supported OTA listing URL or a
 resolvable New Zealand address. A URL selects `LISTING_PRICING`; an address selects
@@ -279,26 +241,17 @@ price attribution without excluding either valid customer need.
 
 ## D-026 Worker Baseline v1 Source And Fixture Boundary
 
-**Status:** Implemented and locally verified on deterministic fixture/public-source paths.
+**Decision:** Formal analysis uses Property, SellableUnit and Listing identities, immutable
+observations and versioned snapshots/results. PostgreSQL is durable; Redis coordinates.
+The active six OTA sources use Argus public connectors. Demo/fixture execution is limited to
+development/test. Missing or blocked live evidence produces an honest unavailable result.
 
-**Decision:** Formal analysis is anchored to Property, SellableUnit and Listing. PostgreSQL stores
-immutable observations and versioned snapshots/results; Redis only coordinates. OTA adapters expose
-one contract and deterministic research fixtures, but live collection remains unavailable until each
-source has an operational implementation. Production forbids demo/fixture modes
-and returns `SOURCE_UNAVAILABLE` instead of substituting generated data.
+Optional public-signal failure is recorded separately and does not imply unavailable accommodation.
+One valid query-compatible price remains deliverable even if recommendation evidence is insufficient.
 
-Public-signal collection must pass enabled and operational-health gates before network access. A
-failed optional signal source is retained as a failed
-`CollectionRun` but does not imply unavailable accommodation inventory. A blocked core rate source
-ends the request as `SOURCE_UNAVAILABLE` without a result or notification email.
-
-**Reason:** The product requires auditable real evidence, and fixture completeness must never be
-misrepresented as permission or capability to collect live OTA data.
+**Reason:** Source capability, observed price and analytical confidence are distinct facts.
 
 ## D-027 Domain And Runtime Trust Boundaries
-
-**Status:** Product-approved; implemented for local development and represented in production
-Compose configuration. Production deployment and DNS remain `not_verified`.
 
 **Decision:** Use environment-equivalent semantic hosts. `tymra.test`/`tymra.nz` contains the public
 funnel, customer account, reports and same-origin `/api/v1` routes. `ops.tymra.test`/`ops.tymra.nz`
@@ -315,9 +268,7 @@ with other projects attached to the shared ingress network. Browser automation i
 service: Tymra calls `api.argus.test`/`api.argus.nz`, while short-lived human handoffs use
 `connect.argus.test`/`connect.argus.nz`. Tymra does not expose a product-owned noVNC hostname.
 
-The shared host Traefik and external `local` network are the canonical local ingress. Compose
-restart policies and a 60-second LaunchAgent health check restore the stack without depending on a
-terminal session. Production hostnames are supplied through `HOST_PUBLIC`, `HOST_OPS`, `HOST_WWW`
+The shared host Traefik and external `local` network define local ingress. Production hostnames are supplied through `HOST_PUBLIC`, `HOST_OPS`, `HOST_WWW`
 and origin variables rather than embedded throughout application code. Production secrets and
 runtime switches use a separate `PROD_*` namespace so the local `.env` cannot silently select demo
 providers or reuse development credentials in a deployment.
@@ -328,52 +279,18 @@ trust boundaries. Same-origin customer APIs avoid unnecessary CORS and parent-do
 
 ## D-028 Browser Event Collection Before Scheduling
 
-**Status:** Implemented; bounded Eventfinda and Ticketmaster daily production plans are active
-after source-specific acceptance. Unattended coverage and challenged detail access remain under review.
+**Decision:** Eventfinda and Ticketmaster use read-only Argus listing/detail workflows, without a
+Tymra browser runtime or Ticketmaster API. Development scheduling is disabled. Each source requires
+bounded persistence, idempotency, locks, lease recovery, evidence and unchanged configuration checks
+under [collection acceptance](collection/acceptance.md).
 
-**Decision:** Eventfinda and Ticketmaster use the same read-only Browser Worker architecture; no
-Ticketmaster API integration is retained. Development keeps event schedules disabled. Eventfinda
-implements nationwide paginated discovery, a durable detail frontier, bounded local acceptance and
-a development bootstrap mode with scheduler execution hard-disabled by environment.
-Ticketmaster implements five verified city listing routes, a durable detail frontier, bounded detail
-batches, exact-target canonical persistence, horizon-based refresh and exponential failure backoff.
-Earlier captures stopped on its initial verification interstitial; two-stage evidence on 2026-07-21
-proved that the same page can resolve to normal public event content after a bounded passive wait,
-without a click, form input, login or challenge solution. Later live runs remained challenged after
-10-20 seconds and correctly stopped, retained failure evidence and applied a six-hour cooldown.
-Automated database acceptance proves two-pass idempotency, 72/168-hour evidence and unchanged
-source configuration and schedules. This is development implementation evidence, not a claim of reliable
-unattended production access.
-Event facts are not automatically represented as `MAJOR_EVENT` demand signals without capacity,
-attendance or other explicit impact evidence. Raw browser evidence has short retention.
+Listing evidence is used directly when complete; necessary detail work is bounded and deferred.
+Challenges stop through the source circuit. Bounded trials do not prove unattended stability,
+complete coverage or event-driven accommodation demand.
 
-Bounded local Eventfinda acceptance runs only with `NODE_ENV=development` and is capped at
-one listing page and two detail pages, records `localAcceptance=true` on the collection run and does
-not change the source's configuration or operational status. This development-only path cannot
-enable schedules.
-
-`--development-bootstrap` uses the same environment and configuration guards but allows the
-configured nationwide page and detail-batch limits. It still enforces source locks, one browser,
-4-7 second request spacing, daily budgets, challenge stop and cooldown. It exists to prove and seed
-the complete development frontier without representing production authorization.
-
-The 2026-07-21 nationwide bootstrap completed 187/187 listing pages, verified the pagination
-boundary and upserted 2,821 detail targets with no retry or failure. A following five-target detail
-batch persisted 51 advertised occurrences with no failure. Source configuration and schedules remained
-unchanged; remaining detail hydration is deliberately paced operating work.
-
-The same separation is mandatory for every future data-collection channel through the
-[local source collection acceptance](collection/acceptance.md) standard.
-Each source supplies its own hard bounds and evidence, while sharing the environment guards,
-read-only behaviour, two-pass persistence/idempotency proof, source-lock contention, lease recovery,
-retention, source-configuration preservation and full-verification gates.
-
-**Reason:** Channel implementation status must reflect full operational acceptance rather than a
-successful bounded regression, while source facts remain distinct from pricing-impact claims.
+**Reason:** Source implementation, production enablement and sustained operation are separate gates.
 
 ## D-029 Source-to-Canonical Event Pipeline
-
-**Status:** Implemented and locally verified.
 
 **Decision:** Collected evidence first enters short-lived `RawArtifact` storage. Parsed source
 series and occurrences are persisted in `SourceEvent` and `SourceEventOccurrence`. The application
@@ -387,26 +304,7 @@ linked `MarketSignal` records.
 them separate allows additional event providers, safe reprocessing, auditable deduplication and
 manual correction without destroying collected evidence or silently changing analytical inputs.
 
-**Verification:** Both event migrations were applied to the local development database. A two-pass
-Eventfinda fixture regression verified one source series, two idempotent source occurrences, one
-canonical event, two canonical occurrences, one canonical venue and complete source links without
-changing Eventfinda configuration. The full database integration suite passed afterward.
-The 2026-07-21 bounded real-page acceptance additionally verified 20 frontier targets, two source
-series, 120 unique source and canonical occurrences, two venues and complete source links; the
-second pass created no new occurrence or link rows and left Eventfinda configuration unchanged.
-The nationwide development run then verified all 187 listing pages, 2,821 current discovery
-targets and a five-target detail batch that persisted 51 advertised occurrences without failure.
-Ticketmaster integration then verified one discovery target and two idempotent detail hydrations into
-one source/canonical event, occurrence, venue and complete lineage, plus persistent-challenge backoff.
-The local closure then verified Redis lock contention and release, pre/post-expiry job recovery,
-negative environment and scheduler guards, 72/168-hour time-advanced retention and the complete
-workspace quality gate. The final gate passed 81 TypeScript unit/component tests, 34 browser
-runtime/extractor tests and 49 integration tests plus lint, workspace typecheck, the 57-route
-Next.js production build and all four Worker entrypoint builds.
-
 ## D-030 Source-to-Canonical Market Signal Pipeline
-
-**Status:** Implemented and locally verified across all configured non-event public signal sources.
 
 **Decision:** Non-event public signals first persist in `SourceMarketSignal`. `MarketSignal` is the
 canonical application record and `MarketSignalSourceLink` records source lineage, match method and
@@ -423,16 +321,7 @@ pre/post source-configuration and schedule hashes.
 lineage. The new pipeline provides the same audit boundary as canonical events while retaining
 conservative matching.
 
-**Verification:** Holidays, GeoNet, MBIE, Stats NZ, MetService, NZTA, RBNZ FX, Queenstown Airport and
-Port of Auckland cruise sources completed bounded real passes on 2026-07-21. Database queries and
-adapter-specific tests verify deterministic inputs, source/canonical lineage where an analytical
-signal is emitted, unchanged source configuration and disabled schedules. A valid zero-alert MetService feed
-is a successful observation, while LINZ Gazetteer records remain reference data and intentionally
-do not manufacture a market signal. Parser failure uses 168-hour evidence in integration regression.
-
 ## D-031 Manual Import Local Acceptance
-
-**Status:** Implemented and automatically verified; real operator-file acceptance is `not_verified`.
 
 **Decision:** Manual import has an explicit development-only `localAcceptance` path capped at one
 256 KB file and two valid rows under the shared Redis source lock. It stores only hashed metadata as
@@ -445,46 +334,21 @@ parser and persistence path under development-only bounds.
 operator-owned export. Immutable observations also require idempotent
 create-if-absent behavior rather than an upsert that attempts an update.
 
-**Verification:** Integration coverage proves environment guards, development scheduler disablement, file and row
-bounds, two-pass source/canonical persistence, zero second-pass observations, 72/168-hour evidence,
-source-configuration preservation and disabled schedules. A genuine operator file has not been supplied, so
-no real-file run IDs or locally verified claim exist.
-
 ## D-032 Persistent Browser Identity and Adaptive Challenge Circuit
 
-**Status:** Implemented and locally verified.
+**Decision:** Argus owns persistent browser identity, profile encryption, execution mode and
+same-profile concurrency. Tymra owns source health, budgets and the challenge circuit; it does not
+implement profile storage or a private browser fallback.
 
-**Decision:** Each browser source receives a stable anonymous Profile. The Browser Worker accepts a
-bounded `profileKey`, serializes concurrent use of that Profile and saves it only after successful
-non-challenge extraction. Profiles are encrypted at rest with AES-256-GCM and atomically replaced.
-Tymra adds no custom operating-system or user-agent override and leaves the coherent browser identity
-to the pinned Ulixee runtime.
+Ticketmaster challenges use 6/24/72-hour cooldowns. After the first two cooldowns one listing-only
+half-open probe may close the circuit; the third consecutive challenge requires manual review.
+Passive interstitial observation is bounded. Automated CAPTCHA solving, proxy rotation,
+fingerprint spoofing and fabricated human activity are prohibited. Approved CAPTCHA handoff follows D-042.
 
-Ticketmaster challenge handling uses a source circuit with 6-hour, 24-hour and 72-hour cooldowns.
-The first two expired cooldowns permit exactly one listing-only half-open probe. A successful probe
-closes the circuit; a third consecutive challenge requires manual review and never automatically
-reopens. Interstitial pages are semantically polled once per second and stop early on resolution or a
-terminal block. Automated CAPTCHA solving, proxy rotation, fingerprint spoofing and randomized user
-simulation remain prohibited; authenticated operator handoff follows D-042.
-
-**Reason:** Stable successful browser state and sharply bounded recovery probes reduce repeated cold
-sessions and unnecessary pressure on a source. Persisting failed state or repeatedly retrying a
-challenge would make blocking more likely and provide no data-quality benefit.
-
-**Verification:** Runtime tests prove encrypted Profile round trips without plaintext leakage,
-successful-only Profile export, invalid-key rejection and same-Profile concurrency rejection.
-Extractor tests prove early semantic resolution and terminal-block detection. Worker unit and
-database integration tests prove all three cooldown levels, permanent manual state, one-request
-half-open behavior and successful circuit reset.
-
-The all-channel regression additionally disabled Ulixee session keep-alive, made the timeout apply
-to the full browser task, hardened Xvfb restart readiness and proved that a normal reCAPTCHA-protected
-footer is not an access challenge. Two final RBNZ B1 passes then each persisted two signals with one
-request, three success artifacts and no active browser task left behind.
+**Reason:** Stable browser state and bounded recovery avoid repeated cold sessions while keeping
+execution ownership in the shared platform.
 
 ## D-033 Keep The Product Baseline In The Local Project
-
-**Status:** Implemented and verified.
 
 **Decision:** `docs/product` is the only canonical product baseline. No Google Doc, exported hash,
 legacy release document or external copy acts as an authority or compatibility source.
@@ -492,30 +356,18 @@ legacy release document or external copy acts as an authority or compatibility s
 **Reason:** A single local system of record keeps product intent versionable beside implementation
 and prevents future work from depending on deleted or ambiguous same-named Drive files.
 
-**Verification:** Product README, current requirement precedence and traceability resolve only
-repository files.
-
 ## D-034 Use Explicit Application Boundaries And Remove Phantom Packages
 
-**Status:** Superseded in part by D-035; `apps/browser-worker` was later removed.
+**Decision:** Runnable applications are `apps/web` and `apps/worker`; shared code is in
+`packages/*`. Web UI remains with its consumer rather than an empty marker-only UI package.
+Dependencies flow from applications to shared packages.
 
-**Decision:** Runnable processes live under `apps/`: `web`, `worker` and `browser-worker`. Shared
-runtime code remains under `packages/`. The unused `packages/ui` marker package is removed; the
-existing visual system remains implemented by `apps/web/app/globals.css` and Web components.
+**History:** This replaced D-001's root Web layout. The temporary `apps/browser-worker` boundary
+was removed by D-035; it is not a supported application or fallback.
 
-**Reason:** A symmetrical top-level structure makes runtime ownership visible, avoids mixing one
-application with repository orchestration files, and prevents an empty package from implying a
-component-library boundary that does not exist. The move deliberately preserves the current homepage
-visual and interaction behaviour.
-
-**Verification:** The complete `pnpm verify` gate passed after the move. A production build generated
-all 64 static pages and all four Worker entrypoints. Real browser QA at 1440×900 and 390×844 verified
-EN/ZH rendering, search input, section navigation, mobile navigation, zero horizontal overflow, no
-framework error overlay and no relevant console warning or error.
+**Reason:** Directory ownership should represent actual runtime and dependency boundaries.
 
 ## D-035 Use Argus As A Durable External Browser Execution Boundary
-
-**Status:** Implemented and locally verified.
 
 **Decision:** Tymra retains ownership of source configuration, schedules, budgets, locks, collection
 runs, persistence and canonicalisation. Browser execution for Eventfinda listings/details,
@@ -533,23 +385,7 @@ fallback packages, Compose services and browser profile volumes are removed.
 persisted orchestration boundary prevents duplicate submissions, avoids holding a Worker during
 remote execution and keeps remote cancellation subordinate to the local parent Job.
 
-**Verification:** The 2026-07-29 and 2026-07-30 acceptance records cover submit/poll/resume,
-idempotent trace identity, restart recovery, result acknowledgement, dry-run boundaries and
-cancellation settlement. ARGUS-023 additionally verified persist-before-ACK, exact-hash ACK,
-idempotent repeated ACK, Argus result/evidence purge and retained Tymra business records. On
-2026-08-01 the migration was applied locally with 33 completed and one cancelled execution and no
-active execution; current Argus client/orchestrator unit tests, Worker typecheck and Worker build
-passed. The 2026-08-02 Argus-only acceptance then passed the database integration suite, all four
-real bounded browser sources, restart recovery, cancellation, evidence copy and remote purge after
-ACK. See [`argus-only-cutover-2026-08-02.md`](./evidence/argus-only-cutover-2026-08-02.md).
-Lincoln's 2026-08-04 acceptance additionally proved the full connector contract, standardisation,
-same-run deferred recovery, local HTML/screenshot retention, remote HTTP 410 after ACK and
-second-pass idempotency. See
-[`lincoln-key-dates-acceptance-2026-08-04.md`](./evidence/lincoln-key-dates-acceptance-2026-08-04.md).
-
 ## D-036 Use Listing-First Collection, Stable Identity And One Shared Public-Source Acceptance Runner
-
-**Status:** Implemented and locally verified; live rerun remains dated evidence.
 
 **Decision:** Every public collector uses the smallest authoritative representation and does not open
 a detail page when a list, feed or dataset already contains the normaliser's required fields.
@@ -565,58 +401,27 @@ lineage, configuration preservation, disabled schedules and zero second-pass sou
 not just performance details. One bounded runner makes the same persistence and idempotency contract
 observable across transports without conflating local verification with production activation.
 
-**Verification:** The immutable 2026-07-30 report records 34/34 successful Jobs and CollectionRuns,
-zero second-pass source/link growth and no remaining active acceptance execution. On 2026-08-01 the
-current runner code, 80 root tests, 37 Worker tests, Worker typecheck and Worker build passed. The
-real 17-source runner was not repeated, so current external availability continues to rely on the
-dated record.
-
 ## D-037 Require A Verified OTA Listing After Address Discovery
 
-**Status:** Superseded for address benchmarks by D-048; retained for target-listing price claims.
+**Partly superseded by D-048.** A claim about a target property's own price requires a verified
+supported Listing and physical-unit/query match. An address alone does not prove that identity.
+Address benchmarks instead preserve a spatial anchor and attribute nearby rates to their actual
+Listings; they do not need or fabricate a target Listing.
 
-**Decision:** A confirmed LINZ address supplies geographic identity and public-signal routing, but
-does not prove an accommodation listing, sellable unit or price. Address-first Price Checks must
-therefore obtain a supported public OTA listing and validate its stable identity and
-location through a durable, read-only Argus Job before any rate Job is queued. Tymra owns strict
-connector schemas, conservative address matching, canonical persistence, evidence retention and
-the resulting user state. It never substitutes a LINZ identity for an OTA Listing and live mode
-never falls back to fixture or manual-import pricing.
-
-**Reason:** One street address can contain multiple businesses or units, while OTA pages may expose
-only approximate locations. Separating geographic confirmation from listing confirmation prevents
-false matches and fabricated market evidence without giving up nationwide address discovery.
-
-**Verification:** Provider address-match tests and Worker connector tests cover country/city and
-coordinate conflicts, insufficient location precision, stable request fields, read-only contracts
-and inconsistent price rejection. Production readiness additionally requires the corresponding
-Argus connectors and one bounded evidence-copy/ACK cross-service run; automatic scheduling remains
-disabled.
+**Reason:** This retains the identity safety rule without forcing the retired listing-only flow onto
+the approved address-benchmark mode.
 
 ## D-038 Model OTA Brands Separately From Source Families
 
-**Status:** Tymra implementation complete; live cross-service acceptance pending.
+**Decision:** The active contract covers Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com.
+Each Listing retains public brand and provider family. Equivalent physical Property/Unit identities
+are deduplicated before comparison without discarding distinct observed brand quotes.
+Other OTA brands have no current compatibility requirement.
 
-**Decision:** Tymra actively collects Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com
-through one versioned OTA contract. Other OTA brands are outside the current contract and require
-no compatibility path. Every Listing stores both the public brand and its provider family.
-Booking.com/Agoda share `BOOKING_HOLDINGS`; the other active brands retain their configured family.
-Address-driven discovery is bounded to eight
-competitor listings, retains each observed brand quote, and maps equivalent property/unit identities
-to the same canonical records before analysis so one accommodation is not counted repeatedly.
-
-**Reason:** Brand URLs and public prices can differ even when inventory originates from one platform
-family. Keeping both dimensions preserves evidence while preventing duplicated supply from inflating
-competitor counts.
-
-**Verification:** URL, provider contract and cross-brand duplicate tests cover the six current providers.
-Argus fixture contracts and a final bounded cross-service run remain required before any new source
-is described as externally verified. User-triggered jobs remain the only OTA execution path and
-automatic scheduling stays disabled.
+**Reason:** Brand and inventory family are not interchangeable; repeated inventory must not inflate
+the market sample. Production enablement is independently source-scoped under D-039.
 
 ## D-039 Gate OTA Enablement On Durable Positive Evidence
-
-**Status:** Implemented; source-by-source external acceptance remains required.
 
 **Decision:** OTA health is calculated from durable `CollectionRun`, `ArgusExecution`, `Listing`
 and `RateObservation` evidence over a bounded window. The operational report exposes the last
@@ -635,13 +440,7 @@ or partial-fee observations remain diagnostic evidence and cannot satisfy the re
 can supply a usable market quote. Evidence-derived health prevents placeholder timestamps and
 fixture checks from being mistaken for production readiness.
 
-**Verification:** `ota-health.test.ts` covers positive, empty, rate-limited and blocked evidence.
-The Worker exposes a read-only `/worker/ota-health` endpoint and `ota:health` CLI command, while
-`release:preflight --sources` fails closed when OTA evidence is missing or outside the thresholds.
-Automatic scheduling remains disabled in development.
-
-**2026-10-05 repair reacceptance:** Harold explicitly approved a separate repaired-version
-acceptance window for relaunch. The default remains the rolling 30-day window. An operator may
+**Version-bound reacceptance (introduced 2026-10-05):** The default remains the rolling 30-day window. An operator may
 freeze a source-specific boundary at the first exact bounded job of the repaired version using
 `ota:production:acceptance-window`; the boundary records that job, its creation time, both source
 revisions and authorisation time. Existing boundaries cannot be moved or overwritten to exclude
@@ -652,8 +451,7 @@ release preflight use the same effective window. All thresholds above remain; au
 enablement additionally requires the latest two exact complete successful parents inside this
 window, positive complete future rates and retained evidence with verified delivery/ACK.
 
-**2026-10-06 additional repaired version:** Harold instructed enabling Agoda after the new
-Argus repair passed two exact production trials. A separately confirmed
+**Successive repaired versions (introduced 2026-10-06):** A separately confirmed
 `ota:production:acceptance-version` action may append a window for changed Tymra/Argus revisions
 at that version's first exact bounded parent, naming the previous frozen starting job.
 `productionOtaRepairAcceptance` is retained unchanged; later windows are kept in the ordered
@@ -673,8 +471,6 @@ non-demo query; original identity timestamps and historical metrics are retained
 
 ## D-040 Treat Development Collection As Explicit Technical Validation
 
-**Status:** Implemented.
-
 **Decision:** In `NODE_ENV=development`, an explicitly invoked local-acceptance collection may run
 even when an internal enablement or production health gate is not satisfied, provided the source's
 operational state is not explicitly `BLOCKED` and it declares development support.
@@ -691,18 +487,7 @@ still apply.
 requiring prior production-grade evidence creates a circular dependency. External access boundaries
 are not internal release gates and cannot be converted into a development override.
 
-**Verification:** `release-safety.test.ts` proves evidence-free development preflight and all-pass
-execution. `source-schedule-control.test.ts` proves direct validation accepts non-blocked degraded
-states while scheduling still requires a healthy source and development scheduling remains disabled.
-Direct CLI captures now copy and hash every Argus evidence object before ACK and require the result
-endpoint to return 410; dry runs hash evidence in memory before the same purge verification.
-The Booking public-browser path has additionally completed a bounded real Wellington discovery and
-all-in rate run with Tymra contract validation, evidence hash verification, ACK and 410 purge.
-Expedia `/Hotel-Search` remains outside the current public-source workflow and was not opened.
-
 ## D-041 Defer Partner OTA API Integrations Until Credentials Are Available
-
-**Status:** Deferred; executable Partner API modules removed.
 
 **Decision:** Tymra currently routes every supported OTA workflow through its public connector.
 The Booking Demand API and Expedia Rapid API connector IDs, endpoint routing, wire contracts,
@@ -727,13 +512,7 @@ not retained as dead code because external API contracts may change before resto
 providing current capability. A fresh implementation against the then-current official contracts
 is safer than preserving dormant integration code.
 
-**Verification:** Provider routing tests require Booking and Expedia to resolve only to their public
-connectors. Repository search must find no Partner connector IDs or endpoint hosts in executable
-Tymra code. Scheduler remains disabled.
-
 ## D-042 Use Short-Lived noVNC Handoff For CAPTCHA
-
-**Status:** Shared Argus session lifecycle and Tymra client contract implemented; Tymra operator UI remains pending.
 
 **Decision:** When an OTA browser execution reaches a CAPTCHA, Argus pauses the exact browser
 session and returns `manual_required` with `reason=CAPTCHA`, an opaque `sessionId`, a short-lived
@@ -752,14 +531,7 @@ fingerprint spoofing and unattended interaction remain prohibited.
 check without losing the requested dates, occupancy, currency or page state, while keeping Tymra's
 collection evidence auditable and avoiding automated challenge bypass.
 
-**Verification:** The Argus client contract test requires a CAPTCHA result to expose and normalise
-the noVNC session fields. Cross-service acceptance still requires an expiring Argus session, manual
-completion, continuation of the same Job, evidence copy/ACK and confirmation that expired or reused
-links are rejected.
-
 ## D-043 Derive OTA Market Movement Only From Matched Time-Series Evidence
-
-**Status:** Implemented.
 
 **Decision:** `PRICE_RISING`, `AVAILABILITY_TIGHTENING` and `RESTRICTION_INCREASING`
 are internal Tymra signals derived from non-demo, operationally healthy OTA observations. The
@@ -775,14 +547,7 @@ policy version; they are retracted when the evidence no longer qualifies.
 and stay query across time prevents inventory-mix changes, fee-incomplete prices and single-provider
 page behaviour from being presented as a market trend.
 
-**Verification:** Pure policy tests cover all three positive signals and fail-closed behaviour for
-insufficient or single-provider samples. Persistence uses stable policy/query identities and the
-normal pricing signal selector consumes confirmed signals only.
-
 ## D-044 Route Argus Public Market Facts Through Source-Isolated Lineage
-
-**Status:** Implemented; production activation is source-specific. The bounded public-source plans
-that passed their operating gates are active; development seed schedules remain disabled.
 
 **Decision:** Tymra integrates the accepted Argus official-venue, cruise, live-airport and university
 contracts as 20 distinct public sources. Venue and university records enter the canonical event
@@ -800,14 +565,7 @@ public record. No proxy source or same-group brand evidence substitutes for them
 **Reason:** Public schedules and calendars add useful local demand context only when identity,
 timestamps, source ownership and non-inference boundaries remain auditable through the full pipeline.
 
-**Verification:** Contract and normalisation tests cover identity/count consistency, impact evidence,
-capacity separation and passenger non-inference. The public acceptance runner includes every new
-source, requires the expected one or two Argus executions, retained local evidence, zero remote
-evidence references after ACK, and canonical source lineage on both passes.
-
 ## D-045 Use Pacific/Auckland For Every Business Calendar Date
-
-**Status:** Implemented.
 
 **Decision:** Tymra derives, compares and displays accommodation stay dates, query-plan dates,
 source date ranges, daily collection boundaries and date-only public events in
@@ -824,13 +582,7 @@ millisecond before the next New Zealand local midnight, including 23-hour and 25
 morning, and a fixed offset fails during daylight saving. Mixing those meanings can shift the
 formal 30-day horizon, OTA request dates and event overlap by one day.
 
-**Verification:** Domain tests cover the UTC/New Zealand midnight boundary, year rollover, the
-23-hour September transition and the 25-hour April transition. Web, worker and public-event tests
-cover default stay dates, OTA grouping, early-morning event overlap and date-only Argus events.
-
 ## D-046 Organise Membership Code By Feature Boundary
-
-**Status:** Implemented.
 
 **Decision:** Authenticated customer components live in `apps/web/components/member`; operator-only
 membership components live in `apps/web/components/admin/membership`; membership authentication,
@@ -849,12 +601,7 @@ making ownership unclear and documentation drift easier. Feature boundaries make
 isolation, review scope and future decomposition explicit without coupling a structural cleanup to
 business refactoring.
 
-**Verification:** Repository searches reject the former import paths and numbered source copies;
-lint, TypeScript, unit/integration tests and production build verify the moved module graph.
-
 ## D-047 Fail Closed At Independent Membership Launch Gates
-
-**Status:** Implemented locally; production provider acceptance remains external.
 
 **Decision:** Paid plan visibility does not implicitly launch every advanced capability. CSV export
 and the Portfolio read API require verified email, a serviceable membership, plan entitlement,
@@ -868,13 +615,7 @@ prices and is never replaced by the fixture suite.
 or misstate cross-service readiness. Independent fail-closed controls allow code to ship safely while
 credentials, provider capacity, production monitoring and commercial approval remain pending.
 
-**Verification:** Configuration tests enforce gate dependencies and managed-challenge production
-requirements; server/integration tests cover authenticated provider verification, Stripe lifecycle,
-quota and retention; `test:e2e:member-live` is the explicit external acceptance command.
-
 ## D-048 Support Listing Pricing And Address Benchmarks As Separate Analysis Modes
-
-**Status:** Implemented locally; live address-benchmark provider acceptance remains external.
 
 **Decision:** Tymra accepts two explicit member Price Check modes. `LISTING_PRICING` verifies a
 supported target OTA Listing and returns target-property prices. `LOCATION_BENCHMARK` verifies a
@@ -892,14 +633,7 @@ Tymra claims a price belongs to the member's own accommodation.
 what nearby accommodation is publicly charging. Treating the second case as a first-class benchmark
 preserves useful evidence without falsely attributing a nearby rate to the submitted address.
 
-**Verification:** Domain, API and membership integration tests distinguish the two analysis modes,
-enforce stable physical-Property quota identity, return a single valid applicable observation and
-keep recommendation status independent. Public EN/ZH browser checks verify separate OTA-link and
-address entry points. Production launch still requires a bounded real-provider address-benchmark run.
-
 ## D-049 Treat The Accommodation Data Core As The Asset And Product Surfaces As Outputs
-
-**Status:** Product-approved strategy; no additional product surface is approved by this decision.
 
 **Decision:** Tymra's current strategic core is New Zealand accommodation market intelligence, not
 an unbounded general-purpose New Zealand data warehouse. The system continuously accumulates
@@ -919,14 +653,7 @@ timestamps, quality state and hashes rather than indefinite retention of browser
 stable accommodation identity, historical depth, calibrated quality and auditable provenance are
 the compounding assets that make later analysis and additional products defensible.
 
-**Verification:** This decision clarifies strategy and data-governance requirements only. Current
-implementation status remains governed by `docs/traceability.md`; each future surface requires its
-own approved requirements and acceptance evidence before it may be described as available.
-
 ## D-050 Deploy The Nationwide Data Core And Hidden Client Surface Together
-
-**Status:** Product-approved current baseline; documentation updated, implementation gap audit
-required.
 
 **Decision:** New Zealand nationwide accommodation data collection is current scope now.
 Christchurch remains an early real-acceptance and regression market but is not a product, scheduler
@@ -956,14 +683,7 @@ market asset. One production artifact prevents the hidden client surface and dat
 into separate architectures while allowing Tymra to delay public discovery during early data
 accumulation.
 
-**Verification:** `docs/product/data-core.md` defines `DATA-CORE-001..022`. The current codebase must
-be audited against those clauses before the backend is called nationwide-production-ready.
-Customer-browser, membership and Stripe paths require production acceptance even while their entry
-points remain hidden.
-
 ## D-051 Keep The Initial Production Ingress Admin-Only
-
-**Status:** Approved and verified on the initial production ingress on 2026-09-24.
 
 **Decision:** The first production ingress exposes only `ops.tymra.nz` for administrator sign-in,
 authenticated Admin pages and Admin APIs. `tymra.nz` and `www.tymra.nz` have no production Web routers.
@@ -975,8 +695,76 @@ This operational stage does not redefine `DEPLOYED_HIDDEN` or certify the client
 **Reason:** The first deployment is for private backend operation. A hidden navigation link alone
 still leaves direct customer URLs available to anyone who knows them.
 
-**Verification:** Before deployment, validate the rendered Compose routers, production route
-denials and Admin authentication. After deployment, check the public, www and Operations hosts
-from outside the stack and verify that only authenticated Admin functions are accessible.
-Opening the customer site requires the existing production acceptance gates and a separate ingress
-change. DNS or search-engine indexing status must be checked separately from code and HTTP behavior.
+## D-052 Isolate Verification And Give Modules Explicit Owners
+
+**Decision:** Database tests require explicit disposable local targets and reject missing or unsafe
+configuration before fixture setup. Browser verification owns a standalone Compose project, network,
+ports and disposable data volume, with synthetic credentials and external services disabled.
+CI runs workspace verification and browser flows independently; production-shaped build verification
+uses synthetic disabled-service configuration rather than deployment credentials.
+
+Worker service entrypoints delegate to typed modules for requests, pricing, catalog, operations,
+source collection and persistence. Job dispatch delegates to dedicated handlers. A shared schedule
+policy reuses exact approved shape validators and source-approval rules; it does not widen collection
+bounds or replace source-specific activation controls.
+
+Providers expose named contract/adapter subpaths, without a root export-all or compatibility barrel.
+Homepage state, member features and Admin queries have separate owners. Shared TypeScript settings
+contain no Next.js plugin or Web aliases; static checks cover all workspaces and enforce client/server
+and application/package dependency boundaries. Styles load from their owning route layouts, while
+public responsiveness and reduced motion remain global.
+
+**Reason:** Routine tests must not reset development data or contact real services. Explicit owners
+reduce coupled imports and large mixed-purpose files while preserving business contracts, query
+filters, retry/lease behavior and evidence-before-ACK guarantees.
+
+## 文档与运行阶段变迁
+
+本节只记录影响后续判断的变迁。删除仓库文件的完整旧内容可在 Git 提交
+`4146a415137c50cec66398c61f651e7a0b6b48b5` 中按原路径查看；不用旧页、别名页或兼容副本
+恢复旧流程。生产原始失败记录、业务数据、配对备份及来源原件未由文档清理删除。
+
+| 时段 | 变迁及仍有效的边界 |
+| --- | --- |
+| 2026-07 至 08-02 | Root Web 迁入 apps/web；私有 Browser Worker 被 Argus 外部执行替代。建立 canonical event/signal、durable polling、证据 copy/hash/ACK。当前职责见 collection/argus.md |
+| 2026-08-03 至 08-09 | 曾采用 Eventfinda/Ticketmaster HTTP 与混合详情方案；公共来源扩展至主要市场及 Sporty/Ticketek。随后浏览器来源回归 Argus；旧传输步骤不再适用。事件事实不等于需求影响 |
+| 2026-08-10 至 08-21 | 四档会员、独立密码登录、双目标模式与全国数据核心成为当前产品合同。旧 bearer 结果、仅 OTA 输入和强制目标 Listing 的地址流程退休；2026-08-12 Sandbox 只证明测试支付。OTA soak 的人工豁免不证明自然长时周期 |
+| 2026-09-13 至 09-14 | 工程迁入 Development；iCloud 仅作导航/原始资料。旧目录、运行快照及备份恢复由 Life 既有恢复入口管理，不把迁移时镜像/分支/LaunchAgent 状态写成长期事实 |
+| 2026-09-24 | Admin-only 生产接入。首次 Lincoln 尝试因 UNIVERSITY_CALENDAR 持久枚举缺失及 Cloudflare HTML 改写而回滚；修复 enum 与 no-transform 交付后复用原 Argus Job，业务入库、证据及 ACK/410 通过，原失败保留 |
+| 2026-09-25 至 09-29 | 首批两条、再五条公开计划扩展至 78 条有界公开计划；补充增量、时间、历史版本及 list-first 采集。旧五来源评估器只适用于其固定基线，不能套用到当前 84 条计划。隐藏入口开发检查未开放生产客户站点 |
+| 2026-10-04 至 10-06 | 六 OTA 分来源试采、修复、固定验收窗口并启用；七公开来源完成预算/排队/查询/筛选恢复。Airbnb 总价与 Bookabach 后缀修复后重新验收，最新 84 条计划开启；恢复后的自然周期仍需核查 |
+| 2026-10-06 文档整理 | 状态集中到 traceability，下一步集中到 implementation-plan；稳定合同与运行快照分离。删除下列重复交接、冻结候选与阶段准备页，保留独立验收证据、来源原件和代码实际使用的基线 |
+| 2026-10-07 文件清理 | 删除未安装的旧本机自启/恢复入口、其 E2E 锁标记机制及已无页面的 bearer 结果目录；清理未被当前进程或容器使用的构建与依赖残留。保留有效源码、依赖、数据库迁移、验收与采集原始证据、凭证和恢复材料 |
+| 2026-10-07 结构优化 | Worker 与 Job handler 按职责拆分，调度分类/来源批准集中到 schedule-policy；provider 改显式子路径；首页、会员功能和后台查询分别归属。独立测试栈替代重建日常开发服务，测试入口增加 fail-closed 守卫；共享 TS、全工作区检查与 CI 浏览器步骤落地。旧 bearer/status 测试改为现行账户报告权限、终态隐藏及最新版本合同，不保留旧入口适配 |
+
+删除记录（路径相对仓库）：
+
+- `docs/collection/argus-responsibilities.md`、`docs/collection/argus-priority-source-prompt.md`：
+  当前职责并入 Argus 主合同及对应来源合同；旧待办与交接命令失效。
+- `docs/argus-live-ota-readiness-2026-08-13.md`：冻结旧镜像的续跑说明退休；
+  其 2026-08-13 开发 Agoda 报告仅有部分费用的 NZD 309 nightly 观察，不证明完整总价或生产就绪。
+- `docs/evidence/non-ota-collection-task-archive-2026-08-05.md`：重复的任务交接归入本变迁记录。
+  当时 School Sport 两来源及 Ticketek 完成两轮本地持久化/ACK，第二轮无新增；不代表现行来源可用性。
+- `docs/evidence/full-production-gates-preparation-2026-09-25.md`：隔离候选和隐藏入口证据摘要保留在追踪表；旧“下一步部署”清单已被当前计划取代。
+- `docs/evidence/first-five-cycle-review-preparation-2026-09-25.md`：
+  保留机器基线及只读工具的适用范围在 collection/acceptance.md，不继续维护待运行状态。
+- `docs/evidence/first-public-scheduled-collection-2026-09-25.md`、
+  `docs/evidence/first-five-public-scheduled-collection-2026-09-25.md`：
+  首批启用阶段已被后续公开来源发布验收和当前追踪取代。
+- `docs/evidence/tymra-argus-production-attempt-2026-09-24.md`、
+  `docs/evidence/tymra-argus-production-recheck-2026-09-25.md`：
+  失败根因、恢复边界与后续验收集中到上表及保留的 2026-09-24 正式验收记录。
+- iCloud `sources/history-index.md`：原任务/图片登记由 `sources/README.md` 直接引用两个原始登记 JSON，
+  删除重复 ID 表和过时的运行/备份现状描述；不删除原登记或图片。
+- `ops/launchd/`、`scripts/ensure-local-dev.sh`、`scripts/run-local-web.sh`：三个 LaunchAgent
+  均未安装或加载，现行服务使用独立容器；删除重复启动及自动恢复入口。E2E 中仅用于暂停旧恢复脚本的
+  `e2e-runtime.lock` 写入/删除同步移除，不改变测试的环境重建和恢复流程。
+- `apps/web/app/[locale]/result/[token]/`：只剩无子页面的 layout，构建路由中已无此入口；
+  现行结果由已登录客户在账户内访问，不保留旧 bearer 路由外壳。
+- 本机工程父目录 `history/legacy-local-launchers/` 及其说明页：删除 2026-09-14 迁入、仍指向
+  旧 `Documents/project/nbc-tymra` 的两份辅助脚本；路径迁移及退役事实保留在本节。
+- 本机 `migration-cache-pnpm-interrupted-2026-09-13/`、仓库
+  `output/local-cache-backup-20260821/`、闲置 `.next` / `.next-build` / Worker `dist`、
+  TypeScript 增量缓存、五份带数字后缀的旧 E2E 锁、一份相同内容的测试状态副本及空目录：
+  属于可重建产物、重复文件或空壳，清除前已核对引用、符号链接、打开文件及容器挂载。
+  实际依赖安装、原始测试报告、soak checkpoint / Argus 证据和受保护 runtime 目录保留。

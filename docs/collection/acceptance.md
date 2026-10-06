@@ -1,6 +1,6 @@
 # 本地数据采集验收标准
 
-Last updated: 2026-08-06
+Last reviewed: 2026-10-06
 
 **状态：** 所有在本地开发环境实现的数据采集渠道都必须遵守的项目标准。
 
@@ -10,8 +10,8 @@ Last updated: 2026-08-06
 
 - `localAcceptance` 只允许在 `NODE_ENV=development` 下运行。
 - 开发环境会硬性禁止 Scheduler 执行；验收不得创建、启用或修改计划任务。
-- 数据源需在开发环境启用，本地验收不得改变来源配置、生命周期、健康或运行状态。
-- 生产启用是独立的运维决策，不由本地验收自动触发。最新统一 34 来源、68 pass 结果见
+- 来源须允许开发技术验证且不能明确为 BLOCKED；该有界模式可按 D-040 检查未启用或非健康来源，不修改来源配置、生命周期、健康或运行状态。具体来源仍执行自身范围和访问限制。
+- 生产启用是独立的运维决策，不由本地验收自动触发。历史 34 来源、68 pass 结果见
   [2026-08-06 operational hardening acceptance](../evidence/operational-hardening-acceptance-2026-08-06.md)。
 
 ## 有边界的真实采集
@@ -42,12 +42,26 @@ Last updated: 2026-08-06
 
 1. 解析成功、来源变体及缺失字段的保守处理；
 2. 持久化、来源到 canonical 的链路和两次运行幂等性；
-3. 成功/失败证据的 TTL 选择及时间推进清理；
+3. 成功/失败证据的 TTL 选择、时间推进及实际清理层；数据库软删除、Argus purge 与 Tymra 文件物理删除分别验证；
 4. 部分发现安全，以及适用时的限流/挑战停止逻辑；
 5. `test`、`production` 拒绝本地验收，并验证开发环境硬性禁止 Scheduler 执行；
 6. Redis 来源锁的竞争、释放和重获；
 7. Job 租约过期后才能回收；
 8. 来源配置和计划任务保持不变；
-9. 完整 `pnpm verify`：lint、typecheck、unit、integration 和 production build。
+9. 最终渠道候选完成适用的 lint、typecheck、unit、独立测试库 integration、build 和来源专用验收；可复用仍匹配当前候选的有效证据，命令与副作用见根 README。文档维护不触发完整运行。
 
 只有上述适用门槛都有实际证据时才使用 `locally verified`。未适用项必须明确说明，不能把本地成功扩大成生产或长期稳定性结论。
+
+## 历史五来源评估器的适用范围
+
+[2026-09-25 机器基线](../evidence/first-five-cycle-baseline-2026-09-25.json)供当时精确五计划的
+只读评估器使用，SHA-256 为 `70bece654af7354ae1d5dd6ee8de3774b026f04efb9e0ed8abdab7b2c84c538e`。
+[快照查询](../../scripts/review-first-five-public-cycle.sql)、
+[artifact stream](../../scripts/stream-first-five-artifacts.sql)、
+[哈希核验器](../../scripts/verify-first-five-artifact-hashes.mjs)和
+[周期评估器](../../scripts/evaluate-first-five-cycle.mjs)保留其明确的历史边界：
+精确五计划、后续不同 UTC 日的单次成功 Job、原范围/预算、无重复/缺失 lineage 及证据哈希。
+
+评估器退出 2 为 WAITING、1 为 FAIL、0 只表示其命名检查通过。当前生产已有更多计划，
+不能用这份旧基线宣称当前系统异常或已通过验收；新范围先定义对应的只读比对和完成条件。
+业务日期仍按 Pacific/Auckland，历史工具的 UTC 日比较不改变业务时区合同。

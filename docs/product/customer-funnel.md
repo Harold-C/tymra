@@ -1,10 +1,11 @@
 # Tymra Customer Funnel Requirements
 
-Last updated: 2026-08-21
+Baseline date: 2026-08-21; editorial alignment: 2026-10-06
 
 Status: **Product-approved current client baseline. It deploys with the national data core and starts as `DEPLOYED_HIDDEN`; remaining evidence is tracked in `traceability.md`.**
 
-Production navigation, membership and public Price Check entry points are initially hidden from the homepage, public navigation and marketing CTA. The routes, APIs, sessions, Worker flows and result access still deploy and must pass production acceptance. Hidden discovery is not an authorization boundary.
+The approved client deployment hides navigation, membership and public Price Check entry points from the homepage, public navigation and marketing CTA. The routes, APIs, sessions, Worker flows and result access still deploy and must pass production acceptance. Hidden discovery is not an authorization boundary. The current Admin-only operational stage is
+separate; see [product scope](README.md#approved-target-and-operational-stage) and [traceability](../traceability.md).
 
 This document defines the single current client flow for anonymous value, email verification,
 customer accounts and abuse prevention. There is no legacy customer architecture or migration
@@ -240,13 +241,17 @@ ACTIVE -> SUSPENDED | DELETED
 The initial customer role is `OPERATOR`. No customer role grants `/admin`
 access.
 
-### 6.2 Creation point
+### 6.2 Creation point for anonymous-check unlock
 
 - Email submission creates a pending verification request, not an active customer account.
 - Successful magic-link verification creates or resumes the customer account.
 - Account creation, anonymous-check ownership transfer, session creation and formal-check enqueueing
   must be idempotent and transactionally consistent.
 - Replaying the same verification request cannot create duplicate users or duplicate formal checks.
+
+Independent password registration creates an unverified Free account/session without a Price Check,
+Job, pricing unit or quota entry. Email verification is still required before provider collection.
+It is not subject to the anonymous-unlock account-creation timing above.
 
 ### 6.3 Property relationship
 
@@ -262,7 +267,9 @@ access.
 - Store only a keyed token hash.
 - Default lifetime: 15 minutes, configurable.
 - Single use; successful consumption revokes it immediately.
-- Bind it to the intended action and pending verification request.
+- Bind it to the intended action: `UNLOCK_FORMAL_CHECK` or `VERIFY_CUSTOMER_EMAIL`.
+  Registration verification cannot enqueue an anonymous-check unlock, and neither token is a
+  general returning-member password sign-in route.
 - Do not put the complete token in logs, analytics, page titles, exception payloads or screenshots.
 - After consumption, exchange it for a customer session and redirect to a URL without the token.
 - Invalid, expired, used or revoked tokens reveal no account or property details.
@@ -323,7 +330,7 @@ acknowledged in-page during the notification grace period.
 
 | Email | Trigger | Suppression rule |
 | --- | --- | --- |
-| `VERIFY_AND_SIGN_IN` | Valid unlock or sign-in request passes abuse controls | Cooldown and idempotency prevent duplicates |
+| `VERIFY_AND_SIGN_IN` | Valid unlock or registration email-verification request passes abuse controls | Cooldown and idempotency prevent duplicates |
 | `RESULT_READY` | Formal report completes and no authenticated page acknowledges rendering it during the notification grace period | Suppress after authenticated in-page delivery is acknowledged |
 | `PARTIAL_RESULT` | Formal terminal outcome is partial | Replaces `RESULT_READY` |
 | `INSUFFICIENT_DATA` | Formal terminal outcome has insufficient evidence | Replaces `RESULT_READY` |
@@ -349,7 +356,8 @@ acknowledged in-page during the notification grace period.
 
 ### 9.4 Consent
 
-- Verification, sign-in and report delivery are service messages.
+- Email verification and report delivery are service messages; password sign-in does not itself
+  require a verification email.
 - Marketing consent is separate, optional and unchecked by default.
 - The account-creation disclosure and relevant terms are visible before email submission.
 
@@ -368,7 +376,7 @@ the only blocking signal because hotels and offices may share an outbound addres
 | Equivalent rough computation | One computation per property/query per 6 hours | Serve cached result |
 | Magic-link sends per email | One per 60 seconds and 3/hour | Neutral cooldown response |
 | Magic-link sends per IP | 10/hour | Challenge or temporary block |
-| Formal checks per customer | First check included; then 1/day and 5/rolling 30 days during pilot | Quota response, no enqueue |
+| Formal checks per customer | Current plan and Benefit Group allowance in [membership-plans.md](membership-plans.md#prices-and-entitlements) | Quota checked before enqueue; no separate pilot allowance |
 
 ### 10.2 Risk signals
 
@@ -399,8 +407,8 @@ provider jobs or send duplicate emails.
 Recommended rough-analysis stages:
 
 ```text
-Validating the OTA listing
-Capturing the default listing context
+Resolving the selected OTA listing or New Zealand address
+Binding the observed listing context or disclosed address-benchmark query
 Checking market coverage
 Matching the market range
 Generating preliminary signals
@@ -520,7 +528,7 @@ with the verified core funnel.
 | R15-ID-002 | A valid magic link creates or resumes one customer and one session | Auth integration and E2E |
 | R15-ID-003 | Customer identity cannot access or receive Admin privileges | Authorization tests |
 | R15-AUTH-001 | A customer can register and later sign in with email and password without creating a rough/formal check, job, pricing unit or quota entry | API, database integration and EN/ZH browser tests |
-| R15-AUTH-002 | Unlock and sign-in tokens are purpose-bound and cannot exchange side effects | Purpose-confusion, replay and concurrent-consume integration tests |
+| R15-AUTH-002 | Password authentication rejects invalid credentials, throttling violations, duplicate registration and unsafe return targets; unlock and email-verification tokens cannot exchange purposes | Credential/API, purpose-confusion, replay and concurrent-consume integration tests |
 | R15-AUTH-003 | Sign-out revokes the current customer session and leaves membership, customer data and Admin sessions unchanged | Session lifecycle and browser tests |
 | R15-AUTH-004 | Protected account routes preserve only allowlisted same-origin return targets through sign-in | Open-redirect and route-guard tests |
 | R15-SEC-001 | Magic links are hashed, single-use, 15-minute and removed from the URL | Security integration and browser test |
@@ -545,8 +553,9 @@ explicit approval before production launch:
 - final privacy retention periods;
 - challenge provider selection;
 - pilot quotas after observing real provider cost and false positives;
-- whether the included first formal check becomes a permanent free entitlement;
-- team accounts, stronger property verification and report sharing.
 
-The supported-OTA-link and automatic default-context input contract is current. Individual
+Included Free entitlement follows the approved membership contract. Teams, stronger property
+ownership verification and public report sharing remain out of current scope.
+
+The supported OTA-link/address dual-mode and automatic default-context input contract is current. Individual
 implementation and acceptance status is maintained only in `traceability.md`.

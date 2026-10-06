@@ -4,6 +4,8 @@
 
 文档定位：本文件是 Tymra 当前开发版本的页面、路由和用户流程契约，定义公开网站、真实价格检查、客户会员、Stripe Billing、异步状态、结果、Exception Inbox、市场运维页面、页面数据需求和 API 绑定。PG-\* 标识必须进入 docs/traceability.md，并映射到路由、组件和端到端测试。
 
+规范勘误：2026-10-06；基线版本不变。本文定义目标页面合同，实际 Admin-only 阶段见[产品入口](README.md#approved-target-and-operational-stage)。
+
 ## 基线控制
 
 本文件属于当前统一生产部署。页面必须服从《需求说明》的范围和《业务规则》的状态与判断，视觉样式由《视觉交互》定义。本文件只定义路由、页面区域、内容顺序、用户流程、页面数据需求和 API 绑定，不重复定义颜色、字号、圆角、栅格或动效；首页视觉统一引用 \[UI-HOME\]。本文列出的公开、客户和后台路由均随同一版本部署；未列出的业务页面默认不创建。路由示例中的 {locale} 只能为 en 或 zh。
@@ -70,7 +72,7 @@ Team、PMS Connection 和自动调价页面不属于当前范围。不得创建�
 • `/{locale}/pricing`：公开双语会员方案与价格页，比较 Free、Host、Pro、Portfolio 的含 GST 新西兰元月费、实体房源额度、精确逐日价格检查范围、监测范围、检查/调度频率和已通过的功能门槛；未通过生产 Launch Gate 的方案必须标记为尚未开放且不可购买。
 • `/{locale}/sign-in`：独立会员登录，使用会员邮箱和密码；不得要求先创建 Price Check，也不提供通用 Magic Link 登录。
 • `/{locale}/sign-up`：创建 Free 会员账户，要求邮箱、至少 12 位密码、确认密码及服务条款同意；注册不得创建价格任务或消耗额度。
-• `/{locale}/auth/verify`：消费 unlock 或 sign-in 专用 token，建立干净客户会话后移除 URL 中的 token。
+• `/{locale}/auth/verify`：消费 `UNLOCK_FORMAL_CHECK` 或 `VERIFY_CUSTOMER_EMAIL` 专用 token；完成相应验证并移除 URL 中的 token，不作为通用密码登录入口。
 • 未登录访问客户页面：跳转 `/{locale}/sign-in?returnTo=...`；只允许同源、相对且位于客户路由白名单内的返回地址。
 
 ### 2.5.2 会员账户
@@ -124,7 +126,7 @@ Team、PMS Connection 和自动调价页面不属于当前范围。不得创建�
 
 ### 验证页 `/{locale}/auth/verify`
 
-Price Check 验证是 Route Handler，不在最终可见 URL 保留 token。成功时轮换会话并跳转；失败时进入本地化错误页，提供重新发起 Price Check 验证的入口。该 token 只允许执行 `UNLOCK_FORMAL_CHECK`，不得作为通用会员登录凭据。
+邮箱验证使用统一 Route Handler，按 token purpose 分别执行 `UNLOCK_FORMAL_CHECK` 或 `VERIFY_CUSTOMER_EMAIL`。成功时轮换会话、清除 URL token 并跳转；失败时进入本地化错误页，提供重新发起对应验证的入口。两种 purpose 不得交换副作用或作为通用会员登录凭据。
 
 ### 退出
 
@@ -319,7 +321,7 @@ Select Unit；None of these；Back to Property。选择后进入 /query。
 
 ## 8.1 默认值
 
-2 Adults、0 Children、1 Unit、默认 1 Night、`Pacific/Auckland`、NZD。匿名／一次性正式流程默认未来 30 天；登录会员的精确逐日价格范围按 Free 14、Host 30、Pro 90、Portfolio 180 天执行，并与更长的监测范围分开显示。
+2 Adults、0 Children、1 Unit、默认 1 Night、`Pacific/Auckland`、NZD。匿名粗略流程沿用自动查询条件；正式精确逐日范围与监测范围引用《membership-plans.md》，页面不另定义权益或把监测范围当作已观测价格覆盖。
 
 ## 8.2 可编辑字段
 
@@ -392,7 +394,7 @@ Tymra Logo；Property；Sellable Unit；Stay Query；Generated at；Data last ch
 
 ## 10.7 Version
 
-Superseded 结果显示新版本可用提示并链接最新 token；Withdrawn 显示结果已撤回及联系入口。
+Superseded 结果显示新版本可用提示并链接该客户有权访问的最新站内结果；服务端继续校验会话和归属。Withdrawn 显示结果已撤回及联系入口。
 
 # \[PG-BIZSTATE\] 十一、Waitlist 与业务状态页面
 
@@ -576,4 +578,4 @@ PG-AT-004 Exception Inbox 为空时后台不制造人工任务；有异常时可
 PG-AT-005 非新西兰、未开放、数据不足、来源失败和链接过期均有明确页面状态。  
 PG-AT-006 结果页展示真实数据时间、置信度、限制和版本，不展示内部评分。  
 PG-AT-007 1440px 与 390px 通过视觉与功能验收，无横向滚动。  
-PG-AT-008 未批准的 Dashboard、Billing、Monitoring、Team 和自动调价路由不存在。  
+PG-AT-008 未批准的 Dashboard、Billing、Monitoring、Team 和自动调价路由不存在。

@@ -1,6 +1,7 @@
 # New Zealand major-market public-signal coverage
 
-Last updated: 2026-09-29 (source-specific schedule wording)
+Last reviewed: 2026-10-06. This is the source/coverage contract; recorded operational state is in
+[traceability](../traceability.md).
 
 ## Completion definition
 
@@ -48,7 +49,7 @@ accommodation-demand evidence. Venue capacity or duplicate publication alone is 
 | Southland/Fiordland | Great South | None registered | Core implemented |
 
 The direct-adapter-only `assessNzMarketCoverage` report remains 14 of 15 and identifies Dunedin as
-Argus-required by design. The separate registered Argus path is now live, so all 15 markets have an
+Argus-required by design. The separate Argus path is implemented, so all 15 markets have an
 implemented official-calendar collection path; this does not imply operational stability.
 
 ## Nationwide address coverage hierarchy
@@ -66,7 +67,7 @@ Christchurch. `resolveNzAddressSignalCoverage` produces one explicit level:
 - `NATIONAL_ONLY`: the property is confirmed as New Zealand but its region is unresolved; only
   `new-zealand` signals are queried and no regional or local coverage is implied.
 
-All 17 official region names, including Gisborne, Marlborough, West Coast and Chatham Islands, map
+All 17 configured coverage-region names, including Gisborne, Marlborough, West Coast and Chatham Islands, map
 to a non-null coverage result. Explicit non-New-Zealand countries fail closed. The resolved level,
 market name and limitations are frozen into the competitor set, date/market snapshots and result
 payload, and are shown in both secure result experiences.
@@ -99,72 +100,20 @@ Implementation coverage and operational stability are deliberately separate. The
 Freshness follows the registered cadence: 30 hours for event sources, 216 hours for weekly sources,
 30 minutes for MetService, three hours for high-frequency transport/GeoNet sources and 36 hours for
 daily context sources. The daily market-coverage refresh persists the layer result, healthy sources
-and stale/missing sources in `MarketCoverage.region.publicSignalOperations`. Consequently, the 14
-direct markets are **implemented**, but are not described as operationally stable until enabled,
-enabled schedules have produced the required runtime evidence.
+and stale/missing sources in `MarketCoverage.region.publicSignalOperations`. Consequently, implemented source paths and enabled schedules do not establish operational
+stability until the required runtime evidence exists.
 
 `pnpm --filter @tymra/worker soak:nz-public-signals` provides the resumable unattended gate. It runs
 two-pass acceptance on each cycle, records capacity and failure rate in a checkpoint, defaults to
 three daily cycles, and refuses to label repeated same-day successes as multi-day stability.
 
-## Bounded live evidence
+## Evidence scope
 
-The 2026-08-06 development probes used ordinary read-only HTTP, a bounded future window and source
-limits. They proved current transport and parser compatibility, not multi-day production stability.
-
-| Source | Records observed | Requests used in probe |
-| --- | ---: | ---: |
-| WellingtonNZ | 9 | 1 |
-| Hamilton & Waikato Tourism | 20 bounded | 1 |
-| Destination Queenstown | 4 | 2 |
-| Destination Great Lake Taupō | 20 bounded | 1 |
-| Great South | 12 | 2 |
-| Hawke's Bay Tourism | 200 bounded | 1 |
-| Venture Taranaki | 20 bounded | 1 |
-| Nelson/Tasman | 4 featured | 1 |
-| Tauranga What's On | 13 | 1 |
-| CEDA Manawatū | 30 bounded | 3 |
-| Whangārei District Council | 6 | 1 |
-| RotoruaNZ What's On | 20 bounded | 1 |
-| MBIE Accommodation Data Programme | 18 regional records / 19 canonical signals | 1 |
-| Wellington Airport | 40 bounded flight signals | 1 |
-| Wellington Airport monthly passengers | 3 latest months; April 2026 total 399,346 / YoY -7.00% | 2 |
-| MBIE Tourism Volumes & Flows | 234 recent RTO signals / all 15 markets | 1 |
-| MBIE Monthly Regional Tourism Estimates | 18 RTO signals / all 15 markets | 1 |
-| MBIE International Visitor Survey | 5 rolling-annual signals; latest spend NZ$13.73b / YoY +12.19% | 1 |
-| Queenstown Airport monthly passengers | 13 months; June 2026 total 184,282 / YoY +5.94% | 6 |
-| DOC regional recreation alerts | 143 accommodation-relevant active alerts / 178 signals / all 15 markets | 14 |
-| Interislander service alerts | 1 current alert / Wellington and Nelson-Tasman | 1 |
-| Official ski seasons | 3 season windows / Queenstown-Wānaka, Christchurch and Taupō | 3 |
-
-Auckland and Christchurch direct-source evidence predates this expansion and remains covered by
-their existing parser, worker and acceptance suites. Every new direct source is registered with a
-disabled-by-default development schedule, request budget, configuration metadata and two-pass
-acceptance specification.
-
-The isolated two-pass persistence acceptance on 2026-08-06 covered 27 sources and 54 passes with no
-failures, no repeat-row growth, no schedule mutation and no active Argus executions. The detailed
-evidence and the two runtime defects fixed during that acceptance are recorded in
-[`nz-major-market-public-signals-acceptance-2026-08-06.md`](../evidence/nz-major-market-public-signals-acceptance-2026-08-06.md).
-Separate isolated acceptances then proved MBIE canonical routing to every one of the 15 markets and
-Wellington Airport's direct transport-flow persistence; both second passes added zero rows.
-An additional isolated acceptance (`public-sources-2026-08-06T01:28:37.708Z-45d76c04`) persisted
-234 TVF, 18 MRTE and 5 IVS records/signals per pass. Both regional datasets contained all 15
-canonical markets, every second pass was unchanged, and no Argus execution or schedule mutation
-occurred. The temporary database was removed after verification.
-Queenstown Airport monthly acceptance
-`public-sources-2026-08-06T01:41:21.594Z-c3d49e15` persisted 13 monthly signals per pass with
-six requests and zero second-pass growth. Nationwide access-alert acceptance
-`public-sources-2026-08-06T01:51:28.119Z-e33c390d` persisted 178 DOC signals and two
-Interislander signals, with zero second-pass growth and no Argus executions. Ski-season acceptance
-`public-sources-2026-08-06T01:57:23.892Z-41bf5e5b` persisted all three official season windows and
-was also unchanged on pass two. Every temporary database was removed after verification.
-
-The current development database then passed the complete 50-source direct set twice under
-acceptance `public-sources-2026-08-06T02:15:04.698Z-02faded4`. That artifact is cycle 1 of the
-resumable direct-source soak checkpoint. `SOAK_CYCLES_PER_INVOCATION=1` allows the exact source set
-to be continued on a later UTC day without a long-lived 24-hour process; imported artifacts must be
-complete, passed, failure-free and internally consistent before they are accepted as evidence.
+The dated [major-market acceptance](../evidence/nz-major-market-public-signals-acceptance-2026-08-06.md)
+and [P0–P2 acceptance](../evidence/tymra-public-market-signals-p0-p2-2026-08-09.md) record
+transport, parser, two-pass persistence and lineage evidence. Historical monthly totals and source
+availability are not current market facts. Do not resume an old soak checkpoint against changed
+source definitions or candidates; freeze and verify the intended acceptance identity.
 
 ## Pricing-decision integration
 
@@ -203,23 +152,21 @@ retains all source lineage, and retracts a previous signal if the aggregate evid
 An isolated PostgreSQL integration test proved the two-source merge, unique signal, two lineage links
 and pricing-visible `MAJOR_EVENT` state on 2026-08-06.
 
-## Argus integration status
+## Additional Argus contracts
 
-Tymra has the source identities, source-specific schedules, scope validation, durable Job submission, fixed
-v1 response schemas, named-download retention, normalisation, canonical-market routing,
-deduplication and persistence for all three browser connectors. Argus has registered all three:
+The Worker validates schema/version and source-specific fields before normalization.
+The runtime contract registry is `apps/worker/src/clients/argus-client.ts`.
 
-1. `dunedinnz-public / collect_events` passed two Tymra Jobs in a valid quiet window with retained
-   evidence, ACK/410 and zero repeat growth.
-2. `mot-airline-performance / collect_monthly_performance` passed two Tymra Jobs with 100 bounded
-   records, 147 routed signals, named workbook evidence and all 147 signals unchanged on the repeat
-   pass.
-3. `auckland-airport-monthly / collect_monthly_traffic` passed two real browser-click persistence
-   runs. Each returned 13 bounded months and 13 signals; the repeat pass skipped all 13 as unchanged.
-   HTML, screenshot and the named XLSX passed local SHA-256 verification and ACK/410. The latest
-   trustworthy month is `2026-05`; the source's malformed `2006-06` final row remains excluded rather
-   than being inferred as June 2026.
+| Connector / workflow | Versioned result contract | Required source semantics |
+| --- | --- | --- |
+| `dunedinnz-public / collect_events` | `regional-events-public.collect_events@1.0.0` | Stable IDs/URLs, explicit dates/precision, venue/location/status and provenance; no invented attendance or demand |
+| `auckland-airport-monthly / collect_monthly_traffic` | `auckland-airport-monthly.collect_monthly_traffic@1.0.0` | Published YYYY-MM, non-negative total, nullable domestic/international/change; reconcile published components, retain named workbook evidence |
+| `mot-airline-performance / collect_monthly_performance` | `mot-airline-performance.collect_monthly_performance@1.0.0` | Route/month, published flight counts and 0..100 percentages; `VOLUNTARY_PARTICIPATING_AIRLINES` and coverage caveat retained; absent reporting is not zero or whole-market coverage |
 
-Argus completion is accepted only when the connector passes its schema test, one bounded real Job,
-copy-before-ACK evidence verification, persistence, and a second identical pass with zero new event
-or lineage rows.
+Malformed workbook periods must be excluded rather than inferred from a filename or sheet title.
+The 2026-08-06 Auckland acceptance excluded a row labelled `2006-06` despite a June 2026 sheet
+title; that is a dated example, not a statement that May 2026 remains the latest available month.
+
+Acceptance requires schema validation, bounded real capture, named-download/HTML/screenshot
+copy and hash checks before ACK, canonical lineage and a second identical pass without duplicate
+event/signal/link growth. Production plan activation and natural cycles remain separate evidence.

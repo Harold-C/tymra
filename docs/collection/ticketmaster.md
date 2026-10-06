@@ -1,29 +1,12 @@
 # Ticketmaster New Zealand collection
 
-Last updated: 2026-09-29
+Last reviewed: 2026-10-06.
 
-**Current operating state:** City listings and selectively required details use the Argus headed
-browser and persistent public Profile. After two successful bounded production trials, the
-`progress-ticketmaster-daily` plan was enabled and its weekly pilot disabled. The daily plan
-allows at most three listing pages, two necessary details and 100 results; the source retains its
-20-request daily budget. The first natural daily cycle, unattended stability and reliable access
-to challenged detail pages remain separate checks. The dated observations below describe earlier
-snapshots; see [traceability](../traceability.md) for the release evidence.
-
-### Earlier local candidate (2026-09-28)
-
-2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集城市列表和详情。
-访问挑战继续触发熔断，不会尝试绕过；当时新的生产业务写入及详情回退仍需独立验收。
-同日单页本地 dry-run 成功：奥克兰列表发现 19 张卡片，本次日期窗口的 2 条完整记录
-均可免详情页；Argus Job 已 ACK/PURGED。当天 20 次本地预算曾拦截正式入队试采，
-源码已修正预算耗尽误触发挑战熔断，当时仍需非 dry-run 的业务与证据验收。
-`NODE_ENV=development` 现在不执行跨轮次每日累计额度；生产的 20 次上限、
-单次采集范围、请求间隔和访问挑战停采保持有效。
-
-**Development status:** Listing-first discovery, canonical persistence, a durable fallback detail
-frontier and bounded hydration are implemented. Automated database acceptance covers listing and
-fallback paths. Two bounded production progress trials succeeded without needing a detail page;
-reliable access to challenged detail pages is still not verified by those trials.
+The bounded `progress-ticketmaster-daily` plan uses Argus's headed browser and persistent
+public Profile: at most three listing pages, two necessary details and 100 results, within
+the source's 20-request daily budget. The superseded weekly pilot was deleted on 2026-10-06.
+Current activation and recovery evidence belong in [traceability](../traceability.md);
+successful listing-only trials do not verify challenged detail access.
 
 ## Decision
 
@@ -66,7 +49,7 @@ is the current production schedule; development hard-disables scheduler executio
    days and 14-day cap beyond 60 days. A listing or hydrated detail marked cancelled is
    `CANCELLED`, `active=false` and `nextFetchAt=null`; ended targets are retired, failures back off
    exponentially, and a persistent challenge or rate limit opens the adaptive source circuit.
-8. Keep impact status `PENDING_EVIDENCE` until capacity, attendance or corroborating demand evidence exists.
+8. Keep impact status `PENDING_EVIDENCE` until the [impact policy](event-impact-data-contract.md) qualifies the evidence; capacity alone is insufficient.
 
 The local acceptance bound is one listing page, at most two fallback details and a 31-day effective
 window. The normal collector uses one concurrent request, a 5-9 second inter-request delay, at most
@@ -74,19 +57,8 @@ five city pages and three fallback details under the collector defaults. The act
 schedule narrows each run to three listings and two necessary details. Production retains a
 20-request daily ceiling; development has no cumulative daily ceiling. A complete five-city
 snapshot using the collector defaults requests five listing pages; the current daily plan covers
-at most three. The previous 17-page/day ceiling remains the worst case when incomplete targets
-require all four fallback batches. No automatic challenge
-retry is performed. Both legacy seeded schedules are disabled.
-
-The retained five-city snapshot from 2026-07-20 contained 89 cards and 89 unique event URLs. All 89
-had the fields required by the listing-complete rule, including three cancelled events. For that
-snapshot the listing-first pipeline reduces initial pages from 94 (five listings plus 89
-details) to five, while still persisting every accepted event occurrence.
-
-On 2026-08-03, two real bounded listing acceptance passes each made one direct HTTP request,
-discovered 20 events, persisted one complete listing occurrence, avoided all detail requests,
-retained one HTML artifact, and created zero Argus executions. The second pass created zero new
-source or canonical rows.
+at most three. No automatic challenge retry is performed. Development seed definitions are not the active
+production plan.
 
 Repeated dates from one listing or detail group share one source event, canonical event and exact
 venue during persistence. Each date remains a distinct occurrence. A later unchanged occurrence only
@@ -120,82 +92,18 @@ the allowlisted city listing URL in `metadata.discoveredFrom`. Detail execution 
 Argus as `entry_url`; Argus opens the city page and follows the exact event link in the same browser
 context. Missing `discoveredFrom` is a hard parsing failure and never falls back to a cold direct
 detail navigation. Each detail hydration therefore consumes two source requests in collection limits.
-The 4 August 2026 bounded API acceptance completed Job
-`job_6f1d1348fc107c6410c1f857adec40a4`, returned a complete Christchurch event detail without a
-challenge, verified both evidence hashes and completed the result ACK.
+The navigation and contract behavior must be verified against the current Argus candidate;
+older direct-HTTP/hybrid runs are not acceptance of the present transport.
 
-### TYMRA-TM-HYBRID-ACCEPT-001
+Required regression covers listing-complete avoidance, exact detail identity, missing fields,
+idempotent series/occurrence/lineage writes, two-stage challenge evidence, 72/168-hour TTL
+selection, source configuration preservation and the single-page half-open circuit.
+Database TTL handling does not prove local evidence-file physical deletion.
 
-The 4 August 2026 non-dry-run acceptance exercised the complete deployed integration rather than an
-Argus-only call:
-
-1. Tymra Job `cmsdxli8x0000o877cmivo2ko` fetched the Auckland listing by ordinary HTTP, discovered
-   19 events, selected two bounded records, persisted two complete listing events and created no
-   Argus execution.
-2. One selected target was temporarily marked as listing-incomplete to exercise the required-detail
-   branch without changing its URL or `discoveredFrom`. After acceptance, this marker was removed and
-   the original `listingComplete=true`, `detailRequired=false` metadata was restored.
-3. Tymra Job `cmsdxoyir0000n3340g73654n` submitted Argus Job
-   `job_6dc98647fb91cc048a69751b55ea4340`. Argus opened the Auckland entry page, followed event
-   `240064D77F550D98` in the same Context and returned a successful detail.
-4. CollectionRun `cmsdxoymz0001n30o5ozj4l00` completed with two source requests, one detail, one
-   persisted event and two retained evidence artifacts. The copied HTML was 750,773 bytes and the
-   screenshot 126,413 bytes; both local SHA-256 values matched Tymra `RawArtifact.contentHash`.
-5. Tymra ACK completed and the Argus result endpoint returned HTTP 410 with the same result hash,
-   proving that downstream persistence happened before Argus cleanup.
-
-The first attempt exposed that the running worker still contained the pre-`entry_url` image. It made
-no Argus execution and ended its CollectionRun as `PARTIAL`. Rebuilding the worker with the current
-source removed that deployment drift; the successful acceptance above uses the rebuilt image.
-
-- Extractor and normaliser tests cover Next-data parsing, source-host enforcement, missing identity, exact/missing end time and metadata preservation.
-- Browser runtime tests distinguish a persistent challenge from a temporary interstitial, preserve
-  both HTML and screenshot capture stages and extract the settled page only when challenge markers
-  disappear. Normal scheduled pages still omit screenshots.
-- Database integration performs discovery once and the same detail twice, proves an idempotent
-  frontier, source/canonical events, venue and lineage, verifies 72/168-hour evidence classes, and
-  confirms source configuration and both schedules do not change.
-- Database integration also proves that a first challenge stores the six-hour `OPEN` state and an
-  expired cooldown permits only one listing-only half-open probe before resetting to `CLOSED`.
-- Real city checks succeeded for Auckland, Wellington, Christchurch, Hamilton and Rotorua. The latest bounded Auckland runs `cmrtfdhjc0001mq2ans0flgl0` and `cmrtfdst30001mq3thsa0v9ys` each made one request, discovered 18 events, persisted two records and retained three success artifacts with no failure.
-- Pre-boundary real detail runs `cmrtepevg0001lb63reffd9ou` and
-  `cmrtepodq0001lb7ax0kpbva1` each made one detail request, fetched zero details and ended `PARTIAL`
-  with one failure. The corresponding frontier URLs were real Ticketmaster event URLs, not fixtures.
-- Historical pre-Argus Browser Worker trace `ticketmaster-detail-diag-1784563586504` retained an 8,446-byte HTML
-  response with SHA-256
-  `821e8d11cb964ee940993bc0ad0e7d1eb9260a40ed63d00f849b9a689dba32c2`. Its page title is
-  `Let's Get Your Identity Verified`; the HTML contains `Browsing Activity Has Been Paused`,
-  reCAPTCHA, `action="identify"` and an `abuse-component`. The manifest records `readonlyOnly=true`,
-  `externalSideEffectsPerformed=false` and `status=failed`. Sensitive request/IP identifiers are
-  intentionally omitted here.
-- That diagnostic predates the manifest's `requestedUrl` field, so the exact detail URL is recovered
-  from the durable frontier rather than claimed from the manifest. It explains the earlier decision
-  but no longer establishes a valid listing-only boundary.
-- Follow-up full-evidence trace `ticketmaster-detail-live-1784583155045` captured the exact first
-  frontier URL. Its original 1,280 x 900 PNG is retained at
-  [`../evidence/ticketmaster-detail-live-1784583155045.png`](../evidence/ticketmaster-detail-live-1784583155045.png)
-  with SHA-256 `8b43501b7f8551a36401313fc33642baede88284d82171f32bc518346d9e5bbf`.
-  The screenshot shows Ticketmaster's `One moment please...` interstitial while its accompanying
-  8,446-byte HTML contains the identity-verification and anti-bot markers above.
-- Ideal two-stage trace `ticketmaster-detail-ideal-1784583809592` captured the same URL again. The
-  initial 1,280 x 900 screenshot is
-  [`../evidence/ticketmaster-detail-ideal-1784583809592-initial.png`](../evidence/ticketmaster-detail-ideal-1784583809592-initial.png).
-  After the passive wait, the settled screenshot is
-  [`../evidence/ticketmaster-detail-ideal-1784583809592-settled.png`](../evidence/ticketmaster-detail-ideal-1784583809592-settled.png)
-  with SHA-256 `bebb72440d0c6cfee0dea529de16cadb77b8fcefc0fcfd12562b7386e0dc022e`.
-  It shows the normal Amanda Nguyen event page and `EventCancelled` notice. Settled HTML grew from
-  8,446 to 445,634 bytes and the existing extractor recovered event ID, title, status, time, venue,
-  address, coordinates, offer status, performer and image.
-- After detail implementation, bounded live runs `cmrtsi3ps0001qs41ob7ghc0z` and
-  `cmrtsklsx0001pg2ae0i17xpf` waited ten seconds, while `cmrtsnv680001qn2ap5pdojwi` used the final
-  20-second contract. The last two runs targeted the same Amanda Nguyen URL that had previously
-  resolved. In those dated runs all three attempts retained a persistent challenge, fetched
-  zero details and entered cooldown. Each completed capture retained initial HTML, settled challenge
-  HTML, result and manifest; the initial 8,446-byte page grew to 188,100 bytes but retained
-  `Browsing Activity Has Been Paused` and `abuse-component` markers. This is evidence of variable
-  source behavior, not a parser or persistence success. These runs predate challenge-triggered
-  scheduled screenshots. Future challenged captures retain the two HTML files, two PNG screenshots,
-  result and manifest so operators can compare the visible states without another request.
+The historical [initial capture](../evidence/ticketmaster-detail-live-1784583155045.png),
+[two-stage initial image](../evidence/ticketmaster-detail-ideal-1784583809592-initial.png) and
+[settled image](../evidence/ticketmaster-detail-ideal-1784583809592-settled.png) document variable
+public challenge behavior in July 2026. They do not establish current source availability.
 
 ## Remaining Production Gates
 
@@ -209,14 +117,13 @@ source removed that deployment drift; the successful acceptance above uses the r
 The implementation and automated database acceptance are complete; the remaining items are external,
 production or operational gates. All schedules stay disabled in development.
 
-In the 2026-08-01 development snapshot, Ticketmaster unit tests, shared extractor tests, Worker
-typecheck and build passed. Live listing/detail capture and the database integration suite were
-not rerun that day; later bounded production trial results are in [traceability](../traceability.md).
+Recovery of an existing paused daily plan uses the guarded
+`schedule:public:recovery-prepare`, `schedule:public:recovery-trial` and
+`schedule:public:recovery-enable` flow with the source, deployed 40-character revision and
+`--confirm RESTORE_PUBLIC_SCHEDULE`. It requires the latest two complete exact-plan,
+one-attempt trials, retained evidence and verified delivery. Preserve failures and the frozen
+checkpoint; inspect actual runtime state and authorization before these mutations.
 
-`schedule:ticketmaster:enable` enables every schedule bound to the Ticketmaster source, including
-retired definitions and the active daily plan. Do not use this source-wide command to resume the
-daily plan: the production Scheduler rejects unapproved enabled definitions. The guarded
-`schedule:progress:enable` command creates the daily plan after its two-trial gate; it cannot
-resume a plan that already exists. To pause or resume the existing daily plan, use the audited
-Admin schedule control for `progress-ticketmaster-daily` after checking source and runtime gates.
-Retain the source registry, frontier, runs and evidence.
+Do not use `schedule:ticketmaster:enable` to resume the daily plan: it enables all source-bound
+definitions. `schedule:progress:enable` creates a new plan rather than recovering an existing one.
+Pause the affected plan through audited control and retain its registry, frontier, runs and evidence.

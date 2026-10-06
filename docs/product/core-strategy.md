@@ -4,6 +4,8 @@
 
 文档状态：Active — Tymra Core Strategy Baseline v1.3｜Owner / 最终批准人：Harold｜最后更新：2026 年 8 月 21 日
 
+维护说明：2026-10-06。本文描述批准的产品与数据目标；实际 Admin-only 运行阶段及验收边界见[产品入口](README.md#approved-target-and-operational-stage)和[追踪表](../traceability.md)。
+
 ## 当前分析模式
 
 当前分析入口及价格返回规则以《membership-plans.md》为权威来源：
@@ -16,7 +18,7 @@
 # 执行摘要
 
 Tymra 的核心价值不是临时生成一份看起来合理的价格报告，而是先建立并持续运行覆盖新西兰全国的住宿市场数据采集机制，长期积累房源、Sellable Unit、OTA Listing、公开报价、可售变化、市场事件和异常信号。用户可提交地址或受支持的 OTA 链接；系统按明确的分析模式确认稳定 Property 身份，并分别生成目标房源定价结果或周边行情基准。
-当前生产版本同时部署内部采集后台、公开 Price Check、客户登录、会员、方案价格、Stripe、账单和客户结果。客户端初期为 `DEPLOYED_HIDDEN`：首页、公共导航和营销 CTA 不显示入口，但路由、API、Worker、数据库和 webhook 一起部署并验收。会员采用邮箱密码登录，Price Check 验证流程以《customer-funnel.md》为准。
+批准的完整产品由同一生产版本部署内部采集后台、公开 Price Check、客户登录、会员、方案价格、Stripe、账单和客户结果。客户端初期为 `DEPLOYED_HIDDEN`：首页、公共导航和营销 CTA 不显示入口，但路由、API、Worker、数据库和 webhook 一起部署并验收。会员采用邮箱密码登录，Price Check 验证流程以《customer-funnel.md》为准。
 数据层采用“全国长期底座 \+ 全国事件与异常触发 \+ 全国代表性 OTA 面板 \+ 内部按需深挖”的组合。全国范围从第一阶段开始建设；数据采集、重试、来源健康、追加历史和全国覆盖状态必须持续运行。全国房源目录应尽量接近全量，全国价格矩阵采用分层代表性面板而不追求所有组合全量采集。
 技术层采用“数据新鲜度感知的缓存命中 \+ 全国持续采集 \+ 按需实时刷新 \+ 不可变历史存储”。正式报告必须固化一个时间一致、证据可追踪的 MarketSnapshot，并同时保留日期级 DateSnapshot、竞品集合版本、来源运行状态和分析版本；不同查询条件、不同 Sellable Unit 或相差过大的采集时间不得直接混合。
 在没有经营者实际订单、入住率、剩余库存和成交 ADR 的阶段，Tymra 的输出统一定义为 Market Reference Range、Review Range、目标价格位置、低价风险和需求压力判断，不宣称已经计算出收益最优价格。只有在用户自愿接入 PMS、Channel Manager 或提供经营结果后，才能进一步评估房源级收益效果。

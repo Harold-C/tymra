@@ -1,90 +1,98 @@
 # Tymra codebase structure
 
-Last updated: 2026-08-11
+Last reviewed: 2026-10-07. Runtime versions, mounts and acceptance belong in
+[traceability](../traceability.md), not this directory map.
 
-## Local workspace layout (2026-09-13)
+## Workspace boundaries
 
-- Business entry: `/Users/haroldchen/Library/Mobile Documents/com~apple~CloudDocs/Workspaces/tymra`;
-  contains routing and historical-source indexes, not copied product contracts or Git data.
-- Engineering root: `/Users/haroldchen/Development/tymra/repo`. Future linked worktrees belong under
-  `/Users/haroldchen/Development/tymra/worktrees/<topic>` when a task needs them; only main exists now.
-- Existing containers run the retained built application image and do not bind-mount this source
-  tree. Their original Compose path labels are creation metadata, not active source dependencies.
-  Use the new repository for future explicitly requested builds and configuration changes.
-- PostgreSQL, Redis and local Argus evidence remain in `tymra_postgres_data`, `tymra_redis_data`
-  and `tymra_argus_evidence`. Shared local CA files remain outside the repository.
-- Repository `ops/launchd` templates point to the new root but are not installed or loaded.
-  Old copies now in `/Users/haroldchen/Development/tymra/history/legacy-local-launchers` are retained historical
-  helpers, not active supervisors; do not execute them as current project entrypoints.
-- Sources, runtime configuration, data volumes, Mailpit container files and the exact built
-  application image are preserved in the comprehensive recovery ZIP.
-  Use the [recovery guide](</Users/haroldchen/Development/life/work-environment/chatgpt-rebuild/备份恢复说明.md>); superseded local backup folders are retired. Current sources and formal history remain in their new locations; iCloud is not a full runtime backup.
+- Engineering: `/Users/haroldchen/Development/tymra/repo`; select the actual Git worktree and
+  inspect its branch/changes before editing.
+- Business navigation and original source material:
+  `/Users/haroldchen/Library/Mobile Documents/com~apple~CloudDocs/Workspaces/tymra`.
+- Manual linked worktrees: `/Users/haroldchen/Development/tymra/worktrees/<topic>`;
+  app-managed worktrees follow the saved app setting. Isolate Compose identities, ports and data.
+- Credentials, dependencies, runtime data and evidence stay in their local/protected engineering
+  locations. The iCloud entry is not a second checkout or runtime backup.
+- Workspace migration and retired launchers are historical; recovery uses the existing
+  [Life recovery guide](</Users/haroldchen/Development/life/work-environment/chatgpt-rebuild/备份恢复说明.md>).
+  Recheck recoverability before use rather than assuming an old backup description is current.
 
-## Runtime and package boundaries
+## Applications and packages
 
 ```text
 apps/
-  web/                         Next.js public, member, Admin and HTTP API surfaces
-    app/[locale]/account/      authenticated member routes
-    components/member/         member-facing UI
-    components/admin/membership/ operator-only membership UI
-    lib/server/membership/     authentication, entitlement, risk and billing services
-  worker/                      durable jobs, collection and Argus orchestration
-    src/membership/            membership scheduling, retention and aggregate operations metrics
+  web/                          Next.js public, member, Admin and HTTP API
+    components/home/            homepage sections and search state hook
+    components/public/          anonymous customer funnel
+    components/member/          account, report and membership components
+      portal/                   history, units, calendar, billing, settings and feature gates
+    lib/server/admin-resources.ts typed Admin resource queries
+    components/admin/membership/ operator membership UI
+    lib/server/membership/      authentication, entitlement, risk and billing
+  worker/                       durable jobs, API, scheduler, CLI and collection
+    src/services/worker-service.ts public service facade
+    src/services/worker/        typed request, pricing, catalog and operations modules
+      collection/              source orchestration, transports and persistence
+    src/jobs/handlers/          pricing, collection, notifications, coverage and failure handling
+    src/operations/schedule-policy.ts approved schedule classification and source policy
+    src/membership/             member scheduling, retention and aggregate metrics
     src/services/ota-pricing-orchestrator.ts
-                               address discovery, comparable identity and public OTA rate persistence
+                                address discovery, comparable identity and rates
 packages/
-  config/                      validated runtime configuration
-  db/                          Prisma schema, migrations and persistence helpers
-  domain/                      pure contracts and policy
-  providers/                   source adapters and normalisation
-  queue/                       durable queue primitives
-docs/
-  product/                     authoritative product contracts
-  architecture/                current code and runtime boundaries
-  collection/                  source contracts and acceptance rules
-  evidence/                    dated, immutable acceptance snapshots
+  config/                       validated runtime configuration
+  db/                           Prisma schema, migrations and persistence
+  domain/                       pure contracts and policy
+  providers/                    explicit adapter and contract entrypoints
+    src/public/                 direct public adapters, shared parsers and Worker registry
+  queue/                        durable queue primitives
 ```
 
-The repository intentionally has no private Browser Worker, browser-runtime package or marker-only
-UI package. Argus owns browser execution; reusable Web UI stays with its actual application
-consumer.
-
 Dependencies flow from applications to shared packages. `domain` must not import application or
-database code. Provider adapters emit domain contracts; persistence remains in `db`; browser work is
-performed by Argus and reached through the Worker boundary.
+database code. Adapters emit domain contracts; database writes belong to the persistence boundary.
+Browser execution is external through [Argus](../collection/argus.md); there is no private Browser
+Worker or marker-only UI package.
 
-## Membership ownership
+`tsconfig.base.json` contains shared TypeScript settings; each project selects any DOM libraries it
+needs, while Next.js plugins and Web aliases belong to Web. `pnpm typecheck` checks all workspace packages and applications,
+then root scripts and test configuration. `scripts/check-boundaries.mjs` enforces the dependency
+direction and keeps server infrastructure out of client components.
 
-- Public/anonymous funnel UI stays in `components/public`; authenticated account UI stays in
-  `components/member`.
-- Customer authentication, entitlement, quota, risk and Stripe reconciliation stay under
-  `lib/server/membership`. Route handlers validate transport concerns and delegate to this layer.
-- Admin membership operations are isolated under `components/admin/membership` and protected by the
-  existing Admin session. Customer sessions never grant Admin access.
-- A pricing unit represents one real Property whether it began as an OTA URL or a street address.
-- Member account workspace styles and the public customer-funnel styles live in separate CSS
-  surfaces (`member-account.css` and `customer-funnel.css`) so changes to one surface can be
-  reviewed without scanning the other.
-  OTA listings and provider-specific room identities do not consume extra property slots.
+## Feature ownership
 
-## Generated and historical files
+- Customer authentication, entitlement, quota, risk and Stripe reconciliation live in
+  `apps/web/lib/server/membership`; routes validate transport and delegate.
+- Admin membership operations use Admin sessions. Customer sessions grant no Admin authority.
+- A member pricing slot represents one real Property; matched addresses, OTA listings and
+  provider room identifiers do not consume extra slots.
+- Global tokens, public responsive rules and reduced-motion defaults live in
+  `apps/web/app/globals.css`. Locale layouts load `customer-funnel.css`, account layouts load
+  `member-account.css`, and Admin layouts load `admin.css`. Public pages must not rely on Admin
+  stylesheet loading. Preserve cascade order when moving shared rules.
+- Homepage search state and submission live in `components/home/useHomeSearch.ts`; presentation
+  sections use that explicit contract. Member feature files import their own contracts and helpers,
+  without a compatibility view barrel. Admin rendering delegates persistence queries to
+  `lib/server/admin-resources.ts`.
+- Worker member retention and operational aggregates live in `src/membership/operations.ts`.
+  OTA pricing orchestration and shared price semantics live in `src/services`.
+- Provider imports select named package subpaths rather than a root export-all barrel.
+  `packages/providers/src/contracts.ts` owns the common provider interface;
+  `src/public/registry.ts` assembles direct public adapters for Worker execution. Email consumers
+  use the email entrypoint without loading spreadsheet or collection adapters.
+- Public event/Argus adapters remain in `packages/providers/src/public-event-web-adapters.ts`.
+  Source definitions live in `packages/db/prisma/seed-sources.ts`; seed orchestration stays in
+  `seed.ts`. Seed is development setup, not a production source migration.
 
-Build output (`.next*`, `dist`, coverage and caches) is generated and must not be treated as source.
-Numbered copies such as `Component 2.tsx` are not valid source variants. Dated files under
-`docs/evidence` are historical snapshots; current status belongs in `docs/traceability.md`.
+## Test runtime
 
-## Decomposition status
+`test/isolation.ts` validates disposable database/Redis and dedicated Compose identities before
+test setup writes. Browser setup uses `test/runtime-environment.ts` and the standalone
+`docker-compose.test.yml`; it owns its ports, fixture credentials, network and disposable volume.
+It does not rebuild or seed the daily development stack. The root [verification guide](../../README.md#verification)
+documents guarded integration, isolated builds and separately authorised external acceptance.
 
-The first behaviour-preserving split is complete:
+## Documentation and generated files
 
-- shared/public CSS remains in `app/globals.css`; member and Admin surfaces live in
-  `styles/member.css` and `styles/admin.css` with import order preserved;
-- membership retention and privacy-safe operational metrics live in `worker/src/membership/operations.ts`;
-- generic public event/Argus web adapters live in `public-event-web-adapters.ts` behind the unchanged registry;
-- deterministic source definitions live in `prisma/seed-sources.ts`, while orchestration remains in `seed.ts`.
-- address-based OTA discovery and price persistence live in `worker/src/services/ota-pricing-orchestrator.ts`;
-  shared public-price semantics live in `worker/src/services/ota-price.ts`.
-
-Further Worker/source-family decomposition is allowed only as independently reviewed changes with
-the current feature, seed-idempotency and integration suites held constant.
+The [document index](../README.md) assigns one authority to each concern. Dated evidence proves
+its named candidate and environment only. Build output, caches, `dist`, `.next*` and coverage
+are generated artifacts; numbered copies such as `Component 2.tsx` are not supported source variants.
+Retired structures are summarized in [decisions](../decisions.md#文档与运行阶段变迁).

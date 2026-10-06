@@ -1,6 +1,7 @@
 # Non-OTA public collection
 
-Last updated: 2026-09-29 (Argus sources and bounded plans)
+Last reviewed: 2026-10-06. Production activation and latest recorded runs are in
+[traceability](../traceability.md).
 
 ## Request strategy
 
@@ -85,11 +86,12 @@ longer depends on a process restart.
 
 All schedules remain controlled by source operational state and are hard-disabled in development.
 
-## Current status
+## Bounded acceptance
 
 The implementation exposes one development-only acceptance runner for the configured non-OTA
 public sources. It fixes one 31-day window, runs each selected source twice with source-specific bounds
 and `maxAttempts=1`, verifies source/canonical lineage, requires zero enabled schedules, checks that
-source configuration remains unchanged and rejects second-pass source/link growth. The nationwide expansion
-and latest isolated persistence evidence are recorded in the
-[2026-08-06 acceptance record](../evidence/nz-major-market-public-signals-acceptance-2026-08-06.md).
+source configuration remains unchanged and rejects second-pass source/link growth. Dated persistence evidence is indexed in
+[evidence](../evidence/README.md); a past acceptance does not establish current freshness or
+source availability. Production recovery uses the existing exact-plan trial/enable flow rather
+than rerunning development seed or replacing healthy schedules.

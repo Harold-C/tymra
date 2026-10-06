@@ -5,7 +5,9 @@
 - Product decision: approved current membership structure and commercial contract
 - Effective definition date: 2026-08-10, Pacific/Auckland
 - Scope: current unified production deployment; initial public discovery state is `DEPLOYED_HIDDEN`
-- Runtime status: client routes, APIs, Worker flows, Stripe and data lifecycle deploy with the national data core; homepage, public navigation and marketing CTA entry points remain hidden until discovery is enabled
+- Approved deployment behavior: client routes, APIs, Worker flows, Stripe and data lifecycle deploy with the national data core; homepage, public navigation and marketing CTA entry points remain hidden until discovery is enabled
+- Recorded operational stage: see [product scope](README.md#approved-target-and-operational-stage) and [traceability](../traceability.md); Admin-only production is not customer acceptance
+- Editorial alignment: 2026-10-06; commercial terms unchanged
 
 ## Product decisions
 
@@ -300,7 +302,7 @@ The membership system cannot be described as complete until all applicable rows 
 | `MEM-RISK-002` | Concurrent Free claims, promotions, exports and API calls are idempotent and cannot exceed their database-enforced allowance. |
 | `MEM-RISK-003` | Payment fingerprints are HMAC-only; refund, dispute and Radar signals are reviewable and members can appeal without exposing payment data. |
 | `MEM-RISK-004` | Risk retention, reason-code metrics, Admin allow/deny/release actions and every override are independently testable and audited. |
-| `MEM-NAV-001` | Public and authenticated headers expose the correct Sign in, Account and Sign out actions in EN/ZH and on mobile. |
+| `MEM-NAV-001` | EN/ZH desktop/mobile navigation honors discovery mode: hidden public surfaces omit customer entries; enabled discovery and authenticated account surfaces show the correct Sign in, Account and Sign out actions. |
 | `MEM-ACC-001` | Account overview accurately renders persisted plan, status, usage, units, horizons, cadence and next actions for every plan/lifecycle state. |
 | `MEM-UNIT-001` | Unit add/confirm/activate/deactivate/reactivate and downgrade selection enforce stable identity and plan limits transactionally. |
 | `MEM-CHECK-001` | History and detail are owner-only, filterable, retention-aware and separate target-price success from recommendation availability. |

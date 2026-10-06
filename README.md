@@ -1,147 +1,72 @@
-# Tymra Release 1
+# Tymra
 
-Tymra is a bilingual Price Check application with a PostgreSQL system of record, Redis coordination,
-a background Worker pipeline, Fastify Worker API, Scheduler, operational Admin and local Mailpit
-delivery. Worker Baseline v1 adds Property/SellableUnit/Listing resolution, query signatures,
-append-only observations, competitor/date/market snapshots, pricing analysis and immutable results.
+Tymra is Spicy Maggie's New Zealand accommodation market-intelligence product. Its data core
+collects versioned property, public OTA price and market-signal evidence; the bilingual Price Check
+and membership application are product surfaces over that core.
 
-## Documentation
+## Documentation and working directory
 
-Use the [documentation index](docs/README.md) as the single entry point. Product baselines live in
-`docs/product`, stable runtime design in `docs/architecture`, collection standards in
-`docs/collection`, historical run records in `docs/evidence`, and current implementation status in
-[`docs/traceability.md`](docs/traceability.md). The former Google Docs are no longer authoritative.
+Start with the [documentation index](docs/README.md). Approved requirements live in
+[product](docs/product/README.md), current implementation and recorded runtime evidence in
+[traceability](docs/traceability.md), and remaining work in the
+[implementation plan](docs/implementation-plan.md).
 
-The current local engineering root is `/Users/haroldchen/Development/tymra/repo`.
-The iCloud `Workspaces/tymra` directory is the business navigation entry, not a second source tree.
-See `docs/architecture/codebase.md` for directory boundaries and `docs/traceability.md` for the
-current runtime and migration status. Existing containers run a built image; editing this tree
-does not change their application code until an explicitly requested candidate switch.
+The engineering root is `/Users/haroldchen/Development/tymra/repo`; iCloud
+`Workspaces/tymra` contains navigation and source material. Select the actual repo/worktree
+explicitly and check its branch and existing changes. Before runtime work, inspect the selected
+Compose project, images, source mounts and database. A disk edit does not prove a running image
+changed, and a source mount/watch process can make an edit take effect immediately.
 
-## Prerequisites
+## Toolchain and environment
 
-- Docker Desktop with Docker Compose v2
-- Node.js 20.9-24 and pnpm 10-11 for host-based development
-- The shared host Traefik network named `local`; the checked-in Compose labels provide all `.test`
-  HTTPS routes
+- The manifest selects `pnpm@11.7.0` and accepts Node 20.9–24 / pnpm 10–11.
+  The checked-in Dockerfile pins the container runtime; use the repository's existing toolchain.
+- Local full-stack operation uses Docker Compose v2 and the shared Traefik `local` network.
+- Use `.env.example` to configure the selected local environment. Keep the real `.env` protected
+  and uncommitted; do not copy another environment's secrets or print them for validation.
+- Replace placeholder secrets through the existing secure setup process. Database credentials must
+  agree between `POSTGRES_PASSWORD` and `DATABASE_URL`. `ADMIN_PASSWORD_HASH` is a bootstrap
+  bcrypt hash; runtime authentication reads the stored database hash. Never store the plaintext
+  Admin password in the repository.
+- `PROVIDER_MODE=demo|fixture` is restricted to development/test. Production never substitutes
+  generated data for a failed source.
+- Paid plans, export and member API have independent `MEMBERSHIP_*_LAUNCH_ENABLED` gates.
+  Export also requires Pro; the member read API also requires Portfolio.
 
-## Environment
+## Local operation
 
-Create a local `.env` from `.env.example`. Keep `.env` uncommitted. Replace every
-`replace-with-...` value and use the same database password in `POSTGRES_PASSWORD` and
-`DATABASE_URL`.
-
-Generate each 256-bit application secret independently:
-
-```sh
-openssl rand -hex 32
-```
-
-Generate the administrator bcrypt hash without storing a plaintext password in the repository:
-
-```sh
-read -s ADMIN_PASSWORD
-printf '\n'
-export ADMIN_PASSWORD
-pnpm exec node -e "import('bcryptjs').then(async ({hash}) => console.log(await hash(process.env.ADMIN_PASSWORD, 12)))"
-unset ADMIN_PASSWORD
-```
-
-Run that command with `ADMIN_PASSWORD` supplied only to the process, then put the resulting hash
-in `ADMIN_PASSWORD_HASH`. This is a bootstrap-only seed value; Web and Worker authentication read
-the stored database hash at runtime. Do not put the plaintext password in `.env`.
-
-`PROVIDER_MODE=demo` and `PROVIDER_MODE=fixture` are restricted to development and test.
-Production rejects both and never falls back to generated data after a live collection failure.
-
-Paid plans and advanced member operations are independently fail-closed. Keep
-`MEMBERSHIP_*_LAUNCH_ENABLED=false` until the applicable acceptance passes; export additionally
-requires the Pro launch gate and the member read API additionally requires the Portfolio launch gate.
-
-## Docker Compose
-
-Build and start PostgreSQL, Redis, migrations, idempotent seed, Web, Worker API, Worker and Mailpit.
-Browser collection is performed only by the separately deployed Argus service. The disabled
-development Scheduler is an opt-in profile, so it does not consume resources during normal local
-development:
+These are runtime actions, not document checks. Compose startup builds the image, starts services,
+and runs migration and development seed. Use only the intended local database and data volumes.
 
 ```sh
 pnpm compose:up
 docker compose ps
 ```
 
-All Node application services reuse `tymra-app-dev:local`; Compose logs rotate at 10 MB with three
-files per container.
+Local services share `tymra-app-dev:local`: Web, Fastify API and Worker, with PostgreSQL,
+Redis and Mailpit. Argus is a separate shared service, not a Tymra browser container.
+Scheduler is an opt-in Compose profile; development hard-disables automatic source scheduling
+even when its process is started. Do not use profile startup as a source-acceptance shortcut.
 
-Start or stop the Scheduler explicitly only when testing schedules:
-
-```sh
-pnpm compose:scheduler:up
-pnpm compose:scheduler:down
-```
-
-Migration and seed services run automatically and must complete before application processes start.
-Both can be rerun safely:
-
-```sh
-docker compose run --rm migrate
-docker compose run --rm seed
-```
-
-Local endpoints:
-
-| Service | URL or port |
+| Surface | Default local address |
 | --- | --- |
-| Public Web | `https://tymra.test/en` and `https://tymra.test/zh` |
-| Member sign-in | `https://tymra.test/en/sign-in` and `https://tymra.test/zh/sign-in` |
-| Operations | `https://ops.tymra.test/admin/sign-in` |
-| Worker diagnostics | `https://worker.tymra.test/worker/health`, `/worker/readiness` and privacy-safe `/worker/alerts` |
-| Direct Worker API fallback | `http://localhost:3100` (loopback only) |
-| Browser handoff | `https://connect.argus.test` (Argus enabled only; use the generated random URL) |
-| Argus diagnostics | `https://argus.test/health` and `/readiness` |
-| Tymra → Argus | `https://api.argus.test/v1/jobs` |
+| Public Web | `https://tymra.test/en`, `https://tymra.test/zh` |
+| Member sign-in | `https://tymra.test/en/sign-in`, `https://tymra.test/zh/sign-in` |
+| Admin | `https://ops.tymra.test/admin/sign-in` |
+| Worker diagnostics | `https://worker.tymra.test/worker/health`, `/worker/readiness`, `/worker/alerts` |
+| Internal Worker API | Loopback `http://localhost:3100` |
+| Argus API | `https://api.argus.test/v1/jobs` |
+| Argus diagnostics | `https://argus.test/health`, `/readiness` |
+| Human browser handoff | Exact expiring URL returned by Argus under `https://connect.argus.test` |
 | Mailpit | `https://mail.tymra.test` |
-| PostgreSQL | `localhost:5433` |
-| Redis | `localhost:6379` |
+| PostgreSQL / Redis | Loopback ports 5433 / 6379 |
 
-Compose defaults local email to SMTP through Mailpit. `EMAIL_PROVIDER=log` records only redacted
-delivery metadata and never prints result tokens.
+`pnpm compose:down` stops the local stack while retaining named data volumes. Database reset,
+migration reruns, seed, evidence cleanup and recovery scripts are separate writes; do not use them
+as routine diagnostics. Retired LaunchAgent templates and automatic recovery scripts were removed;
+use the explicit Compose or host commands here for the selected environment.
 
-Stop the application while retaining the database:
-
-```sh
-pnpm compose:down
-```
-
-Delete and recreate all local database data:
-
-```sh
-docker compose down --volumes
-docker compose up --build -d
-docker compose run --rm seed
-```
-
-### Development member accounts
-
-Development seed creates one verified account for each plan. The sign-in page pre-fills the Free
-account; use another email below to inspect its plan state.
-
-| Email | Plan |
-| --- | --- |
-| `demo1@tymra.test` | Free |
-| `demo2@tymra.test` | Host |
-| `demo3@tymra.test` | Pro |
-| `demo4@tymra.test` | Portfolio |
-
-All four accounts share one development-only password. Set `MEMBER_DEV_PASSWORD` to an explicit
-local value of at least 12 characters, or leave it blank to derive the password from
-`SESSION_SECRET`. No plaintext development password is stored in the repository. The legacy
-`development-demo@tymra.test` member login is removed; that string remains only as a fixture data
-label and is not an account.
-
-## Host Development
-
-With PostgreSQL available on port 5433 and the environment exported:
+For host development, use the selected local environment with PostgreSQL/Redis available:
 
 ```sh
 pnpm install
@@ -151,213 +76,129 @@ pnpm db:seed
 pnpm dev
 ```
 
-Run the Worker, API and optional Scheduler in separate terminals:
+Run `pnpm worker` and `pnpm --filter @tymra/worker api` in separate terminals when using
+host processes. Do not run duplicate host and Compose application processes. Database commands
+write to the configured target and development seed must never run in production.
 
-```sh
-pnpm worker
-pnpm --filter @tymra/worker api
-SCHEDULER_ENABLED=true pnpm --filter @tymra/worker scheduler
-```
+Development seed creates verified `demo1@tymra.test` (Free), `demo2@tymra.test` (Host),
+`demo3@tymra.test` (Pro) and `demo4@tymra.test` (Portfolio). Their shared development password
+is supplied by protected `MEMBER_DEV_PASSWORD` (at least 12 characters), or derived from
+`SESSION_SECRET`. Fixture labels are never evidence of real market observations.
 
-Useful Worker CLI examples:
+## Production boundary
 
-```sh
-pnpm cli collect:listing 'https://www.booking.com/hotel/nz/example.html'
-pnpm cli analyse:listing 'https://www.booking.com/hotel/nz/example.html' --email operator@example.test
-pnpm cli source:health
-pnpm cli collect:disruptions
-pnpm cli retention:cleanup
-```
+`docker-compose.prod.yml` uses explicit `PROD_*` settings and host variables
+`HOST_PUBLIC`, `HOST_OPS`, `HOST_WWW` and `HOST_BASE_DOMAIN`.
+The collection Worker/API use the `collection` profile and Scheduler uses `scheduler`.
+Compose defaults are not proof of the running settings; recorded versions and plan state belong
+in [traceability](docs/traceability.md).
 
-### Event collection and browser responsibility
+The initial access stage exposes only `ops.tymra.nz` for authenticated Admin pages/API.
+`ADMIN_ONLY_ACCESS=true`, no public/www Web router and Admin noindex headers keep customer
+surfaces closed. PostgreSQL, Redis, Worker and Scheduler are internal; production has no Mailpit.
+Backend-only email uses log delivery. Customer access, Stripe, real mail and paid capabilities
+require their own acceptance and authorized ingress/configuration changes.
+`DEPLOYED_HIDDEN` only hides navigation and is a distinct product discovery mode.
 
-Eventfinda listing and necessary detail pages, Ticketmaster city listings and selectively required
-details, and RBNZ browser captures use durable, read-only Argus Jobs. Those collections persist each
-Argus execution, release the Worker while it runs, poll through a separate delayed database Job and
-resume the same collection after
-completion or restart. There is no in-process or private-browser fallback. Eventfinda supports
-nationwide paginated discovery, one detail target per event series, multi-date expansion and
-development-only bootstrap runs. Ticketmaster collects complete structured events from five
-verified city listing routes and schedules a detail page only when required identity, date, status or
-venue fields are missing. Its detail pages may show a temporary verification interstitial, so this
-listing-first path also materially reduces challenge exposure. The Worker retains a durable fallback
-detail frontier, exact-target persistence, refresh/backoff policy and database acceptance. The
-current production plans are `progress-eventfinda-daily` (up to three listing pages and one necessary
-detail) and `progress-ticketmaster-daily` (up to three listing pages and two necessary details).
-The older discovery/detail seed definitions and weekly pilots are not the active production plans.
-Ticketmaster detail access remains subject to source challenges; no Ticketmaster API key or API
-endpoint is used. Direct page loading in the Worker is available only through an explicit test fixture.
+Deploy a fixed candidate, verify recovery material and read back the actual image, configuration,
+health and affected business result. Do not infer production acceptance from a build or local
+test. Bootstrap only the selected administrator in a fresh production database, without demo seed.
 
-Docker `restart: unless-stopped` policies remain configured on the current local services.
-As verified on 2026-09-13, no Tymra LaunchAgent is installed or loaded; the earlier claim that a
-60-second host health check is active no longer describes this Mac. Repository templates and
-scripts remain available for a separately requested setup. Running the recovery script can start
-shared Traefik and execute Compose up, including migrations/seed; do not use it as a read-only check.
-Host-based Web/Worker fallbacks must remain unloaded while the Compose application processes run.
+## Collection and import
 
-## Production Domains
+See [Argus](docs/collection/argus.md) for durable submit/poll/resume, schema validation,
+evidence copy/hash and ACK. [Public collection](docs/collection/public-data.md) defines direct
+transports; [Eventfinda](docs/collection/eventfinda.md) and
+[Ticketmaster](docs/collection/ticketmaster.md) define bounded listing/detail behavior.
+The active OTA set is Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com.
+Other brands and Partner APIs are outside the current contract; no compatibility implementation
+is required by these docs.
 
-`docker-compose.prod.yml` keeps the same trust boundaries with production host variables:
+Normal Admin manual import requires an enabled, operationally available source. Download the
+template, preview errors and import only the intended rows. The development-only
+`localAcceptance=true` path is capped at 256 KiB/two rows and preserves source configuration.
+See [manual import](docs/collection/manual-import.md) and
+[acceptance](docs/collection/acceptance.md).
 
-```sh
-HOST_PUBLIC=tymra.nz
-HOST_OPS=ops.tymra.nz
-HOST_WWW=www.tymra.nz
-HOST_BASE_DOMAIN=tymra.nz
-```
-
-Production secrets and service settings use explicit `PROD_*` variables, such as
-`PROD_POSTGRES_PASSWORD`, `PROD_SESSION_SECRET`, `PROD_ADMIN_EMAIL`, `PROD_EMAIL_FROM` and
-`PROD_SMTP_URL`. This prevents Compose from silently reusing the local `.env` values.
-
-The backend-only deployment uses `PROD_EMAIL_PROVIDER=log` and leaves SMTP unset.
-Collection Worker/API services require the `collection` Compose profile, and the Scheduler
-requires the `scheduler` profile. The current running profiles and exact images are recorded in
-`docs/traceability.md`; the five-source Scheduler was subsequently enabled for bounded observation.
-The initial deployment used a disabled loopback endpoint and non-working token until the
-restricted Argus production acceptance on 2026-09-24.
-Do not run the development seed for production: it creates demonstration scenarios. Bootstrap
-only the explicitly selected administrator into the fresh, migrated production database.
-
-The first production ingress exposes only `ops.tymra.nz` for Admin. The production Compose file
-defaults to `ADMIN_ONLY_ACCESS=true`, has no public or www Web router, and marks Admin responses
-`noindex`. The public hostname, customer routes and same-origin customer APIs remain closed even
-when their code is present in the image. PostgreSQL, Redis, Worker, Scheduler and the Worker API
-remain on the internal Docker network. Mailpit is not part of the production Compose file.
-Opening the customer site later requires a separate ingress change and the client release gates
-in `docs/product/requirements.md`.
-
-## Manual Import
-
-Sign in to Admin, open **Data Sources**, and use **Manual rate import**. Download the CSV template,
-preview it, review row errors, then import. The source must be enabled and operationally available.
-
-The Admin API also accepts explicit `localAcceptance=true` in development. That path is fixed at
-256 KB and two valid rows, retains short-lived hashed evidence and does not mutate source
-configuration. Development scheduling is hard-disabled independently of runtime configuration.
+Source plan and health reads are distinct from collection, retry, enablement and cleanup writes.
+Use `pnpm cli source:health`, `ota:health` and `schedule:sources:plan` according to their
+actual effects; a source health probe may contact the source and update stored health. Production source recovery uses
+the source-specific guarded flow documented in the collection contracts. Never run an old first-batch
+bootstrap or source-wide enable command to recreate retired plans.
 
 ## Verification
 
+Choose checks for the actual change; documentation-only work checks facts, links and final diff.
+
+| Check | Coverage / prerequisites |
+| --- | --- |
+| `pnpm lint`, `pnpm typecheck`, `pnpm test` | Dependency boundaries, Web lint, every workspace's types and unit coverage; live fixtures remain separately gated |
+| `pnpm test:integration` | Database/API/Worker; explicit disposable isolated PostgreSQL and Redis targets required |
+| `pnpm test:integration:ota-offline` | Six OTA delivery contracts against local synthetic HTTP; fresh `_offline_test` database with migrations and no seed required |
+| `pnpm build` | Web production build and Worker entrypoints |
+| `pnpm build:isolated` | Production-shaped build with synthetic configuration and disabled external services; requires isolated test targets |
+| `pnpm verify` | Lint + workspace types + unit + guarded integration + isolated build; excludes Playwright and external provider/Stripe acceptance |
+| `pnpm test:e2e` | Desktop/mobile fixture flows; creates, migrates, seeds and removes its own Compose test stack |
+| `pnpm test:e2e:member-matrix` | Four-plan entitlement and launch-gate routes in the same isolated desktop/mobile runtime |
+| `pnpm test:e2e:hidden` | Existing isolated loopback candidate with customer routes available and `CLIENT_DISCOVERY_MODE=DEPLOYED_HIDDEN`; set `TYMRA_HIDDEN_BASE_URL` |
+| `pnpm compose:smoke` | Creates an isolated stack and removes its own containers/test volumes on completion; excludes Scheduler |
+| `pnpm test:cycle-review` | Historical five-source evaluator's synthetic regression; not a current production health check |
+
+**Database safety:** Integration configuration rejects missing or unsafe targets before loading
+test fixtures. Set `TYMRA_TEST_DISPOSABLE=YES`, an explicit `TYMRA_TEST_DATABASE_NAME` matching
+a `tymra_test` / `tymra_e2e` database (optionally with an underscore suffix), and local
+`DATABASE_URL` / `REDIS_URL`. The development database port 5433 and ordinary Redis port 6379
+are refused; `redis-test` is the dedicated container exception. Verify the actual selected services,
+then migrate/seed only that disposable database. `NODE_ENV=test` alone is insufficient.
+
 ```sh
-pnpm lint
-pnpm typecheck
-pnpm test
+: "${DATABASE_URL:?Set and verify a disposable isolated test database}"
+: "${REDIS_URL:?Set and verify an isolated Redis service}"
+export TYMRA_TEST_DISPOSABLE=YES
+export TYMRA_TEST_DATABASE_NAME=tymra_test
 pnpm test:integration
-pnpm test:e2e
-pnpm test:e2e:hidden
-pnpm test:cycle-review
-pnpm test:e2e:member-live
-pnpm test:stripe:readiness
-pnpm test:e2e:stripe
-pnpm test:challenge:readiness
-pnpm build
+# Or, for a fixed release candidate requiring the full applicable gate:
 pnpm verify
 ```
 
-`pnpm verify` covers lint, TypeScript, unit tests, database/API/Worker integration tests and production
-builds; it does not include Playwright. Run `pnpm test:e2e` separately when UI or browser-visible
-behaviour changes. Current worktree verification and any deliberately unrun gate are recorded in
-[`docs/traceability.md`](docs/traceability.md), not inferred
-from an older successful run.
+Playwright supplies synthetic fixture settings through `test/runtime-environment.ts`, without
+loading `.env`. `docker-compose.test.yml` owns project `tymra-e2e`, database 55434, Redis 56380,
+Web 43307, API 43407 and Mailpit 51027/58027; these ports must be free. The stack has its own
+data volume and network, no source mounts or shared Traefik dependency, and outbound network
+masquerading is disabled. Scheduler, Stripe, paid launch gates and real providers stay disabled.
+Setup failures and normal teardown remove only this test stack and its volume. Do not run two
+isolated browser invocations concurrently. Live-member and Stripe acceptance retain separate entries.
 
-`pnpm test:e2e:hidden` is a non-mutating browser check for an isolated local candidate already
-running with `CLIENT_DISCOVERY_MODE=DEPLOYED_HIDDEN` and customer routes available. Set
-`TYMRA_HIDDEN_BASE_URL` to that candidate's loopback origin. It checks hidden public links,
-mobile navigation, direct routes and unauthenticated access in both languages; it refuses a
-non-loopback origin and does not recreate the normal development Compose stack.
+CI runs guarded verification, six-source delivery in a separate empty database, and an isolated browser job. A configured workflow
+is not evidence of an executed cloud run. A skipped test is not a pass; report required conditional
+cases and their separate evidence.
 
-`pnpm test:cycle-review` checks the read-only five-source second-cycle evaluator. Its baseline,
-snapshot SQL, artifact-hash stream and exact acceptance procedure are recorded in
-[`docs/evidence/first-five-cycle-review-preparation-2026-09-25.md`](docs/evidence/first-five-cycle-review-preparation-2026-09-25.md).
+The six-source offline OTA pipeline additionally requires a fresh database ending in `_offline_test`.
+Migrate that empty disposable database without development seed: the test creates its own source
+registry and refuses to overwrite existing sources. After setting the matching guarded test target,
+run `pnpm test:integration:ota-offline`. This entry also rejects the wrong database suffix instead
+of silently skipping all six cases.
+It exercises live contract rules against a local synthetic HTTP server, without contacting OTAs.
 
-`pnpm test:e2e:member-live` is an explicit real-provider gate. It requires
-`MEMBER_LIVE_EMAIL`, `MEMBER_LIVE_PASSWORD` and `MEMBER_LIVE_INPUT`; use
-`MEMBER_LIVE_LISTING_URL` only when an address flow asks for listing confirmation, and set
-`MEMBER_LIVE_NIGHTS` when the acceptance property has a public minimum-stay restriction. The test
-fails unless the member report contains at least one non-demo public OTA price. Its dedicated
-Playwright config never retains traces, screenshots or video because those artifacts could capture
-the development credential.
+### External acceptance
 
-Stripe's real test-mode gate is deliberately separate from `pnpm verify`. Use a disposable,
-verified Free member and a Stripe test account whose Host, Pro and Portfolio Prices are active,
-monthly, NZD and GST-inclusive. First run `pnpm test:stripe:readiness` with
-`STRIPE_ACCEPTANCE_CONFIRM_TEST_MODE=YES`; the command performs read-only account, Portal and Price
-checks and prints only hashed Stripe identifiers. Start Stripe CLI webhook forwarding to
-`http://127.0.0.1:3000/api/v1/billing/stripe/webhook`, use its test signing secret, recreate the Web
-container with billing and the intended membership launch gates enabled, then run
-`pnpm test:e2e:stripe`. The browser test uses Stripe's public `4242` test card, waits for persisted
-Webhook state after every mutation, follows Stripe Checkout's AI-agent disclosure, and never retains
-traces, screenshots or video. Re-running the development seed preserves an existing Stripe-backed
-subscription instead of resetting its entitlement. The test intentionally
-leaves the disposable subscription active with a scheduled downgrade so the Stripe Dashboard,
-Billing Events admin page and database can be reconciled before manual test-data cleanup.
+These checks can create remote work, send mail, change test subscriptions or probe providers.
+Run them only for the authorized environment, account, source and budget.
 
-Production Price Checks fail configuration validation unless `ABUSE_CHALLENGE_MODE=managed` with an
-HTTPS verification endpoint, site key and provider secret. After configuring the provider, run
-`CHALLENGE_ACCEPTANCE_CONFIRM_INVALID_PROBE=YES pnpm test:challenge:readiness`; it sends one fixed,
-intentionally invalid token and passes only when the provider rejects it. The command never prints the
-secret or subject hash.
-
-### Recovery of existing paused public plans
-
-The seven public sources diagnosed on 2026-10-06 use `schedule:public:recovery-prepare`,
-`schedule:public:recovery-trial`, and `schedule:public:recovery-enable`, each with
-`--source <key> --revision <40-character deployed revision> --confirm RESTORE_PUBLIC_SCHEDULE`.
-Preparation preserves the existing plan and failure history, sets a fixed revision checkpoint,
-and leaves automatic scheduling paused. Trials run serially with the exact current plan payload
-and one attempt. Enablement requires the latest two complete trials, retained evidence and verified
-browser delivery. Eventfinda and Ticketmaster keep their existing daily progress definitions;
-retired weekly definitions are not recreated. QueenstownNZ, Southland and Wellington Airport need
-two requests per trial; Queenstown Airport needs six serial requests and a twelve-request daily
-source budget for two acceptance passes. Normal weekly batches remain bounded to six requests.
-
-The production Scheduler defaults to off. Inspect `/worker/alerts`, then run `pnpm cli release:preflight --sources <key>` and
-`pnpm cli release:canary-plan --sources <key>` before any canary. `pnpm cli release:canary-run` requires exactly one source,
-`--confirm RUN_BOUNDED_CANARY`, performs two passes and caps `--limit` at 2. Any stop condition requires
-the guarded `release:rollback --confirm DISABLE_COLLECTIONS` path before another attempt. Local
-development canary output is technical validation only and is not production evidence.
-
-For the first production public-source batch only, `release:bootstrap-public-canary` with `--source <key>`
-and `--confirm BOOTSTRAP_PUBLIC_CANARY` can create one disabled, non-demo source from the formal registry.
-The allowed keys are `public_holidays_nz`, `rto_calendars`, `mbie`, `geonet`, and `stats_nz`;
-the command refuses to overwrite an existing source or run with any schedule outside the exact first
-public batch. This lets the two existing weekly pilots continue while adding the next sources.
-For the initial three sources, after a successful source health check and explicit
-`source:activate <key>`, run the usual preflight and plan, then use `release:canary-run` with one
-`--sources <key>`, `--from YYYY-MM-DD`, `--to YYYY-MM-DD`, `--limit 2`, and
-`--confirm RUN_BOUNDED_CANARY`. In production this command
-limits the window to 31 days and the final business results to two per pass; it does not enqueue a Job
-or enable Scheduler. The 2026-09-25 production results and recovery material are recorded in
-[`docs/evidence/public-canary-production-2026-09-25.md`](./docs/evidence/public-canary-production-2026-09-25.md).
-For the subsequent GeoNet and Stats NZ sources, with approved schedules already running,
-activate each healthy source, prepare only its missing exact schedule, inspect `schedule:sources:plan`,
-and enable through the guarded schedule command. The scheduler and Worker enforce the per-source
-request, time-window, and result caps.
-
-An isolated full-stack smoke environment can run alongside the normal local stack. The command
-always removes its containers and test volumes on success, failure or interruption:
-
-```sh
-pnpm compose:smoke
-```
-
-Smoke excludes the Scheduler. Argus browser acceptance is run in the Argus repository and is not a
-Tymra Compose profile.
-
-Integration tests require PostgreSQL and Redis. Use a dedicated database URL when preserving local
-development data. E2E expects `https://tymra.test` to be running.
-
-## Demo Boundaries
-
-Every generated fixture is marked `Development Demo Data` and `Not real market data`. Seed data
-covers published high/medium confidence, partial low confidence, insufficient data, unavailable
-source, unsupported market, property and unit confirmation, exception types, expired links,
-withdrawn links and superseded result versions. No live OTA scraping or credentials are
-used. The active public OTA scope is Booking.com, Airbnb, Expedia, Bookabach, Agoda and Trip.com.
-Wotif, Hotels.com and Vrbo remain disabled compatibility contracts; Google Hotels is excluded from
-execution. Development fixture/record-replay paths are labelled and must not be presented as live
-market evidence. All configured non-OTA public source IDs now
-have concrete transports and parsers. Most remain pending operational validation and production
-activation; category IDs such as venues,
-councils, universities, RTOs, airports and ports currently implement one named first provider
-rather than every New Zealand institution.
+- `pnpm test:e2e:member-live` requires protected `MEMBER_LIVE_EMAIL`,
+  `MEMBER_LIVE_PASSWORD` and `MEMBER_LIVE_INPUT`; optional `MEMBER_LIVE_LISTING_URL`
+  and `MEMBER_LIVE_NIGHTS` refine the selected input. It requires a non-demo observed OTA price.
+- `pnpm test:stripe:readiness` with `STRIPE_ACCEPTANCE_CONFIRM_TEST_MODE=YES` reads test
+  account/Portal/Price configuration. `pnpm test:e2e:stripe` uses a disposable verified Free
+  member, test-mode webhook forwarding and active monthly NZD GST-inclusive Prices.
+  It changes test subscriptions and can leave one active with a scheduled downgrade; reconcile
+  persisted webhooks and dashboard state before scoped cleanup. See the dated
+  [Sandbox lifecycle evidence](docs/evidence/stripe-sandbox-membership-lifecycle-2026-08-12.md).
+- `pnpm test:challenge:controlled` checks controlled responses.
+  `CHALLENGE_ACCEPTANCE_CONFIRM_INVALID_PROBE=YES pnpm test:challenge:readiness` sends one
+  invalid token to the configured HTTPS managed provider and requires rejection.
+- Real acceptance credentials belong in the existing protected environment. Member-live and
+  Stripe browser configurations omit traces, screenshots and video to avoid credential capture.
+- `pnpm accept:public` and `pnpm accept:soak:ota` perform real bounded collection; follow
+  [acceptance](docs/collection/acceptance.md), source gates and fixed-candidate identity.
+  Historical soak checkpoints and waivers cannot be reused as acceptance of a changed candidate.

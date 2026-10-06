@@ -1,4 +1,6 @@
-# 事件房价影响数据契约 v1
+# 事件房价影响数据契约
+
+维护：2026-10-06。证据 Schema 与 promotion policy 独立版本化，版本见下文。
 
 ## 目的
 
@@ -95,41 +97,25 @@ Argus 负责确定性采集可观察事实；Tymra 负责业务判断。
   `MAJOR_EVENT`，各来源通过 lineage link 追溯。证据失效时信号会变为 `RETRACTED`。
 - 可信场馆参考表使用精确别名匹配补充 Te Pae 的官方名称、地址和 3,600 人容量，并保留官方
   来源和观察日期；容量只作 enrichment，不等同于预计到场。
-- Canterbury A&P Show 官方页面公布的 70,000 annual visitors 被规范化为
-  `EXPECTED_ATTENDANCE`。2026-08-05 两轮真实采集均成功，第二轮 source/link 行零增长，source
-  与 canonical occurrence 均为 `PROMOTED`。
+- 历史真实 promotion 与幂等证据见[事件影响验收](../evidence/event-impact-acceptance-2026-08-05.md)。
+  后续批次仍须核对同一届活动、适用日期和现行来源证据，不能沿用旧人数作为新事实。
 
 尚未拆分的是来源原始分类和 Tymra 标准分类；当前二者仍共用 `category`。这不影响 v2 promotion
 安全边界，但仍是后续数据模型质量工作。
 
-## Argus 当前覆盖评估
+## 来源质量与验收
 
-### 按能力评估
+每个来源按实际 payload 检查稳定身份、日期精度、结束时间、状态、场地/市场位置、
+原始分类、来源更新时间和可审计影响证据。缺失字段及由规则补全的字段必须可区分；
+Argus connector 注册或事件采集成功不代表这些字段全部齐备。
 
-| 能力 | Ticketmaster | Eventfinda | OurAuckland | 结论 |
-| --- | --- | --- | --- | --- |
-| 稳定来源 ID、URL、标题 | 满足 | 满足；无来源 ID 时 Tymra 可由 URL 派生 | 满足 | 满足 |
-| occurrence 开始时间 | 满足 | 满足，支持多个 occurrence | detail 支持精确时间；listing 为日期 | 满足 |
-| 结束时间与时间精度 | 经常缺失；Tymra 当前会折叠到开始时间 | 可缺失，已有缺失标志 | detail/listing 均明确 precision | 部分满足 |
-| 生命周期状态 | listing/detail 可取但可能缺失 | detail 可取 | 固定假设为 scheduled | 部分满足 |
-| 场地和市场位置 | listing 可有地址和经纬度；detail 已保留来源场馆字段 | detail 通常最完整 | detail 有场馆、地址原文和地图 | 基本满足 |
-| 来源分类 | 常是通用 Schema.org 类型，detail 契约未保留 | listing/detail 可取 | Tymra 固定为 Council event | 部分满足 |
-| 采集时间和证据哈希 | 满足 | 满足 | 满足 | 满足 |
-| 来源更新时间 | 未提供 | 未提供 | 未提供 | 不满足，但不是入库阻塞项 |
-| ticket status / offer | 部分满足 | 部分满足 | 未提供 | 可选能力部分满足 |
-| performer / organizer | performer；detail 无 organizer | 两者均可取 | 未提供 | 可选能力部分满足 |
-| 场馆容量 | 未提供 | 未提供 | 未提供 | 不满足 |
-| 预计或实际到场人数 | 未提供 | 未提供 | 未提供 | 不满足 |
-| 其他结构化影响证据 | 未提供 | 未提供 | 未提供 | 不满足 |
-
-### 验收结论
-
-- **事件发现、入库和基础日期/市场匹配：基本满足，但不是所有来源都达到完整质量。**
-  Eventfinda detail 最完整；Ticketmaster 依赖 listing/detail 可用性；OurAuckland 只适合作为日期精度、Auckland 市场级事件。
-- **自动判断事件会影响房价：只对有合格结构化证据的来源满足。** Ticketmaster、Eventfinda 和
-  OurAuckland 本身仍不提供可用的人数证据，因此其事件保持 `PENDING_EVIDENCE`；Canterbury
-  A&P Show 的官方 70,000 annual visitors 证据通过 v1 policy 后可提升。
-- **门票价格不是缺口的修复方向。** 当前更重要的缺口是事件规模、位置精度和可审计的需求证据。
+- 结束时间未知时可以使用存储哨兵，但必须保留缺失标记，不能描述成来源公布的真实持续时间。
+- 区域级位置不等于精确场馆；School Sport 等记录不得由来源组织名推断城市或酒店距离。
+- Ticketmaster、Eventfinda、OurAuckland 等事件列表不能仅凭名称、票价、售罄或重复刊登
+  获得影响资格。只有通过版本化 policy 的结构化 evidence bundle 才能提升。
+- 场馆容量仍只是上限；年度访问总量不能未经适用日期与口径检查当作每场到场人数。
+- 实现状态和待补质量项在[追踪表](../traceability.md)维护，旧单次字段评估表不作为当前
+  Connector 能力保证。
 
 ## 后续扩展门槛
 

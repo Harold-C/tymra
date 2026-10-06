@@ -2,7 +2,9 @@
 
 ## 状态：Active — National Data Core Product Baseline v1.3｜基线集合：Tymra National Data Core Baseline v1.3｜基线日期：2026-08-21
 
-文档定位：本文件定义 Tymra 当前开发版本的产品目标、目标用户、业务价值、全国数据核心、自动化运营模式、完整生产部署范围、成功指标、合规边界和业务验收标准。详细判断见《业务规则》，页面和用户流程见《页面结构》，视觉和组件实现见《视觉交互》。第十七章同时定义 Codex 一次性开发的固定技术默认值、交付物和完成标准。
+文档定位：本文件定义 Tymra 当前开发版本的产品目标、目标用户、业务价值、全国数据核心、自动化运营模式、完整生产部署范围、成功指标、合规边界和业务验收标准。详细判断见《业务规则》，页面和用户流程见《页面结构》，视觉和组件实现见《视觉交互》。第十七章定义完整产品的工程交付物和完成标准；具体任务范围与执行规则见仓库 AGENTS.md。
+
+规范勘误：2026-10-06；沿用现有批准基线，实际阶段与变迁见[产品入口](README.md#approved-target-and-operational-stage)。
 
 ## 基线控制
 
@@ -421,11 +423,11 @@ PRD-AT-010 同一生产部署包含客户登录、会员、Pricing、Stripe Bill
 
 逐步增加 PMS／Channel Manager 集成、团队协作、API、合作伙伴能力、更完整的事件影响模型和更广市场。自动调价必须作为独立阶段审批。
 
-# \[PRD-CODEX\] 十七、Codex 一次性开发执行契约
+# \[PRD-CODEX\] 十七、工程交付契约
 
 ## 17.1 执行目标
 
-《需求说明》《data-core.md》《业务规则》及其引用的技术与追踪文档共同构成 Tymra National Data Core Baseline v1.3。所谓“一次性开发”是指 Codex 在一个连续任务中完成仓库审计、实现、数据库变更、测试、修复和文档交付，不是跳过验证，也不是用模拟结果冒充生产能力。Codex 可以在内部按阶段工作，但最终必须交付一个可本地运行、可测试、可统一部署的全国数据后台与完整客户会员产品。
+《需求说明》《data-core.md》《业务规则》及其引用文档共同构成 Tymra National Data Core Baseline v1.3。完整产品交付目标是可运行、可测试、可统一部署的全国数据后台与客户会员产品；每次任务按当前请求、已有授权和仓库 AGENTS.md 选择实现及验证范围。本章不要求普通文档维护或局部修复重新实施整个产品，也不授予数据库、外部调用或生产操作权限。
 
 会员能力与后台属于同一开发和部署基线，不得因入口隐藏而跳过 `MEM-*` 的独立认证、账户、Billing、Worker 和浏览器验收。
 
@@ -435,7 +437,7 @@ PRD-AT-010 同一生产部署包含客户登录、会员、Pricing、Stripe Bill
 
 ## 17.3 默认技术基线
 
-若目标仓库已有技术栈，Codex 应按当前基线直接维护；若为空仓库，默认使用 pnpm workspace：apps/web 为 Next.js App Router、React、TypeScript；apps/worker 为 Node.js TypeScript 后台任务；packages/domain、db、providers、config 分别保存领域逻辑、数据库、数据提供者和共享配置，Web 组件按消费者保存在 `apps/web/components`。界面使用现有 Tailwind CSS、lucide-react 和 Motion 能力。数据使用 PostgreSQL 与 Prisma，校验使用 Zod，后台任务使用 PostgreSQL 支持的持久任务队列。运营后台与客户账户使用相互隔离的安全会话；客户路由随生产版本部署，展示配置只隐藏入口，不关闭认证、API 或 Worker 能力。邮件、分析和错误监控均通过适配器接入。
+沿用现有 pnpm workspace：apps/web 为 Next.js App Router、React、TypeScript；apps/worker 为 Node.js TypeScript 后台任务；共享包、依赖方向和实际目录见《architecture/codebase.md》，具体版本见 manifest 与 lockfile。Web 组件保留在实际消费者 `apps/web/components`，界面沿用现有设计体系。数据使用 PostgreSQL 与 Prisma，校验使用 Zod，持久任务以 PostgreSQL 为事实源、Redis 协调。运营后台与客户账户使用相互隔离的安全会话。完整客户端目标及当前 Admin-only 运行阶段分开判断；邮件、分析和错误监控通过适配器接入。
 
 ## 17.4 数据提供者与真实数据约束
 
@@ -447,7 +449,7 @@ Codex 必须交付：Exception Inbox；全国 Market Coverage、来源健康、C
 
 ## 17.6 测试和完成定义
 
-交付前必须通过 lint、类型检查、单元测试、领域规则测试、数据库集成测试、任务幂等／租约／重试测试、后台和客户端关键浏览器流程以及生产构建。至少覆盖全国 coverage、来源 capability、追加历史、时间、Freshness、Confidence、lineage、地址／Listing 两种模式、单价格返回、证据 ACK／purge、异常复核和来源故障。本地必须能够通过 docker compose up \--build 启动；迁移和开发种子必须可重复执行。`DEPLOYED_HIDDEN` 必须同时验证公开导航／CTA 不显示入口、直接路由仍部署、认证与权益不被绕过。任何失败测试都必须在同一任务中修复，而不是只写入已知问题。
+完整产品发布候选必须通过适用的 lint、类型、单元、领域规则、独立数据库集成、任务幂等／租约／重试、后台与客户端浏览器流程及生产构建。至少覆盖全国 coverage、capability、追加历史、时间、Freshness、Confidence、lineage、地址／Listing 双模式、单价格返回、证据 ACK／purge、异常复核和来源故障。本地启动、migration 和开发 seed 入口见根 README；重复执行也必须限于正确环境。`DEPLOYED_HIDDEN` 同时验证隐藏发现入口、直接路由和完整认证/权益。日常修改按影响做必要验证；失败不得隐藏或靠削弱断言通过，真实外部阻塞必须说明，未完成必要门槛不称为可发布。
 
 ## 17.7 需求追踪
 
@@ -459,7 +461,7 @@ Codex 必须交付：Exception Inbox；全国 Market Coverage、来源健康、C
 
 ## 17.9 环境变量与配置契约
 
-仓库必须提供 .env.example，并在服务启动时使用共享 Schema 校验环境变量。核心变量至少包括：DATABASE\_URL、APP\_BASE\_URL、SESSION\_SECRET、ADMIN\_EMAIL、ADMIN\_PASSWORD\_HASH、RESULT\_TOKEN\_SECRET、ACCESS\_KEY\_SECRET、DATA\_ENCRYPTION\_KEY、CRON\_SECRET、PROVIDER\_MODE、DEFAULT\_MARKET、AUTO\_PUBLISH\_ENABLED、EMAIL\_PROVIDER 和 EMAIL\_FROM。EMAIL\_PROVIDER=smtp 时必须提供 SMTP\_URL；本地开发可使用 EMAIL\_PROVIDER=log。可选变量包括 SENTRY\_DSN 和 ANALYTICS\_ENDPOINT。任何密钥不得提交仓库。生产环境 PROVIDER\_MODE=demo 必须启动失败；PROVIDER\_MODE=manual 只允许使用已在后台启用且运行健康的导入来源，并且不满足自动发布质量门槛时必须返回明确限制状态。
+仓库必须提供 .env.example，并在启动时通过共享 Schema 校验数据库、会话、一次性验证、加密、管理员、来源、调度、邮件及会员/支付配置。实际变量名、类型和默认值由 .env.example 与 packages/config 维护，不在产品规范复制旧变量清单。任何密钥不得进入 Git 或普通日志。SMTP 模式必须有对应配置；本地可使用 log。生产必须拒绝 demo/fixture，manual 只使用已启用且健康的真实导入来源，质量门槛不满足时返回明确限制状态。
 
 ## 17.10 固定开发、测试与 CI 命令
 

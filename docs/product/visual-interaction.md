@@ -2,7 +2,9 @@
 
 ## 状态：Active — Current Visual & Interaction Baseline v1.3｜基线集合：Tymra National Data Core Baseline v1.3｜基线日期：2026-08-21
 
-文档定位：本文件是 Tymra 当前开发版本的视觉系统、组件和交互实现契约，定义设计令牌、排版、响应式、公开流程、会员、真实结果、Exception Inbox、后台工作台、状态反馈、动效、双语和无障碍。Codex 必须按本文建立共享 UI package 和页面样式，不得使用随机模板、未定义颜色、虚构数据或未经批准的交互模式。UI-\* 标识必须进入 docs/traceability.md，并映射到组件、页面和视觉回归测试。
+文档定位：本文件是 Tymra 当前开发版本的视觉系统、组件和交互实现契约，定义设计令牌、排版、响应式、公开流程、会员、真实结果、Exception Inbox、后台工作台、状态反馈、动效、双语和无障碍。Codex 必须按本文维护 `apps/web/components` 中的可复用组件和页面样式，不得使用随机模板、未定义颜色、虚构数据或未经批准的交互模式。UI-\* 标识必须进入 docs/traceability.md，并映射到组件、页面和视觉回归测试。
+
+规范勘误：2026-10-06；基线版本不变。本文定义目标视觉合同，实际访问阶段见[产品入口](README.md#approved-target-and-operational-stage)。
 
 ## 基线控制
 
@@ -142,7 +144,7 @@ Sticky、Drawer 和底部操作条必须适配 env(safe-area-inset-\*），不�
 
 ## 6.1 技术映射
 
-使用现有 Web 设计令牌和可复用组件。基础组件按公开、会员和 Admin surface 放在 `apps/web/components`；页面不得复制同类组件样式。lucide-react 提供图标，Motion 仅用于必要过渡。当前仓库不保留无消费者的 `packages/ui` marker package。
+使用现有 Web 设计令牌和可复用组件。基础组件按公开、会员和 Admin surface 放在 `apps/web/components`；页面不得复制同类组件样式。lucide-react 提供图标，Motion 仅用于必要过渡。
 
 ## 6.2 Button
 
@@ -268,7 +270,7 @@ Drawer 用于详情和移动端上下文；Dialog 用于确认不可逆操作。
 
 ## 8.3 Query
 
-使用四个清晰字段组和摘要卡。未来 30 天为只读范围；更改人数或晚数时显示信息提示，不用警告色。
+使用四个清晰字段组和摘要卡。精确逐日范围与监测范围按会员合同分别显示；更改人数或晚数时显示信息提示，不用警告色。
 
 ## 8.4 Processing
 
@@ -306,7 +308,7 @@ Insufficient 显示无法建议的原因、已检查内容和下一步，不显�
 
 ## 9.6 Version Banner
 
-Superseded 使用 Information Banner，提供 View latest result；Withdrawn 使用 Warning Banner 和 Contact；Expired/Invalid 页面不显示 Property 摘要。
+Superseded 使用 Information Banner，提供 View latest result；Withdrawn 使用 Warning Banner 和 Contact；验证过期、无效或未授权页面不显示 Property 摘要；结果版本不因验证链接过期而变成 bearer 链接失效页。
 
 ## 9.7 Feedback
 
@@ -512,7 +514,7 @@ apps/web 页面只组合共享组件和业务容器；不得在每页创建新�
 
 ## 18.1 必测公开画面
 
-英文和中文：Home、Check Idle、Validation Error、Property Candidates、Unit Selection、Query、Processing（含 Normalizing）、Needs Confirmation、Ready、Normal Result、Partial Result、Insufficient、Unsupported、Source Unavailable / Retry Later、Cancelled、Expired Result、Withdrawn Result、Waitlist、Methodology、FAQ、Contact 和法律页。
+英文和中文：Home、Check Idle、Validation Error、Property Candidates、Unit Selection、Query、Processing（含 Normalizing）、Needs Confirmation、Ready、Normal Result、Partial Result、Insufficient、Unsupported、Source Unavailable / Retry Later、Cancelled、Expired Verification、Withdrawn Result、Waitlist、Methodology、FAQ、Contact 和法律页。
 
 ## 18.2 必测后台画面
 
@@ -520,7 +522,7 @@ Sign in、Exception Inbox 有数据/空状态、每个 Exception Type 的工作�
 
 ## 18.2A 必测会员画面
 
-英文和中文：独立登录 idle/validation/sent/expired；账户空状态及四档方案摘要；有效单位正常/满额/停用；检查历史和一个有效 OTA 价格但推荐不可用；逐日与仅监测 Calendar；提醒、Portfolio、Export、Integration 的可用及 Launch Gate 状态；Billing 正常/待付款/降级待选择/取消待生效/宽限/暂停；设置、退出、删除确认和会话过期。
+英文和中文：独立密码登录 idle/validation/invalid-credentials/throttled；邮箱验证 sent/expired；账户空状态及四档方案摘要；有效单位正常/满额/停用；检查历史和一个有效 OTA 价格但推荐不可用；逐日与仅监测 Calendar；提醒、Portfolio、Export、Integration 的可用及 Launch Gate 状态；Billing 正常/待付款/降级待选择/取消待生效/宽限/暂停；设置、退出、删除确认和会话过期。
 
 ## 18.3 尺寸
 
@@ -536,7 +538,7 @@ Playwright 截图覆盖 Home、Check flow、Status、Result、会员登录/账�
 
 # \[UI-AT\] 十九、最终视觉验收
 
-UI-AT-001 Search Card 是公开首页最强入口。  
+UI-AT-001 客户发现入口开放时 Search Card 是公开首页最强入口；`DEPLOYED_HIDDEN` 时按页面合同移除该入口及焦点占位。
 UI-AT-002 真实任务状态准确，不出现 Preview Complete 或伪造秒级结果。  
 UI-AT-003 结果页先呈现上下文、置信度和重点日期，不使用巨大风险分数或损失收入。  
 UI-AT-004 Exception Inbox 只呈现异常，单个异常可在一屏完成决策。  

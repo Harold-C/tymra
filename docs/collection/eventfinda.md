@@ -1,38 +1,11 @@
 # Eventfinda New Zealand collection
 
-Last updated: 2026-09-29
+Last reviewed: 2026-10-06.
 
-**Current operating state:** Eventfinda listing and necessary detail captures use the Argus headed
-browser with its persistent public Profile. After two successful bounded production trials, the
-`progress-eventfinda-daily` plan was enabled and the old weekly pilot was disabled. Each daily run
-is capped at three listing pages, one necessary detail and 500 results; source concurrency is one,
-the daily request budget is 24 and requests wait at least 12 seconds plus up to 6 seconds of jitter.
-The first natural daily cycle and longer unattended stability still need independent review. The
-dated local and earlier production observations below are historical snapshots, not the current
-schedule state; see [traceability](../traceability.md) for the release evidence.
-
-### Earlier local candidate (2026-09-28)
-
-2026-09-28 本地候选改用 Argus 有头浏览器及固定持久 Profile 采集列表和详情。
-HTTP 202 中间响应作为访问限制停止，空的全国列表拒绝解析；保护性冷却仍生效。
-当时此变更尚未完成新的生产持久化验收，生产定期计划保持暂停。
-同日本地单页 dry-run 再遇访问挑战，零个成功页面，失败 Job 已 ACK/PURGED，
-没有详情请求或业务写入。来源本地并无待解除冷却；每日预算耗尽现与网站挑战区分。
-`NODE_ENV=development` 现在不执行跨轮次每日累计额度；单次采集范围、间隔及
-访问挑战停采保持有效，生产日额度不变。
-当日后续本地有头会话获得全国列表 19 张卡片及一张详情的 3 个日期，均为
-HTTP 200、无可见登录要求。一次正式本地队列发现保存了 20 个列表目标和
-校验后的 Argus 证据；详情业务持久化与生产验收仍需独立核对。
-另一次单条详情在正常网页上遇 Argus 结构化结果超限：289 个场次的原结果
-613,463 字节超过 512 KiB。Argus 本地候选消除完全相同票档的场次级重复后，
-同一份已保存 HTML 离线结果 327,642 字节。后续切换本地 Argus/Worker 候选，
-单次尝试的正式详情 Job 成功返回 289 个场次，并在当前时间窗口保存 58 个
-来源场次及对应 canonical links；两份证据 SHA-256 一致且 ACK 后 Argus 结果
-为 410/PURGED。旧失败记录仍保留为历史事实。当时生产来源及定期计划继续暂停。
-
-**Development status:** Collector development, local bounded acceptance, nationwide discovery and
-bounded detail persistence are verified. Production activation passed the two-run gate; multi-day
-unattended evidence remains a separate operating check.
+Listing and necessary detail captures use Argus's headed browser and persistent public Profile.
+The bounded `progress-eventfinda-daily` plan allows at most three listing pages, one necessary
+detail and 500 results. Queue and execution deadlines follow [Argus](argus.md).
+Source activation, recovery and natural-cycle evidence belong in [traceability](../traceability.md).
 
 ## Scope
 
@@ -41,18 +14,6 @@ Tymra is intended to collect the complete set of currently published New Zealand
 The active bounded production plan routes listing and necessary detail capture through Argus's
 fixed read-only connector and persistent browser profile. Tymra retains frontier, pacing,
 deduplication and business persistence.
-
-Completed evidence includes extractor unit tests, bounded real listing and detail captures, a two-pass
-bounded real persistence run, fixture-backed idempotent persistence, database migration regression,
-source-lineage checks, raw-evidence retention checks, Redis lock contention, durable lease recovery,
-environment/scheduler guard tests, a complete workspace verification and service health checks.
-The nationwide persisted frontier and detail pipeline are now verified. Hydrating the remaining
-frontier uses deliberately paced detail batches; production still requires multi-day unattended
-observation and ongoing duplicate-rate review.
-
-In the 2026-08-01 development snapshot, unit tests, Worker typecheck and build passed, but
-nationwide discovery and real two-pass acceptance were not rerun that day. Later production
-acceptance is recorded in [traceability](../traceability.md).
 
 All local collection work follows the project-wide
 [local source collection acceptance](./acceptance.md) standard. This document
@@ -71,9 +32,10 @@ The extractor supports:
 - Every occurrence, including start and end time, event status, attendance mode, venue address and coordinates, offers, availability, performers, organizer and images.
 
 Argus HTML/screenshot evidence is referenced by `RawArtifact`, copied and SHA-256 checked before
-ACK, then retained for the configured TTL, 72 hours by default. Parser-failure evidence uses the
+ACK, then assigned the configured TTL, 72 hours by default. Parser-failure evidence uses the
 failure TTL, 168 hours by default. Normalized event metadata retains useful business fields without
-retaining the whole page indefinitely.
+retaining the whole page indefinitely. Tymra physical file cleanup is still tracked separately in
+[the implementation plan](../implementation-plan.md).
 
 ## Event data pipeline
 
@@ -96,8 +58,7 @@ Detail selection takes changed visible listings first, then new targets without 
 
 One Eventfinda detail page is the authoritative series expansion because it can advertise many dates
 that do not all appear on the listing card. Every occurrence is persisted from that one response.
-The retained local evidence includes ten detail pages with 462 occurrences in total and a maximum of
-289 occurrences on one page, so separate per-date detail requests are neither needed nor allowed.
+Separate per-date detail requests are unnecessary; expand the advertised occurrences from that series capture.
 
 Base detail refresh policy:
 
@@ -174,59 +135,9 @@ the source's per-run bounds. Do not use the direct CLI for non-dry-run Argus col
 Discovery and details are deliberately separate. Rotating bounded discovery runs seed or refresh
 the durable frontier; repeated bounded detail batches then fill canonical events without a single unbounded job.
 
-The 2026-07-21 development bootstrap completed all 187 advertised nationwide listing pages in run
-`cmrtgk94f0001p12abpvktwir`. It made 187 requests with no retry, failure, rate limit or challenge,
-verified the pagination boundary and upserted 2,821 unique detail targets. Run
-`cmrth8ak10001p1mfjq41lue7` then fetched five due targets and persisted 51 advertised event
-occurrences with no failure. Both runs recorded unchanged configuration and schedule snapshots. The
-remaining frontier is intentionally processed in bounded batches so the acceptance run does not
-replace the configured pacing with a one-off bulk crawl.
-
-The 2026-07-21 local acceptance ran the bounded full pass twice against real Eventfinda pages. Each
-pass scanned one of 187 advertised listing pages, discovered 20 targets, fetched two detail pages
-and parsed 126 advertised occurrence inputs without a request failure, rate limit or challenge.
-Source uniqueness collapsed six repeated date inputs to 120 stored occurrences. The database
-retained two source series, two canonical events, two venues, 120 canonical occurrences and complete
-event and occurrence source links. The second pass created zero new source occurrences, canonical
-occurrences or links. Source configuration remained unchanged throughout.
-
-The first attempt exposed real JSON-LD `SportsEvent` and `Festival` types that the original extractor
-did not classify as event occurrences. The extractor now accepts schema event subtypes; the failed
-attempt remains audited as `PARTIAL`, and its application parser-failure evidence uses the 168-hour
-failure TTL. Successful evidence uses the 72-hour TTL.
-
-### HTTP cutover verification (2026-08-03)
-
-- Bounded two-pass discovery acceptance retained one direct HTML artifact per pass, with zero parser
-  failures, zero Argus executions, unchanged configuration and unchanged schedules.
-- Bounded full run `cmsd6ghl60001pp2a0jqgbwi0` made three direct HTTP requests, scanned one of 194
-  listing pages, fetched two detail pages and persisted 34 occurrences with zero failures.
-- Subsequent bounded full run `cmsd6gw9n0001pp3ucnn2if3v` also fetched two details without failure.
-  Both runs retained three HTML artifacts and created zero `ArgusExecution` rows.
-- The direct parser supports schema.org `Festival`, `Hackathon`, `CourseInstance`, and `*Event`
-  event types.
-
-### Local verification closure (2026-07-21)
-
-All gates that can be completed in the local development environment have now passed:
-
-- Redis rejected a competing source-lock holder and allowed reacquisition after release.
-- A durable job was not recovered before lease expiry, then was recovered and claimed by a second
-  worker after expiry.
-- `localAcceptance` was rejected in `test` and `production`; development scheduler execution remained hard-disabled.
-- Partial discovery, challenge stop/cooldown, two-pass idempotency, source/canonical lineage and
-  72/168-hour retention selection and time-advanced cleanup passed automated regression.
-- The full repository verification passed: 81 TypeScript unit/component tests, 34 browser
-  runtime/extractor tests, 49 integration tests, lint, workspace typecheck, the 57-route Next.js
-  production build and all four Worker entrypoint builds.
-- A final read-only database check reconfirmed the bounded and nationwide real runs as `SUCCEEDED`,
-  all 120 bounded source occurrences, the 2,821-target nationwide frontier, disabled schedules and
-  unchanged source configuration.
-- Historical pre-Argus Browser Worker health returned `healthy=true`, `activeTasks=0` and `concurrency=1`.
-
-Real elapsed 72/168-hour deletion and multi-day unattended stability are not local completion gates
-and remain explicitly outstanding. Nationwide discovery and bounded detail persistence have passed;
-full-frontier hydration remains paced operating work.
+Historical bootstrap counts and pre-Argus transport experiments are summarized in
+[decisions](../decisions.md#文档与运行阶段变迁); dated two-pass evidence remains in the
+[evidence index](../evidence/README.md). Those runs do not establish current full-frontier coverage.
 
 ## Scheduling and activation
 
@@ -237,9 +148,8 @@ Database seed creates these legacy schedule definitions disabled:
 
 Neither legacy seed definition is the current production plan. The enabled
 `progress-eventfinda-daily` plan runs `phase=full`, at most three listing pages and one necessary
-detail, with a 500-result bound. The former `pilot-public-eventfinda-weekly` definition is retained
-disabled as a superseded pilot. Two one-attempt production trials passed with persisted results,
-copied evidence and Argus ACK/PURGED before the daily plan was enabled.
+detail, with a 500-result bound. The former weekly pilot was deleted on 2026-10-06 after replacement by the daily plan.
+Do not recreate it or enable the development seed definitions.
 
 The detail pass only hydrates
 targets whose `nextDetailFetchAt` is due; unchanged detail pages back off progressively according to
@@ -261,15 +171,17 @@ not fixed contractual totals.
 
 Review each natural run's CollectionRun status, source lock, request budget, copied evidence,
 parser-failure and duplicate rates, queue depth, canonical-link growth and source cooldown. A
-successful queue Job alone is not source acceptance. If the active plan needs to stop, disable
-`progress-eventfinda-daily` through the audited Admin schedule control and leave the source registry,
-frontier, immutable runs and evidence intact for audit and recovery. Use the same plan-specific
-control to resume it after checking source and runtime gates. The `schedule:eventfinda:enable` CLI
-command enables every schedule bound to the source, including retired definitions; do not use it to
-resume the daily plan. The guarded `schedule:progress:enable` command only creates a new plan after
-its two-trial gate and cannot resume an existing one. If source access or operational health is lost,
-also suspend the source through the audited CLI. Do not reactivate the old seed definitions or weekly
-pilot as a rollback shortcut.
+successful queue Job alone is not source acceptance. Pause only the affected daily plan through its audited control and preserve the source registry,
+frontier, immutable runs and evidence. To recover an existing paused plan, use the source-scoped
+`schedule:public:recovery-prepare`, `schedule:public:recovery-trial` and
+`schedule:public:recovery-enable` flow with the deployed 40-character revision and
+`--confirm RESTORE_PUBLIC_SCHEDULE`. Preparation freezes the revision checkpoint; two latest
+complete one-attempt trials, retained evidence and verified delivery are required before enablement.
+These are production mutations, subject to the task's actual scope and source budgets.
+
+Do not use `schedule:eventfinda:enable` to resume this plan: it enables every source-bound
+definition. `schedule:progress:enable` creates a new plan and is not the existing-plan recovery path.
+Never reactivate retired weekly or development seed definitions as a rollback shortcut.
 
 ## Data quality controls
 
@@ -280,5 +192,5 @@ pilot as a rollback shortcut.
 - Placeholder performers such as `n/a` are discarded rather than stored as named entities.
 - Missing regions are filled from a conservative New Zealand city-to-region map; unknown cities remain null.
 - Published occurrences without an explicit schema status default to `SCHEDULED`; valid priced ticket links are treated as `ONSALE` unless explicit sold-out evidence exists.
-- Event impact remains `PENDING_EVIDENCE` until venue capacity, attendance or corroborating demand evidence is available.
+- Event impact remains `PENDING_EVIDENCE` unless the [impact policy](event-impact-data-contract.md) qualifies the evidence; venue capacity alone cannot promote an event.
 - A page with no parseable occurrences is a parser failure and is retried with backoff rather than silently stored.

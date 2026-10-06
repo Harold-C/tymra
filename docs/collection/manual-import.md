@@ -1,7 +1,7 @@
 # Manual rate import collection
 
-**Development status:** Bounded local acceptance is implemented and automatically verified; real
-operator-file acceptance is `not_verified`.
+This contract defines bounded import behavior. Recorded implementation and real-file acceptance
+status are maintained in [traceability](../traceability.md).
 
 ## Boundary
 
@@ -16,7 +16,7 @@ source to be enabled for `DEVELOPMENT`. Development scheduling is hard-disabled.
 ## Hard limits and coordination
 
 - one uploaded CSV or JSON file;
-- maximum file size 256 KB;
+- maximum file size 256 KiB;
 - at most two valid rows, regardless of how many the caller supplies;
 - one concurrent import under the shared Redis `source:manual-import` lock;
 - a 60-second lock lease/operation bound;
@@ -44,10 +44,10 @@ records the existing observation count in the second `CollectionRun` instead.
 ## Verification and blocker
 
 The database integration regression verifies development/test/production and scheduler guards,
-256 KB and two-record bounds, two-pass idempotency, one source listing and immutable observation per
+256 KiB and two-record bounds, two-pass idempotency, one source listing and immutable observation per
 stable identity, 72/168-hour evidence selection, unchanged source configuration and disabled schedules. It
 uses generated test rows, not an operator export.
 
-The remaining local acceptance blocker is a genuine operator CSV/JSON export that Harold is willing
-to attest and use. Until the same bounded file is imported twice and its database rows are queried,
-this channel remains `implemented_not_verified`, not `locally verified`.
+Real-file acceptance requires an authorized genuine operator CSV/JSON export, imported twice within
+the same bounds and checked against persisted rows. Generated fixtures cannot close that gate;
+the remaining work is listed in [the implementation plan](../implementation-plan.md).
