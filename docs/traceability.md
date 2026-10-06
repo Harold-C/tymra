@@ -1,6 +1,6 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (seven paused public source repairs validated locally; production release and recovery acceptance pending)
+Last updated: 2026-10-06 (six public sources restored; School Sport NZ regional truncation repaired locally, final release and acceptance pending)
 
 ## 2026-10-06 七个暂停公开来源修复与恢复验收（进行中）
 
@@ -22,8 +22,21 @@ Queenstown 月报为六次；不足额度在请求前拒绝，分类为 REQUEST_
 月报来源每日预算至少十二次以容纳两个六请求验收批次；自动周计划仍每批六次。
 当前已通过 lint、完整类型检查、244 项 Web／域模型及 399 项 Worker 单元检查；
 独立测试数据库中的八项恢复门槛与完整 131 项数据库／API／Worker 集成检查通过，
-六条既有条件跳过保留。固定镜像、生产备份实际恢复、生产复验及最终启用尚待完成。过程收据沿用
-`runtime/release-candidates/public-recovery-20261006`，实际生产结论以本节后续读回为准。
+六条既有条件跳过保留。`6c941b5` 固定镜像已通过相同 Linux amd64 镜像中的完整
+检查、117 页构建及生产新鲜配对备份实际恢复（80 表／525 份证据／55 条交付）。
+只替换 Tymra 四个应用，Argus／Synix 未发布。Eventfinda、Ticketmaster 及四个
+直连来源各两轮精确生产试采、业务入库和证据校验通过，六条原计划已恢复。
+GitHub 首次 CI 未获托管 Runner，零步骤执行后取消；已重试，未将远端排队计为通过。
+
+School Sport NZ 第一轮页面和交付成功，但先截取全国前两条，分别在 Bay of Plenty
+和 Southland，Canterbury 筛选后零入库；验收拒绝继续启用，空结果和证据保留。
+已用该生产 HTML 本地重放：日期窗口内共 17 条，Parakiore 的 SISS Junior
+Volleyball Cup 和 Jellie Park 的 SISS Junior Water Polo Cup 位于后续记录。
+Tymra 全国列表读取上限改为 100，再做地区筛选并按原每批两条入库；仍为一次页面
+请求，不改 Argus。真实页面离线重放、模拟全国前两条均为外地区的完整入库／幂等
+集成回归、lint 和全仓类型检查通过；该补充修复的固定镜像及生产复验接续执行。
+过程收据沿用 `runtime/release-candidates/public-recovery-20261006` 及 `-v2`，
+最终生产结论以本节后续读回为准。
 
 ## 2026-10-06 退役周计划删除与七个暂停公开来源复核（上轮诊断记录）
 

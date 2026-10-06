@@ -1572,6 +1572,8 @@ export class WorkerService {
     const maxRecords = localAcceptance
       ? Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 10 : 20), sourceId === TICKETEK_SOURCE_ID ? 10 : 20)
       : Math.min(options.limit ?? (sourceId === TICKETEK_SOURCE_ID ? 20 : 100), sourceId === TICKETEK_SOURCE_ID ? 20 : 100);
+    // National rows need regional filtering before the business-record limit applies.
+    const maxListingRecords = sourceId === SCHOOL_SPORT_NZ_SOURCE_ID ? 100 : maxRecords;
     const maxDetails = productionCanary ? 0 : sourceId === TICKETEK_SOURCE_ID
       ? Math.min(options.maxDetails ?? (localAcceptance ? 1 : 3), localAcceptance ? 1 : 10)
       : 0;
@@ -1586,7 +1588,7 @@ export class WorkerService {
       productionCanary,
       dryRun: options.dryRun === true,
       requested: { from: requestedFrom.toISOString(), to: requestedTo.toISOString(), limit: options.limit ?? null },
-      effective: { from: requestedFrom.toISOString(), to: to.toISOString(), maxRecords, maxDetails },
+      effective: { from: requestedFrom.toISOString(), to: to.toISOString(), maxRecords, maxDetails, maxListingRecords },
       configurationBefore,
       schedulesBefore,
     };
@@ -1607,7 +1609,7 @@ export class WorkerService {
             url: definition.url,
             startDate: nzDateKey(requestedFrom),
             endDate: nzDateKey(to),
-            maxRecords,
+            maxRecords: maxListingRecords,
             dryRun: options.dryRun === true,
             parentJobId: options.jobId,
           });

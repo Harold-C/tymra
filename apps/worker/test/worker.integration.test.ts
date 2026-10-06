@@ -1100,12 +1100,15 @@ describe("Worker baseline pipeline", () => {
         const seriesId = isNational ? sportyNzSeriesId : sportySeriesId;
         const occurrenceId = isNational ? sportyNzOccurrenceId : sportyOccurrenceId;
         const startsAt = isNational ? "2026-08-19" : "2026-08-20";
+        const occurrence = { seriesId, occurrenceId, title: `Canterbury Tournament ${suffix}`, sport: "Athletics", genderGrade: "Secondary", venue: "Nga Puna Wai", address: null, locality: "Christchurch", region: "Canterbury", startsAt, endsAt: startsAt, timePrecision: "DATE", timezone: "Pacific/Auckland", status: "SCHEDULED", canonicalUrl, sourceOrganisation, sourceUpdated: null, imageUrl: null, description: null, canterburyHosted: true, fieldSources: { title: "fixture" } };
+        const candidates = isNational ? [1, 2].map(index => ({ ...occurrence, seriesId: `${seriesId}:outside-${index}`, occurrenceId: `${occurrenceId}:outside-${index}`, title: `Southland Tournament ${suffix} ${index}`, venue: "Invercargill Velodrome", locality: "Invercargill", region: "Southland", canterburyHosted: false })).concat([occurrence]) : [occurrence];
+        const occurrences = candidates.slice(0, capture.max_records ?? 100);
+        const series = occurrences.map(row => ({ seriesId: row.seriesId, title: row.title, sport: row.sport, genderGrade: row.genderGrade, sourceOrganisation, canonicalUrl, sourceUpdated: null, imageUrl: null, description: null, fieldSources: { title: "fixture" } }));
         return argusSuccess(capture, {
           data_schema: "sporty-school-sport-public.collect_events", schema_version: "1.0.0", extractor: "sporty_school_sport", kind: "event_listing",
           title: `Canterbury Tournament ${suffix}`, canonicalUrl, sourceOrganisation, window: { startsOn: "2026-08-01", endsOn: "2026-09-30" },
-          series: [{ seriesId, title: `Canterbury Tournament ${suffix}`, sport: "Athletics", genderGrade: "Secondary", sourceOrganisation, canonicalUrl, sourceUpdated: null, imageUrl: null, description: null, fieldSources: { title: "fixture" } }],
-          occurrences: [{ seriesId, occurrenceId, title: `Canterbury Tournament ${suffix}`, sport: "Athletics", genderGrade: "Secondary", venue: "Nga Puna Wai", address: null, locality: "Christchurch", region: "Canterbury", startsAt, endsAt: startsAt, timePrecision: "DATE", timezone: "Pacific/Auckland", status: "SCHEDULED", canonicalUrl, sourceOrganisation, sourceUpdated: null, imageUrl: null, description: null, canterburyHosted: true, fieldSources: { title: "fixture" } }],
-          totalSeries: 1, totalOccurrences: 1, truncated: false, quality: "complete", missingFields: [], warnings: [], fieldSources: { series: "fixture", occurrences: "fixture" },
+          series, occurrences,
+          totalSeries: series.length, totalOccurrences: occurrences.length, truncated: occurrences.length < candidates.length, quality: "complete", missingFields: [], warnings: [], fieldSources: { series: "fixture", occurrences: "fixture" },
         }, `Canterbury Tournament ${suffix}`, "d");
       }
       const series = { seriesId: ticketekSeriesId, title: `Ticketek Show ${suffix}`, category: "Theatre", imageUrl: null, canonicalUrl: ticketekUrl, status: "SCHEDULED", sourceUpdated: null, description: "Integration detail", fieldSources: { title: "fixture" } };
@@ -1133,9 +1136,13 @@ describe("Worker baseline pipeline", () => {
     try {
       for (const sourceId of sourceIds) {
         const source = sourceByKey.get(sourceId)!;
-        const options = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-30T00:00:00Z"), phase: "full" as const, limit: 10, maxDetails: 1, localAcceptance: true };
+        const options = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-30T00:00:00Z"), phase: "full" as const, limit: 2, maxDetails: 1, localAcceptance: true };
         const first = await acceptanceService.collectSource(sourceId, "christchurch", undefined, options);
         runIds.push(first.runId);
+        if (sourceId === "school_sport_nz") {
+          expect(first).toMatchObject({ events: 1, counters: { records: 3, requests: 1, persisted: 1 } });
+          expect(await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, externalId: { startsWith: `${sportyNzOccurrenceId}:outside-` } } })).toBe(0);
+        }
         const afterFirst = await counts(source.id);
         const second = await acceptanceService.collectSource(sourceId, "christchurch", undefined, options);
         runIds.push(second.runId);
@@ -1528,6 +1535,7 @@ type TestArgusCapture = {
   entry_url?: string;
   start_date?: string;
   end_date?: string;
+  max_records?: number;
 };
 
 function createArgusServer(captureResult: (capture: TestArgusCapture) => Record<string, unknown>, onAck?: () => void) {
