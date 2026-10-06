@@ -1,5 +1,5 @@
 import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
-import type { PublicSignal } from "@tymra/providers";
+import type { PublicSignal } from "@tymra/providers/types";
 
 export const RBNZ_FX_URL = "https://www.rbnz.govt.nz/statistics/series/exchange-and-interest-rates/exchange-rates-and-the-trade-weighted-index";
 export const RBNZ_FX_ALLOWED_HOSTS = ["www.rbnz.govt.nz", "rbnz.govt.nz"] as const;

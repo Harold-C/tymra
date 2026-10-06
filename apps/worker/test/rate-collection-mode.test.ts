@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { usesFixtureRateCollection } from "../src/jobs/job-handlers";
+import { usesFixtureRateCollection } from "../src/jobs/handlers/pricing";
 
 describe("rate collection mode", () => {
   it("never routes live public collection through development fixture rates", () => {

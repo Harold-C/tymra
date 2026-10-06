@@ -3,7 +3,7 @@ import {
   eventImpactEvidenceBundleSchema,
   type EventImpactEvidenceBundle,
 } from "@tymra/domain";
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 export type TrustedVenueReference = {
   key: string;

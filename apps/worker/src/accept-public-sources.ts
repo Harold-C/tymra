@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
 import { addNzCalendarDays, nzDateKey, nzStartOfDay } from "@tymra/domain";
-import { ARGUS_PUBLIC_MARKET_SOURCES } from "@tymra/providers";
+import { ARGUS_PUBLIC_MARKET_SOURCES } from "@tymra/providers/argus-public-market-adapters";
 import {
   enqueueJob,
   isTerminalJobStatus,

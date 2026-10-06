@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sourceSchedulingBlockers } from "../src/services/worker-service";
+import { sourceSchedulingBlockers } from "../src/operations/source-access";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "../src/operations/source-access";
 
 const readySource = {

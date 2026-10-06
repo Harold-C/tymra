@@ -4,6 +4,7 @@ import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { membershipFeatureLaunchAvailability } from "@/lib/server/membership/stripe-billing";
+import "../../../styles/member-account.css";
 
 export default async function AccountLayout({ children, params }: { children: React.ReactNode; params: { locale: "en" | "zh" } }) {
   const session = await getCustomerSessionForPage();

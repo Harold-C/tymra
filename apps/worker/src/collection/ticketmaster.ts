@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { nzCalendarDayDifference, nzDateTime, type EventImpactEvidenceBundle } from "@tymra/domain";
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 export const TICKETMASTER_ALLOWED_HOSTS = ["www.ticketmaster.co.nz", "ticketmaster.co.nz"] as const;
 export const TICKETMASTER_EXTRACTOR = "ticketmaster";

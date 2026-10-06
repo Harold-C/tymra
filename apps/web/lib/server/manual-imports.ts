@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { getEnvironment, type Environment } from "@tymra/config";
 import { hashPersonalIdentifier, prisma, recordIdentityEntityVersion, recordListingVersion, syncCollectionIncident, type Prisma } from "@tymra/db";
 import { nzCalendarDayDifference } from "@tymra/domain";
-import { previewManualImport, type ManualImportPreview, type ManualImportRow } from "@tymra/providers";
+import { previewManualImport, type ManualImportPreview, type ManualImportRow } from "@tymra/providers/manual-import";
 import { withRedisLock } from "@tymra/queue";
 
 type ImportRequest = {

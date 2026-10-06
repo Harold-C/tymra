@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publicDataAdapters } from "@tymra/providers";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 import { registrySourceSeedRecords } from "../../../packages/db/prisma/seed-sources";
 
 import { assertFirstPublicGeoNetReferences, boundFirstPublicResults, firstPublicPriorJobAction, firstPublicReferenceRecordLimit, FIRST_PUBLIC_SCHEDULES, firstPublicSchedulePayload, isFirstPublicSchedule, isPreviousChristchurchPublicSchedule, isPreviousMbiePublicSchedule } from "../src/operations/production-public-schedules";

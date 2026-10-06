@@ -1,5 +1,5 @@
 import { getEnvironment } from "@tymra/config";
-import { prisma, type Prisma } from "@tymra/db";
+import { adminResourceQueries, adminPaginatedQueries, type AdminResource } from "@/lib/server/admin-resources";
 
 import { adminListHref, adminListState } from "@/lib/admin-list";
 import { adminDateLocale, adminLabel, adminText, formatAdminValue, type AdminLocale, type AdminMessageKey } from "@/lib/admin-i18n";
@@ -9,7 +9,7 @@ import { AdminListTools } from "./AdminListControls";
 import { AdminCopyButton } from "./AdminCopyButton";
 import { AdminListSummary, AdminPagination, AdminTable, StatusPill, type AdminColumn, type AdminRow } from "./AdminTable";
 
-export type AdminResource = "properties" | "units" | "listings" | "competitors" | "marketCoverage" | "collectionRuns" | "dataSources" | "events" | "signals" | "feedback" | "audit" | "settings";
+
 
 const titles: Record<AdminResource, [AdminMessageKey, AdminMessageKey]> = {
   properties: ["propertiesTitle", "propertiesDescription"],
@@ -47,22 +47,18 @@ export async function AdminResourcePage({ resource, searchParams = {} }: { resou
 
 async function loadPaginatedResource(resource: "listings" | "competitors" | "feedback" | "audit", locale: AdminLocale, page: { q: string; kind: string; skip: number; take: number; since?: Date }): Promise<{ columns: AdminColumn[]; rows: AdminRow[]; total: number }> {
   if (resource === "listings") {
-    const where: Prisma.ListingWhereInput = { isDemo: false, ...(page.q ? { OR: [{ externalId: { contains: page.q, mode: "insensitive" } }, { unit: { officialName: { contains: page.q, mode: "insensitive" } } }, { dataSource: { name: { contains: page.q, mode: "insensitive" } } }] } : {}) };
-    const [total, items] = await Promise.all([prisma.listing.count({ where }), prisma.listing.findMany({ where, orderBy: { firstDiscoveredAt: "desc" }, skip: page.skip, take: page.take, include: { unit: { select: { officialName: true } }, dataSource: { select: { name: true } } } })]);
+    const { total, items } = await adminPaginatedQueries.listings(page);
     return { total, ...table(locale, ["Listing", "Unit", "Source", "Platform", "Status", "Last confirmed"], items.map((item) => [<><strong>{item.unit.officialName}</strong><small>{item.externalId}</small></>, item.unit.officialName, item.dataSource.name, item.platform, pill(item.onlineStatus, locale), date(item.lastConfirmedAt, locale)]), items.map((item) => `/admin/accommodations/${item.propertyId}`)) };
   }
   if (resource === "competitors") {
-    const where: Prisma.CompetitorRelationshipWhereInput = { isDemo: false, ...(page.q ? { OR: [{ targetUnit: { officialName: { contains: page.q, mode: "insensitive" } } }, { competitorUnit: { officialName: { contains: page.q, mode: "insensitive" } } }] } : {}) };
-    const [total, items] = await Promise.all([prisma.competitorRelationship.count({ where }), prisma.competitorRelationship.findMany({ where, orderBy: [{ targetUnitId: "asc" }, { version: "desc" }], skip: page.skip, take: page.take, include: { targetUnit: { select: { officialName: true, propertyId: true } }, competitorUnit: { select: { officialName: true } } } })]);
+    const { total, items } = await adminPaginatedQueries.competitors(page);
     return { total, ...table(locale, ["Target Unit", "Competitor", "Role", "Version", "Valid to", "Override"], items.map((item) => [<><strong>{item.targetUnit.officialName}</strong><small>{item.targetUnitId}</small></>, item.competitorUnit.officialName, pill(item.role, locale), item.version, date(item.validTo, locale), adminText(locale, item.manualOverride ? "manual" : "system")]), items.map((item) => `/admin/accommodations/${item.targetUnit.propertyId}`)) };
   }
   if (resource === "feedback") {
-    const where: Prisma.FeedbackWhereInput = { isDemo: false, ...(page.kind ? { type: page.kind as never } : {}), ...(page.since ? { createdAt: { gte: page.since } } : {}), ...(page.q ? { OR: [{ id: { contains: page.q, mode: "insensitive" } }, { priceCheckId: { contains: page.q, mode: "insensitive" } }, { comment: { contains: page.q, mode: "insensitive" } }] } : {}) };
-    const [total, items] = await Promise.all([prisma.feedback.count({ where }), prisma.feedback.findMany({ where, orderBy: { createdAt: "desc" }, skip: page.skip, take: page.take })]);
+    const { total, items } = await adminPaginatedQueries.feedback(page);
     return { total, ...table(locale, ["Feedback", "Type", "Price Check", "Comment", "Created", "Data"], items.map((item) => [<><strong>{formatCompactId(item.id)}</strong><small>{item.id}</small></>, pill(item.type, locale), item.priceCheckId, item.comment || "—", date(item.createdAt, locale), demo(item.isDemo, locale)]), items.map((item) => `/admin/checks/${item.priceCheckId}`)) };
   }
-  const where: Prisma.AuditEventWhereInput = { isDemo: false, ...(page.kind ? { entityType: { contains: page.kind, mode: "insensitive" } } : {}), ...(page.since ? { createdAt: { gte: page.since } } : {}), ...(page.q ? { OR: [{ eventType: { contains: page.q, mode: "insensitive" } }, { entityType: { contains: page.q, mode: "insensitive" } }, { entityId: { contains: page.q, mode: "insensitive" } }] } : {}) };
-  const [total, items] = await Promise.all([prisma.auditEvent.count({ where }), prisma.auditEvent.findMany({ where, orderBy: { createdAt: "desc" }, skip: page.skip, take: page.take })]);
+  const { total, items } = await adminPaginatedQueries.audit(page);
   return { total, ...table(locale, ["Event", "Entity", "Entity ID", "Actor", "Created", "Data"], items.map((item) => [pill(item.eventType, locale), item.entityType, <span className="code-value" key={item.id}>{item.entityId}</span>, item.actorAdminId || adminText(locale, "system"), date(item.createdAt, locale), demo(item.isDemo, locale)])) };
 }
 
@@ -73,50 +69,50 @@ export function AdminPageHeader({ title, description, actions }: { title: string
 async function loadResource(resource: Exclude<AdminResource, "settings">, locale: AdminLocale): Promise<{ columns: AdminColumn[]; rows: AdminRow[] }> {
   switch (resource) {
     case "properties": {
-      const items = await prisma.property.findMany({ orderBy: { canonicalName: "asc" }, take: 100, include: { _count: { select: { units: true, priceChecks: true } } } });
+      const items = await adminResourceQueries.properties();
       return table(locale, ["Property", "City", "Support", "Units", "Checks", "Data"], items.map((item) => [item.canonicalName, item.city, pill(item.supportStatus, locale), item._count.units, item._count.priceChecks, demo(item.isDemo, locale)]), items.map((item) => `/admin/accommodations/${item.id}`));
     }
     case "units": {
-      const items = await prisma.sellableUnit.findMany({ orderBy: { officialName: "asc" }, take: 100, include: { property: { select: { canonicalName: true } }, _count: { select: { listings: true, priceChecks: true } } } });
+      const items = await adminResourceQueries.units();
       return table(locale, ["Unit", "Property", "Capacity", "Status", "Listings", "Checks"], items.map((item) => [item.officialName, item.property.canonicalName, item.capacity, pill(item.status, locale), item._count.listings, item._count.priceChecks]), items.map((item) => `/admin/accommodations/${item.propertyId}#unit-${item.id}`));
     }
     case "listings": {
-      const items = await prisma.listing.findMany({ orderBy: { firstDiscoveredAt: "desc" }, take: 100, include: { unit: { select: { officialName: true } }, dataSource: { select: { name: true } } } });
+      const items = await adminResourceQueries.listings();
       return table(locale, ["Listing", "Unit", "Source", "Platform", "Status", "Last confirmed"], items.map((item) => [item.externalId, item.unit.officialName, item.dataSource.name, item.platform, pill(item.onlineStatus, locale), date(item.lastConfirmedAt, locale)]), items.map((item) => `/admin/accommodations/${item.propertyId}`));
     }
     case "competitors": {
-      const items = await prisma.competitorRelationship.findMany({ orderBy: [{ targetUnitId: "asc" }, { version: "desc" }], take: 100, include: { targetUnit: { select: { officialName: true, propertyId: true } }, competitorUnit: { select: { officialName: true } } } });
+      const items = await adminResourceQueries.competitors();
       return table(locale, ["Target Unit", "Competitor", "Role", "Version", "Valid to", "Override"], items.map((item) => [item.targetUnit.officialName, item.competitorUnit.officialName, pill(item.role, locale), item.version, date(item.validTo, locale), adminText(locale, item.manualOverride ? "manual" : "system")]), items.map((item) => `/admin/accommodations/${item.targetUnit.propertyId}`));
     }
     case "marketCoverage": {
-      const items = await prisma.marketCoverage.findMany({ orderBy: [{ gapPriorityScore: "desc" }, { name: "asc" }] });
+      const items = await adminResourceQueries.marketCoverage();
       return table(locale, ["Market", "Priority", "Status", "Properties", "Units", "Listings", "Panel A/R", "24h / 72h", "Last success", "Coverage gaps"], items.map((item) => [item.name, item.gapPriorityScore, pill(item.status, locale), item.knownPropertyCount, item.knownUnitCount, item.knownListingCount, `${item.anchorPanelCount}/${item.rotatingPanelCount}`, `${percent(item.coverage24h)} / ${percent(item.coverage72h)}`, date(item.lastSuccessfulAt, locale), jsonStrings(item.coverageGaps).join(", ") || "—"]));
     }
     case "collectionRuns": {
-      const items = await prisma.collectionRun.findMany({ orderBy: { createdAt: "desc" }, take: 100, include: { dataSource: { select: { name: true } } } });
+      const items = await adminResourceQueries.collectionRuns();
       return table(locale, ["Collection Run", "Source", "Mode", "Status", "Succeeded", "Started"], items.map((item) => [item.id, item.dataSource.name, item.mode, pill(item.status, locale), item.successCount, date(item.startedAt, locale)]));
     }
     case "dataSources": {
-      const items = await prisma.dataSource.findMany({ orderBy: { name: "asc" } });
+      const items = await adminResourceQueries.dataSources();
       return table(locale, ["Data Source", "Type", "Lifecycle", "Health", "Enabled"], items.map((item) => [item.name, item.providerType, pill(item.lifecycle, locale), pill(item.healthStatus, locale), adminText(locale, item.enabled ? "yes" : "no")]));
     }
     case "events": {
-      const items = await prisma.eventOccurrence.findMany({ orderBy: { startsAt: "desc" }, take: 150, include: { canonicalEvent: true, venue: true, sourceLinks: { include: { sourceEventOccurrence: { include: { dataSource: { select: { name: true } } } } } } } });
+      const items = await adminResourceQueries.events();
       return table(locale, ["Event", "Sources", "Location", "Category", "Status", "Starts", "Impact"], items.map((item) => {
         const sources = [...new Set(item.sourceLinks.map((link) => link.sourceEventOccurrence.dataSource.name))].join(", ");
         return [item.canonicalEvent.title, sources || adminText(locale, "unlinked"), [item.venue?.city, item.venue?.region].filter(Boolean).join(", ") || adminText(locale, "newZealand"), item.canonicalEvent.category ?? adminText(locale, "unclassified"), pill(item.status, locale), date(item.startsAt, locale), pill(item.impactStatus, locale)];
       }));
     }
     case "signals": {
-      const items = await prisma.marketSignal.findMany({ orderBy: { startsAt: "desc" }, take: 100 });
+      const items = await adminResourceQueries.signals();
       return table(locale, ["Signal", "Market", "Region", "Status", "Starts", "Ends"], items.map((item) => [item.type.replaceAll("_", " "), item.marketKey, item.region, pill(item.status, locale), date(item.startsAt, locale), date(item.endsAt, locale)]));
     }
     case "feedback": {
-      const items = await prisma.feedback.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+      const items = await adminResourceQueries.feedback();
       return table(locale, ["Feedback", "Type", "Price Check", "Comment", "Created", "Data"], items.map((item) => [item.id, pill(item.type, locale), item.priceCheckId, item.comment || "—", date(item.createdAt, locale), demo(item.isDemo, locale)]));
     }
     case "audit": {
-      const items = await prisma.auditEvent.findMany({ orderBy: { createdAt: "desc" }, take: 150 });
+      const items = await adminResourceQueries.audit();
       return table(locale, ["Event", "Entity", "Entity ID", "Actor", "Created", "Data"], items.map((item) => [item.eventType, item.entityType, item.entityId, item.actorAdminId || adminText(locale, "system"), date(item.createdAt, locale), demo(item.isDemo, locale)]));
     }
   }

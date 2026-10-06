@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { Environment } from "@tymra/config";
 import { prisma, type Prisma } from "@tymra/db";
-import { publicDataAdapters } from "@tymra/providers";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { getArgusJobResult } from "../clients/argus-client";

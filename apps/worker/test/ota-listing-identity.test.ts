@@ -1,7 +1,7 @@
-import { parseOtaListingReference } from "@tymra/providers";
+import { parseOtaListingReference } from "@tymra/providers/ota-adapters";
 import { describe, expect, it } from "vitest";
 
-import { canonicalReferenceIdentityMatches } from "../src/services/worker-service";
+import { canonicalReferenceIdentityMatches } from "../src/services/worker/helpers";
 
 describe("OTA listing identity bridging", () => {
   it("accepts an Agoda numeric extraction only when its canonical slug matches the submitted listing", () => {

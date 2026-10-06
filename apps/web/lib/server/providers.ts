@@ -1,11 +1,8 @@
 import { getEnvironment } from "@tymra/config";
 import { prisma } from "@tymra/db";
-import {
-  DemoProvider,
-  ManualImportProvider,
-  type DataProvider,
-  type ManualImportRow,
-} from "@tymra/providers";
+import { DemoProvider } from "@tymra/providers/demo";
+import { ManualImportProvider, type ManualImportRow } from "@tymra/providers/manual-import";
+import { type DataProvider } from "@tymra/providers/contracts";
 
 export async function getDataProvider(): Promise<DataProvider> {
   const environment = getEnvironment();

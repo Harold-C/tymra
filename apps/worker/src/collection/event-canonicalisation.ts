@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 export type SourceEventIdentity = {
   externalId: string;

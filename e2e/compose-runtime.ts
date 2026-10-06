@@ -1,77 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { assertIsolatedComposeEnvironment } from "../test/isolation";
 
-const runtimeLockPath = resolve(process.cwd(), "output/e2e-runtime.lock");
-
-export function acquireRuntimeLock() {
-  mkdirSync(resolve(process.cwd(), "output"), { recursive: true });
-  writeFileSync(runtimeLockPath, `${Date.now()}\n`, { encoding: "utf8" });
-}
-
-export function releaseRuntimeLock() {
-  rmSync(runtimeLockPath, { force: true });
-}
-
-export function recreateRuntime(environment: NodeJS.ProcessEnv, options: { waitForHealthy?: boolean } = {}) {
-  const waitForHealthy = options.waitForHealthy ?? true;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      removeRuntimeServices(environment);
-      execFileSync("docker", ["compose", "up", "-d", ...(waitForHealthy ? ["--wait"] : []), "--no-deps", "--force-recreate", "web", "worker", "api"], {
-        cwd: process.cwd(),
-        env: environment,
-        stdio: "inherit",
-      });
-      assertRuntimeEnvironment(environment);
-      waitForPublicRoute(environment);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt < 3) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 1_000);
-    }
-  }
-  throw lastError;
-}
-
-function removeRuntimeServices(environment: NodeJS.ProcessEnv) {
-  // Compose can return before a forced recreation has fully removed the old
-  // container. Stop and remove only the E2E-managed services first so a retry
-  // cannot race a lingering container name.
-  execFileSync("docker", ["compose", "stop", "--timeout", "10", "web", "worker", "api"], {
-    cwd: process.cwd(),
-    env: environment,
-    stdio: "inherit",
-  });
-  execFileSync("docker", ["compose", "rm", "--force", "web", "worker", "api"], {
-    cwd: process.cwd(),
-    env: environment,
-    stdio: "inherit",
+export function isolatedCompose(environment: NodeJS.ProcessEnv, ...arguments_: string[]) {
+  assertIsolatedComposeEnvironment(environment);
+  execFileSync("docker", ["compose", "--env-file", "/dev/null", "-p", environment.COMPOSE_PROJECT_NAME!, "-f", resolve("docker-compose.test.yml"), ...arguments_], {
+    cwd: process.cwd(), env: environment, stdio: "inherit",
   });
 }
 
-function assertRuntimeEnvironment(environment: NodeJS.ProcessEnv) {
-  const expected = Object.fromEntries(["PROVIDER_MODE", "PUBLIC_COLLECTION_MODE", "ABUSE_CHALLENGE_MODE"].flatMap((name) => environment[name] === undefined ? [] : [[name, environment[name]]]));
-  if (!Object.keys(expected).length) return;
-  execFileSync("docker", ["compose", "exec", "-T", "web", "node", "-e", `const expected=${JSON.stringify(expected)};process.exit(Object.entries(expected).every(([key,value])=>process.env[key]===value)?0:1)`], {
-    cwd: process.cwd(), env: environment, stdio: "ignore",
-  });
+export function recreateRuntime(environment: NodeJS.ProcessEnv) {
+  isolatedCompose(environment, "up", "-d", "--no-deps", "--force-recreate", "web", "worker", "api");
+  isolatedCompose(environment, "exec", "-T", "web", "node", "-e", 'process.exit(process.env.PROVIDER_MODE === "demo" && process.env.PUBLIC_COLLECTION_MODE === "fixture" ? 0 : 1)');
 }
 
-function waitForPublicRoute(environment: NodeJS.ProcessEnv) {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= 60; attempt += 1) {
-    try {
-      execFileSync("curl", ["--silent", "--show-error", "--fail", "--max-time", "5", "https://tymra.test/en"], {
-        env: environment,
-        stdio: "ignore",
-      });
-      return;
-    } catch (error) {
-      lastError = error;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
-    }
-  }
-  throw lastError;
+export function stopTestRuntime(environment: NodeJS.ProcessEnv) {
+  isolatedCompose(environment, "down", "--volumes", "--remove-orphans");
 }

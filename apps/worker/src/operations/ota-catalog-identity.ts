@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { otaListingIdentitySchema } from "@tymra/providers";
+import type { otaListingIdentitySchema } from "@tymra/providers/ota-argus-contracts";
 
 type Identity = z.infer<typeof otaListingIdentitySchema>;
 

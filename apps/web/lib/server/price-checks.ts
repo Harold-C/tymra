@@ -15,15 +15,10 @@ import {
   stayQuerySchema,
   type PriceCheckStatus,
 } from "@tymra/domain";
-import {
-  linzAddressIdentityProvider,
-  normalizeAddressQuery,
-  otaArgusConnectorForSource,
-  parseOtaListingReference,
-  resolveNzAddressSignalCoverage,
-  stableAddressIdentityId,
-  type AddressIdentity,
-} from "@tymra/providers";
+import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentity } from "@tymra/providers/address-identity";
+import { otaArgusConnectorForSource } from "@tymra/providers/ota-argus-contracts";
+import { parseOtaListingReference } from "@tymra/providers/ota-adapters";
+import { resolveNzAddressSignalCoverage } from "@tymra/providers/nz-market-coverage";
 import { withRedisLockWait } from "@tymra/queue";
 
 import { checkAccessHash, deriveCheckAccessKey } from "./check-access";

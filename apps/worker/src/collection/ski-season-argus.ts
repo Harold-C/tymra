@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { nzStartOfDay } from "@tymra/domain";
-import { SKI_SEASON_SOURCES, type PublicRawRecord } from "@tymra/providers";
+import { SKI_SEASON_SOURCES } from "@tymra/providers/ski-season-adapter";
+import { type PublicRawRecord } from "@tymra/providers/types";
 
 export const publicSkiSeasonExtractionSchema = z.object({
   data_schema: z.literal("public-ski-season.collect_season"),

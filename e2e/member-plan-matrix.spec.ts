@@ -17,7 +17,7 @@ const plans = [
 test.describe("fixed development member plan matrix", () => {
   for (const expected of plans) {
     test(`${expected.plan} account exposes only its contracted entitlements`, async ({ page }) => {
-      await signIn(page, expected.email, required("STRIPE_TEST_MEMBER_PASSWORD"));
+      await signIn(page, expected.email, required("MEMBER_DEV_PASSWORD"));
       const response = await page.request.get("/api/v1/customer/membership");
       expect(response.ok()).toBe(true);
       const payload = await response.json() as { data: {
@@ -40,7 +40,8 @@ test.describe("fixed development member plan matrix", () => {
       });
       expect(payload.data.usage.remainingSpotChecks).toBeGreaterThanOrEqual(0);
       expect(payload.data.usage.remainingSpotChecks).toBeLessThanOrEqual(expected.checks);
-      expect(payload.data.launchAvailability[expected.plan]).toBe(true);
+      expect(payload.data.launchAvailability[expected.plan]).toBe(expected.plan === "FREE"
+        || enabled("BILLING_ENABLED") && enabled(`MEMBERSHIP_${expected.plan}_LAUNCH_ENABLED`));
 
       await page.goto("/en/account/billing", { waitUntil: "domcontentloaded" });
       const membership = page.getByRole("region", { name: expected.displayName });

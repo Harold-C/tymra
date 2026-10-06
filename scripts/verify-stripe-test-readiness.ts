@@ -21,7 +21,7 @@ async function main() {
 
   const client = new Stripe(secretKey);
   const [account, portal, ...prices] = await Promise.all([
-    client.accounts.retrieve(),
+    client.accounts.retrieve(null),
     client.billingPortal.configurations.retrieve(portalConfigurationId),
     ...paidPlans.map((plan) => client.prices.retrieve(priceIds[plan])),
   ]);

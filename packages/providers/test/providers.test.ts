@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { DemoProvider, previewManualImport } from "../src";
+import { DemoProvider } from "@tymra/providers/demo";
+import { previewManualImport } from "@tymra/providers/manual-import";
 
 const context = { sourceKey: "demo", locale: "en" as const, correlationId: "test" };
 

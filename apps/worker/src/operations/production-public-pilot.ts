@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 
 import { prisma, type Prisma } from "@tymra/db";
 import { nzDateKey, nzStartOfDay } from "@tymra/domain";
-import { ARGUS_PUBLIC_MARKET_SOURCES, SKI_SEASON_SOURCES, argusPublicMarketSource, nzCoverageKeysForAreaText, parseMetServiceCapAlert, parseMetServiceCapFeed, publicDataAdapters } from "@tymra/providers";
+import { ARGUS_PUBLIC_MARKET_SOURCES, argusPublicMarketSource } from "@tymra/providers/argus-public-market-adapters";
+import { SKI_SEASON_SOURCES } from "@tymra/providers/ski-season-adapter";
+import { nzCoverageKeysForAreaText } from "@tymra/providers/nz-market-coverage";
+import { parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers/public/metservice-cap";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { normaliseSportySchoolSportEvents, sportySchoolSportExtractionSchema } from "../collection/school-sport-ticketek";

@@ -1,4 +1,4 @@
-import { PricingUnitsView } from "@/components/member/CustomerPortalViews";
+import { PricingUnitsView } from "@/components/member/portal/PricingUnitsView";
 import { getAccountMetadata } from "@/lib/account-metadata";
 export function generateMetadata({ params }: { params: { locale: "en" | "zh" } }) { return getAccountMetadata(params.locale, "pricingUnits"); }
 export default function Page({ params }: { params: { locale: "en" | "zh" } }) { return <PricingUnitsView locale={params.locale} />; }

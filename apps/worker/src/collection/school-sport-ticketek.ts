@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { eventImpactEvidenceBundleSchema, nzDateKey, nzDateTime, nzEndOfDay } from "@tymra/domain";
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 export const SCHOOL_SPORT_NZ_SOURCE_ID = "school_sport_nz";
 export const SCHOOL_SPORT_CANTERBURY_SOURCE_ID = "school_sport_canterbury";

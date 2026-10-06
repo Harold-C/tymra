@@ -9,7 +9,7 @@ import type {
   ProviderRate,
   RateRequest,
   UnitCandidate,
-} from "./index";
+} from "./contracts";
 
 export const manualImportRowSchema = z.object({
   property_external_id: z.string().trim().min(1),

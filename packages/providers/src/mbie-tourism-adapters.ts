@@ -3,7 +3,7 @@ import { addNzCalendarDays, addNzCalendarMonths, nzStartOfDay } from "@tymra/dom
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
-import { marketKeysForMbieArea } from "./public-adapters";
+import { marketKeysForMbieArea } from "./public/mbie-accommodation";
 
 const TVF_MONTHLY_URL = "https://teic.mbie.govt.nz/assets/tv&f/Volumes_monthly_unique_counts.xlsx";
 const MRTE_SUMMARY_URL = "https://teic.mbie.govt.nz/assets/mrte/Summary.xlsx";

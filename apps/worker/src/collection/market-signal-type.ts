@@ -1,6 +1,6 @@
 import { MarketSignalType } from "@prisma/client";
 
-import { AdapterError } from "@tymra/providers";
+import { AdapterError } from "@tymra/providers/types";
 
 export function mapSignalType(type: string): MarketSignalType {
   if (Object.values(MarketSignalType).includes(type as MarketSignalType)) return type as MarketSignalType;

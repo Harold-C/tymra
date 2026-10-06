@@ -6,7 +6,7 @@ import type {
   ProviderRate,
   RateRequest,
   UnitCandidate,
-} from "./index";
+} from "./contracts";
 
 const demoProperties: PropertyCandidate[] = [
   {

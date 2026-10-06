@@ -10,7 +10,7 @@ import {
   type Prisma,
 } from "@tymra/db";
 import { nzCalendarDayDifference, stayQuerySchema, unlockRoughResultSchema } from "@tymra/domain";
-import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers";
+import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers/email";
 
 import { issueCustomerSessionToken } from "./customer-auth";
 import { ensureFreeMembership, MembershipAccessError, membershipQueuePriority, reserveSpotCheck } from "./membership";

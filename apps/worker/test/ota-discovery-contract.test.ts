@@ -5,7 +5,7 @@ vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@ty
 vi.mock("../src/services/argus-orchestrator", async (original) => ({ ...await original<typeof import("../src/services/argus-orchestrator")>(), captureBrowserTaskWithDurableArgus: mock.capture }));
 import { WorkerService } from "../src/services/worker-service";
 import { DeferredJobError } from "../src/jobs/deferred-job";
-import { otaDiscoveryUrlForSource } from "@tymra/providers";
+import { otaDiscoveryUrlForSource } from "@tymra/providers/ota-argus-contracts";
 beforeEach(() => {
   vi.resetAllMocks(); vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-30T12:00:00Z"));
   mock.run.mockResolvedValue({ id: "run", status: "RUNNING", startedAt: new Date("2026-09-30T11:00:00Z"), scope: { operation: "NATIONAL_CATALOG_DISCOVERY", targetId: "target" } });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { PublicRawRecord } from "@tymra/providers";
+import type { PublicRawRecord } from "@tymra/providers/types";
 
 const fieldSourcesSchema = z.record(z.string(), z.string());
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);

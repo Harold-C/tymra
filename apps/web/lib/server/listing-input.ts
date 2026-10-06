@@ -1,5 +1,6 @@
 import { addNzCalendarDays } from "@tymra/domain";
-import { otaProviderDetails, parseOtaListingReference, type OtaProvider } from "@tymra/providers";
+import { otaProviderDetails, type OtaProvider } from "@tymra/providers/ota-argus-contracts";
+import { parseOtaListingReference } from "@tymra/providers/ota-adapters";
 
 export type SupportedOta = "BOOKING" | "AIRBNB" | "EXPEDIA" | "WOTIF" | "HOTELS_COM" | "BOOKABACH" | "VRBO" | "AGODA" | "TRIP_COM";
 

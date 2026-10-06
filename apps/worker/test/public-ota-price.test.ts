@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { publicOtaPrice } from "../src/services/worker-service";
-import { otaRateExtractionSchema } from "@tymra/providers";
+import { publicOtaPrice } from "../src/services/ota-price";
+import { otaRateExtractionSchema } from "@tymra/providers/ota-argus-contracts";
 
 describe("public OTA price return invariant", () => {
   it("accepts a source-evidenced complete bundled total without treating unknown components as itemized", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { publicDataAdapters, SKI_SEASON_SOURCES } from "@tymra/providers";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
+import { SKI_SEASON_SOURCES } from "@tymra/providers/ski-season-adapter";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("three-resort Argus ski-season delivery", () => {

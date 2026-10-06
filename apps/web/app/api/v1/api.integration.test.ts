@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import { addressIdentityPersistentCache, hashOpaqueToken, hashPersonalIdentifier, prisma } from "@tymra/db";
-import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentitySearchResult } from "@tymra/providers";
+import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentitySearchResult } from "@tymra/providers/address-identity";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 

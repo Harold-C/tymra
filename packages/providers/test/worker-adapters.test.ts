@@ -2,7 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 import { isCccAccessChallenge } from "../src/christchurch-priority-adapters";
 
-import { AdapterError, NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, changedMetServiceFeedItems, combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, extractEventfindaHttpPage, extractTicketmasterHttpPage, findQueenstownAirportDashboardUrl, findWellingtonAirportWorkbookUrl, marketKeysForAnniversaryRegion, marketKeysForMbieArea, metServiceFeedItemVersion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, otaAdapters, parseAirportMonthlyPassengers, parseAraAcademicCalendar, parseAucklandLivePage, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage, parseChristchurchNzPage, parseChristchurchRacing, parseChristchurchSports, findNzCruiseScheduleCsvUrl, parseNzCruiseScheduleCsv, parseDocAlertGroups, parseEducationSchoolHolidays, parseEmploymentPublicHolidays, parseFlightTime, parseHawkesBayNzEvents, parseInterislanderAlerts, parseIsaacTheatreRoyalEvents, parseIvsAnnualSummary, parseManawatuNzEvents, parseMbieAccommodationTail, parseMetServiceCapAlert, parseMetServiceCapFeed, parseMrteSummary, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseNztaDelays, parseOurAucklandPage, parsePlatformJsonLdEvents, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSkiSeasonHtml, parseSouthlandNzEvents, parseStatsNzInternationalTravel, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseTePaeEvents, parseTourismFlowsMonthly, parseUcKeyDates, parseUniversityEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken, parseWaikatoNzEvents, parseWellingtonAirportFlights, parseWellingtonAirportMonthlyPassengers, parseWellingtonNzEvents, publicDataAdapters, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "../src";
+import { AdapterError } from "@tymra/providers/types";
+import { NZ_MAJOR_ACCOMMODATION_MARKETS, assessNzMarketCoverage, assessNzMarketOperationalCoverage, canonicalNzMarketKey, marketKeysForAnniversaryRegion, nearestNzMarketKey, nzCoverageKeysForAreaText, nzMarketKeysForAreaText, publicSignalCollectionPlanForAddress, publicSignalCollectionPlanForMarket, publicSignalSourceIdsForMarket, resolveNzAddressSignalCoverage, resolveNzMarketKey } from "@tymra/providers/nz-market-coverage";
+import { changedMetServiceFeedItems, metServiceFeedItemVersion, parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers/public/metservice-cap";
+import { combineQueenstownPassengerMatrices, decodeQueenstownPassengerMatrix, findQueenstownAirportDashboardUrl } from "@tymra/providers/queenstown-airport-monthly-adapter";
+import { extractEventfindaHttpPage, extractTicketmasterHttpPage } from "@tymra/providers/direct-event-page-extractors";
+import { findWellingtonAirportWorkbookUrl, parseWellingtonAirportMonthlyPassengers } from "@tymra/providers/airport-monthly-adapters";
+import { marketKeysForMbieArea, parseMbieAccommodationTail } from "@tymra/providers/public/mbie-accommodation";
+import { otaAdapters } from "@tymra/providers/ota-adapters";
+import { parseAirportMonthlyPassengers, parseChristchurchRacing, parseChristchurchSports, findNzCruiseScheduleCsvUrl, parseNzCruiseScheduleCsv, parseUcKeyDates } from "@tymra/providers/christchurch-demand-adapters";
+import { parseAraAcademicCalendar, parseCanterburyMajorAnnualEvent, parseChristchurchCouncilEventsPage } from "@tymra/providers/christchurch-priority-adapters";
+import { parseAucklandLivePage, parseChristchurchNzPage, parseOurAucklandPage, parsePoalCruiseCsv, parseQueenstownAirportFlights, parseUniversityEvents, parseWellingtonAirportFlights } from "@tymra/providers/official-nz-adapters";
+import { parseDocAlertGroups, parseInterislanderAlerts } from "@tymra/providers/access-disruption-adapters";
+import { parseEducationSchoolHolidays, parseEmploymentPublicHolidays } from "@tymra/providers/public/calendar";
+import { parseFlightTime, parsePlatformJsonLdEvents } from "@tymra/providers/public-event-platform-adapters";
+import { parseHawkesBayNzEvents, parseManawatuNzEvents, parseNelsonTasmanNzEvents, parseNorthlandNzEvents, parseQueenstownNzEvents, parseRotoruaNzEvents, parseSouthlandNzEvents, parseTaranakiNzEvents, parseTaupoNzEvents, parseTaurangaNzEvents, parseWaikatoNzEvents, parseWellingtonNzEvents } from "@tymra/providers/regional-market-adapters";
+import { parseIsaacTheatreRoyalEvents, parseTePaeEvents, parseVenuesOtautahiStories, parseVenuesOtautahiToken } from "@tymra/providers/christchurch-event-adapters";
+import { parseIvsAnnualSummary, parseMrteSummary, parseTourismFlowsMonthly } from "@tymra/providers/mbie-tourism-adapters";
+import { parseNztaDelays } from "@tymra/providers/public/nzta";
+import { parseSkiSeasonHtml } from "@tymra/providers/ski-season-adapter";
+import { parseStatsNzInternationalTravel } from "@tymra/providers/public/stats-nz-travel";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 
 const fixtureContext = { mode: "fixture" as const, correlationId: "adapter-contract", locale: "en" as const, currency: "NZD" as const };
 const liveContext = { ...fixtureContext, mode: "live" as const };

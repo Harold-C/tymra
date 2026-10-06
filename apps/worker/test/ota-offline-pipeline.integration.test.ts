@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { prisma } from "@tymra/db";
-import { getEnvironment } from "@tymra/config";
+import { getEnvironment, type Environment } from "@tymra/config";
 import { addNzCalendarDays, nzDateKey } from "@tymra/domain";
 import { closeRedis } from "@tymra/queue";
 import { prepareProductionOta, productionOtaPayload } from "../src/operations/production-ota";
@@ -103,7 +103,9 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); if (!address || typeof address === "string") throw Error("Fixture did not bind");
-  const env = {...environment, ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: token, ARGUS_EVIDENCE_ROOT: root};
+  // Exercise the live handler's exact contract against this local synthetic HTTP server only.
+  const env: Environment = {...environment, PROVIDER_MODE: "live", PUBLIC_COLLECTION_MODE: "live", FIXTURE_COLLECTION_ENABLED: false,
+    ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_API_TOKEN: token, ARGUS_EVIDENCE_ROOT: root};
   try {
     await prepareProductionOta(sourceKey, "production");
     const source = await prisma.dataSource.update({where: {key: sourceKey}, data: {enabled: true}});

@@ -4,7 +4,7 @@ import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate, otaH
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isSourceScopedRentalIdentity } from "./ota-catalog-identity";
 import { positiveOtaListingEvidenceWhere } from "./ota-listing-evidence";
-import type { otaListingIdentitySchema } from "@tymra/providers";
+import type { otaListingIdentitySchema } from "@tymra/providers/ota-argus-contracts";
 import type { z } from "zod";
 
 export const OTA_PILOT_VERSION = "ota-bounded-production-v1";

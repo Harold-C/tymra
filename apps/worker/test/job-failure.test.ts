@@ -1,4 +1,4 @@
-import { AdapterError } from "@tymra/providers";
+import { AdapterError } from "@tymra/providers/types";
 import { describe, expect, it } from "vitest";
 
 import { classifyJobFailure } from "../src/jobs/job-failure";

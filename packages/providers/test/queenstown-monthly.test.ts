@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { decodeQueenstownPassengerMatrix, queenstownPassengerQueries, queenstownAirportMonthlyAdapters } from "../src/queenstown-airport-monthly-adapter";
-import { publicDataAdapters } from "../src";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 
 describe("current Queenstown Airport PBIR report", () => {
   it("binds all three fields and preserves domestic and international filters", () => {

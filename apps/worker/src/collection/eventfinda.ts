@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { nzCalendarDayDifference } from "@tymra/domain";
 
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 export const EVENTFINDA_LISTING_URL = "https://www.eventfinda.co.nz/whatson/events/new-zealand";
 export const EVENTFINDA_EXTRACTOR = "eventfinda";

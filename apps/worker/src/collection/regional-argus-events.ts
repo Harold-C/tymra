@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { eventImpactEvidenceBundleSchema } from "@tymra/domain";
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 import {
   DUNEDINNZ_EVENTS_SOURCE_ID,

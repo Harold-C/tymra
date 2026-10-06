@@ -1,7 +1,14 @@
 import { defineConfig, devices } from "playwright/test";
+import { testRuntimeEnvironment } from "./test/runtime-environment";
+import { assertIsolatedComposeEnvironment } from "./test/isolation";
+
+const environment = testRuntimeEnvironment();
+assertIsolatedComposeEnvironment(environment);
+Object.assign(process.env, environment);
 
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: "release1.spec.ts",
   outputDir: "./output/playwright-results",
   fullyParallel: false,
   workers: 1,
@@ -12,9 +19,7 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
   use: {
-    // All browser-visible local development flows use the canonical Traefik origin.
-    // The loopback container port is reserved for internal health probes only.
-    baseURL: "https://tymra.test",
+    baseURL: environment.PUBLIC_ORIGIN,
     ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

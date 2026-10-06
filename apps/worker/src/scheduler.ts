@@ -1,11 +1,8 @@
 import { getEnvironment } from "@tymra/config";
 import { enqueueJob, prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
-import { firstPublicPriorJobAction, isFirstPublicSchedule } from "./operations/production-public-schedules";
-import { isProductionPublicPilotSchedule } from "./operations/production-public-pilot";
-import { isProductionProgressSchedule } from "./operations/production-progress-schedules";
-import { isRollingLincolnSchedule } from "./operations/rolling-lincoln-schedule";
-import { isProductionOtaSchedule, otaSourceApproved } from "./operations/production-ota";
+import { firstPublicPriorJobAction } from "./operations/production-public-schedules";
+import { classifySchedule, sourceMeetsSchedulePolicy } from "./operations/schedule-policy";
 import { ACTIVE_OTA_SOURCE_KEYS } from "./operations/ota-health";
 import { isCollectionScheduleJobType, nextCollectionOutsideOfficeHours } from "./operations/collection-office-hours";
 
@@ -28,11 +25,9 @@ await prisma.$disconnect();
 async function enqueueDueSchedules(now = new Date()) {
   const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
   for (const schedule of schedules) {
-    const publicPilot = isProductionPublicPilotSchedule(schedule);
-    const progressSchedule = isProductionProgressSchedule(schedule);
-    const rollingLincolnSchedule = isRollingLincolnSchedule(schedule);
-    const otaSchedule = isProductionOtaSchedule(schedule);
-    if (environment.NODE_ENV === "production" && !isFirstPublicSchedule(schedule) && !publicPilot && !progressSchedule && !rollingLincolnSchedule && !otaSchedule) {
+    const policy = classifySchedule(schedule);
+    const otaSchedule = policy?.kind === "ota";
+    if (environment.NODE_ENV === "production" && !policy) {
       throw new Error(`Production scheduler found an unapproved enabled schedule: ${schedule.key}`);
     }
     if (environment.NODE_ENV === "production" && isCollectionScheduleJobType(schedule.jobType)) {
@@ -54,19 +49,13 @@ async function enqueueDueSchedules(now = new Date()) {
     if (typeof payload.sourceId === "string") {
       const source = await prisma.dataSource.findUnique({ where: { key: payload.sourceId } });
       const blockers = source ? sourceCollectionBlockers(source, environment.NODE_ENV) : ["source missing"];
-      const metadata = source?.metadata;
-      if (otaSchedule && (!source || !otaSourceApproved(source) || blockers.length)) {
+      if (otaSchedule && (!sourceMeetsSchedulePolicy(policy!, source) || blockers.length)) {
         await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: false, nextRunAt: null } });
         continue;
       }
       if (otaSchedule && await prisma.job.count({ where: { sourceId: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, status: { in: ["PENDING", "RUNNING"] } } })) continue;
-      const pilotApproved = !(publicPilot || progressSchedule || rollingLincolnSchedule) || (source?.providerType === "PUBLIC" && !source.isDemo
-        && source.environments.includes("PRODUCTION")
-        && typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
-        && (rollingLincolnSchedule
-          ? (metadata as Record<string, unknown>).rollingLincolnApproved === true
-          : (metadata as Record<string, unknown>).boundedProductionCanary === true));
-      if ((publicPilot || progressSchedule || rollingLincolnSchedule) && (blockers.length || !pilotApproved)) {
+      if (policy && policy.sourceApproval !== "standard" && !otaSchedule
+        && (blockers.length || !sourceMeetsSchedulePolicy(policy, source))) {
         await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: false, nextRunAt: null } });
         process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "public_pilot_paused_after_source_block", schedule: schedule.key })}\n`);
         continue;

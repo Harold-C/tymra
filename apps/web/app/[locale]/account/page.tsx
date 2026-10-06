@@ -1,4 +1,4 @@
-import { CustomerAccount } from "@/components/member/CustomerAccountViews";
+import { CustomerAccount } from "@/components/member/CustomerAccount";
 import { getAccountMetadata } from "@/lib/account-metadata";
 import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 import { redirect } from "next/navigation";

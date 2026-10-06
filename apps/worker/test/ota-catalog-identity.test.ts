@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { otaListingIdentitySchema } from "@tymra/providers";
+import { otaListingIdentitySchema } from "@tymra/providers/ota-argus-contracts";
 import { isSourceScopedRentalIdentity, selectBoundedOtaUnits } from "../src/operations/ota-catalog-identity";
 import { otaIdentityRequiresDetail } from "../src/operations/production-ota";
 import { otaDiscoveryGeography, otaObservedRegion } from "../src/operations/ota-discovery-geography";

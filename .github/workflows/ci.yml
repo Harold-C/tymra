@@ -24,7 +24,7 @@ jobs:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 56380:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -32,8 +32,10 @@ jobs:
           --health-retries 10
     env:
       NODE_ENV: test
+      TYMRA_TEST_DISPOSABLE: "YES"
+      TYMRA_TEST_DATABASE_NAME: tymra_test
       DATABASE_URL: postgresql://tymra:test-only-database-password@127.0.0.1:5432/tymra_test
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://127.0.0.1:56380
       APP_BASE_URL: https://tymra.test
       SESSION_SECRET: test-only-session-secret-00000000000000000000000000000000
       ADMIN_EMAIL: admin@tymra.test
@@ -62,3 +64,41 @@ jobs:
       - run: pnpm --filter @tymra/db db:deploy
       - run: pnpm db:seed
       - run: pnpm verify
+      - name: Create empty offline OTA database
+        run: |
+          pnpm exec prisma db execute --url "$DATABASE_URL" --stdin <<'SQL'
+          CREATE DATABASE tymra_test_offline_test;
+          SQL
+      - name: Verify offline OTA delivery
+        env:
+          DATABASE_URL: postgresql://tymra:test-only-database-password@127.0.0.1:5432/tymra_test_offline_test
+          TYMRA_TEST_DATABASE_NAME: tymra_test_offline_test
+        run: |
+          pnpm --filter @tymra/db db:deploy
+          pnpm test:integration:ota-offline
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - run: pnpm test:e2e:member-matrix
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-evidence
+          path: |
+            output/playwright-report
+            output/playwright-results
+            output/playwright-member-matrix-results
+          retention-days: 7

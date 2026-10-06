@@ -1,5 +1,7 @@
+import { assertIsolatedTestEnvironment } from "./isolation";
+
+assertIsolatedTestEnvironment();
 Object.assign(process.env, { NODE_ENV: "test" });
-process.env.DATABASE_URL ??= "postgresql://tymra@127.0.0.1:5433/tymra_dev";
 process.env.APP_BASE_URL = "https://tymra.test";
 process.env.BASE_DOMAIN = "tymra.test";
 process.env.PUBLIC_ORIGIN = "https://tymra.test";

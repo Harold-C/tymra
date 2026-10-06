@@ -1,0 +1,100 @@
+name: tymra-e2e
+
+x-app: &app
+  image: tymra-app-test:local
+  build:
+    context: .
+    target: dev
+  environment: &environment
+    NODE_ENV: development
+    DATABASE_URL: postgresql://tymra:test-only-database-password@postgres-test:5432/tymra_test
+    REDIS_URL: redis://redis-test:6379
+    BASE_DOMAIN: localhost
+    PUBLIC_ORIGIN: http://localhost:43307
+    APP_BASE_URL: http://localhost:43307
+    ADMIN_ORIGIN: http://127.0.0.1:43307
+    WORKER_INTERNAL_URL: http://api:3100
+    ARGUS_API_BASE_URL: http://127.0.0.1:41999
+    ARGUS_API_TOKEN: ${ARGUS_API_TOKEN:?Use the isolated test runner}
+    ARGUS_EVIDENCE_ROOT: /tmp/tymra-isolated-test-evidence
+    SESSION_SECRET: ${SESSION_SECRET:?Use the isolated test runner}
+    RESULT_TOKEN_SECRET: ${RESULT_TOKEN_SECRET:?Use the isolated test runner}
+    ACCESS_KEY_SECRET: ${ACCESS_KEY_SECRET:?Use the isolated test runner}
+    DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Use the isolated test runner}
+    CRON_SECRET: ${CRON_SECRET:?Use the isolated test runner}
+    ADMIN_EMAIL: admin@tymra.test
+    ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Use the isolated test runner}
+    MEMBER_DEV_PASSWORD: isolated-member-test-password
+    PROVIDER_MODE: demo
+    PUBLIC_COLLECTION_MODE: fixture
+    FIXTURE_COLLECTION_ENABLED: "true"
+    AUTO_PUBLISH_ENABLED: "true"
+    ACCEPT_NEW_CHECKS: "true"
+    INTERNAL_ON_DEMAND_ENABLED: "true"
+    CUSTOMER_FUNNEL_ENABLED: "true"
+    CLIENT_DISCOVERY_MODE: VISIBLE
+    ADMIN_ONLY_ACCESS: "false"
+    SCHEDULER_ENABLED: "false"
+    HIGH_FREQUENCY_SCHEDULER_ENABLED: "false"
+    BILLING_ENABLED: "false"
+    ABUSE_CHALLENGE_MODE: disabled
+    EMAIL_PROVIDER: smtp
+    SMTP_URL: smtp://mailpit-test:1025
+    EMAIL_FROM: Tymra Test <no-reply@tymra.test>
+    WORKER_ID: tymra-isolated-test
+    WORKER_POLL_INTERVAL_MS: "100"
+    WORKER_LEASE_SECONDS: "30"
+    WORKER_API_HOST: 0.0.0.0
+    WORKER_API_PORT: "3100"
+  networks: [test]
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: tymra_test
+      POSTGRES_USER: tymra
+      POSTGRES_PASSWORD: test-only-database-password
+    ports: ["127.0.0.1:55434:5432"]
+    volumes: ["postgres-test:/var/lib/postgresql/data"]
+    networks: [test]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U tymra -d tymra_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis-test:
+    image: redis:7.4-alpine
+    ports: ["127.0.0.1:56380:6379"]
+    networks: [test]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  mailpit-test:
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:51027:1025", "127.0.0.1:58027:8025"]
+    networks: [test]
+  web:
+    <<: *app
+    working_dir: /app/apps/web
+    command: ["./node_modules/.bin/next", dev, --hostname, 0.0.0.0, --port, "3000"]
+    ports: ["127.0.0.1:43307:3000"]
+  worker:
+    <<: *app
+    working_dir: /app/apps/worker
+    command: ["./node_modules/.bin/tsx", src/index.ts]
+  api:
+    <<: *app
+    working_dir: /app/apps/worker
+    command: ["./node_modules/.bin/tsx", src/api.ts]
+    ports: ["127.0.0.1:43407:3100"]
+
+volumes:
+  postgres-test:
+networks:
+  test:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"

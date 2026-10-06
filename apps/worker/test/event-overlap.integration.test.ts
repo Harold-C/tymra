@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
 import { prisma } from "@tymra/db";
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 import { describe, expect, it } from "vitest";
 
 import { WorkerService } from "../src/services/worker-service";

@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from "@tymra/db";
-import { publicDataAdapters } from "@tymra/providers";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS } from "./production-public-pilot";

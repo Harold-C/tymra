@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider, useMessages } from "next-intl";
 import { notFound } from "next/navigation";
+import "../../styles/customer-funnel.css";
 
 const locales = new Set(["en", "zh"]);
 
@@ -31,4 +32,3 @@ export default function LocaleLayout({ children, params }: { children: React.Rea
     </NextIntlClientProvider>
   );
 }
-

@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { eventImpactEvidenceBundleSchema, nzEndOfDay, nzStartOfDay } from "@tymra/domain";
-import { argusPublicMarketSource, type ArgusPublicMarketSourceDefinition, type PublicEvent, type PublicRawRecord, type PublicSignal } from "@tymra/providers";
+import { argusPublicMarketSource, type ArgusPublicMarketSourceDefinition } from "@tymra/providers/argus-public-market-adapters";
+import { type PublicEvent, type PublicRawRecord, type PublicSignal } from "@tymra/providers/types";
 
 const fieldSources = z.record(z.string(), z.string());
 const nullableString = z.string().nullable();

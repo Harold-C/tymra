@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { SKI_SEASON_SOURCES, parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers";
+import { SKI_SEASON_SOURCES } from "@tymra/providers/ski-season-adapter";
+import { parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers/public/metservice-cap";
 import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
 import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";

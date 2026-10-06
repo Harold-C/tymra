@@ -4,9 +4,6 @@ import { expect, test } from "playwright/test";
 
 import { e2eAdminEmail, e2eAdminPassword } from "./test-identities";
 
-const resultPath = (locale: "en" | "zh", checkId: string, version = 1) =>
-  `/${locale}/result/${encodeURIComponent(`result:${checkId}:${version}`)}`;
-
 const listingUrlLabel = {
   en: "Supported OTA listing URL",
   zh: "受支持的 OTA 房源链接",
@@ -17,7 +14,10 @@ const insightsHeading = {
   zh: "先看清值得检查的重点",
 } as const;
 
-const adminUrl = (pathname: string) => new URL(pathname, "https://ops.tymra.test").toString();
+const publicOrigin = process.env.PUBLIC_ORIGIN!;
+const adminOrigin = process.env.ADMIN_ORIGIN!;
+const mailpitOrigin = process.env.TYMRA_TEST_MAILPIT_URL!;
+const adminUrl = (pathname: string) => new URL(pathname, adminOrigin).toString();
 
 function isMobileProject(testInfo: import("playwright/test").TestInfo) {
   const viewport = testInfo.project.use.viewport;
@@ -80,7 +80,7 @@ test.describe("public Release 1", () => {
     const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
     const page = await context.newPage();
     try {
-      await goto(page, "https://tymra.test/en/sign-in");
+      await goto(page, `${publicOrigin}/en/sign-in`);
       await page.getByLabel("Membership email").fill("no-js-member@tymra.test");
       await page.getByLabel("Password").fill("no javascript password fixture");
       const submitted = page.waitForRequest((request) => request.url().includes("/en/sign-in") && request.method() === "POST");
@@ -291,7 +291,7 @@ test.describe("public Release 1", () => {
     const search = await pollMailpit(page, email, 1);
     expect(search.messages_count).toBe(1);
     expect(search.messages[0].Subject).toBe("Verify your email to unlock the Tymra report");
-    const message = await (await page.request.get(`http://127.0.0.1:8025/api/v1/message/${search.messages[0].ID}`)).json();
+    const message = await (await page.request.get(`${mailpitOrigin}/api/v1/message/${search.messages[0].ID}`)).json();
     const secureHref = String(message.HTML).match(/href="(https?:\/\/[^\"]+\/en\/auth\/verify\?[^\"]+)"/)?.[1]?.replaceAll("&amp;", "&");
     expect(secureHref).toBeTruthy();
     const secureUrl = new URL(secureHref!);
@@ -343,86 +343,86 @@ test.describe("public Release 1", () => {
     await expect(page.getByRole("button", { name: /confirm/i })).toHaveCount(0);
   });
 
-  test("Unsupported OTA input and persisted legacy status boundary pages are explicit", async ({ page }) => {
-    test.slow();
+  test("unsupported OTA input is explicit", async ({ page }) => {
     await goto(page, "/en/check");
     await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel(listingUrlLabel.en).fill("https://www.booking.com/hotel/au/sydney.html");
     await page.getByRole("button", { name: "Check This Listing" }).click();
     await expect(page.getByText("Enter a supported public OTA listing URL.")).toBeVisible();
+  });
 
-    for (const [status, label] of [
-      ["SOURCE_UNAVAILABLE", "Source unavailable"],
-      ["INSUFFICIENT_DATA", "Insufficient data"],
-      ["PARTIAL", "Partial result"],
-      ["NEEDS_CONFIRMATION", "Needs confirmation"],
-    ]) {
-      const response = await postJsonFromPage<{ data: { checkId: string } }>(page, "/api/v1/price-checks", {
-          email: `status-${status.toLowerCase()}@tymra.test`,
-          locale: "en",
-          input: "Christchurch Central Stay",
-          propertyId: "demo-property-central",
-          unitId: "demo-unit-central",
-          stayQuery: {
-            checkIn: "2026-09-20T00:00:00.000Z",
-            checkOut: "2026-09-21T00:00:00.000Z",
-            adults: 2,
-            children: 0,
-            units: 1,
-            currency: "NZD",
-            cancellationCategory: "STANDARD",
-            timezone: "Pacific/Auckland",
-          },
-          serviceConsent: true,
-          marketingConsent: false,
-          idempotencyKey: `e2e-status:${status}:${crypto.randomUUID()}`,
-      });
-      expect(response.status).toBe(201);
-      const testCheckId = response.body.data.checkId;
-      await prisma.priceCheck.update({ where: { id: testCheckId }, data: { status: status as never } });
-      await goto(page, `/en/check/${testCheckId}/status`);
-      await expect(page.getByRole("heading", { name: label })).toBeVisible({ timeout: 30_000 });
+  test("formal reports require their owner and show only the latest published version", async ({ page }) => {
+    const checkIds = ["demo-check-normal-high", "demo-check-low-partial", "demo-check-expired", "demo-check-withdrawn", "demo-check-superseded"];
+    await goto(page, "/en/account/checks/demo-check-normal-high");
+    await expect(page).toHaveURL(/\/en\/sign-in\?returnTo=/);
+    const customerId = await signInFixtureMember(page, "demo1@tymra.test");
+    const previous = await prisma.priceCheck.findMany({ where: { id: { in: checkIds } }, select: { id: true, customerUserId: true } });
+    await prisma.priceCheck.updateMany({ where: { id: { in: checkIds } }, data: { customerUserId: customerId } });
+    try {
+      await goto(page, "/en/account/checks/demo-check-normal-high");
+      await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible();
+      await expect(page.getByText("Not real market data", { exact: false }).first()).toBeVisible();
+      await goto(page, "/en/account/checks/demo-check-low-partial");
+      await expect(page.getByRole("heading", { name: "Partial result" })).toBeVisible();
+      for (const checkId of ["demo-check-expired", "demo-check-withdrawn"]) {
+        const response = await page.request.get(publicOrigin + "/api/v1/customer/checks/" + checkId);
+        expect(response.status()).toBe(200);
+        const body = await response.json();
+        expect(body.data.terminal).toBe(true);
+        const status = checkId.endsWith("expired") ? "EXPIRED" : "WITHDRAWN";
+        expect(body.data.status).toBe(status);
+        // BR 5.5 retains expired versions; PG 9.4 suppresses terminal report summaries.
+        if (status === "WITHDRAWN") expect(body.data.result).toBeNull();
+        await goto(page, "/en/account/checks/" + checkId);
+        await expect(page.getByRole("heading", { name: status, exact: true })).toBeVisible();
+        await expect(page.locator(".formal-result-header, .formal-insight-list")).toHaveCount(0);
+      }
+      await goto(page, "/en/account/checks/demo-check-superseded");
+      await expect(page.locator(".formal-result-meta")).toContainText("Analysis version: 2");
+      const retired = await page.request.get(publicOrigin + "/en/result/invalid-local-token");
+      expect(retired.status()).toBe(404);
+      await signInFixtureMember(page, "demo2@tymra.test");
+      const denied = await page.request.get(publicOrigin + "/api/v1/customer/checks/demo-check-normal-high");
+      expect(denied.status()).toBe(404);
+      await goto(page, "/en/account/checks/demo-check-normal-high");
+      await expect(page.getByRole("heading", { name: "Secure access required" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toHaveCount(0);
+    } finally {
+      for (const check of previous) await prisma.priceCheck.update({ where: { id: check.id }, data: { customerUserId: check.customerUserId } });
     }
   });
 
-  test("valid, partial, expired, withdrawn, superseded and invalid result links are safe", async ({ page }) => {
-    await goto(page, resultPath("en", "demo-check-normal-high"));
-    await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible();
-    await expect(page.getByText("Not real market data", { exact: false }).first()).toBeVisible();
-    await expect(page.locator('.feedback-form[data-hydrated="true"]')).toBeVisible();
-    await page.getByLabel("Useful").check();
-    await page.getByRole("button", { name: "Send feedback" }).click();
-    await expect(page.getByText("Feedback received")).toBeVisible();
-
-    await goto(page, resultPath("en", "demo-check-low-partial"));
-    await expect(page.getByText("Low", { exact: true })).toBeVisible();
-    await goto(page, resultPath("en", "demo-check-expired"));
-    await expect(page.getByRole("heading", { name: "This result link has expired" })).toBeVisible();
-    await expect(page.getByText("Development Demo - Christchurch Central Stay")).toHaveCount(0);
-    await goto(page, resultPath("en", "demo-check-withdrawn"));
-    await expect(page.getByRole("heading", { name: "This result has been withdrawn" })).toBeVisible();
-    await goto(page, resultPath("en", "demo-check-superseded"));
-    await expect(page.getByText("This is an older result version")).toBeVisible();
-    await goto(page, resultPath("en", "demo-check-superseded", 2));
-    await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible();
-    await goto(page, "/en/result/invalid-local-token");
-    await expect(page.getByRole("heading", { name: "This result link is invalid" })).toBeVisible();
-  });
-
-  test("Chinese result and compact viewports do not overflow", async ({ page }) => {
-    await goto(page, resultPath("zh", "demo-check-normal-high"));
-    await expect(page.getByRole("heading", { name: "可能需要关注的日期" })).toBeVisible();
-    for (const viewport of [{ width: 320, height: 568 }, { width: 430, height: 932 }, { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1280, height: 800 }]) {
-      await page.setViewportSize(viewport);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  test("Chinese authenticated reports and compact viewports do not overflow", async ({ page }) => {
+    const customerId = await signInFixtureMember(page, "demo1@tymra.test");
+    const previous = await prisma.priceCheck.findUniqueOrThrow({ where: { id: "demo-check-normal-high" }, select: { customerUserId: true } });
+    await prisma.priceCheck.update({ where: { id: "demo-check-normal-high" }, data: { customerUserId: customerId } });
+    try {
+      await goto(page, "/zh/account/checks/demo-check-normal-high");
+      await expect(page.getByRole("heading", { name: "可能需要关注的日期" })).toBeVisible();
+      for (const viewport of [{ width: 320, height: 568 }, { width: 430, height: 932 }, { width: 768, height: 1024 }, { width: 1024, height: 768 }, { width: 1280, height: 800 }]) {
+        await page.setViewportSize(viewport);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      }
+    } finally {
+      await prisma.priceCheck.update({ where: { id: "demo-check-normal-high" }, data: previous });
     }
   });
+
 });
+
+async function signInFixtureMember(page: import("playwright/test").Page, email: string) {
+  const response = await page.request.post(publicOrigin + "/api/v1/customer/auth/password", {
+    headers: { origin: publicOrigin, "x-forwarded-for": "198.51.100.91" },
+    data: { email, password: process.env.MEMBER_DEV_PASSWORD },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  return (await response.json()).data.customer.id as string;
+}
 
 async function pollMailpit(page: import("playwright/test").Page, email: string, minimum: number) {
   let result: { messages_count: number; messages: Array<{ ID: string; Subject: string }> } = { messages_count: 0, messages: [] };
   await expect.poll(async () => {
-    const response = await page.request.get(`http://127.0.0.1:8025/api/v1/search?query=${encodeURIComponent(`to:${email}`)}&limit=20`);
+    const response = await page.request.get(`${mailpitOrigin}/api/v1/search?query=${encodeURIComponent(`to:${email}`)}&limit=20`);
     result = await response.json();
     return result.messages_count;
   }, { timeout: 30_000, intervals: [250, 500, 1_000] }).toBeGreaterThanOrEqual(minimum);
@@ -435,8 +435,8 @@ test.describe("member accessibility and responsive contract", () => {
   let customerId = "";
 
   test.beforeAll(async ({ request }) => {
-    const response = await request.post("https://tymra.test/api/v1/customer/auth/register", {
-      headers: { origin: "https://tymra.test", "x-forwarded-for": "198.51.100.80" },
+    const response = await request.post(`${publicOrigin}/api/v1/customer/auth/register`, {
+      headers: { origin: publicOrigin, "x-forwarded-for": "198.51.100.80" },
       data: { email, password, locale: "en", serviceConsent: true },
     });
     const responseText = await response.text();
@@ -453,7 +453,7 @@ test.describe("member accessibility and responsive contract", () => {
   test("EN/ZH member routes pass axe, keyboard, reduced-motion and compact-width checks", async ({ page }, testInfo) => {
     test.slow();
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const memberOrigin = "https://tymra.test";
+    const memberOrigin = publicOrigin;
     await goto(page, `${memberOrigin}/en/sign-in?returnTo=${encodeURIComponent("/en/account")}`);
     await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Membership email").fill(email);
@@ -542,10 +542,10 @@ test.describe("admin Release 1", () => {
     await page.getByLabel("Email").fill(e2eAdminEmail);
     await page.getByLabel("Password").fill(e2eAdminPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page).toHaveURL(/^https?:\/\/ops\.tymra\.test(?::3000)?\/admin\/exceptions/, { timeout: 30_000 });
+    await expect(page).toHaveURL(adminUrl("/admin/exceptions"), { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Inbox & incidents" })).toBeVisible();
     await gotoAdmin(page, "/admin/checks");
-    await expect(page.getByRole("heading", { name: "Price Checks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Price Checks", exact: true })).toBeVisible();
     await gotoAdmin(page, "/admin/checks/demo-check-normal-high");
     await expect(page.getByRole("heading", { name: "Price Check Detail" })).toBeVisible();
     await gotoAdmin(page, "/admin/data-sources");

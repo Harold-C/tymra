@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
 import { enrichEventVenue } from "../src/collection/venue-reference";
 

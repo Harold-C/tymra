@@ -7,7 +7,10 @@ import path from "node:path";
 import { getEnvironment } from "@tymra/config";
 import { prisma, Prisma } from "@tymra/db";
 import { emptyEventImpactEvidence } from "@tymra/domain";
-import { AdapterError, linzAddressIdentityProvider, otaAdapters, publicDataAdapters, type PublicDataAdapter } from "@tymra/providers";
+import { AdapterError, type PublicDataAdapter } from "@tymra/providers/types";
+import { linzAddressIdentityProvider } from "@tymra/providers/address-identity";
+import { otaAdapters } from "@tymra/providers/ota-adapters";
+import { publicDataAdapters } from "@tymra/providers/public/registry";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { handleJob } from "../src/jobs/job-handlers";

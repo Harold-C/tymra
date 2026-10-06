@@ -3,15 +3,8 @@ import { createHash } from "node:crypto";
 import type { Environment } from "@tymra/config";
 import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, sourceHasCapability } from "@tymra/db";
 import { nzDateKey } from "@tymra/domain";
-import {
-  locateOtaDiscoveryCandidate,
-  otaArgusConnectorForSource,
-  otaCollectRatesExtractionSchema,
-  otaDiscoverListingsExtractionSchema,
-  otaDiscoveryUrlForSource,
-  otaProviderDetails,
-  otaResolveListingExtractionSchema,
-} from "@tymra/providers";
+import { locateOtaDiscoveryCandidate } from "@tymra/providers/ota-address-match";
+import { otaArgusConnectorForSource, otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaDiscoveryUrlForSource, otaProviderDetails, otaResolveListingExtractionSchema } from "@tymra/providers/ota-argus-contracts";
 import type { ArgusBrowserTaskResult } from "../clients/argus-client";
 import { ACTIVE_OTA_SOURCE_KEYS, otaCollectionFailureCode } from "../operations/ota-health";
 import { sortOtaSourcesByMarketWeight } from "../operations/ota-source-priority";

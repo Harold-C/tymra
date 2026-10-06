@@ -18,7 +18,7 @@ import {
 } from "../collection/public-market-argus";
 import { aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionSchema } from "../collection/aviation-argus-signals";
 import { publicSkiSeasonExtractionSchema } from "../collection/ski-season-argus";
-import { otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaResolveListingExtractionSchema } from "@tymra/providers";
+import { otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaResolveListingExtractionSchema } from "@tymra/providers/ota-argus-contracts";
 
 export type ArgusEvidenceKind = "html" | "screenshot" | "download";
 

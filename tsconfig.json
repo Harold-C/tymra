@@ -1,39 +1,27 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2017",
     "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
     ],
-    "allowJs": false,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
       "@/*": [
         "./apps/web/*"
       ]
-    },
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "e2e/**/*.ts",
+    "test/**/*.ts",
+    "scripts/**/*.ts",
+    "*.config.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "output"
   ]
 }

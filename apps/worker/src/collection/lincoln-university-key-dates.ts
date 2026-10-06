@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { PublicSignal } from "@tymra/providers";
+import type { PublicSignal } from "@tymra/providers/types";
 
 export const LINCOLN_KEY_DATES_URL = "https://www.lincoln.ac.nz/study/key-dates/2026-academic-key-dates/";
 

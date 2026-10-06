@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "playwright/test";
+import isolatedConfig from "./playwright.config";
 
-export default defineConfig({
+export default defineConfig(isolatedConfig, {
   testDir: "./e2e",
   testMatch: "member-plan-matrix.spec.ts",
   fullyParallel: false,
@@ -11,7 +12,7 @@ export default defineConfig({
   reporter: [["list"]],
   outputDir: "output/playwright-member-matrix-results",
   use: {
-    baseURL: process.env.MEMBER_MATRIX_BASE_URL ?? "https://tymra.test",
+    baseURL: process.env.PUBLIC_ORIGIN,
     ignoreHTTPSErrors: true,
     trace: "off",
     screenshot: "off",

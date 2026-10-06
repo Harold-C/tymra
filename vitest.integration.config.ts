@@ -1,5 +1,8 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import { assertIsolatedTestEnvironment } from "./test/isolation";
+
+assertIsolatedTestEnvironment();
 
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./apps/web", import.meta.url)) } },

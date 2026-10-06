@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
 
-import type { PublicEvent } from "@tymra/providers";
+import type { PublicEvent } from "@tymra/providers/types";
 
-import { marketKeysForOperationalEvidence, sourceAvailableForOperationalCoverage } from "../src/jobs/job-handlers";
-import {
-  eventSignal,
-  selectPricingMarketSignals,
-  summariseDateDisruptions,
-  summariseMarketSignals,
-  summarisePublicSignalCollectionCoverage,
-} from "../src/services/worker-service";
+import { marketKeysForOperationalEvidence, sourceAvailableForOperationalCoverage } from "../src/jobs/handlers/coverage";
+import { eventSignal, selectPricingMarketSignals, summariseDateDisruptions, summariseMarketSignals, summarisePublicSignalCollectionCoverage } from "../src/services/worker/helpers";
 
 describe("nationwide market signals in pricing", () => {
   it("preserves market evidence for every demand source used by the operational gate", () => {

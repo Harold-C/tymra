@@ -71,28 +71,3 @@ export interface DataProvider {
   fetchRates(request: RateRequest, context: ProviderContext): Promise<ProviderRate[]>;
   healthCheck(context: ProviderContext): Promise<ProviderHealth>;
 }
-
-export * from "./demo-provider";
-export * from "./email-provider";
-export * from "./manual-import-provider";
-export * from "./adapter-types";
-export * from "./access-disruption-adapters";
-export * from "./ski-season-adapter";
-export * from "./ota-adapters";
-export * from "./ota-argus-contracts";
-export * from "./ota-address-match";
-export * from "./public-adapters";
-export * from "./official-nz-adapters";
-export * from "./christchurch-event-adapters";
-export * from "./christchurch-demand-adapters";
-export * from "./christchurch-priority-adapters";
-export * from "./direct-event-page-extractors";
-export * from "./public-event-platform-adapters";
-export * from "./regional-market-adapters";
-export * from "./airport-monthly-adapters";
-export * from "./mbie-tourism-adapters";
-export * from "./queenstown-airport-monthly-adapter";
-export * from "./aviation-argus-adapters";
-export * from "./argus-public-market-adapters";
-export * from "./nz-market-coverage";
-export * from "./address-identity";

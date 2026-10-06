@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AdapterError, isCccAccessChallenge, parseChristchurchCouncilEventsPage, type PublicRawRecord } from "@tymra/providers";
+import { AdapterError, type PublicRawRecord } from "@tymra/providers/types";
+import { isCccAccessChallenge, parseChristchurchCouncilEventsPage } from "@tymra/providers/christchurch-priority-adapters";
 
 const listingUrl = "https://www.ccc.govt.nz/news-and-events/whats-on";
 
