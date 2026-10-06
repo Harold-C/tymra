@@ -1,8 +1,98 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (SSH recovered; seven public sources restored; all 78 public plans enabled; Airbnb automatic-cycle failure leaves five OTA plans enabled)
+Last updated: 2026-10-06 (Airbnb and Bookabach production reacceptance complete; all 84 current schedules enabled)
 
-## 2026-10-06 七个暂停公开来源修复与恢复验收（已恢复）
+## 2026-10-06 Airbnb／Bookabach 自然周期失败修复与恢复验收完成
+
+生产自动周期暴露两个独立解析问题，原失败及全部证据保留：
+
+- Airbnb Run `cmuw6dx2p00zoql0700f774ly` 的价格明细已展开，原始页面为
+  NZ$185.15，其中住宿 161、税 24.15；卡片向上取整显示 NZ$186。旧代码按
+  四舍五入核对而拒绝完整总价。整数卡片改按向上取整绑定，带小数卡片仍须精确
+  相同；明细各项、日期、晚数及币种仍须一致，不把缺失费用推断为零。
+- Bookabach Northland 列表房源为 The Bush Bus Nature’s Hideaway Whangarei，
+  链接编号 `4742386vb`；旧代码截掉 `vb`，详情转到 West Sedona 的另一房源，
+  Run `cmuw8bcbr002eo307v68m15h1` 以 `SOURCE_UNAVAILABLE` 失败，Argus 原因为
+  `BOOKABACH_LISTING_CHANGED`。
+  Argus 路由、快照、解析及 Tymra 身份校验统一保留实际观察到的 `vb/ha`；
+  裸编号和两种后缀各自独立，未知后缀拒绝，不改写或合并旧身份。
+
+Argus `6a83aa6`／`argus-release-20261006-4`、Tymra `735c7f8` 已 push。
+Argus Tag 4 只更改五个公开执行文件，保留原生产 `21310f8` 的私有实现；
+main 中较新的私有认证续跑修复保留在源码，不因本轮公开发布隐式部署。
+本地 16 项 Argus 浏览器／解析定向检查及 32 项 Tymra 相关检查通过。
+42 份原始生产证据校验后，对相关原始 HTML 离线浏览器重放，Airbnb 得到精确总价 18515 分及
+完整必要费用标记，Bookabach 列表得到 `bookabach:4742386vb` 和正确链接。
+这项重放不表述为新一轮真实网站访问。
+
+Tymra 完整 CI、同一固定 Linux amd64 镜像中的 lint、类型、647 项单元和
+131 项数据库／API／Worker 集成检查通过，5／6 条既有条件跳过保留，117 页
+构建完成。新鲜生产配对备份实际恢复 80 表、581 份证据和 83 条已验证交付。
+NZ `19:49` 只替换四个 Tymra 应用，实际源码为 `735c7f8`，生产镜像为
+`sha256:c33e2d7c3974745991865254c10ff1dcba5df65e07ffab34f2c79fdbfdb5328d`。
+`19:50` HTTPS、就绪、调用权限、业务摘要、证据、配置及挂载读回通过；
+没有新增 migration，主机其他容器保持。备份沿用
+`/srv/apps/tymra/backups/ota-recovery-20261006-predeploy`。
+
+Argus `6a83aa6` 的[完整门禁](https://github.com/Harold-C/argus/actions/runs/37423978986)
+及固定导出通过：源码 918 项、固定镜像隔离 Chrome 1,108 项通过；Chrome／
+PostgreSQL 的条件入口由对应另一层补验，各层零失败。最终镜像实际隔离恢复
+最新 873 Job、2 账号、52,063 项私有条目，四项所有权拒绝、三份 wire 哈希、
+两个离线 Profile 打开通过。NZ `20:08` 共享及 Synix 调用方空闲时只替换 Argus
+browser，PG／tunnel、环境、挂载、私有实现及 Profile 保留；HTTPS 六公开
+工作流、两个私有属主读取及两个跨客户端拒绝通过。没有发布 Synix。
+独立 Synix 发布对话同期进行自己的备份暂停，该状态不归因于本轮公开修复，
+也不将全部 Synix 服务健康一直不变作为本轮证据。
+
+Bookabach Northland 两个精确父 Job `cmuwcg6q90000mq6nbwbn5fwm`、
+`cmuwcsc3g0000mq8uyhnrf95h` 均一次尝试、列表与报价 Run 各成功一条；
+`bookabach:4742386vb` 在 2026-10-13–14、两成人、一单位取得匿名
+NZD 152.00 AVAILABLE／COMPLETE。两轮共五次执行、十份持久证据，逐份哈希、
+持久交付、摘要 200／ACK 后 410 通过；第二轮复用已核实详情。
+官方修复窗口以第一轮及 Tymra `735c7f8`／Argus `6a83aa6` 固定，旧失败与
+历史行保持。正式 CLI 接受上述两轮并恢复原每日计划，下一次 NZ
+`2026-10-07 21:57`；临时 Northland 优先级已恢复为原 100。
+
+Airbnb 第一轮新父 Job `cmuwca8800000mq4aczcwz31z` 成功取得 Canterbury 的
+房源，但报价 Run 仍以 `NO_COMPLETE_PUBLIC_TOTAL` 失败，当时计划继续暂停。
+实际明细现价 177.61＝住宿 154.44＋税 23.17；Total 行还显示划线原价 209.42，
+旧解析误取原价。原失败和六份证据已校验保留，三次持久交付及 ACK／410 通过。
+补充候选 `cac5a3b`／`argus-release-20261006-5` 只修改该公开快照、针对测试与
+说明：在原生 Total 行用显式现价／原价标签识别应付总价，额外费用、冲突标签、
+卡片或明细不一致继续拒绝。33 项定向检查、类型检查和实际页面无网络重放通过，
+原 185.15 普通报价及 Bookabach 后缀重放也通过。
+Tag 5 完整源码 918 项与固定镜像 Chrome 1,109 项通过，浏览器／数据库条件
+入口由对应另一层补验，各层零失败；合成配对恢复及运行／故障恢复通过。
+导出的同一镜像全部 12 层及完整执行配置核对，实际恢复最新生产 881 Job、
+2 账号、52,298 私有条目及四项所有权拒绝、三份 wire 哈希、两个离线 Profile。
+NZ `21:05` 共享与 Synix 调用方空闲时只替换 Argus browser，数据库与最新恢复
+快照一致；私有实现、PG／tunnel、环境和挂载保持。生产 HTTPS 六公开工作流、
+两个私有属主读取与两个跨客户端拒绝通过。加密备份已封存并只移除所属明文
+传输目录；没有重建／重发 Tymra。Synix 同期由独立发布对话完成 3.20.0 自身
+升级，本轮没有操作其应用或数据库。
+
+Airbnb 新版本两个父 Job `cmuweak7x0000mqc7833njzrn`、
+`cmuwefmcr0000mqeeiugepwqj` 均一次尝试、列表与报价 Run 各成功一条；
+`airbnb:1567693964948000544` 在 2026-10-13–14、两成人、一单位取得匿名
+NZD 177.61 AVAILABLE／COMPLETE。两轮共四次执行、八份持久证据，逐份哈希、
+持久交付、摘要 200／ACK 后 410 通过；均复用已核实的详情身份。
+正式窗口以第一轮新版本 Job 及 Tymra `735c7f8`／Argus `cac5a3b` 固定，
+原促销失败与所有历史记录保留。正式启用 CLI 接受上述两轮并恢复原每日计划，
+下一次 NZ `2026-10-07 21:44`；临时 Canterbury 优先级已恢复为原 90。
+
+最终实时核对 84 条现行计划全部开启：78 公开＋六 OTA，六来源均 HEALTHY，
+正式发布门槛全部 ready；没有活动 OTA Job。两个来源的手动诊断豁免已撤回，
+正常每日六次、Argus 每来源每日十二次及并发一保持，当日计数未重置：Airbnb
+10、Bookabach 7。其他 82 条计划的定义与启用状态保持；其中 GeoNet、Expedia、
+Trip 的时间字段由各自日计划正常推进，精确 schedule 幂等键、原 payload、一次
+尝试和对应成功 Job 已核对，并未将正常自动运行误写成配置被修改。
+九条原历史 Job 逐行保持，旧失败不删除，私有任务不取消。主 Scheduler 开启、
+高频 Scheduler 关闭；四个 Tymra 应用仍为 `735c7f8`，镜像及重启数保持。
+本轮 Airbnb／Bookabach 恢复后的首个自然自动周期尚未观察；两轮完整实抓与
+启用不代替后续自然周期验收。过程收据沿用
+`runtime/release-candidates/ota-recovery-20261006`。
+
+## 2026-10-06 七个暂停公开来源修复与恢复验收（上轮已恢复记录）
 
 用户授权必要本地调试、调整有界限制并恢复生产。候选只修改 Tymra：Eventfinda、
 Ticketmaster、Sporty School Sport 分别约束排队及实际执行；默认排队一小时，每
