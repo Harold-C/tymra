@@ -1,6 +1,6 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (six public sources restored; School Sport NZ regional truncation repaired locally, final release and acceptance pending)
+Last updated: 2026-10-06 (six public sources restored; final School Sport NZ fix, CI and fixed image passed; production SSH blocks remaining deployment)
 
 ## 2026-10-06 七个暂停公开来源修复与恢复验收（进行中）
 
@@ -34,7 +34,21 @@ School Sport NZ 第一轮页面和交付成功，但先截取全国前两条，�
 Volleyball Cup 和 Jellie Park 的 SISS Junior Water Polo Cup 位于后续记录。
 Tymra 全国列表读取上限改为 100，再做地区筛选并按原每批两条入库；仍为一次页面
 请求，不改 Argus。真实页面离线重放、模拟全国前两条均为外地区的完整入库／幂等
-集成回归、lint 和全仓类型检查通过；该补充修复的固定镜像及生产复验接续执行。
+集成回归、lint 和全仓类型检查通过。补充修复 `bc0b056` 已 push，
+[完整 CI](https://github.com/Harold-C/tymra/actions/runs/37411178068) 通过；新固定
+Linux amd64 镜像内的 lint、类型、643 项单元及 131 项数据库／API／Worker
+集成检查通过，5／6 条既有条件跳过保留，117 页构建完成。固定镜像测试容器
+最初的三 GiB 内存限制令类型检查进程被终止；提高到六 GiB 后同一镜像检查通过，
+没有因此改源码、断言或重新构建。临时测试环境文件已移除。
+
+NZ `2026-10-06 17:04` 再核查 `148.135.121.30:22` 仍连接超时，管理登录页
+HTTP 200；当前执行机器公网 IPv4 为 `203.211.78.4`。Mac mini 的 SSH 正常，
+经其转发到 Tymra 生产 SSH 也未成功；白名单原因尚未在服务器端核实。新镜像
+传输在首次管理连接前失败，没有执行二次生产切换，School Sport NZ 原计划仍
+待恢复。本轮最后成功生产读回的应用版本为 `6c941b5`；六来源已启用的结果有效
+于各次验收时，连接恢复前不宣称已重新核查全部实时计划或自然周期。
+Argus 三个容器在本轮前后身份、镜像、启动时间与重启数一致，均运行、重启零；
+没有修改其私有代码、配置或 Profile，也未发布／重启 Argus 或 Synix。
 过程收据沿用 `runtime/release-candidates/public-recovery-20261006` 及 `-v2`，
 最终生产结论以本节后续读回为准。
 
