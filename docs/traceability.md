@@ -1,8 +1,8 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (six public sources restored; final School Sport NZ fix, CI and fixed image passed; production SSH blocks remaining deployment)
+Last updated: 2026-10-06 (SSH recovered; seven public sources restored; all 78 public plans enabled; Airbnb automatic-cycle failure leaves five OTA plans enabled)
 
-## 2026-10-06 七个暂停公开来源修复与恢复验收（进行中）
+## 2026-10-06 七个暂停公开来源修复与恢复验收（已恢复）
 
 用户授权必要本地调试、调整有界限制并恢复生产。候选只修改 Tymra：Eventfinda、
 Ticketmaster、Sporty School Sport 分别约束排队及实际执行；默认排队一小时，每
@@ -26,7 +26,8 @@ Queenstown 月报为六次；不足额度在请求前拒绝，分类为 REQUEST_
 检查、117 页构建及生产新鲜配对备份实际恢复（80 表／525 份证据／55 条交付）。
 只替换 Tymra 四个应用，Argus／Synix 未发布。Eventfinda、Ticketmaster 及四个
 直连来源各两轮精确生产试采、业务入库和证据校验通过，六条原计划已恢复。
-GitHub 首次 CI 未获托管 Runner，零步骤执行后取消；已重试，未将远端排队计为通过。
+GitHub 首次 CI 未获托管 Runner，零步骤执行后取消；最终补充版本的完整 CI
+已通过，未将远端排队计为通过。
 
 School Sport NZ 第一轮页面和交付成功，但先截取全国前两条，分别在 Bay of Plenty
 和 Southland，Canterbury 筛选后零入库；验收拒绝继续启用，空结果和证据保留。
@@ -41,16 +42,54 @@ Linux amd64 镜像内的 lint、类型、643 项单元及 131 项数据库／API
 最初的三 GiB 内存限制令类型检查进程被终止；提高到六 GiB 后同一镜像检查通过，
 没有因此改源码、断言或重新构建。临时测试环境文件已移除。
 
-NZ `2026-10-06 17:04` 再核查 `148.135.121.30:22` 仍连接超时，管理登录页
-HTTP 200；当前执行机器公网 IPv4 为 `203.211.78.4`。Mac mini 的 SSH 正常，
-经其转发到 Tymra 生产 SSH 也未成功；白名单原因尚未在服务器端核实。新镜像
-传输在首次管理连接前失败，没有执行二次生产切换，School Sport NZ 原计划仍
-待恢复。本轮最后成功生产读回的应用版本为 `6c941b5`；六来源已启用的结果有效
-于各次验收时，连接恢复前不宣称已重新核查全部实时计划或自然周期。
-Argus 三个容器在本轮前后身份、镜像、启动时间与重启数一致，均运行、重启零；
-没有修改其私有代码、配置或 Profile，也未发布／重启 Argus 或 Synix。
+NZ `2026-10-06 17:04` 的 SSH 超时曾阻塞补充发布。用户在 CloudCone 应用
+规则后，现有专用密钥成功连接为 `spmadmin`／`spm-prod-01`，确认源地址
+`203.211.78.4`、目标 `148.135.121.30:22`。主机 UFW 允许 OpenSSH 来源
+Anywhere，Fail2ban SSH 封禁为零；CloudCone 的当前 `/32` TCP/22 条目由
+用户应用。本轮没有修改防火墙或 SSH 身份验证设置。
+
+恢复连接后先读回生产真实状态。补充镜像经过四份传输校验及加载后的配置／层
+校验，生产镜像为
+`sha256:31d2ec0375f9493bc5befb462e0a505e51552ee7d1280eb2f3eab8d6c37123f1`，
+源码 `bc0b0566168fd7fe8a75f51122273064b0fe6ec5`。新鲜配对备份位于
+`/srv/apps/tymra/backups/public-recovery-20261006-v2-predeploy`，实际隔离恢复
+80 张业务表、561 份证据文件和 73 条已验证交付；只核验 School Sport NZ 的
+恢复 CLI，保留其他来源与计划。NZ `17:48` 替换 Tymra 四个应用，`17:49`
+读回业务摘要、证据、配置、挂载、依赖就绪、Admin HTTPS／noindex 和 Argus
+调用权限均通过；没有新增 migration。PostgreSQL、Redis、Traefik 和主机网站
+容器保持身份。Argus 三个私有容器前后身份、镜像、启动时间和重启数完全一致，
+均运行、重启零；没有发布／重启 Argus 或 Synix，亦未修改其私有 Profile。
+
+School Sport NZ 新版本两个原计划精确父 Job 为
+`cmuw79vrv0000o34058twstzk`、`cmuw7bdzt0000o356tiuwacsr`，对应 Run
+`cmuw79wlb0001o307elhbzy0q`、`cmuw7ber1000vo307iq57upud`。均一次尝试、
+完整成功、零失败；每轮一次页面请求、17 条全国原始记录、最多 100 条列表
+读取及两条业务记录上限，实际入库两条非 demo Canterbury 活动。两次执行
+交付已验证，六份原始证据含四份留存文件及两份数据库 payload，内容哈希全部
+通过。第二轮两条内容未变化，未重复创建活动。保留旧版本成功但零结果的
+`cmuvqowyu00utql07p3ik4lw1`，没有改写旧失败或移动既有六来源验收起点。
+
+两条活动为 SISS Junior Volleyball Cup（NZ 11 月 17–19 日）及 SISS Junior
+Water Polo Cup（NZ 11 月 18–21 日）。结构化数据明确 Canterbury 地区和
+`canterburyHosted=true`；venue／city 为空，符合该来源允许地区级位置的
+现行合同，仍为 `PENDING_EVIDENCE`，未推断场馆或提升影响结论。原周计划
+`pilot-public-school_sport_nz-weekly` 已按正式门槛启用，下一次为 NZ
+`2026-10-13 17:52`。最终七来源均 HEALTHY／PRODUCTION，最近两次精确
+完整验收保留；原六来源与所有其他计划／来源逐行保持。
+
+最终实时计划共 84 条，启用 83 条：78 条公开计划全部开启、五条 OTA 开启。
+唯一暂停的是 `pilot-ota-airbnb-daily`：NZ `17:24` 自动父 Job
+`cmuw6csx40000pl075peptpk3`，Run `cmuw6dx2p00zoql0700f774ly` 在 `17:25`
+以 `NO_COMPLETE_PUBLIC_TOTAL` 失败，没有取得包含全部必要费用的明确总价，
+系统暂停 Airbnb。该批次发生在本次补充镜像切换之前；新鲜备份和最终验收
+均保留其真实暂停状态、失败及证据，没有重新启用或调整报价门槛。首个自然
+周期的报价失败仍需基于保留响应区分真实不可售与解析缺口。
+
+Scheduler 正常开启，高频 Scheduler 关闭，最终无活动 Job；两条已退役周计划
+仍缺席，历史业务及全部旧失败保持。七个恢复来源的后续自然自动周期尚未
+验收，不能把本轮两个有界生产试采表述为自然周期已经全部成功。
 过程收据沿用 `runtime/release-candidates/public-recovery-20261006` 及 `-v2`，
-最终生产结论以本节后续读回为准。
+本节完成状态以本轮最终生产读回为准。
 
 ## 2026-10-06 退役周计划删除与七个暂停公开来源复核（上轮诊断记录）
 
