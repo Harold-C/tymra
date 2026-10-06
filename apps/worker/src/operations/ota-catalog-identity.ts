@@ -20,11 +20,13 @@ export function isSourceScopedRentalIdentity(identity: Identity): boolean {
   if (!["airbnb", "bookabach"].includes(identity.provider) || identity.countryCode !== "NZ"
     || !identity.approximateLocation?.label.trim() || !(identity.city?.trim() || identity.region?.trim())
     || identity.warnings.includes("UNIT_CAPACITY_FROM_SEARCH_OCCUPANCY")) return false;
-  const match = /^(airbnb|bookabach):([1-9]\d*)$/.exec(identity.sourceListingId);
-  if (!match || match[1] !== identity.provider) return false;
+  const match = identity.provider === "airbnb"
+    ? /^airbnb:([1-9]\d*)$/.exec(identity.sourceListingId)
+    : /^bookabach:([1-9]\d*(?:vb|ha)?)$/.exec(identity.sourceListingId);
+  if (!match) return false;
   let url: URL;
   try { url = new URL(identity.canonicalUrl); } catch { return false; }
-  const expectedPath = identity.provider === "airbnb" ? `/rooms/${match[2]}` : `/holiday-accommodation/p${match[2]}`;
+  const expectedPath = identity.provider === "airbnb" ? `/rooms/${match[1]}` : `/holiday-accommodation/p${match[1]}`;
   const hosts = identity.provider === "airbnb" ? ["www.airbnb.co.nz", "www.airbnb.com"] : ["www.bookabach.co.nz"];
   const unitId = identity.provider === "airbnb" ? identity.sourceListingId : `${identity.sourceListingId}:entire-home`;
   return hosts.includes(url.hostname) && url.pathname === expectedPath

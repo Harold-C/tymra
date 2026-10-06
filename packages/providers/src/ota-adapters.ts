@@ -19,7 +19,7 @@ const definitions: OtaDefinition[] = [
   { sourceId: "expedia", name: "Expedia", domains: ["expedia.co.nz", "expedia.com"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/Hotel-Information?selected=${encodeURIComponent(id)}` },
   { sourceId: "wotif", name: "Wotif", domains: ["wotif.co.nz"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/Hotel-Information?selected=${encodeURIComponent(id)}` },
   { sourceId: "hotels", name: "Hotels.com", domains: ["nz.hotels.com", "hotels.com"], type: "OTA", idFromUrl: expediaGroupId, canonicalPath: (id) => `/ho${id}` },
-  { sourceId: "bookabach", name: "Bookabach", domains: ["bookabach.co.nz"], type: "OTA", idFromUrl: vrboGroupId, canonicalPath: (id) => `/holiday-accommodation/p${id}` },
+  { sourceId: "bookabach", name: "Bookabach", domains: ["bookabach.co.nz"], type: "OTA", idFromUrl: bookabachId, canonicalPath: (id) => `/holiday-accommodation/p${id}` },
   { sourceId: "vrbo", name: "Vrbo", domains: ["vrbo.com"], type: "OTA", idFromUrl: vrboGroupId, canonicalPath: (id) => `/${id}` },
   { sourceId: "agoda", name: "Agoda", domains: ["agoda.com"], type: "OTA", idFromUrl: agodaId, canonicalPath: (id) => `/hotel/nz/${id}.html` },
   { sourceId: "trip", name: "Trip.com", domains: ["nz.trip.com", "trip.com"], type: "OTA", idFromUrl: tripId, canonicalPath: (id) => `/hotels/example-hotel-detail-${id}` },
@@ -217,6 +217,10 @@ function vrboGroupId(url: URL): string | null {
   return url.pathname.match(/\/p(\d+)(?:\/|$)/i)?.[1]
     ?? url.pathname.match(/\/(\d+)(?:ha)?(?:\/|$)/i)?.[1]
     ?? url.searchParams.get("propertyId");
+}
+
+function bookabachId(url: URL): string | null {
+  return /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?holiday-accommodation\/p([1-9]\d*(?:vb|ha)?)(?:\/|$)/iu.exec(url.pathname)?.[1]?.toLowerCase() ?? null;
 }
 
 function agodaId(url: URL): string | null {

@@ -29,6 +29,8 @@ expired resolution requires another bounded detail. Search occupancy is not phys
 The rate request carries optional `unitExternalId`; results must match provider, listing, physical
 unit, dates, NZD and occupancy. Available positive all-in totals require either explicit components
 or `totalIncludesMandatoryFees=true` with `fieldSources.totalIncludesMandatoryFees` evidence.
+Bookabach property and physical-unit identities retain an observed `vb` or `ha` suffix;
+the bare property ID and each suffixed ID are distinct, including in canonical URLs.
 Unknown breakdown components remain nullable in observation context; existing integer accounting
 columns are not evidence that an unpublished fee equals zero. Each new run appends a price observation;
 replaying the same run is idempotent.

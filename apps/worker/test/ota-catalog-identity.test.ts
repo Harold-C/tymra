@@ -54,3 +54,17 @@ it("keeps city frontier scope explicit and never maps Northland to Christchurch"
   expect(otaObservedRegion({ city: "Whangarei", region: "Northland" }, frontier)).toBe("Northland");
   expect(otaObservedRegion({ city: null, region: null }, frontier)).toBeNull();
 });
+
+it.each(["vb", "ha"])("keeps Bookabach %s namespace identities separate from the bare property ID", suffix => {
+  const value = identity("bookabach");
+  const sourceListingId = `bookabach:123${suffix}`;
+  const namespaced = { ...value, sourceListingId, canonicalUrl: `https://www.bookabach.co.nz/holiday-accommodation/p123${suffix}`,
+    units: [{ ...value.units[0]!, externalId: `${sourceListingId}:entire-home` }] };
+  expect(isSourceScopedRentalIdentity(namespaced)).toBe(true);
+  expect(otaIdentityRequiresDetail(namespaced)).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...namespaced, canonicalUrl: value.canonicalUrl })).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...namespaced, units: value.units })).toBe(false);
+  const airbnb = identity("airbnb");
+  expect(isSourceScopedRentalIdentity({ ...airbnb, sourceListingId: `airbnb:123${suffix}`, canonicalUrl: `https://www.airbnb.co.nz/rooms/123${suffix}`,
+    units: [{ ...airbnb.units[0]!, externalId: `airbnb:123${suffix}` }] })).toBe(false);
+});

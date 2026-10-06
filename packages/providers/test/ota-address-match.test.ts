@@ -83,6 +83,8 @@ describe("OTA listing to confirmed address match", () => {
     ["https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information", "wotif", "12345", "https://www.wotif.co.nz/Auckland-Hotels-Example.h12345.Hotel-Information"],
     ["https://nz.hotels.com/ho12345", "hotels", "12345", "https://nz.hotels.com/ho12345"],
     ["https://www.bookabach.co.nz/holiday-accommodation/p12345", "bookabach", "12345", "https://www.bookabach.co.nz/holiday-accommodation/p12345"],
+    ["https://www.bookabach.co.nz/holiday-accommodation/p12345vb?tracking=ignored", "bookabach", "12345vb", "https://www.bookabach.co.nz/holiday-accommodation/p12345vb"],
+    ["https://www.bookabach.co.nz/holiday-accommodation/p12345ha", "bookabach", "12345ha", "https://www.bookabach.co.nz/holiday-accommodation/p12345ha"],
     ["https://www.vrbo.com/12345ha", "vrbo", "12345", "https://www.vrbo.com/12345"],
     ["https://www.agoda.com/example-hotel/hotel/auckland-nz.html?hotel_id=12345", "agoda", "12345", "https://www.agoda.com/example-hotel/hotel/auckland-nz.html"],
     ["https://www.trip.com/hotels/auckland-hotel-detail-12345/example/", "trip", "12345", "https://nz.trip.com/hotels/example-hotel-detail-12345"],
