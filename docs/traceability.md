@@ -1,34 +1,104 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-07 (83/84 plans enabled; Trip restored; Booking reference-only continuation candidate under validation)
+Last updated: 2026-10-08 (83/84 plans enabled; Trip restored; Booking reference-only continuation deployed and verified, daily plan awaiting positive public-rate gate)
 
-## 2026-10-07 全部计划恢复及 Booking 参考价继续采集候选
+## 2026-10-08 全部计划恢复：83/84，Booking 参考价继续采集实测通过
 
 用户要求开启全部现行计划。Trip.com 两轮有界生产父 Job
 `cmuxsd05f0000n64ib6agojbi`、`cmuxst7os0000n682bxbcc88l` 已分别获取
 NZD 92／196 的匿名完整总价，执行／留存证据／交付通过；NZ 20:43 原日计划
-已启用。当前 83／84 开启，仅 Booking 关闭。正常预算和并发不变。
+已启用。NZ 10-08 01:06 读回为 83／84 开启（78 公开、五 OTA），仅 Booking
+原日计划关闭、nextRun 为空；Booking 来源 enabled／PILOT、operational/health
+DEGRADED。主 Scheduler 开启、高频关闭；全部原计划定义保持。
 
 Argus `6fe04d8`／`argus-release-20261007-2` 已修复将请求人数误作房型实际
 容量的公共身份判断，完整 CI、固定镜像、944 Job／2 账号／56,155 私有条目
-配对恢复及 NZ 21:51 生产切换通过；Synix 私有路径保持。Tymra 仍运行
-`df5fd23`。新版本 Booking 首轮 `cmuxvqidg0000n611aqicgm86` 目的地建议
+配对恢复及 NZ 10-07 21:51 生产切换通过；Synix 私有路径保持。当时 Tymra 为
+`df5fd23`。容量版本 Booking 首轮 `cmuxvqidg0000n611aqicgm86` 目的地建议
 导航失败，随后 `cmuxvz0sj0000n62tvlm5l61i` 获取 NZD 112 公开完整总价，
 `cmuxw55qy0000n63q512pqokp` 保留 BK's Magnolia 原价 239／精确会员价 182.90，
 但旧规则仍暂停整个来源。三个父 Job、原失败及当前版本验收起点保持。
 
-用户明确选择“保留参考价，继续采集其他房源”。D-052 候选将有效 Booking
+用户明确选择“保留参考价，继续采集其他房源”。D-052 将有效 Booking
 REFERENCE_ONLY 记为成功完成取证、公开价成功数零，不产生价格观测或覆盖率
 提升，保留房型缺口并继续后续父 Job；恢复执行不会重复抓取或计费。无效／
 过期／不匹配参考证据、挑战及限流保持原失败保护，其余提供方和生产启用的
-正价要求不变。427 Worker 单元及全仓类型检查已通过；完整 CI、固定镜像、
-新鲜生产恢复和新版真实抓取／正式启用尚待完成。
+正价要求不变。Tymra `2024961`／`tymra-release-20261007-2` 的
+[完整 CI](https://github.com/Harold-C/tymra/actions/runs/37602102576)通过：
+lint／类型、246 Web/域模型＋427 Worker 单元、131 数据库/API/Worker 集成及
+完整构建；固定镜像相同 673 单元通过。六来源空库隔离管线通过，包括参考价
+后两轮公开报价、持久保存、幂等恢复、零假报价／覆盖及来源不暂停，外部 fetch 禁止。
+
+最终镜像实际恢复新鲜切换配对快照的 80 表、691 份证据，摘要、文件哈希／
+权限／属主及编译后的六 OTA 健康读取匹配。NZ 10-07 23:15 仅替换 Tymra
+四个应用，实际镜像
+`sha256:59ed536d53a935b388fca77df3157f136f16435ca038af3f49a2f909d56b4238`；
+运行／健康、重启零，PG／Redis、环境／挂载保持，无新增 migration。
+Ops HTTPS／readiness 和管理访问边界通过；客户入口继续 ADMIN_ONLY，未开放。
+Argus 三服务与 Synix 十服务保持。备份／回滚材料在
+`/srv/apps/tymra/backups/booking-reference-continue-20261007-cutover`，候选收据在
+`runtime/release-candidates/booking-reference-continue-20261007`；不含 main 未发布重构。
+
+新版首个父 Job `cmuxynovk0000t80zh9ynv8b7` 的 Museum Apartment Hotel／`38735825`
+公开报价 NZD 278，包含税费；隐藏精确数值 277.60，原价 347、可选早餐 45。
+旧 Argus 将可见主价与隐藏金额的费用声明错误绑定，报
+PUBLIC_RATE_AVAILABILITY_UNKNOWN，零公开价格写入。三次执行、六份实际文件
+哈希／字节、交付和 ACK/410 通过，失败摘要 `d9977029ac7028397f7be119db0cc66a`
+保护；不能用参考价继续规则掩盖公开报价解析错误。
+
+Argus `b6737ee`／`argus-release-20261007-3` 修复公开主报价定位及费用证据归属。
+25 项六来源费用回归、18 项隔离 Chrome、原 snapshot／HTML 无网络重放、类型／
+构建通过；返回 27800／AVAILABLE／含税费，参考价和未知分项保持。隐藏费用、
+其他报价、仅税和额外收费仍拒绝。
+[完整门禁](https://github.com/Harold-C/argus/actions/runs/37609458919)及
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37612517831)通过：源码
+924、固定镜像 Chrome 1,118，零失败，177／13 条条件入口由另一层补验；
+全部 12 层 RootFS、完整执行配置和最终镜像原页面重放通过。
+实际恢复新鲜配对快照 957 Job、2 账号、56,823 私有条目，数据库／文件摘要、
+权限／属主、四项所有权拒绝、两份 wire 哈希、两个无网络 Profile 打开通过；
+不表示私有实站认证已验收。AES-256 备份已封存、0600、卸载，SHA-256
+`1d837c7f4d307684c46086f30bd4e23c1d0cda5bb142a29b0168c3da42e3fd21`。
+NZ 10-08 00:24 仅替换 browser，实际镜像
+`sha256:4dbddd300235e67e5eeb7d1c951afd73f941e20759bd69fb72244ca1bf5b157e`；
+PG／tunnel、配置／挂载、Tymra 四应用和 Synix 十服务保持，HTTPS、六公开连接器
+及私有所有权读取通过。收据在 Argus `runtime/production-releases/argus-release-20261007-3`，
+回滚为 `55602e2`。生产保留全部私有实现，不含 main 未发布认证续跑变更。
+
+当前验收窗口绑定首个真实父 Job `cmuy0wjky0000t80xrhn9g82k`、UTC 11:27:28.546、
+Tymra `2024961`／Argus `b6737ee`，前序为 `cmuxynovk0000t80zh9ynv8b7`；
+全部旧窗口和失败保持。首轮 Mapua Wharfside Apartments 完整匿名 NZD 250.00
+成功。第二轮 `cmuy114pq0000t82n9lpkukzl` 的 The Sails Nelson 返回
+INTERNAL_ERROR／SOURCE_UNAVAILABLE，父 Job DEAD、一次尝试、零价格写入；
+留存正常页面／截图未见挑战，隔离离线执行未复现，具体内部原因未确认。
+三次执行、六份文件、交付和 ACK/410 通过，失败摘要
+`c61193c737f33eec1685c54d7a5e8128` 保护。第三轮
+`cmuy1hqtj0000t83m185f68xq` 的 Chateau Marlborough／`37308710` 匿名含税费
+NZD 194.00 完整成功，原价 228.00 单独作参考。
+
+第四轮 `cmuy1njdq0000t84ko64rc50i` 的 Hokitika Firestation Apartments／`491975102`／
+ratePlan `424216849` 只有原价 396.00 和会员价 356.40。全部四轮查询均为
+2026-10-15–16、两成人一单位、NZD。第四轮 UNKNOWN／REFERENCE_ONLY，父 Job
+和报价 Run 成功完成取证，报价 successCount／failureCount 均零，scope 保存
+rateOutcome=REFERENCE_ONLY、referencePriceCount=2。两项参考价持久保存，
+零 RateObservation；单位缺口 REFERENCE_PRICES_ONLY、publicTotalVerified=false、
+lastSuccessfulAt 为空。来源保持 enabled／PILOT，未因参考价暂停。第三、四轮
+共六次执行、十二份实际文件哈希／字节、交付和 ACK/410 通过。
+
+四轮用满当前 NZ 日的十二次 Argus 执行。正常 Tymra 每来源每日六次、Argus
+十二次、并发一不变；最新 `ota-trial:` 手动诊断豁免 UTC 11:43:53 开始、11:56:02
+撤回，当前所有来源零豁免、无活跃 OTA Job。UTC 11:57 正式启用命令返回
+`Both discovery and exact-unit rate must succeed in each trial`，来源／计划摘要
+保持。最新两轮为公开 194.00 与仅参考价，未满足两轮完整正价要求；正常额度
+NZ 2026-10-09 00:00 恢复后仍需两轮新完整正价及 D-039，再启用原日计划。
+计数、窗口和失败不重置，没有预约额外采集。84 条原计划、预算、历史失败及
+参考价缺口保护收据在现有 `runtime/release-candidates/booking-reference-20261007`，
+包括 `schedule-enable-final-readback.json` 和 `booking-final-activation-gate.json`。
 
 Airbnb `cmuxv3fr80000lh07mmubr9zv`、Bookabach `cmuxvjxyo0000lh07nlh312u1`
 已按原日计划自然完成，分别 NZD 155.24／135，两个业务 Run／三次执行及每轮
 六份留存证据哈希／交付通过，ACK 后 result 410。收据沿用现有
-`runtime/release-candidates/booking-reference-20261007`；新参考价继续候选
-使用同一正式 release-candidates 分类，当前上线状态不由候选测试替代。
+`runtime/release-candidates/booking-reference-20261007`。Trip 首个恢复后自然周期
+尚未验收；这些样本不证明全国代表性、长期稳定性或客户产品已验收。
 
 ## 2026-10-07 Booking 公开参考价修复发布及单次抓取
 
