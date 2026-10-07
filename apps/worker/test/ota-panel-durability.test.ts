@@ -61,6 +61,18 @@ describe("durable physical-unit panel prices", () => {
     expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: "NO_AVAILABLE_PUBLIC_RATE" });
     expect(mock.observation).not.toHaveBeenCalled();
   });
+  it("retains original/member evidence before reporting a reference-only offer, without a public price observation", async () => {
+    const referencePrices = [
+      { kind: "ORIGINAL", amountMinor: 27500, ratePlanExternalId: "member-plan", sourceText: "Original price NZD 275" },
+      { kind: "MEMBER_ONLY", amountMinor: 24750, ratePlanExternalId: "member-plan", sourceText: "Members-only price NZD 247.50" },
+    ];
+    Object.assign(rate, { availabilityStatus: "UNKNOWN", rateFence: "REFERENCE_ONLY", basePriceMinor: null,
+      mandatoryFeesMinor: null, taxesMinor: null, optionalFeesMinor: null, totalPriceMinor: null, referencePrices });
+    await expect(service.collectPanelMemberRate("member", "job", "source")).rejects.toMatchObject({ code: "REFERENCE_PRICES_ONLY" });
+    expect(mock.evidence).toHaveBeenCalledWith("source", "run-1", expect.objectContaining({ extracted: expect.objectContaining({ rates: [expect.objectContaining({ referencePrices })] }) }), "booking-public", listing.canonicalUrl);
+    expect(mock.runUpdate.mock.lastCall?.[0].data).toMatchObject({ status: "FAILED", errorCode: "REFERENCE_PRICES_ONLY" });
+    expect(mock.observation).not.toHaveBeenCalled();
+  });
   it.each([null, 24000])("keeps UNKNOWN availability distinct from unavailable, even with total %s", async (totalPriceMinor) => {
     Object.assign(rate, { availabilityStatus: "UNKNOWN", restrictionReason: null, basePriceMinor: null,
       mandatoryFeesMinor: null, taxesMinor: null, totalPriceMinor, priceStatus: totalPriceMinor === null ? "UNAVAILABLE" : "PARTIAL" });

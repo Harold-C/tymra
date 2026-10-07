@@ -623,6 +623,32 @@ describe("Argus async Job client", () => {
     assert.equal(extraction.quality, "partial");
   });
 
+  it("receives a partial Booking reference offer without discarding amounts or turning it into a public price", async () => {
+    const traceId = "booking-reference-rate-test";
+    const referencePrices = [
+      { kind: "ORIGINAL", amountMinor: 27500, ratePlanExternalId: "member-plan", sourceText: "Original price NZD 275" },
+      { kind: "MEMBER_ONLY", amountMinor: 24750, ratePlanExternalId: "member-plan", sourceText: "Members-only price NZD 247.50" },
+    ];
+    server = jobServer(async () => {
+      const result = otaCollectRatesResult("booking-public", "booking", traceId);
+      result.status = "partial";
+      const data = result.data as { rates: Array<Record<string, unknown>>; quality: string; warnings: string[] };
+      data.quality = "partial"; data.warnings = ["REFERENCE_PRICES_ONLY"];
+      Object.assign(data.rates[0]!, { rateFence: "REFERENCE_ONLY", availabilityStatus: "UNKNOWN",
+        basePriceMinor: null, mandatoryFeesMinor: null, taxesMinor: null, optionalFeesMinor: null, totalPriceMinor: null, referencePrices });
+      return result;
+    });
+    const environment = await listenEnvironment();
+    const response = await captureBrowserTaskWithArgus(environment, { traceId, connectorId: "booking-public", workflowId: "collect_rates", url: "https://www.booking.com/hotel/nz/example-stay.html", checkIn: "2026-09-10", checkOut: "2026-09-12", adults: 2, children: 0, units: 1, currency: "NZD" });
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal(response.payload.status, "success");
+    const rate = (response.payload.extracted as { rates: Array<Record<string, unknown>> }).rates[0]!;
+    assert.deepEqual(rate.referencePrices, referencePrices);
+    assert.equal(rate.totalPriceMinor, null);
+    assert.equal(rate.availabilityStatus, "UNKNOWN");
+  });
+
   it("preserves Agoda partial nightly prices without manufacturing a stay total", async () => {
     const traceId = "agoda-partial-rate-test";
     const url = "https://www.agoda.com/en-nz/novotel-christchurch-airport/hotel/christchurch-nz.html";

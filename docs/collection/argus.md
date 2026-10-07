@@ -35,6 +35,24 @@ Unknown breakdown components remain nullable in observation context; existing in
 columns are not evidence that an unpublished fee equals zero. Each new run appends a price observation;
 replaying the same run is idempotent.
 
+Booking's additive optional `referencePrices` field in `ota-public.collect_rates@1.0.0` preserves
+explicit original comparison and member-only amounts separately from public price fields. The
+receiving schema bounds each amount/label and rejects an available/priced `REFERENCE_ONLY` rate.
+Validated same-provider references are saved in `RawArtifact.payload.otaReferenceRates`, with
+listing/unit identity, NZD, dates and guest/unit counts, before the public acceptance gate. The
+wire result and original evidence retain their normal integrity and ACK rules. A reference-only
+bounded collection reports `REFERENCE_PRICES_ONLY`, creates no public price observation and keeps
+the existing pause protection; it does not claim that the stay is unavailable. Public-price mapping
+accepts existing `PUBLIC`, `PUBLIC_SIGNED_OUT` and `PUBLIC_ANONYMOUS` fences; member/App/promotion
+and reference amounts cannot be promoted into that calculation. Pausing marks both operational and
+health status `DEGRADED` as well as suspending the named source/plan.
+
+This change needs no migration and keeps required fields and request versions unchanged. Deploy
+the receiving Tymra update before the Argus extractor. Older extractor results remain readable;
+older receivers see null public prices/unknown availability but omit optional reference metadata.
+Historical failed results are preserved. Re-enabling Booking still requires its normal exact-job,
+positive anonymous all-in price, retained evidence and delivery acceptance, after an authorized release.
+
 `ota:production:enable` requires the latest two exact, single-attempt successful Jobs within seven
 days, positive physical-unit discovery and complete available price in each, retained evidence and
 verified Argus ACK/purge. D-039 rolling health thresholds also apply. Plans are daily and staggered

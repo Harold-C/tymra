@@ -92,7 +92,7 @@ export async function pauseProductionOta(sourceId: string, nodeEnv: string) {
   if (!["production", "development"].includes(nodeEnv)) throw new Error("OTA pause requires a live production or development environment");
   await prisma.$transaction([
     prisma.scheduleDefinition.updateMany({ where: { key: `pilot-ota-${sourceId}-daily` }, data: { enabled: false, nextRunAt: null } }),
-    prisma.dataSource.updateMany({ where: { key: sourceId, metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: { enabled: false, lifecycle: "SUSPENDED", healthStatus: "DEGRADED", lastReviewedAt: new Date() } }),
+    prisma.dataSource.updateMany({ where: { key: sourceId, metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: { enabled: false, lifecycle: "SUSPENDED", operationalStatus: "DEGRADED", healthStatus: "DEGRADED", lastReviewedAt: new Date() } }),
   ]);
   return { sourceId, scheduleEnabled: false, mutationPerformed: true };
 }

@@ -7,7 +7,9 @@ export function publicOtaPrice(rate: {
   fieldSources?: Record<string, string>;
   nightlyPriceMinor?: number | null;
   priceStatus?: "ITEMIZED" | "BUNDLED" | "PARTIAL" | "UNAVAILABLE";
+  rateFence?: string;
 }, nights: number) {
+  if (rate.rateFence !== undefined && !["PUBLIC", "PUBLIC_SIGNED_OUT", "PUBLIC_ANONYMOUS"].includes(rate.rateFence)) return null;
   const itemized = rate.basePriceMinor !== null
     && rate.mandatoryFeesMinor !== null
     && rate.taxesMinor !== null

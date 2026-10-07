@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mock = vi.hoisted(() => ({ source: vi.fn(), jobs: vi.fn(), startingJob: vi.fn(), runs: vi.fn(), rates: vi.fn(), executions: vi.fn(), artifacts: vi.fn(), parserCount: vi.fn(), listingCount: vi.fn(), schedule: vi.fn(), updateSource: vi.fn(), updateSchedule: vi.fn() }));
-vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), prisma: { $transaction: async (fn: (tx: unknown) => unknown) => fn({ dataSource: { findUniqueOrThrow: mock.source, update: mock.updateSource }, job: { findMany: mock.jobs, findUniqueOrThrow: mock.startingJob }, collectionRun: { findMany: mock.runs }, listing: { count: mock.listingCount }, rateObservation: { count: mock.rates }, argusExecution: { findMany: mock.executions }, rawArtifact: { findMany: mock.artifacts, count: mock.parserCount }, scheduleDefinition: { findUniqueOrThrow: mock.schedule, update: mock.updateSchedule } }) } }));
-import { enableProductionOtaSchedule, beginProductionOtaRepairAcceptance, isProductionOtaSchedule, otaIdentityRequiresDetail, otaSourceApproved, productionOtaPayload, OTA_PILOT_VERSION } from "../src/operations/production-ota";
+const mock = vi.hoisted(() => ({ source: vi.fn(), jobs: vi.fn(), startingJob: vi.fn(), runs: vi.fn(), rates: vi.fn(), executions: vi.fn(), artifacts: vi.fn(), parserCount: vi.fn(), listingCount: vi.fn(), schedule: vi.fn(), updateSource: vi.fn(), updateSchedule: vi.fn(), pauseSource: vi.fn(), pauseSchedule: vi.fn() }));
+vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), prisma: { dataSource: { updateMany: mock.pauseSource }, scheduleDefinition: { updateMany: mock.pauseSchedule }, $transaction: async (fn: ((tx: unknown) => unknown) | Promise<unknown>[]) => Array.isArray(fn) ? Promise.all(fn) : fn({ dataSource: { findUniqueOrThrow: mock.source, update: mock.updateSource }, job: { findMany: mock.jobs, findUniqueOrThrow: mock.startingJob }, collectionRun: { findMany: mock.runs }, listing: { count: mock.listingCount }, rateObservation: { count: mock.rates }, argusExecution: { findMany: mock.executions }, rawArtifact: { findMany: mock.artifacts, count: mock.parserCount }, scheduleDefinition: { findUniqueOrThrow: mock.schedule, update: mock.updateSchedule } }) } }));
+import { enableProductionOtaSchedule, beginProductionOtaRepairAcceptance, pauseProductionOta, isProductionOtaSchedule, otaIdentityRequiresDetail, otaSourceApproved, productionOtaPayload, OTA_PILOT_VERSION } from "../src/operations/production-ota";
 import { OTA_REPAIR_ACCEPTANCE_VERSION } from "../src/operations/ota-health";
 
 const source = { id: "booking-source", key: "booking", providerType: "OTA", sourceType: "OTA", enabled: true, isDemo: false, environments: ["PRODUCTION"], concurrencyLimit: 1, dailyBudget: 6, metadata: { productionOta: OTA_PILOT_VERSION }, accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY" };
@@ -21,6 +21,13 @@ beforeEach(() => {
   mock.artifacts.mockResolvedValue([{ storageRef: "tymra-evidence:retained", parserFailure: false }]);
 });
 describe("production OTA pilot acceptance", () => {
+  it("pauses only the named pilot and marks both operational and health status degraded", async () => {
+    await pauseProductionOta("booking", "production");
+    expect(mock.pauseSchedule).toHaveBeenCalledWith({ where: { key: "pilot-ota-booking-daily" }, data: { enabled: false, nextRunAt: null } });
+    expect(mock.pauseSource).toHaveBeenCalledWith(expect.objectContaining({ where: { key: "booking", metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: expect.objectContaining({ enabled: false, lifecycle: "SUSPENDED", operationalStatus: "DEGRADED", healthStatus: "DEGRADED" }) }));
+    expect(mock.updateSource).not.toHaveBeenCalled();
+    expect(mock.updateSchedule).not.toHaveBeenCalled();
+  });
   const revisions = { tymraRevision: "a".repeat(40), argusRevision: "b".repeat(40) };
   const startingJobId = "cmuupnz9x0000ph5zhslv462d";
   it("freezes a source-scoped repair window without changing any job, schedule or old evidence", async () => {

@@ -2986,6 +2986,14 @@ export class WorkerService {
   private async persistArgusEvidence(dataSourceId: string, collectionRunId: string, result: ArgusBrowserTaskResult, extractor: string, requestedUrl: string) {
     const publicOta = ACTIVE_OTA_SOURCE_KEYS.some((key) => extractor === `${key}-public`);
     const parserFailure = publicOta ? otaArtifactIsParserFailure(result.error?.category) : result.status !== "success";
+    const extraction = publicOta && result.status === "success" ? otaCollectRatesExtractionSchema.safeParse(result.extracted) : null;
+    const otaReferenceRates = extraction?.success && extractor === `${extraction.data.provider}-public`
+      ? extraction.data.rates.filter((rate) => rate.sourceListingId === extraction.data.sourceListingId && rate.referencePrices?.length).map((rate) => ({
+        sourceListingId: rate.sourceListingId, unitExternalId: rate.unitExternalId, checkIn: rate.checkIn, checkOut: rate.checkOut,
+        currency: rate.currency, availabilityStatus: rate.availabilityStatus, rateFence: rate.rateFence,
+        adults: rate.adults ?? null, children: rate.children ?? null, units: rate.units ?? null,
+        referencePrices: rate.referencePrices, collectedAt: rate.collectedAt,
+      })) : [];
     const ttlHours = eventfindaEvidenceTtlHours(
       result.status,
       this.environment.RAW_ARTIFACT_TTL_HOURS,
@@ -2996,7 +3004,7 @@ export class WorkerService {
       const id = stableId("argus-evidence", `${collectionRunId}:${storageRef}`);
       await prisma.rawArtifact.upsert({
         where: { id },
-        create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure, expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
+        create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null, ...(otaReferenceRates.length ? { otaReferenceRates } : {}) } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure, expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
         update: {},
       });
     }
@@ -3457,6 +3465,7 @@ export class WorkerService {
       const price = publicOtaPrice(rate, 1);
       if (boundedSourceId && (Date.parse(rate.collectedAt) < Date.now() - 24 * 3_600_000 || Date.parse(rate.collectedAt) > Date.now() + 60_000)) throw new WorkerRequestError("STALE_RATE", "Production trial rate was not observed within the current day", 422);
       if (available && !price) throw new WorkerRequestError("NO_EXPLICIT_PRICE", "Available panel rate has no explicit public price", 422);
+      if (rate.rateFence === "REFERENCE_ONLY") throw new WorkerRequestError("REFERENCE_PRICES_ONLY", "Original/member reference prices were retained; an anonymous public total for the exact stay was not verified", 422);
       if (boundedSourceId && rate.availabilityStatus === "UNKNOWN") throw new WorkerRequestError("PUBLIC_RATE_AVAILABILITY_UNKNOWN", "Public availability for the exact stay could not be verified", 422);
       if (boundedSourceId && !available) throw new WorkerRequestError("NO_AVAILABLE_PUBLIC_RATE", "The exact-unit public stay is unavailable; a positive production acceptance sample is still required", 422);
       if (boundedSourceId && (!available || !price || price.feeCompleteness !== "COMPLETE" || price.amountMinor <= 0)) throw new WorkerRequestError("NO_COMPLETE_PUBLIC_TOTAL", "Bounded production acceptance requires an available explicit total with complete mandatory fees", 422);
