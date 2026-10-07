@@ -1,6 +1,34 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-07 (Booking public reference repair deployed; one complete production capture; Booking daily plan remains disabled)
+Last updated: 2026-10-07 (83/84 plans enabled; Trip restored; Booking reference-only continuation candidate under validation)
+
+## 2026-10-07 全部计划恢复及 Booking 参考价继续采集候选
+
+用户要求开启全部现行计划。Trip.com 两轮有界生产父 Job
+`cmuxsd05f0000n64ib6agojbi`、`cmuxst7os0000n682bxbcc88l` 已分别获取
+NZD 92／196 的匿名完整总价，执行／留存证据／交付通过；NZ 20:43 原日计划
+已启用。当前 83／84 开启，仅 Booking 关闭。正常预算和并发不变。
+
+Argus `6fe04d8`／`argus-release-20261007-2` 已修复将请求人数误作房型实际
+容量的公共身份判断，完整 CI、固定镜像、944 Job／2 账号／56,155 私有条目
+配对恢复及 NZ 21:51 生产切换通过；Synix 私有路径保持。Tymra 仍运行
+`df5fd23`。新版本 Booking 首轮 `cmuxvqidg0000n611aqicgm86` 目的地建议
+导航失败，随后 `cmuxvz0sj0000n62tvlm5l61i` 获取 NZD 112 公开完整总价，
+`cmuxw55qy0000n63q512pqokp` 保留 BK's Magnolia 原价 239／精确会员价 182.90，
+但旧规则仍暂停整个来源。三个父 Job、原失败及当前版本验收起点保持。
+
+用户明确选择“保留参考价，继续采集其他房源”。D-052 候选将有效 Booking
+REFERENCE_ONLY 记为成功完成取证、公开价成功数零，不产生价格观测或覆盖率
+提升，保留房型缺口并继续后续父 Job；恢复执行不会重复抓取或计费。无效／
+过期／不匹配参考证据、挑战及限流保持原失败保护，其余提供方和生产启用的
+正价要求不变。427 Worker 单元及全仓类型检查已通过；完整 CI、固定镜像、
+新鲜生产恢复和新版真实抓取／正式启用尚待完成。
+
+Airbnb `cmuxv3fr80000lh07mmubr9zv`、Bookabach `cmuxvjxyo0000lh07nlh312u1`
+已按原日计划自然完成，分别 NZD 155.24／135，两个业务 Run／三次执行及每轮
+六份留存证据哈希／交付通过，ACK 后 result 410。收据沿用现有
+`runtime/release-candidates/booking-reference-20261007`；新参考价继续候选
+使用同一正式 release-candidates 分类，当前上线状态不由候选测试替代。
 
 ## 2026-10-07 Booking 公开参考价修复发布及单次抓取
 

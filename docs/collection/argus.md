@@ -40,9 +40,14 @@ explicit original comparison and member-only amounts separately from public pric
 receiving schema bounds each amount/label and rejects an available/priced `REFERENCE_ONLY` rate.
 Validated same-provider references are saved in `RawArtifact.payload.otaReferenceRates`, with
 listing/unit identity, NZD, dates and guest/unit counts, before the public acceptance gate. The
-wire result and original evidence retain their normal integrity and ACK rules. A reference-only
-bounded collection reports `REFERENCE_PRICES_ONLY`, creates no public price observation and keeps
-the existing pause protection; it does not claim that the stay is unavailable. Public-price mapping
+wire result and original evidence retain their normal integrity and ACK rules. Under the user's
+2026-10-07 decision, a validated Booking reference-only capture completes with zero public price
+successes, a durable `rateOutcome=REFERENCE_ONLY` marker and an explicit unit coverage gap. It
+creates no public price observation, does not increase price coverage and does not pause Booking.
+The next bounded parent may collect another unit without increasing the per-job limits; a resumed
+capture keeps the same reference-only outcome without another fetch or collection cost. Identity,
+stay, freshness, parser, access-challenge and rate-limit failures retain their existing protection.
+Other providers' reference-only handling is unchanged. Public-price mapping
 accepts existing `PUBLIC`, `PUBLIC_SIGNED_OUT` and `PUBLIC_ANONYMOUS` fences; member/App/promotion
 and reference amounts cannot be promoted into that calculation. Pausing marks both operational and
 health status `DEGRADED` as well as suspending the named source/plan.

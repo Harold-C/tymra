@@ -68,6 +68,14 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
             availabilityStatus: "AVAILABLE", restrictionReason: null, minimumStay: null, mealPlan: "ROOM_ONLY", cancellationPolicy: "NON_REFUNDABLE",
             paymentTerms: "PAY_NOW", rateFence: "PUBLIC", sourceUrl: canonicalUrl, collectedAt: stamp, qualityFlags: [],
             fieldSources: { totalIncludesMandatoryFees: "synthetic same-offer total includes taxes and fees" } }] };
+        if (sourceKey === "booking" && quoteCount === 1) {
+          Object.assign(data.rates[0], { totalPriceMinor: null, totalIncludesMandatoryFees: undefined,
+            priceStatus: "UNAVAILABLE", availabilityStatus: "UNKNOWN", rateFence: "REFERENCE_ONLY",
+            referencePrices: [
+              { kind: "ORIGINAL", amountMinor: 27500, ratePlanExternalId: "member-plan", sourceText: "Original NZD 275" },
+              { kind: "MEMBER_ONLY", amountMinor: 24750, ratePlanExternalId: "member-plan", sourceText: "Members-only NZD 247.50" },
+            ], fieldSources: { referencePrices: "synthetic original and members-only offer" } });
+        }
       }
       const bytes = { html: Buffer.from("<h1>Synthetic offline contract fixture</h1>"), screenshot: Buffer.from("synthetic screenshot bytes") };
       const evidence = Object.entries(bytes).map(([kind, content]) => ({kind, traceId: capture.trace_id,
@@ -119,7 +127,7 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
     };
     let originalProperty: any;
     const amounts: number[] = [];
-    for (let round = 0; round < 2; round++) {
+    for (let round = 0; round < (sourceKey === "booking" ? 3 : 2); round++) {
       if (round) {
         await prisma.sourceCrawlTarget.updateMany({where: {dataSourceId: source.id, metadata: {path: ["regionKey"], equals: "canterbury"}}, data: {nextFetchAt: new Date(), priority: 0}});
         if (sourceKey === "airbnb") {
@@ -140,21 +148,36 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
       if (round && sourceKey === "airbnb") expect(listing.property).toMatchObject({address: "Verified mapping street", latitude: -43.4, longitude: 172.5, status: "ACTIVE"});
       const member = await prisma.panelMembership.upsert({where: {sellableUnitId_marketKey: {sellableUnitId: listing.unitId, marketKey: "region-canterbury"}},
         create: {sellableUnitId: listing.unitId, marketKey: "region-canterbury", membershipType: "ANCHOR", targetCadenceHours: 24, coverageGap: {}}, update: {}});
-      expect(await pump(job.id, () => worker.collectPanelMemberRate(member.id, job.id, source.id))).toBe(true);
+      const referenceOnly = sourceKey === "booking" && round === 0;
+      expect(await pump(job.id, () => worker.collectPanelMemberRate(member.id, job.id, source.id))).toBe(referenceOnly ? "REFERENCE_ONLY" : true);
       const submissions = jobs.size;
-      expect(await worker.collectPanelMemberRate(member.id, job.id, source.id)).toBe(true);
+      expect(await worker.collectPanelMemberRate(member.id, job.id, source.id)).toBe(referenceOnly ? "REFERENCE_ONLY" : true);
       expect(jobs.size).toBe(submissions);
-      const rate = await prisma.rateObservation.findFirstOrThrow({where: {listingId: listing.id, collectionRunId: {in: (await prisma.collectionRun.findMany({where: {jobId: job.id}, select: {id: true}})).map(run => run.id)}}});
-      expect(rate).toMatchObject({feeCompleteness: "COMPLETE", availabilityStatus: "AVAILABLE", occupancyCapacity: 3});
-      expect(rate.checkIn).toEqual(new Date(`${addNzCalendarDays(nzDateKey(new Date()), 7)}T00:00:00Z`));
-      expect((rate.unitConstraints as any).observedPriceComponents).toMatchObject({basePriceMinor: null, taxesMinor: null, mandatoryFeesMinor: null});
-      amounts.push(rate.totalAmountMinor);
+      const rateWhere = { listingId: listing.id, collectionRunId: { in: (await prisma.collectionRun.findMany({where: {jobId: job.id}, select: {id: true}})).map(run => run.id) } };
+      if (referenceOnly) {
+        expect(await prisma.rateObservation.count({where: rateWhere})).toBe(0);
+        const gapMember = await prisma.panelMembership.findUniqueOrThrow({where: {id: member.id}});
+        expect(gapMember).toMatchObject({lastSuccessfulAt: null, coverage24h: 0, coverage72h: 0, collectionCost: 1,
+          coverageGap: {code: "REFERENCE_PRICES_ONLY", publicTotalVerified: false, referencePriceCount: 2}});
+        const artifacts = await prisma.rawArtifact.findMany({where: {collectionRunId: {in: rateWhere.collectionRunId.in}}});
+        expect(artifacts.some(artifact => (artifact.payload as any)?.otaReferenceRates?.some((rate: any) =>
+          rate.sourceListingId === sourceListingId && rate.unitExternalId === unitId && rate.referencePrices.length === 2))).toBe(true);
+      } else {
+        const rate = await prisma.rateObservation.findFirstOrThrow({where: rateWhere});
+        expect(rate).toMatchObject({feeCompleteness: "COMPLETE", availabilityStatus: "AVAILABLE", occupancyCapacity: 3});
+        expect(rate.checkIn).toEqual(new Date(`${addNzCalendarDays(nzDateKey(new Date()), 7)}T00:00:00Z`));
+        expect((rate.unitConstraints as any).observedPriceComponents).toMatchObject({basePriceMinor: null, taxesMinor: null, mandatoryFeesMinor: null});
+        amounts.push(rate.totalAmountMinor);
+      }
       const priorRuns = await prisma.collectionRun.findMany({where: {jobId: job.id}});
       await handleJob(job, {...env, NODE_ENV: "production"});
       await handleJob(job, {...env, NODE_ENV: "production"});
       expect(jobs.size).toBe(submissions);
       const runs = await prisma.collectionRun.findMany({where: {jobId: job.id}});
       expect(runs).toEqual(priorRuns);
+      expect((await prisma.dataSource.findUniqueOrThrow({where: {id: source.id}})).enabled).toBe(true);
+      if (referenceOnly) expect(runs.find(run => (run.scope as any).operation === "OTA_PANEL_RATE")).toMatchObject({
+        status: "SUCCEEDED", successCount: 0, failureCount: 0, errorCode: null, scope: {rateOutcome: "REFERENCE_ONLY", referencePriceCount: 2}});
       const executions = await prisma.argusExecution.findMany({where: {parentJobId: job.id}});
       expect(executions.every(execution => execution.deliveryVerifiedAt && execution.completedAt
         && execution.deliveryVerifiedAt >= execution.completedAt)).toBe(true);
@@ -167,11 +190,11 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
       }
       await prisma.job.update({where: {id: job.id}, data: {status: "SUCCEEDED", completedAt: new Date()}});
     }
-    expect(amounts).toEqual([23100, 23200]);
+    expect(amounts).toEqual(sourceKey === "booking" ? [23200, 23300] : [23100, 23200]);
     const observations = await prisma.rateObservation.findMany({where: {dataSourceId: source.id}, orderBy: {createdAt: "asc"}});
     expect(observations.map(rate => rate.totalAmountMinor)).toEqual(amounts);
     expect(await prisma.listing.count({where: {dataSourceId: source.id}})).toBe(1);
-    expect(jobs.size).toBe(5); expect([...jobs.values()].every(job => job.purged)).toBe(true);
+    expect(jobs.size).toBe(sourceKey === "booking" ? 7 : 5); expect([...jobs.values()].every(job => job.purged)).toBe(true);
     await prisma.dataSource.update({where: {id: source.id}, data: {enabled: false}});
     expect(await prisma.scheduleDefinition.count({where: {enabled: true}})).toBe(0);
   } finally {

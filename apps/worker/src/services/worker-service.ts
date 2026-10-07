@@ -3202,7 +3202,8 @@ export class WorkerService {
     const listing = await prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, listingStatus: "ACTIVE", metadata: { path: ["productionOtaJobId"], equals: parentJobId } }, include: { property: true }, orderBy: { id: "asc" } });
     if (!listing) throw new WorkerRequestError("NO_VERIFIABLE_UNIT", "No listing was persisted by this bounded discovery", 422);
     const member = await prisma.panelMembership.upsert({ where: { sellableUnitId_marketKey: { sellableUnitId: listing.unitId, marketKey: `region-${nzRegionCoverageKey(listing.property.region)}` } }, create: { sellableUnitId: listing.unitId, marketKey: `region-${nzRegionCoverageKey(listing.property.region)}`, membershipType: "ANCHOR", targetCadenceHours: 24, coverageGap: {} }, update: { active: true } });
-    if (!await this.collectPanelMemberRate(member.id, parentJobId, source.id)) throw new WorkerRequestError("NO_MATCHING_RATE", "No exact-unit public rate could be collected", 422);
+    const rateOutcome = await this.collectPanelMemberRate(member.id, parentJobId, source.id);
+    if (rateOutcome === false) throw new WorkerRequestError("NO_MATCHING_RATE", "No exact-unit public rate could be collected", 422);
     const regionKey = nzRegionCoverageKey(listing.property.region);
     if (NZ_REGIONS.some((region) => region.key === regionKey)) {
       const [properties, units, listings, panel] = await Promise.all([
@@ -3213,7 +3214,7 @@ export class WorkerService {
       ]);
       await prisma.marketCoverage.updateMany({ where: { key: `region-${regionKey}` }, data: { knownPropertyCount: properties, knownUnitCount: units, knownListingCount: listings, activePanelCount: panel, anchorPanelCount: panel, lastHealthAt: new Date(), coverageGaps: ["BOUNDED_PILOT_ONLY", "REPRESENTATIVE_OTA_PANEL_PENDING"] } });
     }
-    return { sourceId: payload.sourceId, discovered: catalog.discovered };
+    return { sourceId: payload.sourceId, discovered: catalog.discovered, publicPricesCollected: rateOutcome === true ? 1 : 0, referenceOnlyUnits: rateOutcome === "REFERENCE_ONLY" ? 1 : 0 };
   }
 
   async refreshCatalog(marketScope: string, parentJobId?: string, bounded?: { sourceId: string }) {
@@ -3413,6 +3414,7 @@ export class WorkerService {
       await prisma.marketCoverage.updateMany({ where: { key: marketKey }, data: { coverage24h: average(marketMembers.map((member) => member.coverage24h)) ?? 0, coverage72h: average(marketMembers.map((member) => member.coverage72h)) ?? 0, lastHealthAt: new Date() } });
     }
     let collected = 0;
+    let referenceOnlyUnits = 0;
     let collectionFailures = 0;
     if (parentJobId) {
       const dueMembers = await prisma.panelMembership.findMany({
@@ -3422,7 +3424,9 @@ export class WorkerService {
       }).then((items) => items.filter((item) => !item.lastSuccessfulAt || item.lastSuccessfulAt.getTime() <= Date.now() - item.targetCadenceHours * 3_600_000).slice(0, 3));
       for (const member of dueMembers) {
         try {
-          if (await this.collectPanelMemberRate(member.id, parentJobId)) collected += 1;
+          const rateOutcome = await this.collectPanelMemberRate(member.id, parentJobId);
+          if (rateOutcome === true) collected += 1;
+          else if (rateOutcome === "REFERENCE_ONLY") referenceOnlyUnits += 1;
         } catch (error) {
           if (error instanceof DeferredJobError) throw error;
           collectionFailures += 1;
@@ -3430,17 +3434,17 @@ export class WorkerService {
       }
     }
     const otaSignals = await this.refreshOtaMarketSignals(marketScope);
-    return { marketScope, membershipType, targetSize, eligibleUnits: candidates.length, activeMembers: members.length, markets: byMarket.size, shortfall: Math.max(0, targetSize - members.length), collected, collectionFailures, otaSignals };
+    return { marketScope, membershipType, targetSize, eligibleUnits: candidates.length, activeMembers: members.length, markets: byMarket.size, shortfall: Math.max(0, targetSize - members.length), collected, referenceOnlyUnits, collectionFailures, otaSignals };
   }
 
-  async collectPanelMemberRate(panelMembershipId: string, parentJobId: string, boundedSourceId?: string) {
+  async collectPanelMemberRate(panelMembershipId: string, parentJobId: string, boundedSourceId?: string): Promise<boolean | "REFERENCE_ONLY"> {
     const member = await prisma.panelMembership.findUniqueOrThrow({ where: { id: panelMembershipId }, include: { sellableUnit: { include: { property: true, listings: { where: { ...(boundedSourceId ? { dataSourceId: boundedSourceId } : {}), listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, enabled: true } }, include: { dataSource: true }, orderBy: { lastConfirmedAt: "desc" }, take: 1 } } } } });
     const listing = member.sellableUnit.listings[0];
     if (!listing || !await sourceHasCapability(listing.dataSourceId, "COLLECT_RATES")) return false;
     const connectorId = otaArgusConnectorForSource(listing.dataSource.key);
     if (!connectorId) return false;
     const existingRun = await prisma.collectionRun.findFirst({ where: { jobId: parentJobId, dataSourceId: listing.dataSourceId, scope: { path: ["panelMembershipId"], equals: member.id } }, orderBy: { createdAt: "asc" } });
-    if (existingRun?.status === "SUCCEEDED") return true;
+    if (existingRun?.status === "SUCCEEDED") return jsonRecord(existingRun.scope).rateOutcome === "REFERENCE_ONLY" ? "REFERENCE_ONLY" : true;
     const basket = buildNationalDateBasket(new Date());
     const basketIndex = Number.parseInt(createHash("sha256").update(`${nzDateKey(new Date())}:${member.id}`).digest("hex").slice(0, 8), 16) % basket.length;
     const planned = basket[basketIndex];
@@ -3465,7 +3469,17 @@ export class WorkerService {
       const price = publicOtaPrice(rate, 1);
       if (boundedSourceId && (Date.parse(rate.collectedAt) < Date.now() - 24 * 3_600_000 || Date.parse(rate.collectedAt) > Date.now() + 60_000)) throw new WorkerRequestError("STALE_RATE", "Production trial rate was not observed within the current day", 422);
       if (available && !price) throw new WorkerRequestError("NO_EXPLICIT_PRICE", "Available panel rate has no explicit public price", 422);
-      if (rate.rateFence === "REFERENCE_ONLY") throw new WorkerRequestError("REFERENCE_PRICES_ONLY", "Original/member reference prices were retained; an anonymous public total for the exact stay was not verified", 422);
+      if (rate.rateFence === "REFERENCE_ONLY") {
+        if (listing.dataSource.key !== "booking") throw new WorkerRequestError("REFERENCE_PRICES_ONLY", "Original/member reference prices were retained; an anonymous public total for the exact stay was not verified", 422);
+        // The evidence capture completed, but it yielded no verified public price.
+        // Keep this unit's gap without pausing the source or claiming price coverage.
+        const referencePriceCount = rate.referencePrices?.length ?? 0;
+        await prisma.$transaction([
+          prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: 0, failureCount: 0, errorCode: null, errorSummary: null, scope: { ...jsonRecord(run.scope), rateOutcome: "REFERENCE_ONLY", referencePriceCount }, finishedAt: new Date() } }),
+          prisma.panelMembership.update({ where: { id: member.id }, data: { coverageGap: { code: "REFERENCE_PRICES_ONLY", publicTotalVerified: false, referencePriceCount, observedAt: rate.collectedAt }, collectionCost: { increment: 1 } } }),
+        ]);
+        return "REFERENCE_ONLY";
+      }
       if (boundedSourceId && rate.availabilityStatus === "UNKNOWN") throw new WorkerRequestError("PUBLIC_RATE_AVAILABILITY_UNKNOWN", "Public availability for the exact stay could not be verified", 422);
       if (boundedSourceId && !available) throw new WorkerRequestError("NO_AVAILABLE_PUBLIC_RATE", "The exact-unit public stay is unavailable; a positive production acceptance sample is still required", 422);
       if (boundedSourceId && (!available || !price || price.feeCompleteness !== "COMPLETE" || price.amountMinor <= 0)) throw new WorkerRequestError("NO_COMPLETE_PUBLIC_TOTAL", "Bounded production acceptance requires an available explicit total with complete mandatory fees", 422);

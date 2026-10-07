@@ -980,3 +980,28 @@ denials and Admin authentication. After deployment, check the public, www and Op
 from outside the stack and verify that only authenticated Admin functions are accessible.
 Opening the customer site requires the existing production acceptance gates and a separate ingress
 change. DNS or search-engine indexing status must be checked separately from code and HTTP behavior.
+
+## D-052 Continue Booking Collection After A Validated Reference-Only Offer
+
+**Status:** Approved by the user on 2026-10-07.
+
+**Decision:** A Booking physical unit with validated original/member reference prices and no
+verified anonymous public total is a completed evidence capture with zero public price successes.
+Retain the original evidence and structured references, record `rateOutcome=REFERENCE_ONLY` and
+an explicit unit coverage gap, and continue collection of other units. Do not create a public
+`RateObservation`, increase public price coverage, derive an anonymous price from discounts or
+describe unknown public availability as unavailable. Durable resume retains this outcome without
+another capture or collection cost. Existing per-parent limits and source budgets remain in force.
+
+This decision changes Booking's reference-only handling. Invalid identities, dates, stale evidence,
+malformed results, access challenges and rate limits retain their existing failure protections.
+Other providers' reference-only handling and the positive public-price requirements for enabling
+a production schedule remain unchanged.
+
+**Reason:** A valid member-only offer for one unit does not establish that the entire Booking
+source is broken. Reference evidence is useful while an anonymous public price remains unverified.
+
+**Verification:** Durable panel tests check retained references, zero price observations and
+coverage, idempotent resume, the next bounded parent's public price, and rejection of malformed,
+stale or mismatched reference-only results. Production release and exact-job evidence are tracked
+in `docs/traceability.md`.
