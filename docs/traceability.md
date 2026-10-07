@@ -1,6 +1,50 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-06 (SSH recovered; seven public sources restored; all 78 public plans enabled; Airbnb automatic-cycle failure leaves five OTA plans enabled)
+Last updated: 2026-10-07 (Booking public reference repair deployed; one complete production capture; Booking daily plan remains disabled)
+
+## 2026-10-07 Booking 公开参考价修复发布及单次抓取
+
+发布 Tymra `df5fd23`／`tymra-release-20261007-1` 和 Argus `90b678e`／
+`argus-release-20261007-1`；分别基于实际生产 `735c7f8`、`cac5a3b`，不将 main
+其他未发布的 Worker 重构或私有认证续跑变更带入本轮。接收端先于解析端上线，
+无需 migration。完整[CI](https://github.com/Harold-C/tymra/actions/runs/37568104092)
+通过：lint／类型、246＋420 单元、131 集成和构建；六个有界离线管线另在空库
+隔离通过，外部 fetch 禁止。固定镜像 666 单元及运行／权限／桌面、移动登录页
+通过。Argus 完整源码 923、固定镜像 Chrome 1,115 检查和固定导出通过，
+条件浏览器／数据库入口由对应另一层补验，不把跳过计入通过。
+
+Tymra 新鲜配对备份以最终镜像实际恢复 80 张业务表、631 份证据，数据库摘要、
+文件哈希／权限／属主匹配。NZ 18:33 四应用切换为
+`sha256:dc91c6bfd9019b651dddb962f99f1ad99fed476bded48af1fa2f22485b63d5e4`，
+运行、重启零，Web/API 健康；PG／Redis、配置和挂载保留，Ops HTTPS 通过。
+备份／回滚材料在 `/srv/apps/tymra/backups/booking-reference-20261007-cutover`。
+Argus 最新 924 Job、2 账号、54,784 私有条目的配对恢复及切换前全量匹配通过，
+NZ 18:46 仅替换 browser；PG／tunnel、私有实现、Profile、环境及挂载保留。
+HTTPS 六公开连接器、参考价 OpenAPI、属主读取与跨客户端拒绝通过，Synix
+十个容器保持。镜像与封存加密备份摘要详见 Argus 当前状态。
+
+原失败 Job `cmuwnsr550002qn07j23s9zfa` 及其证据保持。Kelly Rd 原始 HTML
+离线重放修复正常 `Select occupancy` 被误判人数限制及隐藏模板误判问题，
+保留原价 27500、精确会员价 24750 为 UNKNOWN／REFERENCE_ONLY，公开总价为空。
+参考金额不会进入公开报价；接收端在门槛前保留参考证据，准确分类
+REFERENCE_PRICES_ONLY，暂停同步 operational／health DEGRADED。
+
+用户授权的一次新版本父 Job `cmuxotc9k0000n62fayir6ijj` 于 NZ 18:49–18:50
+一次尝试完整成功，两个业务 Run 各成功一条、零失败。现行 frontier 选择
+Bay of Plenty 的 One88 on Commerce／`booking:188-on-commerce`／单位 `143668702`
+（One-Bedroom Deluxe Suite with Spa Bath，容量二），2026-10-14–15、
+两成人、一单位；匿名 NZD 209.00 AVAILABLE／COMPLETE，页面明确包含税费，
+无人数／最短住宿限制。未单独披露的费用分项仍为 null。新公开价格
+`cmuxovmur006fn607j9ot3mbf` 已入库，三次列表／详情／报价执行、六份本地
+HTML／截图的字节数／SHA、持久交付及 ACK 通过；三项 summary 200／ACK 后
+result 410。新房源有匿名完整报价、
+参考价为空；原 Kelly Rd 情形是保存页面重放，没有额外真实重抓。
+
+当前 84 条计划中 83 条开启（78 公开＋五 OTA）；Booking 原日计划关闭、nextRun
+为空，来源试采后为 enabled／PILOT、operational／health DEGRADED。其他计划
+启用状态和原失败行摘要保持，原验收窗口、正常预算、并发一及单次尝试保持。
+本轮仅一轮成功，未启用 Booking 日计划、未追加第二轮；自然周期仍未验收。
+收据沿用 `runtime/release-candidates/booking-reference-20261007`。
 
 ## 2026-10-06 七个暂停公开来源修复与恢复验收（已恢复）
 
