@@ -1,15 +1,17 @@
 # Tymra Current Development Traceability
 
-Last updated: 2026-10-08 (83/84 plans enabled; Trip restored; Booking reference-only continuation deployed and verified, daily plan awaiting positive public-rate gate)
+Last updated: 2026-10-08 (84/84 plans enabled; Booking manually rearmed under explicit one-off waiver, today's run skipped)
 
-## 2026-10-08 全部计划恢复：83/84，Booking 参考价继续采集实测通过
+## 2026-10-08 全部计划恢复：84/84，Booking 人工启用并跳过今日补跑
 
 用户要求开启全部现行计划。Trip.com 两轮有界生产父 Job
 `cmuxsd05f0000n64ib6agojbi`、`cmuxst7os0000n682bxbcc88l` 已分别获取
 NZD 92／196 的匿名完整总价，执行／留存证据／交付通过；NZ 20:43 原日计划
-已启用。NZ 10-08 01:06 读回为 83／84 开启（78 公开、五 OTA），仅 Booking
-原日计划关闭、nextRun 为空；Booking 来源 enabled／PILOT、operational/health
-DEGRADED。主 Scheduler 开启、高频关闭；全部原计划定义保持。
+已启用。用户随后要求“打开booking，豁免今天的计划”，NZ 10-08 02:32 人工
+启用 Booking 原日计划，跳过今日补跑，nextRun 为 NZ 10-09 01:32:50。
+当前 84／84 开启（78 公开、六 OTA）；Booking 来源 enabled／PILOT、
+operational HEALTHY（人工恢复运行）、health DEGRADED。标准启用门槛仍未通过，
+本次单次豁免单独留痕。主 Scheduler 开启、高频关闭；全部原计划定义保持。
 
 Argus `6fe04d8`／`argus-release-20261007-2` 已修复将请求人数误作房型实际
 容量的公共身份判断，完整 CI、固定镜像、944 Job／2 账号／56,155 私有条目
@@ -86,13 +88,25 @@ lastSuccessfulAt 为空。来源保持 enabled／PILOT，未因参考价暂停�
 
 四轮用满当前 NZ 日的十二次 Argus 执行。正常 Tymra 每来源每日六次、Argus
 十二次、并发一不变；最新 `ota-trial:` 手动诊断豁免 UTC 11:43:53 开始、11:56:02
-撤回，当前所有来源零豁免、无活跃 OTA Job。UTC 11:57 正式启用命令返回
+撤回，当前所有来源零额度豁免、无活跃 OTA Job。UTC 11:57 正式启用命令返回
 `Both discovery and exact-unit rate must succeed in each trial`，来源／计划摘要
-保持。最新两轮为公开 194.00 与仅参考价，未满足两轮完整正价要求；正常额度
-NZ 2026-10-09 00:00 恢复后仍需两轮新完整正价及 D-039，再启用原日计划。
+保持。最新两轮为公开 194.00 与仅参考价，未满足两轮完整正价要求；常规启用
+仍需两轮完整正价及 D-039。正常额度 NZ 2026-10-09 00:00 恢复。
 计数、窗口和失败不重置，没有预约额外采集。84 条原计划、预算、历史失败及
 参考价缺口保护收据在现有 `runtime/release-candidates/booking-reference-20261007`，
 包括 `schedule-enable-final-readback.json` 和 `booking-final-activation-gate.json`。
+
+后续用户明确授权人工开启并豁免今天，按今日不补跑处理。只更新 Booking 来源
+运行许可及原日计划，沿用原每日时段到 NZ 10-09 01:32:50；来源 metadata 的
+`productionOtaOperatorEnablement` 保存单次豁免、授权、跳过日期、下次时间及
+两端版本。healthStatus、healthSummary、lastSuccessAt、验收窗口和失败保持，
+本次不记录标准门槛通过。当日十二次执行保持，未增加 Job、额度或并发。
+前快照 SHA-256 `5aa3da471b3ae77983cb6ec3ea9eb1630c7904f8685bef6e88b7e8607fbf48dc`，
+收据 `booking-operator-enablement-20261008.json`、前后快照和行摘要保护的
+rollback SQL 保存在现有受保护分类。83 个其他计划、其他来源及 Booking 全部
+Job／Run／执行／价格的摘要、镜像／容器／重启数保持。
+CATALOG_DISCOVERY 不经过公共 EVENT/PUBLIC_DATA 的旧失败暂停分支，原失败
+未改写；首个恢复后自然周期仍未验收。
 
 Airbnb `cmuxv3fr80000lh07mmubr9zv`、Bookabach `cmuxvjxyo0000lh07nlh312u1`
 已按原日计划自然完成，分别 NZD 155.24／135，两个业务 Run／三次执行及每轮
