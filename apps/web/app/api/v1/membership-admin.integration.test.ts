@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAdminSession } from "@/lib/server/admin-auth";
 import { PATCH as updateCustomer } from "./admin/customers/[customerId]/route";
 import { PATCH as updateDataRequest } from "./admin/data-requests/[requestId]/route";
+import { downloadCustomerExport } from "@/lib/server/customer-data-export";
 import { ensureBenefitGroup } from "@/lib/server/membership/member-risk";
 
 const suffix = randomUUID();
@@ -50,22 +51,28 @@ describe("membership administrator boundaries", () => {
     expect((await updateCustomer(request, { params: { customerId } })).status).toBe(403);
   });
 
-  it("updates membership and customer suspension with append-only audits", async () => {
+  it("rejects arbitrary entitlement edits and audits access suspension", async () => {
     const planResponse = await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action: "SET_PLAN", value: "PRO", reason: "Verified billing correction" }), { params: { customerId } });
-    expect(planResponse.status).toBe(200);
+    expect(planResponse.status).toBe(422);
+    for (const action of ["SET_MEMBERSHIP_STATUS", "MARK_EMAIL_VERIFIED", "RELEASE_BENEFIT_GROUP"]) expect((await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action, value: "ACTIVE", reason: "Synthetic boundary check" }), { params: { customerId } })).status).toBe(422);
     const suspensionResponse = await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action: "SUSPEND_CUSTOMER", reason: "Security review requested" }), { params: { customerId } });
     expect(suspensionResponse.status).toBe(200);
-    expect(await prisma.membershipSubscription.findUnique({ where: { customerUserId: customerId } })).toMatchObject({ plan: "PRO" });
+    expect(await prisma.membershipSubscription.findUnique({ where: { customerUserId: customerId } })).toMatchObject({ plan: "FREE" });
     expect(await prisma.customerUser.findUnique({ where: { id: customerId } })).toMatchObject({ status: "SUSPENDED" });
-    expect(await prisma.auditEvent.count({ where: { entityId: customerId } })).toBe(2);
+    expect(await prisma.auditEvent.count({ where: { entityId: customerId } })).toBe(1);
   });
 
   it("handles a customer data request and records before/after status", async () => {
     const response = await updateDataRequest(adminRequest(`/api/v1/admin/data-requests/${dataRequestId}`, { status: "COMPLETED", reason: "Export delivered through approved channel", evidenceReference: "support-delivery-001" }), { params: { requestId: dataRequestId } });
     expect(response.status).toBe(200);
-    expect(await prisma.customerDataRequest.findUnique({ where: { id: dataRequestId } })).toMatchObject({ status: "COMPLETED" });
+    expect(await prisma.customerDataRequest.findUnique({ where: { id: dataRequestId } })).toMatchObject({ status: "IN_PROGRESS", encryptedExport: expect.any(String), exportChecksum: expect.any(String) });
+    await expect(downloadCustomerExport(dataRequestId, deletionCustomerId)).rejects.toMatchObject({ code: "EXPORT_NOT_AVAILABLE" });
+    const delivery = await downloadCustomerExport(dataRequestId, customerId);
+    expect(JSON.parse(delivery.data).account.id).toBe(customerId);
+    expect(delivery.data).not.toContain("passwordHash");
+    expect((await prisma.customerDataRequest.findUniqueOrThrow({ where: { id: dataRequestId } })).downloadedAt).not.toBeNull();
     const audit = await prisma.auditEvent.findFirstOrThrow({ where: { entityId: dataRequestId } });
-    expect(audit.payload).toMatchObject({ previousStatus: "PENDING", status: "COMPLETED" });
+    expect(audit.payload).toMatchObject({ previousStatus: "PENDING", status: "IN_PROGRESS" });
   });
 
   it("resolves a member risk case only through a reasoned audited Admin action", async () => {
@@ -73,6 +80,18 @@ describe("membership administrator boundaries", () => {
     expect(response.status).toBe(200);
     expect(await prisma.membershipRiskCase.findUniqueOrThrow({ where: { id: riskCaseId } })).toMatchObject({ status: "APPROVED", resolvedByAdminId: expect.any(String), adminNote: "Verified legitimate property manager use" });
     expect(await prisma.auditEvent.findFirst({ where: { entityId: customerId, eventType: "customer_resolve_risk_allow" } })).toBeTruthy();
+  });
+
+  it("reports invalid or already reviewed risk actions without a server error or duplicate audit", async () => {
+    const missing = await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action: "RESOLVE_RISK_ALLOW", reason: "Synthetic missing case check" }), { params: { customerId } });
+    expect(missing.status).toBe(422);
+    const unknown = await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action: "RESOLVE_RISK_ALLOW", value: randomUUID(), reason: "Synthetic unknown case check" }), { params: { customerId } });
+    expect(unknown.status).toBe(404);
+    const before = await prisma.auditEvent.count({ where: { entityId: customerId, eventType: "customer_resolve_risk_allow" } });
+    const repeat = await updateCustomer(adminRequest(`/api/v1/admin/customers/${customerId}`, { action: "RESOLVE_RISK_ALLOW", value: riskCaseId, reason: "Synthetic repeat case check" }), { params: { customerId } });
+    expect(repeat.status).toBe(409);
+    expect(await repeat.json()).toMatchObject({ error: { code: "RISK_CASE_ALREADY_REVIEWED" } });
+    expect(await prisma.auditEvent.count({ where: { entityId: customerId, eventType: "customer_resolve_risk_allow" } })).toBe(before);
   });
 
   it("tombstones personal identity and disables service when approved deletion completes", async () => {

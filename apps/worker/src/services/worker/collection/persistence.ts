@@ -1,6 +1,7 @@
 import { prisma, Prisma } from "@tymra/db";
 import { evaluateEventImpactEvidence, mergeEventImpactEvidence } from "@tymra/domain";
 import { AdapterError, type PublicEvent, type PublicSignal } from "@tymra/providers/types";
+import { otaCollectRatesExtractionSchema } from "@tymra/providers/ota-argus-contracts";
 import { mapSignalType } from "../../../collection/market-signal-type";
 import { enrichEventVenue } from "../../../collection/venue-reference";
 import { eventfindaEvidenceTtlHours } from "../../../collection/eventfinda";
@@ -153,6 +154,14 @@ export async function persistArgusConnectorPayload(this: WorkerContext, dataSour
 export async function persistArgusEvidence(this: WorkerContext, dataSourceId: string, collectionRunId: string, result: ArgusBrowserTaskResult, extractor: string, requestedUrl: string) {
   const publicOta = ACTIVE_OTA_SOURCE_KEYS.some((key) => extractor === `${key}-public`);
   const parserFailure = publicOta ? otaArtifactIsParserFailure(result.error?.category) : result.status !== "success";
+  const extraction = publicOta && result.status === "success" ? otaCollectRatesExtractionSchema.safeParse(result.extracted) : null;
+  const otaReferenceRates = extraction?.success && extractor === `${extraction.data.provider}-public`
+    ? extraction.data.rates.filter((rate) => rate.sourceListingId === extraction.data.sourceListingId && rate.referencePrices?.length).map((rate) => ({
+      sourceListingId: rate.sourceListingId, unitExternalId: rate.unitExternalId, checkIn: rate.checkIn, checkOut: rate.checkOut,
+      currency: rate.currency, availabilityStatus: rate.availabilityStatus, rateFence: rate.rateFence,
+      adults: rate.adults ?? null, children: rate.children ?? null, units: rate.units ?? null,
+      referencePrices: rate.referencePrices, collectedAt: rate.collectedAt,
+    })) : [];
   const ttlHours = eventfindaEvidenceTtlHours(
     result.status,
     this.environment.RAW_ARTIFACT_TTL_HOURS,
@@ -163,7 +172,7 @@ export async function persistArgusEvidence(this: WorkerContext, dataSourceId: st
     const id = stableId("argus-evidence", `${collectionRunId}:${storageRef}`);
     await prisma.rawArtifact.upsert({
       where: { id },
-      create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure, expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
+      create: { id, collectionRunId, dataSourceId, artifactType: artifact.kind.toUpperCase(), storageRef, contentHash: artifact.sha256, payload: { traceId: artifact.traceId, kind: artifact.kind, sizeBytes: artifact.sizeBytes, page: result.page, extractor, requestedUrl: requestedUrl ?? result.page?.finalUrl ?? null, ...(otaReferenceRates.length ? { otaReferenceRates } : {}) } as Prisma.InputJsonValue, containsSensitiveData: artifact.containsSensitiveData, parserFailure, expiresAt: new Date(Date.now() + ttlHours * 3_600_000) },
       update: {},
     });
   }

@@ -25,6 +25,10 @@ EXPOSE 3000 3100
 CMD ["pnpm", "--filter", "@tymra/web", "dev"]
 
 FROM base AS build
+ARG TYMRA_RELEASE_VERSION=UNREPORTED
+ARG TYMRA_SOURCE_REVISION=UNREPORTED
+ENV TYMRA_RELEASE_VERSION=$TYMRA_RELEASE_VERSION
+ENV TYMRA_SOURCE_REVISION=$TYMRA_SOURCE_REVISION
 RUN cd apps/web \
   && NODE_ENV=production NEXT_DIST_DIR=.next-build ./node_modules/.bin/next build \
   && cd /app/apps/worker \

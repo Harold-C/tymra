@@ -1,0 +1,16 @@
+import Link from "next/link";
+import { prisma, type Prisma } from "@tymra/db";
+import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
+import { StatusPill, AdminPagination } from "@/components/admin/AdminTable";
+import { DataRequestActions } from "@/components/admin/membership/DataRequestActions";
+import { adminListHref, adminListState } from "@/lib/admin-list";
+import { adminDateLocale } from "@/lib/admin-i18n";
+import { getAdminLocale } from "@/lib/server/admin-locale";
+export default async function DataRequestsPage({ searchParams }: { searchParams: Record<string, string | undefined> }) {
+  const locale = getAdminLocale(); const zh = locale === "zh";
+  const { page, pageSize, skip } = adminListState(searchParams);
+  const history = searchParams.scope === "history";
+  const where: Prisma.CustomerDataRequestWhereInput = history ? { status: { in: ["COMPLETED", "REJECTED"] } } : { status: { in: ["PENDING", "IN_PROGRESS"] } };
+  const [total, requests] = await Promise.all([prisma.customerDataRequest.count({ where }), prisma.customerDataRequest.findMany({ where, select: { id: true, customerUserId: true, type: true, status: true, reason: true, requestedAt: true, completedAt: true, exportReadyAt: true, exportExpiresAt: true, downloadedAt: true, exportChecksum: true, resolutionReference: true }, orderBy: { requestedAt: "asc" }, skip, take: pageSize })]);
+  return <section className="admin-page"><AdminPageHeader title={zh ? "个人数据请求" : "Personal data requests"} description={zh ? "导出文件经所属用户登录下载后记录交付；删除执行身份去标识、会话撤销和服务停用。原审计保持。" : "Exports are delivered through the owner's authenticated download. Deletion removes personal identity and disables access and service; audit is retained."} actions={<Link className="button button-secondary" href={history ? "/admin/data-requests" : "/admin/data-requests?scope=history"}>{zh ? history ? "待处理" : "历史" : history ? "Pending" : "History"}</Link>} /><div className="detail-sections">{requests.map(item => <section key={item.id}><h2>{item.type === "EXPORT" ? zh ? "数据导出" : "Data export" : zh ? "账户删除" : "Account deletion"} · <StatusPill locale={locale} value={item.status} /></h2><dl className="detail-list"><div><dt>ID</dt><dd>{item.id}</dd></div><div><dt>{zh ? "所属客户" : "Owner"}</dt><dd><Link href={`/admin/customers/${item.customerUserId}`}>{item.customerUserId}</Link></dd></div><div><dt>{zh ? "申请时间" : "Requested"}</dt><dd>{item.requestedAt.toLocaleString(adminDateLocale(locale))}</dd></div><div><dt>{zh ? "交付或执行证据" : "Delivery or execution evidence"}</dt><dd>{item.downloadedAt ? item.downloadedAt.toISOString() : item.exportReadyAt ? zh ? "文件已生成，等待用户下载" : "Ready, awaiting owner download" : item.resolutionReference ?? "—"}</dd></div></dl>{!history ? <DataRequestActions requestId={item.id} locale={locale} requestType={item.type} ready={Boolean(item.exportReadyAt && item.exportExpiresAt && item.exportExpiresAt > new Date())} /> : null}</section>)}</div>{!requests.length ? <p>{zh ? "当前范围没有请求。" : "No requests in this view."}</p> : null}<AdminPagination locale={locale} page={page} pageSize={pageSize} total={total} href={(next, size = pageSize) => adminListHref("/admin/data-requests", searchParams, { page: next, pageSize: size })} /></section>;
+}

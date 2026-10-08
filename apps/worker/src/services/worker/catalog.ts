@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordTransformation, sourceHasCapability } from "@tymra/db";
+import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordTransformation, serviceMappedUnitId, sourceHasCapability } from "@tymra/db";
 import { buildNationalDateBasket, NEW_ZEALAND_TIME_ZONE, addNzCalendarDays, nzDateKey, nzDateStorageValue } from "@tymra/domain";
 import { normalizeAddressQuery } from "@tymra/providers/address-identity";
 import { matchOtaListingToConfirmedAddress } from "@tymra/providers/ota-address-match";
@@ -29,7 +29,8 @@ export async function collectProductionOta(this: WorkerContext, payload: unknown
   const listing = await prisma.listing.findFirst({ where: { dataSourceId: source.id, isDemo: false, listingStatus: "ACTIVE", metadata: { path: ["productionOtaJobId"], equals: parentJobId } }, include: { property: true }, orderBy: { id: "asc" } });
   if (!listing) throw new WorkerRequestError("NO_VERIFIABLE_UNIT", "No listing was persisted by this bounded discovery", 422);
   const member = await prisma.panelMembership.upsert({ where: { sellableUnitId_marketKey: { sellableUnitId: listing.unitId, marketKey: `region-${nzRegionCoverageKey(listing.property.region)}` } }, create: { sellableUnitId: listing.unitId, marketKey: `region-${nzRegionCoverageKey(listing.property.region)}`, membershipType: "ANCHOR", targetCadenceHours: 24, coverageGap: {} }, update: { active: true } });
-  if (!await this.collectPanelMemberRate(member.id, parentJobId, source.id)) throw new WorkerRequestError("NO_MATCHING_RATE", "No exact-unit public rate could be collected", 422);
+  const rateOutcome = await this.collectPanelMemberRate(member.id, parentJobId, source.id);
+  if (rateOutcome === false) throw new WorkerRequestError("NO_MATCHING_RATE", "No exact-unit public rate could be collected", 422);
   const regionKey = nzRegionCoverageKey(listing.property.region);
   if (NZ_REGIONS.some((region) => region.key === regionKey)) {
     const [properties, units, listings, panel] = await Promise.all([
@@ -40,7 +41,7 @@ export async function collectProductionOta(this: WorkerContext, payload: unknown
     ]);
     await prisma.marketCoverage.updateMany({ where: { key: `region-${regionKey}` }, data: { knownPropertyCount: properties, knownUnitCount: units, knownListingCount: listings, activePanelCount: panel, anchorPanelCount: panel, lastHealthAt: new Date(), coverageGaps: ["BOUNDED_PILOT_ONLY", "REPRESENTATIVE_OTA_PANEL_PENDING"] } });
   }
-  return { sourceId: payload.sourceId, discovered: catalog.discovered };
+  return { sourceId: payload.sourceId, discovered: catalog.discovered, publicPricesCollected: rateOutcome === true ? 1 : 0, referenceOnlyUnits: rateOutcome === "REFERENCE_ONLY" ? 1 : 0 };
 }
 
 export async function refreshCatalog(this: WorkerContext, marketScope: string, parentJobId?: string, bounded?: { sourceId: string }) {
@@ -150,7 +151,7 @@ export async function refreshCatalog(this: WorkerContext, marketScope: string, p
         await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { catalogRegion: metadata.regionKey, sourceListingId: candidate.sourceListingId, locationPrecision: sourceScoped ? "SOURCE_SCOPED" : "EXACT", approximateLocation: candidate.approximateLocation ?? null } });
         for (const unit of units) {
           const matchingUnits = await prisma.sellableUnit.findMany({ where: { propertyId: property.id, isDemo: false, status: "ACTIVE", mergedIntoId: null, officialName: unit.officialName, unitType: unit.unitType, capacity: unit.capacity!, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, entireOrShared: unit.entireOrShared }, select: { id: true }, take: 2 });
-          const unitId = matchingUnits.length === 1 ? matchingUnits[0].id : stableId("catalog-unit", `${candidate.provider}:${candidate.sourceListingId}:${unit.externalId}`);
+          const unitId = await serviceMappedUnitId(target.dataSourceId, `${candidate.sourceListingId}:${unit.externalId}`, matchingUnits.length === 1 ? matchingUnits[0].id : stableId("catalog-unit", `${candidate.provider}:${candidate.sourceListingId}:${unit.externalId}`), unit);
           const persistedUnit = await prisma.sellableUnit.upsert({ where: { id: unitId }, create: { id: unitId, propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity!, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE", isDemo: false }, update: { canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity!, status: "ACTIVE" } });
           await recordIdentityEntityVersion("SELLABLE_UNIT", persistedUnit.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId } });
           const externalId = `${candidate.sourceListingId}:${unit.externalId}`;
@@ -194,7 +195,7 @@ export async function refreshPanel(this: WorkerContext, membershipType: "ANCHOR"
     orderBy: { id: "asc" },
   });
   const recentObservations = candidates.length ? await prisma.rateObservation.findMany({
-    where: { sellableUnitId: { in: candidates.map((unit) => unit.id) }, isDemo: false, availabilityStatus: "AVAILABLE", collectedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
+    where: { quarantine: null, sellableUnitId: { in: candidates.map((unit) => unit.id) }, isDemo: false, availabilityStatus: "AVAILABLE", collectedAt: { gte: new Date(Date.now() - 30 * 86_400_000) } },
     select: { sellableUnitId: true, effectiveNightlyTotalMinor: true },
   }) : [];
   const pricesByUnit = new Map<string, number[]>();
@@ -240,6 +241,7 @@ export async function refreshPanel(this: WorkerContext, membershipType: "ANCHOR"
     await prisma.marketCoverage.updateMany({ where: { key: marketKey }, data: { coverage24h: average(marketMembers.map((member) => member.coverage24h)) ?? 0, coverage72h: average(marketMembers.map((member) => member.coverage72h)) ?? 0, lastHealthAt: new Date() } });
   }
   let collected = 0;
+  let referenceOnlyUnits = 0;
   let collectionFailures = 0;
   if (parentJobId) {
     const dueMembers = await prisma.panelMembership.findMany({
@@ -249,7 +251,9 @@ export async function refreshPanel(this: WorkerContext, membershipType: "ANCHOR"
     }).then((items) => items.filter((item) => !item.lastSuccessfulAt || item.lastSuccessfulAt.getTime() <= Date.now() - item.targetCadenceHours * 3_600_000).slice(0, 3));
     for (const member of dueMembers) {
       try {
-        if (await this.collectPanelMemberRate(member.id, parentJobId)) collected += 1;
+        const rateOutcome = await this.collectPanelMemberRate(member.id, parentJobId);
+        if (rateOutcome === true) collected += 1;
+        else if (rateOutcome === "REFERENCE_ONLY") referenceOnlyUnits += 1;
       } catch (error) {
         if (error instanceof DeferredJobError) throw error;
         collectionFailures += 1;
@@ -257,17 +261,17 @@ export async function refreshPanel(this: WorkerContext, membershipType: "ANCHOR"
     }
   }
   const otaSignals = await this.refreshOtaMarketSignals(marketScope);
-  return { marketScope, membershipType, targetSize, eligibleUnits: candidates.length, activeMembers: members.length, markets: byMarket.size, shortfall: Math.max(0, targetSize - members.length), collected, collectionFailures, otaSignals };
+  return { marketScope, membershipType, targetSize, eligibleUnits: candidates.length, activeMembers: members.length, markets: byMarket.size, shortfall: Math.max(0, targetSize - members.length), collected, referenceOnlyUnits, collectionFailures, otaSignals };
 }
 
-export async function collectPanelMemberRate(this: WorkerContext, panelMembershipId: string, parentJobId: string, boundedSourceId?: string) {
+export async function collectPanelMemberRate(this: WorkerContext, panelMembershipId: string, parentJobId: string, boundedSourceId?: string): Promise<boolean | "REFERENCE_ONLY"> {
   const member = await prisma.panelMembership.findUniqueOrThrow({ where: { id: panelMembershipId }, include: { sellableUnit: { include: { property: true, listings: { where: { ...(boundedSourceId ? { dataSourceId: boundedSourceId } : {}), listingStatus: "ACTIVE", operationalStatus: "HEALTHY", dataSource: { key: { in: [...ACTIVE_OTA_SOURCE_KEYS] }, enabled: true } }, include: { dataSource: true }, orderBy: { lastConfirmedAt: "desc" }, take: 1 } } } } });
   const listing = member.sellableUnit.listings[0];
   if (!listing || !await sourceHasCapability(listing.dataSourceId, "COLLECT_RATES")) return false;
   const connectorId = otaArgusConnectorForSource(listing.dataSource.key);
   if (!connectorId) return false;
   const existingRun = await prisma.collectionRun.findFirst({ where: { jobId: parentJobId, dataSourceId: listing.dataSourceId, scope: { path: ["panelMembershipId"], equals: member.id } }, orderBy: { createdAt: "asc" } });
-  if (existingRun?.status === "SUCCEEDED") return true;
+  if (existingRun?.status === "SUCCEEDED") return jsonRecord(existingRun.scope).rateOutcome === "REFERENCE_ONLY" ? "REFERENCE_ONLY" : true;
   const basket = buildNationalDateBasket(new Date());
   const basketIndex = Number.parseInt(createHash("sha256").update(`${nzDateKey(new Date())}:${member.id}`).digest("hex").slice(0, 8), 16) % basket.length;
   const planned = basket[basketIndex];
@@ -292,6 +296,17 @@ export async function collectPanelMemberRate(this: WorkerContext, panelMembershi
     const price = publicOtaPrice(rate, 1);
     if (boundedSourceId && (Date.parse(rate.collectedAt) < Date.now() - 24 * 3_600_000 || Date.parse(rate.collectedAt) > Date.now() + 60_000)) throw new WorkerRequestError("STALE_RATE", "Production trial rate was not observed within the current day", 422);
     if (available && !price) throw new WorkerRequestError("NO_EXPLICIT_PRICE", "Available panel rate has no explicit public price", 422);
+    if (rate.rateFence === "REFERENCE_ONLY") {
+      if (listing.dataSource.key !== "booking") throw new WorkerRequestError("REFERENCE_PRICES_ONLY", "Original/member reference prices were retained; an anonymous public total for the exact stay was not verified", 422);
+      // The evidence capture completed, but it yielded no verified public price.
+      // Keep this unit's gap without pausing the source or claiming price coverage.
+      const referencePriceCount = rate.referencePrices?.length ?? 0;
+      await prisma.$transaction([
+        prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: 0, failureCount: 0, errorCode: null, errorSummary: null, scope: { ...jsonRecord(run.scope), rateOutcome: "REFERENCE_ONLY", referencePriceCount }, finishedAt: new Date() } }),
+        prisma.panelMembership.update({ where: { id: member.id }, data: { coverageGap: { code: "REFERENCE_PRICES_ONLY", publicTotalVerified: false, referencePriceCount, observedAt: rate.collectedAt }, collectionCost: { increment: 1 } } }),
+      ]);
+      return "REFERENCE_ONLY";
+    }
     if (boundedSourceId && rate.availabilityStatus === "UNKNOWN") throw new WorkerRequestError("PUBLIC_RATE_AVAILABILITY_UNKNOWN", "Public availability for the exact stay could not be verified", 422);
     if (boundedSourceId && !available) throw new WorkerRequestError("NO_AVAILABLE_PUBLIC_RATE", "The exact-unit public stay is unavailable; a positive production acceptance sample is still required", 422);
     if (boundedSourceId && (!available || !price || price.feeCompleteness !== "COMPLETE" || price.amountMinor <= 0)) throw new WorkerRequestError("NO_COMPLETE_PUBLIC_TOTAL", "Bounded production acceptance requires an available explicit total with complete mandatory fees", 422);
@@ -317,7 +332,7 @@ export async function collectPanelMemberRate(this: WorkerContext, panelMembershi
 
 export async function refreshOtaMarketSignals(this: WorkerContext, marketScope = "new-zealand", asOf = new Date()) {
   const observations = await prisma.rateObservation.findMany({
-    where: { isDemo: false, operationalStatus: "HEALTHY", collectedAt: { gte: new Date(asOf.getTime() - 72 * 3_600_000), lte: asOf } },
+    where: { quarantine: null, isDemo: false, operationalStatus: "HEALTHY", collectedAt: { gte: new Date(asOf.getTime() - 72 * 3_600_000), lte: asOf } },
     include: { property: { select: { city: true, region: true, territorialAuthority: true, rto: true } }, dataSource: { select: { key: true } } },
   });
   const eligible: OtaSignalObservation[] = observations.flatMap((observation) => {

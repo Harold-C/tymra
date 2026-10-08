@@ -67,7 +67,7 @@ describe("admin collection control persistence", () => {
     });
     jobIds.push(pending.id);
 
-    const result = await runCollectionControlAction(adminId, { action: "set_source_enabled", sourceKey, enabled: false }, environment);
+    const result = await runCollectionControlAction(adminId, { action: "set_source_enabled", sourceKey, enabled: false, reason: "Synthetic source pause validation" }, environment);
     expect(result).toMatchObject({ sourceKey, enabled: false, cancelledJobs: 1 });
     expect(await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } })).toMatchObject({ enabled: false });
     expect(await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: scheduleKey } })).toMatchObject({ enabled: false, nextRunAt: null });
@@ -76,13 +76,13 @@ describe("admin collection control persistence", () => {
 
   it("resumes a source without changing operational configuration and refuses schedule activation while runtime scheduling is off", async () => {
     const before = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
-    await runCollectionControlAction(adminId, { action: "set_source_enabled", sourceKey, enabled: true }, environment);
+    await runCollectionControlAction(adminId, { action: "set_source_enabled", sourceKey, enabled: true, reason: "Synthetic source resume validation" }, environment);
     const after = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
     expect(after.enabled).toBe(true);
     expect(after.operationalStatus).toBe(before.operationalStatus);
     expect(after.lifecycle).toBe(before.lifecycle);
 
-    await expect(runCollectionControlAction(adminId, { action: "set_schedule_enabled", scheduleKey, enabled: true }, environment))
+    await expect(runCollectionControlAction(adminId, { action: "set_schedule_enabled", scheduleKey, enabled: true, reason: "Synthetic schedule gate validation" }, environment))
       .rejects.toMatchObject({ code: "SCHEDULER_RUNTIME_DISABLED" } satisfies Partial<CollectionControlError>);
     expect((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: scheduleKey } })).enabled).toBe(false);
   });
@@ -97,7 +97,7 @@ describe("admin collection control persistence", () => {
       idempotencyKey: `integration-collection-control:${suffix}:cancel`,
     });
     jobIds.push(pending.id);
-    await runCollectionControlAction(adminId, { action: "cancel_job", jobId: pending.id }, environment);
+    await runCollectionControlAction(adminId, { action: "cancel_job", jobId: pending.id, reason: "Synthetic pending job cancellation" }, environment);
     expect(await prisma.job.findUniqueOrThrow({ where: { id: pending.id } })).toMatchObject({ status: "CANCELLED", lastErrorCode: "ADMIN_CANCELLED" });
     expect(await prisma.auditEvent.count({ where: { actorAdminId: adminId, eventType: { startsWith: "collection_" }, OR: [{ entityId: sourceId }, { entityId: pending.id }] } })).toBeGreaterThanOrEqual(3);
   });

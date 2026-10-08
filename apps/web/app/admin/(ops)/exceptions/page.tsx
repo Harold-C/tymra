@@ -1,8 +1,9 @@
-import { prisma, type ExceptionPriority, type ExceptionStatus, type Prisma } from "@tymra/db";
+import { prisma, Prisma, type ExceptionPriority, type ExceptionStatus } from "@tymra/db";
 import Link from "next/link";
 
 import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
-import { StatusPill } from "@/components/admin/AdminTable";
+import { StatusPill, AdminPagination } from "@/components/admin/AdminTable";
+import { adminListHref, adminListState } from "@/lib/admin-list";
 import { adminDateLocale, formatAdminValue, type AdminLocale } from "@/lib/admin-i18n";
 import { getAdminLocale } from "@/lib/server/admin-locale";
 
@@ -13,21 +14,41 @@ type InboxKind = "all" | "business" | "collection";
 export default async function ExceptionsPage({ searchParams }: { searchParams: Record<string, string | undefined> }) {
   const locale = getAdminLocale();
   const text = copy(locale);
+  const { page, pageSize, skip } = adminListState(searchParams);
   const kind: InboxKind = searchParams.kind === "business" || searchParams.kind === "collection" ? searchParams.kind : "all";
   const status = statuses.includes(searchParams.status as ExceptionStatus) ? searchParams.status as ExceptionStatus : undefined;
   const priority = priorities.includes(searchParams.priority as ExceptionPriority) ? searchParams.priority as ExceptionPriority : undefined;
   const sourceScope: Prisma.DataSourceWhereInput = { isDemo: false };
-  const [businessCount, collectionCount, sources] = await Promise.all([
+  const [businessCount, collectionCount, sources, deliveryCount, billingCount, riskCount, privacyCount] = await Promise.all([
     prisma.exceptionCase.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, isDemo: false } }),
     prisma.collectionIncident.count({ where: { status: { in: ["OPEN", "IN_PROGRESS"] }, isDemo: false, collectionRun: { dataSource: sourceScope } } }),
     prisma.dataSource.findMany({ where: sourceScope, orderBy: { name: "asc" }, select: { key: true, name: true } }),
+    prisma.emailDelivery.count({ where: { OR: [{ status: "FAILED" }, { status: "SENDING", lastError: "DELIVERY_OUTCOME_UNVERIFIED" }] } }),
+    prisma.stripeBillingEvent.count({ where: { processedAt: null, OR: [{ processingError: { not: null } }, { createdAt: { lt: new Date(Date.now() - 300000) } }] } }),
+    prisma.membershipRiskCase.count({ where: { status: "OPEN" } }),
+    prisma.customerDataRequest.count({ where: { status: { in: ["PENDING", "IN_PROGRESS"] }, exportReadyAt: null } }),
   ]);
   const selectedSource = sources.find((item) => item.key === searchParams.source)?.key;
   const shouldLoadBusiness = kind !== "collection";
   const shouldLoadCollection = kind !== "business";
+  const selectedStatuses = status ? [status] : ["OPEN", "IN_PROGRESS"];
+  const matches = Prisma.sql`
+    SELECT e.id, 'request' AS kind, e.priority::text AS priority, e."createdAt" AS created
+    FROM "ExceptionCase" e WHERE e."isDemo" = false AND ${shouldLoadBusiness}
+      AND e.status::text = ANY(${selectedStatuses}::text[]) AND (${priority ?? null}::text IS NULL OR e.priority::text = ${priority ?? null})
+    UNION ALL
+    SELECT i.id, 'collection' AS kind, i.severity::text AS priority, i."createdAt" AS created
+    FROM "CollectionIncident" i JOIN "CollectionRun" r ON r.id = i."collectionRunId" JOIN "DataSource" s ON s.id = r."dataSourceId"
+    WHERE i."isDemo" = false AND s."isDemo" = false AND ${shouldLoadCollection}
+      AND i.status::text = ANY(${selectedStatuses}::text[]) AND (${priority ?? null}::text IS NULL OR i.severity::text = ${priority ?? null})
+      AND (${selectedSource ?? null}::text IS NULL OR s.key = ${selectedSource ?? null})`;
+  const [references, totalRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ id: string; kind: string }>>(Prisma.sql`SELECT * FROM (${matches}) pending ORDER BY CASE WHEN ${searchParams.sort === "oldest"} THEN '' ELSE priority END, created, id LIMIT ${pageSize} OFFSET ${skip}`),
+    prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`SELECT COUNT(*) AS total FROM (${matches}) pending`),
+  ]);
   const [businessItems, collectionItems] = await Promise.all([
-    shouldLoadBusiness ? prisma.exceptionCase.findMany({ where: { ...(status ? { status } : { status: { in: ["OPEN", "IN_PROGRESS"] } }), ...(priority ? { priority } : {}), isDemo: false }, orderBy: searchParams.sort === "oldest" ? { createdAt: "asc" } : [{ priority: "asc" }, { createdAt: "asc" }], take: 100, include: { priceCheck: { include: { property: { select: { canonicalName: true } }, unit: { select: { officialName: true } } } } } }) : [],
-    shouldLoadCollection ? prisma.collectionIncident.findMany({ where: { ...(status ? { status } : { status: { in: ["OPEN", "IN_PROGRESS"] } }), ...(priority ? { severity: priority } : {}), isDemo: false, collectionRun: { dataSource: { ...sourceScope, ...(selectedSource ? { key: selectedSource } : {}) } } }, orderBy: searchParams.sort === "oldest" ? { createdAt: "asc" } : [{ severity: "asc" }, { createdAt: "asc" }], take: 100, include: { collectionRun: { include: { dataSource: { select: { key: true, name: true } } } } } }) : [],
+    prisma.exceptionCase.findMany({ where: { id: { in: references.filter(row => row.kind === "request").map(row => row.id) } }, orderBy: [{ priority: "asc" }, { createdAt: "asc" }], include: { priceCheck: { include: { property: { select: { canonicalName: true } }, unit: { select: { officialName: true } } } } } }),
+    prisma.collectionIncident.findMany({ where: { id: { in: references.filter(row => row.kind === "collection").map(row => row.id) } }, orderBy: [{ severity: "asc" }, { createdAt: "asc" }], include: { collectionRun: { include: { dataSource: { select: { key: true, name: true } } } } } }),
   ]);
   const collectionGroups = groupCollectionIncidents(collectionItems);
   const visibleCount = businessItems.length + collectionGroups.length;
@@ -39,11 +60,18 @@ export default async function ExceptionsPage({ searchParams }: { searchParams: R
       <Link href={inboxHref({ kind: "business" })} aria-current={kind === "business" ? "page" : undefined}>{text.business}<span>{businessCount}</span></Link>
       <Link href={inboxHref({ kind: "collection" })} aria-current={kind === "collection" ? "page" : undefined}>{text.collection}<span>{collectionCount}</span></Link>
     </nav>
+    {kind === "all" && !status ? <div className="overview-priority-grid">{[
+      { href: "/admin/deliveries", label: locale === "zh" ? "通知失败或结果待核验" : "Failed or unverified notifications", count: deliveryCount },
+      { href: "/admin/billing-events?processing=pending", label: locale === "zh" ? "支付事实同步" : "Billing fact reconciliation", count: billingCount },
+      { href: "/admin/membership-risk?status=OPEN", label: locale === "zh" ? "账户风险审查" : "Account risk review", count: riskCount },
+      { href: "/admin/data-requests", label: locale === "zh" ? "隐私请求处理" : "Privacy request processing", count: privacyCount },
+    ].map(item => <Link className="overview-priority" key={item.href} href={item.href}><div><span>{item.label}</span><strong>{item.count}</strong></div></Link>)}</div> : null}
     <form className="admin-filters" method="get"><input type="hidden" name="kind" value={kind} /><label>{text.status}<select name="status" defaultValue={status ?? ""}><option value="">{text.openAndProgress}</option>{statuses.map((value) => <option value={value} key={value}>{labelStatus(value, locale)}</option>)}</select></label><label>{text.priority}<select name="priority" defaultValue={priority ?? ""}><option value="">{text.allPriorities}</option>{priorities.map((value) => <option key={value}>{value}</option>)}</select></label>{kind !== "business" ? <label>{text.source}<select name="source" defaultValue={selectedSource ?? ""}><option value="">{text.allSources}</option>{sources.map((source) => <option key={source.key} value={source.key}>{source.name}</option>)}</select></label> : null}<label>{text.sort}<select name="sort" defaultValue={searchParams.sort ?? "priority"}><option value="priority">{text.priority}</option><option value="oldest">{text.oldestFirst}</option></select></label><button className="button button-secondary" type="submit">{text.apply}</button></form>
     {visibleCount ? <div className="exception-list">
       {businessItems.map((item) => <Link href={`/admin/exceptions/${item.id}`} key={item.id} className="exception-row"><div><StatusPill value={item.priority} locale={locale} /><StatusPill value={item.type} locale={locale} /></div><div><strong>{item.priceCheck.property?.canonicalName ?? text.unconfirmedProperty}</strong><span>{item.priceCheck.unit?.officialName ?? text.unitNotConfirmed}</span><small>{text.businessImpact} · {item.priceCheck.id}</small></div><div><StatusPill value={item.status} locale={locale} /><span>{item.blockingUser ? text.userBlocking : text.internalReview}</span></div></Link>)}
       {collectionGroups.map((group) => <article className="exception-row exception-group" key={group.key}><div><StatusPill value={group.severity} locale={locale} /><StatusPill value={group.category} locale={locale} /></div><div><strong>{group.sourceName}</strong><span>{group.title}</span><small>{group.summary}</small><p>{text.suggestedAction}: {suggestion(group.category, locale)}</p></div><div><strong>{text.occurrences.replace("{count}", String(group.items.length))}</strong><span>{text.latest}: {date(group.latestAt, locale)}</span><div className="exception-row-actions"><Link href={`/admin/collection-runs/${group.items[0].collectionRunId}`}>{text.reviewLatest}</Link><Link href={`/admin/data-sources/${group.sourceKey}`}>{text.manageSource}</Link></div></div></article>)}
     </div> : <div className="admin-empty"><h2>{text.clear}</h2><p>{kind === "all" ? text.allClear : kind === "business" ? text.businessClear : text.collectionClear}</p></div>}
+    <AdminPagination locale={locale} page={page} pageSize={pageSize} total={Number(totalRows[0]?.total ?? 0)} href={(next, size = pageSize) => adminListHref("/admin/exceptions", searchParams, { page: next, pageSize: size })} />
   </section>;
 }
 
@@ -62,6 +90,6 @@ function suggestion(category: string, locale: AdminLocale) { const value = categ
 function inboxHref(input: { kind: InboxKind; status?: string; source?: string }) { const params = new URLSearchParams({ kind: input.kind }); if (input.status) params.set("status", input.status); if (input.source) params.set("source", input.source); return `/admin/exceptions?${params}`; }
 function labelStatus(value: ExceptionStatus, locale: AdminLocale) { const labels = locale === "zh" ? { OPEN: "待处理", IN_PROGRESS: "处理中", RESOLVED: "已解决", DISMISSED: "已忽略" } : { OPEN: "Open", IN_PROGRESS: "In progress", RESOLVED: "Resolved", DISMISSED: "Dismissed" }; return labels[value]; }
 function date(value: Date, locale: AdminLocale) { return value.toLocaleString(adminDateLocale(locale), { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }); }
-function copy(locale: AdminLocale) { return locale === "zh" ? zh : en; }
+function copy(locale: AdminLocale) { return locale === "zh" ? { ...zh, business: "请求异常", businessClear: "当前筛选内没有请求异常。", clear: "当前请求与采集队列已清空", description: "集中处理服务中断、交付、支付同步、账户风险和隐私待办。用户业务选择通过用户流程处理。" } : { ...en, business: "Request incidents", businessClear: "No request incidents match these filters.", clear: "Request and collection queue is clear", description: "Service interruptions, delivery, billing, account risk and privacy work. Customer business choices follow customer workflows." }; }
 const en = { title: "Inbox & incidents", description: "A consolidated action queue for customer-blocking exceptions and grouped collection incidents.", viewResolved: "View resolved", inboxTypes: "Inbox types", all: "All pending", business: "Business exceptions", collection: "Collection incidents", status: "Status", openAndProgress: "Open and in progress", priority: "Priority", allPriorities: "All priorities", source: "Data source", allSources: "All sources", sort: "Sort", oldestFirst: "Oldest first", apply: "Apply filters", unconfirmedProperty: "Unconfirmed property", unitNotConfirmed: "Unit not confirmed", userBlocking: "User blocking", internalReview: "Internal review", clear: "This queue is clear", allClear: "No pending work matches these filters.", businessClear: "No business exceptions match these filters. Collection incidents may still be available in another tab.", collectionClear: "No collection incidents match these filters. Business exceptions may still be available in another tab.", businessImpact: "Review customer-blocking evidence", occurrences: "{count} occurrences", latest: "Latest", suggestedAction: "Suggested action", reviewLatest: "Review latest run", manageSource: "Manage source" };
 const zh: typeof en = { title: "待办与异常", description: "统一处理阻塞客户的业务异常，以及按原因聚合的采集运行异常。", viewResolved: "查看已解决", inboxTypes: "待办类型", all: "全部待办", business: "业务异常", collection: "采集异常", status: "状态", openAndProgress: "待处理和处理中", priority: "优先级", allPriorities: "全部优先级", source: "数据来源", allSources: "全部来源", sort: "排序", oldestFirst: "最早优先", apply: "应用筛选", unconfirmedProperty: "房源未确认", unitNotConfirmed: "房型未确认", userBlocking: "阻塞用户", internalReview: "内部审核", clear: "当前队列已清空", allClear: "没有符合当前筛选条件的待办。", businessClear: "没有符合条件的业务异常；其他标签中可能仍有采集异常。", collectionClear: "没有符合条件的采集异常；其他标签中可能仍有业务异常。", businessImpact: "检查阻塞客户的证据", occurrences: "共 {count} 次", latest: "最近发生", suggestedAction: "建议动作", reviewLatest: "查看最近运行", manageSource: "管理来源" };

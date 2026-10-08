@@ -12,7 +12,7 @@ export async function refreshMarketCoverage() {
     prisma.sellableUnit.findMany({ where: { status: "ACTIVE", mergedIntoId: null, property: { status: "ACTIVE", mergedIntoId: null } }, select: { id: true, property: { select: { city: true, region: true, territorialAuthority: true, rto: true } } } }),
     prisma.listing.findMany({ where: { listingStatus: "ACTIVE", isDemo: false }, select: { id: true, property: { select: { region: true } }, dataSourceId: true } }),
     prisma.panelMembership.findMany({ where: { active: true }, select: { marketKey: true, membershipType: true, lastSuccessfulAt: true, coverage24h: true, coverage72h: true } }),
-    prisma.rateObservation.findMany({ where: { isDemo: false, collectedAt: { gte: since216h } }, select: { collectedAt: true, property: { select: { region: true } } } }),
+    prisma.rateObservation.findMany({ where: { quarantine: null, isDemo: false, collectedAt: { gte: since216h } }, select: { collectedAt: true, property: { select: { region: true } } } }),
     prisma.collectionRun.findMany({ where: { createdAt: { gte: since216h } }, select: { status: true, scope: true, createdAt: true, finishedAt: true, dataSource: { select: { key: true } } } }),
     prisma.sourceMarketSignal.findMany({ where: { lastSeenAt: { gte: since216h } }, select: { marketKey: true, dataSource: { select: { key: true } } } }),
     prisma.marketCoverage.findMany({ select: { key: true, region: true } }),

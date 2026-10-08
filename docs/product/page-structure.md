@@ -196,7 +196,7 @@ Pro/Portfolio 组合页按可操作证据排列单位，不把缺失数据按零
 
 Memberships 页按待处理风险排序，Billing Events 页按未处理/失败优先展示签名验证、事件类型、Stripe 对象引用、接收/处理时间、尝试数、结果和关联账户。不得显示卡数据或任何可用于登录、签名或调用 API 的秘密。
 
-所有 Admin 变更都要显示影响预览、要求原因，高影响动作要求确认，并在成功后显示审计事件 ID。管理员不能模拟客户登录、无合同修改付费方案/额度、绕过 Launch Gate 或删除依法保留的记录。
+所有服务保障变更都要显示对象与影响、要求原因；映射修复和历史回填先预览，高影响动作要求确认。成功后的处置记录和不可变审计保留稳定 ID，可从对象详情或审计列表回查。管理员不能模拟客户登录、任意修改付费方案／额度、绕过 Launch Gate 或删除依法保留的记录。
 
 ## PG-MEMBER-STATES 通用页面状态
 
@@ -432,95 +432,127 @@ Superseded 结果显示新版本可用提示并链接该客户有权访问的最
 
 统一 Header/Footer，显示标题、Last updated、适用版本和目录。Privacy、Terms、Cookies、Disclaimer、Data Deletion 均必须中英文完整。
 
-# \[PG-ADMIN\] 十三、Admin Shell
+# \[PG-ADMIN\] 十三、服务保障后台
 
-## 13.1 认证
+## 13.1 认证与边界
 
-/admin/\* 除 /sign-in 外全部受保护。登录成功默认进入 /admin/exceptions。无权限显示 403，不暴露数据。
+/admin/* 除 /sign-in 外受独立 Admin 会话保护，登录进入 /admin/exceptions。
+客户身份、会话和资源归属保持独立。整体后台以保障服务为唯一职责；
+客户房源、竞品选择、分析条件、监测偏好和业务决策在客户账户完成。
 
-## 13.2 桌面布局
+## 13.2 桌面布局与六模块
 
-左侧固定导航；顶部全局搜索、来源健康、自动发布开关状态和用户菜单；主区；右侧可选详情 Drawer。
+沿用侧栏、顶部搜索和详情区域，导航为服务总览、异常处理、任务与交付、
+数据供应、账户与权益支持、系统与审计。显示环境、实际发布／源码版本和检查时间；
+未知、主动暂停、临时豁免、当前故障与历史失败有明确区别。
 
-## 13.3 移动后台
+## 13.3 小屏
 
-后台主要按桌面优化，但 768px 以下仍可完成紧急查看、接受建议、重试和暂停自动发布。复杂批量操作可以要求桌面。
+可完成证据查看、接手、恢复、暂停和紧急会话撤销。大表格独立滚动，不挤出页面；
+菜单关闭后恢复焦点。复杂导入和影响预览仍显示完整范围及明确限制。
 
-# \[PG-EXC\] 十四、Exception Inbox /admin/exceptions
+# \[PG-EXC\] 十四、统一待办 /admin/exceptions
 
-## 14.1 列表
+## 14.1 列表与入口
 
-默认仅显示 OPEN 和 IN\_PROGRESS。字段：Priority、Type、Check ID、Property/Unit、Market、System Recommendation、Age、Blocking User、Created at。支持 Type、Priority、Market、Age 和 Source 筛选。
+默认 OPEN／IN_PROGRESS。请求异常与按来源原因归并的采集异常统一排序和分页；
+同时显示通知失败／结果未知、支付同步、账户风险和隐私待办及各自处理入口。
+用户报障作为关联请求事件。历史页保留原失败与已解决记录。
 
-## 14.2 默认排序
+## 14.2 排序与筛选
 
-P0 → P1 → P2 → P3；同级按创建时间升序。Blocking User 的任务优先于纯数据维护。
+P0 → P1 → P2 → P3，同级最早优先；状态、来源与优先级筛选不静默截掉超过一百条的记录。
+列表数量、分页和归并范围明确。空状态只说明当前范围，不宣称整个服务健康。
 
-## 14.3 批量操作
+## 14.3 操作
 
-只允许对同类型且同建议的低风险异常批量 Accept、Recollect 或 Mark insufficient。P0、User Report 和 High Priority Review 不允许批量发布。
+处置针对具体对象并要求原因。恢复保留原输入、所有者、入住条件及预算，
+重复点击不生成冲突任务、重复额度或重复通知。高影响操作展示对象和确认。
+不批量接受业务建议或发布结果。
 
-## 14.4 空状态
+# \[PG-EXC-DETAIL\] 十五、异常工作区
 
-明确显示 No exceptions need attention，并提供 Price Checks、Source Health 和 Collection Runs 快捷入口。
+## 15.1 结构
 
-# \[PG-EXC-DETAIL\] 十五、异常工作区 /admin/exceptions/{exceptionId}
+摘要与用户影响、原输入／条件、任务链、原始证据、允许动作、实际结果和审计。
+来源挑战关联原 Argus Job 的受保护短期接管，不新建浏览器替代会话。
 
-## 15.1 单屏结构
+## 15.2 允许动作
 
-左列：异常类型、影响、原始输入和系统建议；中列：冲突字段、候选、竞品、来源和证据；右列：结果预览、允许动作和审计时间线。
+ACKNOWLEDGE、RECOLLECT、REANALYSE、REQUEST_USER_CONFIRMATION、
+WITHDRAW_RESULT、VERIFY_RECOVERY，以及仅限不阻塞用户的低等级事件的 DISMISS。
+页面与 API 执行相同权限，不采用历史 allowedActions 中的越界动作。
 
-## 15.2 只显示争议点
+## 15.3 完成判断
 
-非冲突字段折叠为 Verified summary。所有系统建议必须显示原因和数据时间。
+接手、提交重试、归档和豁免都不自动视为恢复。关闭要求同范围成功运行、
+已保存证据和完整交付；请求恢复还要求原链路不再活动、没有其他阻塞、
+形成恢复后的新可访问结果。客户选择交回所有者确认并正确继续。
 
-## 15.3 动作
+# \[PG-OPS-CHECK\] 十六、任务与交付
 
-Accept suggestion、Select Property、Select Unit、Exclude competitor、Change role、Edit normalized value、Recollect、Reanalyse、Lower confidence、Mark partial、Mark insufficient、Approve and publish、Withdraw result。
+## 16.1 请求和任务
 
-## 15.4 结束行为
+/admin/checks、/admin/checks/{checkId}、/admin/jobs、/admin/jobs/{jobId}
+查询真实阶段、耗时、错误和所属账户，关联身份／权益、采集、分析、数据快照、
+结果版本、通知及审计。失败任务保留原载荷恢复，未执行且受支持的任务可取消；
+被取消、过期、归档或已删除账户的请求不能重启。
 
-保存后自动回到 Inbox 并打开下一任务；支持键盘快捷键。高影响覆盖要求原因，其余动作自动记录原因代码即可。
+## 16.2 通知
 
-# \[PG-OPS-CHECK\] 十六、Price Check 管理
-
-## 16.1 /admin/price-checks
-
-搜索 Check ID、email hash、Property、Unit；筛选 Status、Market、Created at、Result Type 和 Confidence。默认不显示完整邮箱。
-
-## 16.2 /admin/price-checks/{checkId}
-
-Tabs：Overview、Collection Runs、Observations、Competitors、Analysis、Result Versions、Feedback、Audit。提供 Recollect、Reanalyse、Publish、Withdraw 和 Reissue Link。
+/admin/deliveries 单独显示排队、发送、提供方接收、失败和结果未知。
+已发送不表示用户收件。确定失败可幂等恢复；结果未知先核验，不自动重发。
+撤回或已被取代的结果不继续发送旧通知。
 
 ## 16.3 数据安全
 
-原始供应商响应中的敏感字段默认折叠，并记录访问 Audit Event。
+默认遮蔽认证及付款材料。敏感详情与实际证据内容访问写审计，
+证据读取校验保留目录和内容哈希。后台不重新生成客户登录链接或绕过归属。
 
-# \[PG-MARKET\] 十七、市场与来源运维
+# \[PG-MARKET\] 十七、数据供应与支持
 
-## 17.1 Properties 与 Units
+## 17.1 来源、计划和运行
 
-查询、查看版本、合并重复身份、修正标准名称和状态。合并前显示影响对象和结果数量。
+公共与 OTA 采用一致的来源列表、详情、控制、运行、证据与 lineage。
+启用既有计划必须符合完整来源策略、范围、频率、预算和近期验收。
+手动诊断有界并受冷却限制；暂停阻止新任务且不伪造健康。
+临时豁免只覆盖单计划、明确原因和不超过二十四小时，到期恢复检查；
+保留原失败、原预算和检查规则，不自动补跑被豁免时段。
 
-## 17.2 Competitors
+## 17.2 历史回填
 
-按目标 Unit 查看 CORE、REFERENCE、EXCLUDED 和历史版本；支持新关系版本，不原地覆盖。
+/admin/backfills 与详情支持已获准公共来源的有界 JSON 历史导入。
+预览有效／错误行、期间、证据依据与校验和，确认后保存不可变审阅输入。
+显示持久行进度、事实版本、去重和错误；仅恢复未完成行，取消未开始任务。
+保留原观测时间和事实 lineage，不把历史导入冒充新鲜抓取或历史 OTA 可订价。
+来源内容由提交者核验，导入流程不宣称重新访问原页面。
 
-## 17.3 Market Coverage
+## 17.3 事实映射修复
 
-每个市场显示状态、区域范围、已知 Property、已知 Unit、24/72 小时覆盖率、采集成功率、竞品覆盖率、来源健康和最后更新时间。支持暂停或恢复接受新任务。
+/admin/listings/{listingId} 显示渠道身份、标准单位及版本。
+同 Property 的映射修复须有完整、哈希核验的来源身份依据，
+匹配来源、页面、官方单位名、容量、类型和地址。
+先预览影响，再创建映射版本；隔离错误观察，使相关缓存失效并撤回错误结果，
+原观察与结果保留。客户输入不被替换，必要时转用户确认或原请求恢复。
+竞品和价格结论由客户流程与程序规则决定，整体后台只查询证据。
 
-## 17.4 Collections
+## 17.4 账户和权益支持
 
-显示计划与手动 Collection Run、范围、状态、成功/失败、重试和错误分类。支持 Retry failed items，不允许无确认删除历史。
+/admin/customers、/admin/memberships、/admin/billing-events、
+/admin/membership-risk、/admin/data-requests 提供事实对账与支持。
+待处理风控案件不能因日期窗口或列表条数限制而遗漏；统计明确时间范围，
+完整分页并定位所选案件，客户详情仅显示该客户的案件。
+权益以已关联 Stripe 订阅、实际 Price 和付款事实恢复；重复扣额须证明同一请求，
+追加纠正记录而不删原用量。导出文件加密存储，按所有者认证下载，
+成功下载后记完成；删除核对付款和在途交付，匿名化身份并撤销访问。
+不任意改套餐、免除邮箱验证或以后台代替客户决策。
 
-## 17.5 Data Sources
+## 17.5 系统与审计
 
-显示 Enabled、Lifecycle、Operational status、Health、Last success、Error rate 和 Retention。生产 Demo Source 必须明显阻断并不可启用。
-
-## 17.6 Signals
-
-管理 Holiday、School Holiday、Anniversary Day 和经确认活动。显示来源、区域、时间和状态；事件不能直接编辑成 Risk。
+/admin/settings 与审计显示实际进程心跳、配置／版本指纹与变化记录、
+管理员会话撤销、依赖告警、当前环境的备份恢复及保留清理证据。
+证据不足保持未核实；物理文件删除与数据库软删除分别报告。
+原始市场历史、已发布结果及操作审计保持追加／版本化。
 
 # \[PG-API\] 十八、页面与 API 绑定
 

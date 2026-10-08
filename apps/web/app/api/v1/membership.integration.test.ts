@@ -26,16 +26,9 @@ const priceCheckIds: string[] = [];
 
 describe("membership persistence and enforcement", () => {
   afterAll(async () => {
-    const benefitGroupIds = (await prisma.customerUser.findMany({ where: { id: { in: customerIds } }, select: { benefitGroupId: true } })).flatMap((item) => item.benefitGroupId ? [item.benefitGroupId] : []);
-    await prisma.stripeBillingEvent.deleteMany({ where: { stripeEventId: { startsWith: prefix } } });
-    await prisma.job.deleteMany({ where: { OR: [{ priceCheckId: { in: priceCheckIds } }, { idempotencyKey: { startsWith: prefix } }] } });
-    await prisma.membershipUsage.deleteMany({ where: { customerUserId: { in: customerIds } } });
-    await prisma.priceCheck.deleteMany({ where: { id: { in: priceCheckIds } } });
-    await prisma.membershipRiskCase.deleteMany({ where: { OR: [{ customerUserId: { in: customerIds } }, { benefitGroupId: { in: benefitGroupIds } }] } });
-    await prisma.customerUser.deleteMany({ where: { id: { in: customerIds } } });
-    await prisma.benefitGroup.deleteMany({ where: { id: { in: benefitGroupIds } } });
-    await prisma.sellableUnit.deleteMany({ where: { id: { in: unitIds } } });
-    await prisma.property.deleteMany({ where: { id: { in: propertyIds } } });
+    // Confirmation actions retain their request and ownership references. Dispose the
+    // isolated test database instead of deleting immutable history or its parents.
+    await prisma.customerPricingUnit.updateMany({ where: { customerUserId: { in: customerIds } }, data: { active: false, deactivatedAt: new Date() } });
     await prisma.$disconnect();
   });
 

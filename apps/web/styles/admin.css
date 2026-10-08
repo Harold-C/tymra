@@ -799,6 +799,7 @@
 
 .header-pills {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
@@ -815,6 +816,8 @@
 .admin-filters label,
 .exception-actions label {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 5px;
   color: var(--text-muted);
   font-size: 11px;
@@ -826,6 +829,8 @@
 .exception-actions input,
 .exception-actions select,
 .exception-actions textarea {
+  min-width: 0;
+  max-width: 100%;
   min-height: 38px;
   border: 1px solid var(--border-strong);
   border-radius: 5px;
@@ -1548,6 +1553,10 @@ ul.readiness-blockers {
   margin-bottom: 16px;
 }
 
+.unified-inbox-page .overview-priority {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .unified-inbox-page .exception-row > div:nth-child(2) small {
   color: var(--text-secondary);
   display: -webkit-box;
@@ -1784,7 +1793,7 @@ ul.readiness-blockers {
 }
 
 .exception-row span:not(.status-pill) {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 11px;
 }
 
@@ -1903,6 +1912,7 @@ ul.readiness-blockers {
 .workspace-side,
 .detail-sections {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 16px;
 }
@@ -1911,6 +1921,7 @@ ul.readiness-blockers {
 .workspace-side > section,
 .detail-sections > section,
 .settings-list {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
@@ -1947,6 +1958,7 @@ ul.readiness-blockers {
   font-size: 11px;
   line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detail-list,
@@ -2070,6 +2082,7 @@ ul.readiness-blockers {
 }
 
 .incident-action-form select,
+.incident-action-form input,
 .incident-action-form textarea {
   width: 100%;
   border: 1px solid var(--border-strong);

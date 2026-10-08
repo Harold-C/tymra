@@ -34,7 +34,7 @@ export const adminPaginatedQueries = {
     return { total, items };
   },
   audit: async (page: AdminResourcePageQuery) => {
-    const where: Prisma.AuditEventWhereInput = { isDemo: false, ...(page.kind ? { entityType: { contains: page.kind, mode: "insensitive" } } : {}), ...(page.since ? { createdAt: { gte: page.since } } : {}), ...(page.q ? { OR: [{ eventType: { contains: page.q, mode: "insensitive" } }, { entityType: { contains: page.q, mode: "insensitive" } }, { entityId: { contains: page.q, mode: "insensitive" } }] } : {}) };
+    const where: Prisma.AuditEventWhereInput = { isDemo: false, ...(page.kind ? { entityType: { contains: page.kind, mode: "insensitive" } } : {}), ...(page.since ? { createdAt: { gte: page.since } } : {}), ...(page.q ? { OR: [{ id: { contains: page.q, mode: "insensitive" } }, { eventType: { contains: page.q, mode: "insensitive" } }, { entityType: { contains: page.q, mode: "insensitive" } }, { entityId: { contains: page.q, mode: "insensitive" } }] } : {}) };
     const [total, items] = await Promise.all([prisma.auditEvent.count({ where }), prisma.auditEvent.findMany({ where, orderBy: { createdAt: "desc" }, skip: page.skip, take: page.take })]);
     return { total, items };
   },

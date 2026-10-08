@@ -2,6 +2,8 @@ name: tymra
 
 x-app-environment: &app-environment
   NODE_ENV: development
+  TYMRA_RELEASE_VERSION: local-development
+  TYMRA_SOURCE_REVISION: working-tree
   DATABASE_URL: postgresql://tymra:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@tymra-postgres:5432/tymra_dev
   REDIS_URL: redis://tymra-redis:6379
   BASE_DOMAIN: ${BASE_DOMAIN:-tymra.test}
@@ -64,6 +66,8 @@ x-app-environment: &app-environment
   WORKER_LEASE_SECONDS: ${WORKER_LEASE_SECONDS:-120}
   WORKER_API_HOST: 0.0.0.0
   WORKER_API_PORT: 3100
+  CHOKIDAR_USEPOLLING: "true"
+  CHOKIDAR_INTERVAL: "400"
   SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
   HIGH_FREQUENCY_SCHEDULER_ENABLED: ${HIGH_FREQUENCY_SCHEDULER_ENABLED:-false}
   PUBLIC_COLLECTION_MODE: ${PUBLIC_COLLECTION_MODE:-live}
@@ -89,6 +93,18 @@ x-app-dev-image: &app-dev-image
   build:
     context: .
     target: dev
+  volumes: &app-dev-volumes
+    - &dev-source .:/app
+    - &dev-package-cache dev_pnpm_store:/app/.pnpm-store
+    - &dev-root-dependencies dev_root_node_modules:/app/node_modules
+    - &dev-web-dependencies dev_web_node_modules:/app/apps/web/node_modules
+    - &dev-worker-dependencies dev_worker_node_modules:/app/apps/worker/node_modules
+    - &dev-config-dependencies dev_config_node_modules:/app/packages/config/node_modules
+    - &dev-db-dependencies dev_db_node_modules:/app/packages/db/node_modules
+    - &dev-domain-dependencies dev_domain_node_modules:/app/packages/domain/node_modules
+    - &dev-provider-dependencies dev_provider_node_modules:/app/packages/providers/node_modules
+    - &dev-queue-dependencies dev_queue_node_modules:/app/packages/queue/node_modules
+    - &dev-web-cache dev_web_next:/app/apps/web/.next
 
 x-default-logging: &default-logging
   driver: json-file
@@ -97,6 +113,19 @@ x-default-logging: &default-logging
     max-file: "3"
 
 services:
+  dependencies:
+    <<: *app-dev-image
+    working_dir: /app
+    environment:
+      NODE_ENV: development
+      CI: "true"
+    command: ["pnpm", "install", "--frozen-lockfile"]
+    logging: *default-logging
+    mem_limit: ${TYMRA_DEPENDENCIES_MEMORY_LIMIT:-2g}
+    pids_limit: 256
+    profiles: ["tools"]
+    restart: "no"
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -168,12 +197,14 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: "no"
+    profiles: ["bootstrap"]
 
   web:
     <<: *app-dev-image
     environment:
       <<: *app-environment
       NODE_OPTIONS: ${TYMRA_WEB_NODE_OPTIONS:---max-old-space-size=1280}
+      WATCHPACK_POLLING: "true"
     working_dir: /app/apps/web
     command: ["./node_modules/.bin/next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
     init: true
@@ -183,6 +214,17 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
+      - *dev-source
+      - *dev-package-cache
+      - *dev-root-dependencies
+      - *dev-web-dependencies
+      - *dev-worker-dependencies
+      - *dev-config-dependencies
+      - *dev-db-dependencies
+      - *dev-domain-dependencies
+      - *dev-provider-dependencies
+      - *dev-queue-dependencies
+      - *dev-web-cache
       - argus_evidence:/argus-evidence:ro
     networks:
       - default
@@ -200,7 +242,7 @@ services:
       - "traefik.http.routers.tymra-ops.service=tymra-web"
       - "traefik.http.services.tymra-web.loadbalancer.server.port=3000"
     depends_on:
-      seed:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -218,19 +260,30 @@ services:
       <<: *app-environment
       NODE_EXTRA_CA_CERTS: /run/certs/local-dev-rootCA.pem
     working_dir: /app/apps/worker
-    command: ["./node_modules/.bin/tsx", "src/index.ts"]
+    command: ["./node_modules/.bin/tsx", "watch", "--include", "../../packages/**/*.ts", "src/index.ts"]
     init: true
     logging: *default-logging
     mem_limit: ${TYMRA_WORKER_MEMORY_LIMIT:-768m}
     pids_limit: 192
     depends_on:
-      seed:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 30s
     volumes:
+      - *dev-source
+      - *dev-package-cache
+      - *dev-root-dependencies
+      - *dev-web-dependencies
+      - *dev-worker-dependencies
+      - *dev-config-dependencies
+      - *dev-db-dependencies
+      - *dev-domain-dependencies
+      - *dev-provider-dependencies
+      - *dev-queue-dependencies
+      - *dev-web-cache
       - argus_evidence:/argus-evidence
       - "${MKCERT_ROOT_CA_PATH:-/Users/haroldchen/Library/Application Support/mkcert/rootCA.pem}:/run/certs/local-dev-rootCA.pem:ro"
     extra_hosts:
@@ -242,7 +295,7 @@ services:
       <<: *app-environment
       NODE_EXTRA_CA_CERTS: /run/certs/local-dev-rootCA.pem
     working_dir: /app/apps/worker
-    command: ["./node_modules/.bin/tsx", "src/api.ts"]
+    command: ["./node_modules/.bin/tsx", "watch", "--include", "../../packages/**/*.ts", "src/api.ts"]
     init: true
     logging: *default-logging
     mem_limit: ${TYMRA_API_MEMORY_LIMIT:-512m}
@@ -250,6 +303,17 @@ services:
     ports:
       - "127.0.0.1:3100:3100"
     volumes:
+      - *dev-source
+      - *dev-package-cache
+      - *dev-root-dependencies
+      - *dev-web-dependencies
+      - *dev-worker-dependencies
+      - *dev-config-dependencies
+      - *dev-db-dependencies
+      - *dev-domain-dependencies
+      - *dev-provider-dependencies
+      - *dev-queue-dependencies
+      - *dev-web-cache
       - "${MKCERT_ROOT_CA_PATH:-/Users/haroldchen/Library/Application Support/mkcert/rootCA.pem}:/run/certs/local-dev-rootCA.pem:ro"
     extra_hosts:
       - "api.argus.test:host-gateway"
@@ -267,7 +331,7 @@ services:
       - "traefik.http.routers.tymra-worker-diagnostics.service=tymra-worker-api"
       - "traefik.http.services.tymra-worker-api.loadbalancer.server.port=3100"
     depends_on:
-      seed:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -283,14 +347,14 @@ services:
     <<: *app-dev-image
     environment: *app-environment
     working_dir: /app/apps/worker
-    command: ["./node_modules/.bin/tsx", "src/scheduler.ts"]
+    command: ["./node_modules/.bin/tsx", "watch", "--include", "../../packages/**/*.ts", "src/scheduler.ts"]
     profiles: ["scheduler"]
     init: true
     logging: *default-logging
     mem_limit: ${TYMRA_SCHEDULER_MEMORY_LIMIT:-384m}
     pids_limit: 128
     depends_on:
-      seed:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -324,6 +388,16 @@ volumes:
   postgres_data:
   redis_data:
   argus_evidence:
+  dev_root_node_modules:
+  dev_pnpm_store:
+  dev_web_node_modules:
+  dev_worker_node_modules:
+  dev_config_node_modules:
+  dev_db_node_modules:
+  dev_domain_node_modules:
+  dev_provider_node_modules:
+  dev_queue_node_modules:
+  dev_web_next:
 
 networks:
   ingress:

@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { getEnvironment } from "@tymra/config";
 import { hashOpaqueToken, prisma, verifyOpaqueToken } from "@tymra/db";
 import type { NextRequest, NextResponse } from "next/server";
+import { getCustomerSession } from "./membership/customer-auth";
 
 export function checkAccessCookieName(checkId: string) {
   return `tymra_check_${checkId}`;
@@ -24,10 +25,15 @@ export function setCheckAccessCookie(response: NextResponse, checkId: string, ac
 }
 
 export async function hasCheckAccess(request: NextRequest, checkId: string): Promise<boolean> {
+  const check = await prisma.priceCheck.findUnique({ where: { id: checkId }, select: { accessKeyHash: true, customerUserId: true, status: true } });
+  if (!check || check.status === "ARCHIVED") return false;
+  if (check.customerUserId) {
+    const session = await getCustomerSession(request);
+    return session?.customerUserId === check.customerUserId;
+  }
   const accessKey = request.cookies.get(checkAccessCookieName(checkId))?.value;
   if (!accessKey) return false;
-  const check = await prisma.priceCheck.findUnique({ where: { id: checkId }, select: { accessKeyHash: true } });
-  return Boolean(check && verifyOpaqueToken(accessKey, check.accessKeyHash, getEnvironment().ACCESS_KEY_SECRET));
+  return verifyOpaqueToken(accessKey, check.accessKeyHash, getEnvironment().ACCESS_KEY_SECRET);
 }
 
 export function checkAccessHash(accessKey: string) {

@@ -15,6 +15,7 @@ export async function enqueueDueMembershipAnalyses(now = new Date()) {
   let queued = 0;
   let skipped = 0;
   for (const membership of memberships) {
+    if (membership.customerUser.status !== "ACTIVE") continue;
     if (!membershipIsServiceable(membership.status, membership.graceEndsAt, now)) {
       skipped += membership.customerUser.pricingUnits.length;
       continue;
@@ -24,7 +25,7 @@ export async function enqueueDueMembershipAnalyses(now = new Date()) {
     const cadenceMs = Math.ceil(7 * 86_400_000 / entitlements.scheduledAnalysesPerWeek);
     for (const pricingUnit of membership.customerUser.pricingUnits.slice(0, entitlements.activePricingUnitLimit)) {
       const latestUsage = await prisma.membershipUsage.findFirst({
-        where: { customerUserId: membership.customerUserId, pricingUnitId: pricingUnit.id, type: "SCHEDULED_ANALYSIS" },
+        where: { customerUserId: membership.customerUserId, pricingUnitId: pricingUnit.id, type: "SCHEDULED_ANALYSIS", correction: null },
         orderBy: { countedAt: "desc" },
       });
       if (latestUsage && now.getTime() - latestUsage.countedAt.getTime() < cadenceMs) {
@@ -43,6 +44,9 @@ export async function enqueueDueMembershipAnalyses(now = new Date()) {
       const bucket = Math.floor(now.getTime() / cadenceMs);
       const idempotencyKey = `scheduled-analysis:${pricingUnit.id}:${bucket}`;
       const created = await prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${membership.customerUserId} FOR UPDATE`;
+        if (!(await transaction.customerUser.findFirst({ where: { id: membership.customerUserId, status: "ACTIVE" } }))) return false;
+        if (!(await transaction.customerPricingUnit.findFirst({ where: { id: pricingUnit.id, active: true } }))) return false;
         const existing = await transaction.membershipUsage.findUnique({ where: { idempotencyKey } });
         if (existing) return false;
         const usage = await transaction.membershipUsage.create({

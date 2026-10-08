@@ -301,6 +301,7 @@ enum JobType {
   ROTATING_PANEL_COLLECTION
   SOURCE_HEALTH_CHECK
   RETENTION_CLEANUP
+  BACKFILL_IMPORT
 }
 
 enum JobStatus {
@@ -510,6 +511,8 @@ model AdminUser {
   auditEvents       AuditEvent[]
   merges            IdentityMerge[]
   riskCasesResolved MembershipRiskCase[] @relation("RiskCaseResolver")
+  serviceBackfills  ServiceBackfill[]
+  serviceRepairs    ServiceDataRepair[]
 }
 
 model AdminSession {
@@ -564,6 +567,11 @@ model CustomerDataRequest {
   status              CustomerDataRequestStatus @default(PENDING)
   reason              String?
   resolutionReference String?
+  encryptedExport     String?
+  exportChecksum      String?
+  exportReadyAt       DateTime?
+  exportExpiresAt     DateTime?
+  downloadedAt        DateTime?
   requestedAt         DateTime                  @default(now())
   completedAt         DateTime?
   updatedAt           DateTime                  @updatedAt
@@ -652,6 +660,8 @@ model MembershipUsage {
   customerUser   CustomerUser        @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
   benefitGroup   BenefitGroup?       @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)
   benefitClaim   BenefitClaim?
+  correction     MembershipUsageCorrection? @relation("CorrectedUsage")
+  originalCorrections MembershipUsageCorrection[] @relation("OriginalUsage")
 
   @@index([customerUserId, type, countedAt])
   @@index([benefitGroupId, type, countedAt])
@@ -665,11 +675,61 @@ model StripeBillingEvent {
   eventCreatedAt  DateTime
   payloadHash     String
   processingError String?
+  processingStartedAt DateTime?
   processedAt     DateTime?
   createdAt       DateTime  @default(now())
 
   @@index([eventType, createdAt])
   @@index([processedAt])
+}
+
+model ServiceOperation {
+  id           String   @id
+  actorAdminId String
+  requestHash  String
+  action       String
+  sourceKey    String?
+  response     Json
+  createdAt    DateTime @default(now())
+
+  @@index([sourceKey, createdAt])
+}
+
+model ServiceRuntimeHeartbeat {
+  serviceId        String @id
+  processId        String
+  environment      String
+  status           String
+  releaseVersion   String
+  sourceRevision   String
+  configurationHash String
+  observedAt       DateTime
+  details          Json @default("{}")
+}
+
+model MembershipUsageCorrection {
+  id              String @id @default(cuid())
+  usageId         String @unique
+  originalUsageId String
+  actorAdminId    String
+  reason          String
+  evidenceReference String
+  createdAt       DateTime @default(now())
+  usage           MembershipUsage @relation("CorrectedUsage", fields: [usageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  originalUsage   MembershipUsage @relation("OriginalUsage", fields: [originalUsageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model ServiceWaiver {
+  id                String @id @default(cuid())
+  scheduleId        String
+  actorAdminId      String
+  reason            String
+  expiresAt         DateTime
+  originalNextRunAt  DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime @default(now())
+  schedule          ScheduleDefinition @relation(fields: [scheduleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([expiresAt, revokedAt])
 }
 
 model AnonymousCheck {
@@ -1071,6 +1131,7 @@ model Listing {
   observations      RateObservation[]
   workerAnalyses    WorkerAnalysisRequest[]
   versions          ListingVersion[]
+  serviceRepairs    ServiceDataRepair[]
 
   @@unique([dataSourceId, externalId])
   @@index([unitId, onlineStatus])
@@ -1104,6 +1165,7 @@ model ListingVersion {
   parserVersion     String?
   collectionRunId   String?
   listing           Listing   @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  serviceRepairs    ServiceDataRepair[]
 
   @@unique([listingId, version])
   @@unique([listingId, contentHash])
@@ -1525,6 +1587,7 @@ model SourceHealthCheck {
 
 model ScheduleDefinition {
   id             String    @id @default(cuid())
+  waivers        ServiceWaiver[]
   key            String    @unique
   jobType        JobType
   queueName      String
@@ -1581,6 +1644,7 @@ model DataSource {
   crawlTargets           SourceCrawlTarget[]
   capabilities           DataSourceCapability[]
   transformationRuns     TransformationRun[]
+  serviceBackfills        ServiceBackfill[]
 
   @@index([status, enabled])
 }
@@ -1662,6 +1726,7 @@ model CollectionRun {
   sourceEventOccurrences SourceEventOccurrence[]
   sourceMarketSignals    SourceMarketSignal[]
   incident               CollectionIncident?
+  serviceBackfills        ServiceBackfill[]
   transformationRuns     TransformationRun[]
 
   @@index([dataSourceId, createdAt])
@@ -1694,6 +1759,7 @@ model CollectionIncident {
 
 model RateObservation {
   id                         String             @id @default(cuid())
+  quarantine                 RateQuarantine?
   propertyId                 String
   sellableUnitId             String
   listingId                  String
@@ -2061,10 +2127,83 @@ model PublicFactVersion {
   payload          Json
   isDemo           Boolean  @default(false)
   createdAt        DateTime @default(now())
+  backfillRows     ServiceBackfillRow[]
 
-  @@index([dataSourceId, factKind, externalId, createdAt])
+  @@index([dataSourceId, factKind, externalId, createdAt], map: "PublicFactVersion_dataSourceId_factKind_externalId_createdAt_id")
   @@index([collectionRunId])
   @@index([endsAt])
+}
+
+model ServiceBackfill {
+  id              String   @id @default(cuid())
+  commandId       String   @unique
+  actorAdminId    String
+  dataSourceId    String
+  reason          String
+  evidenceReference String
+  checksum        String
+  rangeFrom       DateTime
+  rangeTo         DateTime
+  status          String   @default("VALIDATED")
+  totalRows       Int
+  savedRows       Int      @default(0)
+  duplicateRows   Int      @default(0)
+  failedRows      Int      @default(0)
+  collectionRunId String?
+  jobId           String?
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  rows            ServiceBackfillRow[]
+  admin           AdminUser @relation(fields: [actorAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dataSource      DataSource @relation(fields: [dataSourceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  collectionRun   CollectionRun? @relation(fields: [collectionRunId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  job             Job? @relation(fields: [jobId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@index([dataSourceId, createdAt])
+}
+
+model ServiceBackfillRow {
+  id           String @id @default(cuid())
+  backfillId   String
+  rowNumber    Int
+  payload      Json
+  status       String @default("PENDING")
+  factVersionId String?
+  errorCode    String?
+  attemptCount Int @default(0)
+  backfill     ServiceBackfill @relation(fields: [backfillId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  factVersion  PublicFactVersion? @relation(fields: [factVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  @@unique([backfillId, rowNumber])
+  @@index([backfillId, status])
+}
+
+model ServiceDataRepair {
+  id                 String   @id @default(cuid())
+  commandId          String   @unique
+  actorAdminId       String
+  listingId          String
+  previousUnitId     String
+  correctedUnitId    String
+  evidenceArtifactId String
+  evidenceHash       String
+  reason             String
+  listingVersionId   String
+  impact             Json
+  createdAt          DateTime @default(now())
+  admin              AdminUser @relation(fields: [actorAdminId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  listing            Listing @relation(fields: [listingId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  listingVersion     ListingVersion @relation(fields: [listingVersionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quarantines        RateQuarantine[]
+  @@index([listingId, createdAt])
+}
+
+model RateQuarantine {
+  id                String @id @default(cuid())
+  rateObservationId String @unique
+  repairId          String
+  reason            String
+  createdAt         DateTime @default(now())
+  observation       RateObservation @relation(fields: [rateObservationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  repair            ServiceDataRepair @relation(fields: [repairId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model CanonicalVenue {
@@ -2426,6 +2565,7 @@ model Job {
   priceCheck         PriceCheck?            @relation(fields: [priceCheckId], references: [id])
   analysisRequest    WorkerAnalysisRequest? @relation(fields: [analysisRequestId], references: [id])
   collectionRuns     CollectionRun[]
+  serviceBackfills    ServiceBackfill[]
 
   @@index([status, runAt, priority])
   @@index([queueName, status, runAt, priority])

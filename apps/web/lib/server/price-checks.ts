@@ -7,6 +7,7 @@ import {
   hashPersonalIdentifier,
   prisma,
   recordIdentityEntityVersion,
+  type Prisma,
 } from "@tymra/db";
 import {
   createPriceCheckSchema,
@@ -310,7 +311,11 @@ export async function confirmProperty(checkId: string, input: { propertyId?: str
   });
   const unitId = property.units.length === 1 ? property.units[0].id : null;
   const requiresListingConfirmation = current.analysisType === "LISTING_PRICING" && Boolean(input.addressExternalId) && property.listings.length === 0;
-  const check = await prisma.priceCheck.update({
+  const check = await prisma.$transaction(async tx => {
+  await tx.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${checkId} FOR UPDATE`;
+  const locked = await tx.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
+  if (locked.status !== "NEEDS_CONFIRMATION") throw new Error("CONFIRMATION_NOT_AVAILABLE");
+  const updated = await tx.priceCheck.update({
     where: { id: checkId },
     data: {
       propertyId,
@@ -320,6 +325,9 @@ export async function confirmProperty(checkId: string, input: { propertyId?: str
       listingValidationMessage: null,
       listingValidatedAt: null,
     },
+  });
+  await recordCustomerIdentityConfirmation(tx, locked, "PROPERTY_MATCH", { propertyId, unitId });
+  return updated;
   });
   return { check, requiresListingConfirmation, requiresUnitConfirmation: property.units.length > 1 };
 }
@@ -405,23 +413,38 @@ async function promoteAddressIdentity(externalId: string, rawInput: string) {
 }
 
 export async function confirmUnit(checkId: string, unitId: string) {
-  const current = await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId }, select: { propertyId: true } });
-  const unit = await prisma.sellableUnit.findUniqueOrThrow({ where: { id: unitId }, select: { propertyId: true, status: true } });
+  return prisma.$transaction(async tx => {
+  await tx.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${checkId} FOR UPDATE`;
+  const current = await tx.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
+  if (current.status !== "NEEDS_CONFIRMATION") throw new Error("CONFIRMATION_NOT_AVAILABLE");
+  const unit = await tx.sellableUnit.findUniqueOrThrow({ where: { id: unitId }, select: { propertyId: true, status: true } });
   if (!current.propertyId || unit.propertyId !== current.propertyId || unit.status !== "ACTIVE") {
     throw new Error("The selected Unit does not belong to the confirmed Property");
   }
-  const check = await prisma.priceCheck.update({ where: { id: checkId }, data: { unitId, status: "NEEDS_CONFIRMATION" } });
+  const check = await tx.priceCheck.update({ where: { id: checkId }, data: { unitId, status: "NEEDS_CONFIRMATION" } });
+  await recordCustomerIdentityConfirmation(tx, current, "UNIT_MATCH", { unitId });
   return check;
+  });
+}
+
+async function recordCustomerIdentityConfirmation(tx: Prisma.TransactionClient, check: { id: string; customerUserId: string | null }, type: "PROPERTY_MATCH" | "UNIT_MATCH", choice: Prisma.InputJsonObject) {
+  const cases = await tx.exceptionCase.findMany({ where: { priceCheckId: check.id, type, blockingUser: true, status: { in: ["OPEN", "IN_PROGRESS"] } }, select: { id: true } });
+  if (!cases.length) return;
+  await tx.exceptionCase.updateMany({ where: { id: { in: cases.map(row => row.id) } }, data: { blockingUser: false, status: "IN_PROGRESS" } });
+  await tx.actionRecord.create({ data: { priceCheckId: check.id, actorType: "CUSTOMER", actorId: check.customerUserId, action: type === "UNIT_MATCH" ? "CONFIRM_UNIT" : "CONFIRM_PROPERTY", payload: { ...choice, exceptionIds: cases.map(row => row.id), recoveryVerificationPending: true } } });
 }
 
 export async function confirmQuery(checkId: string, inputValue: unknown, risk?: { identity: MemberRequestIdentity; challengeVerified: boolean }) {
   const input = stayQuerySchema.parse(inputValue);
   const nights = Math.max(1, nzCalendarDayDifference(input.checkOut, input.checkIn));
   const reserved = await runMembershipTransaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${checkId} FOR UPDATE`;
     const check = await transaction.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
+    if (check.status === "QUEUED") return { updated: check, plan: null };
+    if (check.status !== "NEEDS_CONFIRMATION") throw new Error("CONFIRMATION_NOT_AVAILABLE");
     if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
     if (check.analysisType === "LISTING_PRICING" && ["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
-    await transaction.stayQuery.update({ where: { id: check.stayQueryId! }, data: { ...input, nights } });
+    const query = await transaction.stayQuery.create({ data: { ...input, nights } });
     const querySignature = memberQuerySignature({ checkIn: input.checkIn.toISOString(), checkOut: input.checkOut.toISOString(), adults: input.adults, children: input.children, units: input.units, currency: input.currency, propertyId: check.propertyId });
     const membership = check.customerUserId ? await ensureFreeMembership(transaction, check.customerUserId) : null;
     const riskBinding = check.customerUserId && risk
@@ -437,19 +460,20 @@ export async function confirmQuery(checkId: string, inputValue: unknown, risk?: 
           idempotencyKey: `price-check:${check.id}`,
         })
       : null;
-    const updated = await transaction.priceCheck.update({ where: { id: checkId }, data: { status: "QUEUED" } });
+    const updated = await transaction.priceCheck.update({ where: { id: checkId }, data: { status: "QUEUED", stayQueryId: query.id } });
     if (reservation) {
       await transaction.membershipUsage.update({ where: { id: reservation.usage.id }, data: { priceCheckId: check.id } });
       if (risk && riskBinding) await recordMemberAction(transaction, { customerUserId: check.customerUserId!, benefitGroupId: riskBinding.benefitGroupId, priceCheckId: check.id, propertyId: check.propertyId, querySignature, identity: risk.identity });
     }
+    const handoff = await transaction.actionRecord.findFirst({ where: { priceCheckId: check.id, action: "REQUEST_USER_CONFIRMATION", actorType: "ADMIN" }, orderBy: { createdAt: "desc" } });
+    const job = await enqueueJob({
+      type: "RATE_COLLECTION", payload: { priceCheckId: updated.id },
+      idempotencyKey: `${updated.id}:rate-collection:${handoff?.id ?? "initial"}:${stableAddressIdentityId(`${updated.listingValidatedAt?.toISOString() ?? "not-required"}:${input.checkIn.toISOString()}:${input.checkOut.toISOString()}:${input.adults}:${input.children}:${input.units}`)}`,
+      priceCheckId: updated.id, priority: reservation?.membership.plan ? membershipQueuePriority(reservation.membership.plan) : undefined,
+      ...(handoff ? { correlationId: `customer-confirmation:${handoff.id}` } : {}),
+    }, transaction);
+    await transaction.actionRecord.create({ data: { priceCheckId: check.id, actorType: "CUSTOMER", actorId: check.customerUserId, action: "CONFIRM_QUERY", payload: { previousStayQueryId: check.stayQueryId, stayQueryId: query.id, continuationJobId: job.id, handoffActionId: handoff?.id ?? null } } });
     return { updated, plan: reservation?.membership.plan ?? null };
-  });
-  await enqueueJob({
-    type: "RATE_COLLECTION",
-    payload: { priceCheckId: reserved.updated.id },
-    idempotencyKey: `${reserved.updated.id}:rate-collection:${stableAddressIdentityId(`${reserved.updated.listingValidatedAt?.toISOString() ?? "not-required"}:${input.checkIn.toISOString()}:${input.checkOut.toISOString()}:${input.adults}:${input.children}:${input.units}`)}`,
-    priceCheckId: reserved.updated.id,
-    priority: reserved.plan ? membershipQueuePriority(reserved.plan) : undefined,
   });
   await queuePriceCheckEmail(reserved.updated.id, "CHECK_PROCESSING", "check-processing");
   return reserved.updated;
@@ -470,6 +494,7 @@ export async function getPublicCheck(checkId: string) {
       listingValidationMessage: true,
       listingValidatedAt: true,
       unitId: true,
+      exceptions: { where: { status: { in: ["OPEN", "IN_PROGRESS"] }, blockingUser: true, type: { in: ["PROPERTY_MATCH", "UNIT_MATCH"] } }, select: { type: true } },
       isDemo: true,
       createdAt: true,
       updatedAt: true,
@@ -493,12 +518,13 @@ export async function getPublicCheck(checkId: string) {
   return check ? { ...check, nextAction: nextAction(check) } : null;
 }
 
-function nextAction(check: { status: PriceCheckStatus; listingValidationStatus: string; unitId: string | null; property: { units: { id: string }[] } | null }) {
+export function nextAction(check: { status: PriceCheckStatus; listingValidationStatus: string; unitId: string | null; property: { units: { id: string }[] } | null; exceptions?: { type: string }[] }) {
   const { status } = check;
   if (status === "NEEDS_CONFIRMATION") {
+    if (!check.property || check.exceptions?.some(row => row.type === "PROPERTY_MATCH")) return "CONFIRM_PROPERTY" as const;
     if (["REQUIRED", "CONFLICT"].includes(check.listingValidationStatus)) return "CONFIRM_LISTING" as const;
     if (check.listingValidationStatus === "PENDING") return "WAIT" as const;
-    if (!check.unitId && (check.property?.units.length ?? 0) > 1) return "CONFIRM_UNIT" as const;
+    if (check.exceptions?.some(row => row.type === "UNIT_MATCH") || !check.unitId && (check.property?.units.length ?? 0) > 1) return "CONFIRM_UNIT" as const;
     return "CONFIRM_QUERY" as const;
   }
   if (status === "SOURCE_UNAVAILABLE" && check.listingValidationStatus === "SOURCE_UNAVAILABLE") return "CONFIRM_LISTING" as const;

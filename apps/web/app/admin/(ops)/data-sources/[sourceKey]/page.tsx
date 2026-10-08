@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@tymra/db";
+import { serviceCollectionJobTypes } from "@tymra/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -18,7 +19,7 @@ export default async function DataSourceDetailPage({ params, searchParams }: { p
   if (!source || source.isDemo) notFound();
   const [runs, schedules, frontier, recentEvents, recentSignals] = await Promise.all([
     prisma.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false }, orderBy: { createdAt: "desc" }, take: 50, include: { incident: true } }),
-    prisma.scheduleDefinition.findMany({ where: { jobType: { in: ["PUBLIC_DATA_COLLECTION", "EVENT_COLLECTION", "WEATHER_COLLECTION", "TRANSPORT_COLLECTION"] } }, orderBy: { key: "asc" } }),
+    prisma.scheduleDefinition.findMany({ where: { jobType: { in: [...serviceCollectionJobTypes] } }, orderBy: { key: "asc" } }),
     prisma.sourceCrawlTarget.findMany({ where: { dataSourceId: source.id }, orderBy: [{ active: "desc" }, { updatedAt: "desc" }], take: 100 }),
     prisma.sourceEventOccurrence.findMany({ where: { dataSourceId: source.id, isDemo: false }, orderBy: { lastSeenAt: "desc" }, take: 10 }),
     prisma.sourceMarketSignal.findMany({ where: { dataSourceId: source.id, isDemo: false }, orderBy: { lastSeenAt: "desc" }, take: 10 }),

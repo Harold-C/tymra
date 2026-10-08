@@ -7,6 +7,7 @@ export type CustomerCheck = {
   analysisType: "LISTING_PRICING" | "LOCATION_BENCHMARK";
   status: string;
   terminal: boolean;
+  confirmationStep?: string | null;
   createdAt: string;
   updatedAt: string;
   isDemo: boolean;

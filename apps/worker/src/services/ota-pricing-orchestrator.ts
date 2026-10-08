@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { Environment } from "@tymra/config";
-import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, sourceHasCapability } from "@tymra/db";
+import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, serviceMappedUnitId, sourceHasCapability } from "@tymra/db";
 import { nzDateKey } from "@tymra/domain";
 import { locateOtaDiscoveryCandidate } from "@tymra/providers/ota-address-match";
 import { otaArgusConnectorForSource, otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaDiscoveryUrlForSource, otaProviderDetails, otaResolveListingExtractionSchema } from "@tymra/providers/ota-argus-contracts";
@@ -253,7 +253,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
 
       for (const unit of comparableUnits.slice(0, 1)) {
         if (discoveredListingIds.length >= synchronousComparableLimit) break;
-        const unitId = stableId("ota-unit", `${property.id}:${normaliseComparableUnitName(unit.officialName)}:${unit.unitType}:${unit.capacity}`);
+        const unitId = await serviceMappedUnitId(source.id, `${candidate.sourceListingId}:${unit.externalId}`, stableId("ota-unit", `${property.id}:${normaliseComparableUnitName(unit.officialName)}:${unit.unitType}:${unit.capacity}`), unit);
         await prisma.sellableUnit.upsert({
           where: { id: unitId },
           create: { id: unitId, propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE", isDemo: false },

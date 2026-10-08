@@ -48,7 +48,7 @@ export async function AdminResourcePage({ resource, searchParams = {} }: { resou
 async function loadPaginatedResource(resource: "listings" | "competitors" | "feedback" | "audit", locale: AdminLocale, page: { q: string; kind: string; skip: number; take: number; since?: Date }): Promise<{ columns: AdminColumn[]; rows: AdminRow[]; total: number }> {
   if (resource === "listings") {
     const { total, items } = await adminPaginatedQueries.listings(page);
-    return { total, ...table(locale, ["Listing", "Unit", "Source", "Platform", "Status", "Last confirmed"], items.map((item) => [<><strong>{item.unit.officialName}</strong><small>{item.externalId}</small></>, item.unit.officialName, item.dataSource.name, item.platform, pill(item.onlineStatus, locale), date(item.lastConfirmedAt, locale)]), items.map((item) => `/admin/accommodations/${item.propertyId}`)) };
+    return { total, ...table(locale, ["Listing", "Unit", "Source", "Platform", "Status", "Last confirmed"], items.map((item) => [<><strong>{item.unit.officialName}</strong><small>{item.externalId}</small></>, item.unit.officialName, item.dataSource.name, item.platform, pill(item.onlineStatus, locale), date(item.lastConfirmedAt, locale)]), items.map((item) => `/admin/listings/${item.id}`)) };
   }
   if (resource === "competitors") {
     const { total, items } = await adminPaginatedQueries.competitors(page);
@@ -59,7 +59,7 @@ async function loadPaginatedResource(resource: "listings" | "competitors" | "fee
     return { total, ...table(locale, ["Feedback", "Type", "Price Check", "Comment", "Created", "Data"], items.map((item) => [<><strong>{formatCompactId(item.id)}</strong><small>{item.id}</small></>, pill(item.type, locale), item.priceCheckId, item.comment || "—", date(item.createdAt, locale), demo(item.isDemo, locale)]), items.map((item) => `/admin/checks/${item.priceCheckId}`)) };
   }
   const { total, items } = await adminPaginatedQueries.audit(page);
-  return { total, ...table(locale, ["Event", "Entity", "Entity ID", "Actor", "Created", "Data"], items.map((item) => [pill(item.eventType, locale), item.entityType, <span className="code-value" key={item.id}>{item.entityId}</span>, item.actorAdminId || adminText(locale, "system"), date(item.createdAt, locale), demo(item.isDemo, locale)])) };
+  return { total, ...table(locale, ["ID", "Event", "Entity", "Entity ID", "Actor", "Created", "Data"], items.map((item) => [<span className="code-value" key={item.id}>{item.id}</span>, pill(item.eventType, locale), item.entityType, <span className="code-value" key={item.id}>{item.entityId}</span>, item.actorAdminId || adminText(locale, "system"), date(item.createdAt, locale), demo(item.isDemo, locale)])) };
 }
 
 export function AdminPageHeader({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {

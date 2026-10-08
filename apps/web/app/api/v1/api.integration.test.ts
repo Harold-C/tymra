@@ -50,7 +50,7 @@ describe("Release 1 API contracts", () => {
 
   afterAll(async () => {
     if (created.checkId) {
-      const immutableHistory = await prisma.collectionRun.count({ where: { priceCheckId: created.checkId } });
+      const immutableHistory = await prisma.collectionRun.count({ where: { priceCheckId: created.checkId } }) + await prisma.actionRecord.count({ where: { priceCheckId: created.checkId } });
       if (!immutableHistory) {
         await prisma.emailDelivery.deleteMany({ where: { priceCheckId: created.checkId } });
         await prisma.job.deleteMany({ where: { priceCheckId: created.checkId } });
@@ -151,23 +151,8 @@ describe("Release 1 API contracts", () => {
       expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: localIds.locationCheckId } })).toMatchObject({ analysisType: "LOCATION_BENCHMARK", listingValidationStatus: "NOT_REQUIRED" });
     } finally {
       linzAddressIdentityProvider.search = originalSearch;
-      if (localIds.checkId) {
-        await prisma.emailDelivery.deleteMany({ where: { priceCheckId: localIds.checkId } });
-        await prisma.job.deleteMany({ where: { priceCheckId: localIds.checkId } });
-        await prisma.priceCheck.deleteMany({ where: { id: localIds.checkId } });
-        if (localIds.stayQueryId) await prisma.stayQuery.deleteMany({ where: { id: localIds.stayQueryId } });
-      }
-      if (localIds.locationCheckId) {
-        await prisma.emailDelivery.deleteMany({ where: { priceCheckId: localIds.locationCheckId } });
-        await prisma.job.deleteMany({ where: { priceCheckId: localIds.locationCheckId } });
-        await prisma.priceCheck.deleteMany({ where: { id: localIds.locationCheckId } });
-        if (localIds.locationStayQueryId) await prisma.stayQuery.deleteMany({ where: { id: localIds.locationStayQueryId } });
-      }
-      const properties = await prisma.property.findMany({ where: { id: { in: candidatePropertyIds } }, select: { id: true } });
-      await prisma.sellableUnit.deleteMany({ where: { propertyId: { in: properties.map((property) => property.id) } } });
-      await prisma.property.deleteMany({ where: { id: { in: properties.map((property) => property.id) } } });
-      await prisma.addressResolutionCache.deleteMany({ where: { candidates: { some: { addressIdentity: { providerExternalId: { in: externalIds } } } } } });
-      await prisma.addressIdentity.deleteMany({ where: { providerExternalId: { in: externalIds } } });
+      // Confirmed identities and their append-only customer actions remain in the
+      // disposable test database until the database itself is disposed.
     }
   });
 

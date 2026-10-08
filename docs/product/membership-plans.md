@@ -114,7 +114,7 @@ Tymra permits a person to create another account when there is a legitimate reas
 - Member actions record separate account, Benefit Group, device, IP-prefix, Property, OTA-listing, query-signature and coarse geotile subjects. Raw IP, raw device token, card number, last four digits and full address are not stored in the risk graph.
 - Medium risk returns `MEMBER_CHALLENGE_REQUIRED`; repeated enumeration or an unresolved high-confidence case returns a bounded cooldown. Concurrent Price Checks and active Argus noVNC sessions are limited by plan.
 - Stripe webhook processing records only an HMAC of the processor fingerprint. Refund, dispute, repeated payment-instrument and Radar Review signals open review cases; they do not silently rewrite financial truth or automatically merge paid usage quotas.
-- Members can submit one appeal per open case. Admin can allow, deny or release an incorrect grouping only with an explicit reason and immutable audit event. Reason-code approval rate is monitored to calibrate false positives.
+- Members can submit one appeal per open case. Admin can allow or deny the case, or release a grouping-based service restriction supported by the reviewed facts, only with an explicit reason and immutable audit event. Historical Benefit Group and valid claim identities remain traceable; this is not an unrestricted quota reset. Reason-code approval rate is monitored to calibrate false positives.
 - Device/query risk identities expire after 180 days; payment-risk and resolved-case metadata use a separate two-year fraud/financial window. Lifetime Free claims and legally required audit/financial records are retained only to the minimum necessary extent.
 
 ### Independent sign-in and sign-out
@@ -244,10 +244,11 @@ Every Admin mutation requires an explicit reason, confirmation for high-impact a
 
 - reveal or regenerate a customer's Magic Link, session token, API secret, webhook secret or payment credential;
 - impersonate a customer or bypass ownership checks through the customer UI;
-- silently grant a paid plan, change Stripe financial truth, reset usage or extend history without a separately approved and auditable adjustment contract;
+- arbitrarily grant a paid plan, change Stripe financial truth, reset usage or extend history; reconciliation uses the linked subscription and configured Price, and a duplicate usage correction requires evidence of the same original request while retaining both ledger rows;
 - delete legally required financial/audit records or raw evidence outside the applicable retention workflow.
 
 Required operations routes are `/admin/customers`, `/admin/customers/{customerId}`, `/admin/memberships`, and `/admin/billing-events`. Existing Admin session and origin isolation apply.
+Privacy support uses `/admin/data-requests`: exports are encrypted and become completed only after an authenticated owner download; deletion cancels pending delivery, anonymizes account and linked recipient identity, revokes sessions and units, and requires billing reconciliation plus a quiescent request pipeline. Suspended, deleted or cancelled owners cannot be restarted through service recovery. Admin cannot mark email as verified or impersonate the customer.
 
 ### Membership observability and notification policy
 

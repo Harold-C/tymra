@@ -140,8 +140,8 @@ export async function recordTransformation(input: {
   inputs: Array<{ type: LineageNodeType; id: string }>;
   outputs: Array<{ type: LineageNodeType; id: string; evidenceRef?: string; evidenceHash?: string }>;
   metadata?: Prisma.InputJsonValue;
-}) {
-  return prisma.transformationRun.create({
+}, client?: Prisma.TransactionClient) {
+  return (client ?? prisma).transformationRun.create({
     data: {
       dataSourceId: input.dataSourceId,
       collectionRunId: input.collectionRunId,

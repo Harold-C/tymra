@@ -417,7 +417,7 @@ export function CheckStatus({ locale, checkId, memberAccount = false }: { locale
     return () => window.clearInterval(timer);
   }, [load, terminal]);
 
-  const confirmationPath = check?.nextAction === "CONFIRM_LISTING" ? "listing" : check?.nextAction === "CONFIRM_UNIT" ? "unit" : check?.nextAction === "CONFIRM_QUERY" ? "query" : null;
+  const confirmationPath = check?.nextAction === "CONFIRM_PROPERTY" ? "property" : check?.nextAction === "CONFIRM_LISTING" ? "listing" : check?.nextAction === "CONFIRM_UNIT" ? "unit" : check?.nextAction === "CONFIRM_QUERY" ? "query" : null;
   return (
     <FlowPage title={terminal ? t("statusFinishedTitle") : t("statusTitle")} intro={t("statusReference", { checkId })} currentStep={terminal ? 5 : 4}>
       {!check && !error ? <LoadingState label={t("loadingStatus")} /> : null}

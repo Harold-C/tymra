@@ -11,7 +11,7 @@ export async function getDataProvider(): Promise<DataProvider> {
   const source = await prisma.dataSource.findUnique({ where: { key: "manual-import" } });
   const observations = source
     ? await prisma.rateObservation.findMany({
-        where: { dataSourceId: source.id },
+        where: { quarantine: null, dataSourceId: source.id },
         orderBy: { collectedAt: "desc" },
         take: 5_000,
         include: {

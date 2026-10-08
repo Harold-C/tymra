@@ -34,6 +34,24 @@ describe("OTA discovery request contract", () => {
     await Reflect.get(service, "persistArgusEvidence").call(service, "source", "run", result, "expedia-public", "https://www.expedia.co.nz/");
     expect(mock.artifact.mock.lastCall?.[0].create).toMatchObject({ collectionRunId: "run", dataSourceId: "source", parserFailure: category === "PARSING_ERROR", contentHash: "a".repeat(64) });
   });
+  it("saves validated reference prices in retained artifact metadata even when no public price can be accepted", async () => {
+    const service = new WorkerService({ NODE_ENV: "production", RAW_ARTIFACT_TTL_HOURS: 72, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 } as Environment);
+    const referencePrices = [
+      { kind: "ORIGINAL", amountMinor: 27500, ratePlanExternalId: "member-plan", sourceText: "Original price NZD 275" },
+      { kind: "MEMBER_ONLY", amountMinor: 24750, ratePlanExternalId: "member-plan", sourceText: "Members-only price NZD 247.50" },
+    ];
+    const rate = { sourceListingId: "example", unitExternalId: "room-1", checkIn: "2026-10-14", checkOut: "2026-10-15", currency: "NZD",
+      basePriceMinor: null, mandatoryFeesMinor: null, taxesMinor: null, optionalFeesMinor: null, totalPriceMinor: null,
+      availabilityStatus: "UNKNOWN", restrictionReason: "No anonymous public total", minimumStay: null, mealPlan: "UNKNOWN", cancellationPolicy: "UNKNOWN", paymentTerms: "UNKNOWN",
+      rateFence: "REFERENCE_ONLY", sourceUrl: "https://www.booking.com/hotel/nz/example.html", collectedAt: "2026-09-30T12:00:00.000Z", qualityFlags: ["REFERENCE_PRICES_ONLY"], fieldSources: {}, referencePrices };
+    const result = { status: "success", error: null, page: null,
+      extracted: { data_schema: "ota-public.collect_rates", schema_version: "1.0.0", provider: "booking", sourceListingId: "example", rates: [rate], observedAt: rate.collectedAt, warnings: ["REFERENCE_PRICES_ONLY"], quality: "partial" },
+      evidence: [{ kind: "html", traceId: "member-capture", storageRef: "argus-evidence:member-capture/page.html", sha256: "a".repeat(64), sizeBytes: 100, containsSensitiveData: false }] };
+    await Reflect.get(service, "persistArgusEvidence").call(service, "source", "run", result, "booking-public", rate.sourceUrl);
+    expect(mock.artifact.mock.lastCall?.[0].create).toMatchObject({ parserFailure: false, payload: { otaReferenceRates: [{ unitExternalId: "room-1", currency: "NZD", rateFence: "REFERENCE_ONLY", referencePrices }] } });
+    await Reflect.get(service, "persistArgusEvidence").call(service, "source", "other-run", result, "expedia-public", rate.sourceUrl);
+    expect(mock.artifact.mock.lastCall?.[0].create.payload.otaReferenceRates).toBeUndefined();
+  });
   it.each(["booking", "airbnb", "expedia", "bookabach", "agoda", "trip"])("sends a complete future public stay and resumes its NZ date for %s", async (key) => {
     const source = { id: "source", key, enabled: true };
     mock.sources.mockResolvedValue([source]);

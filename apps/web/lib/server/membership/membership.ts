@@ -143,11 +143,12 @@ export async function reserveSpotCheck(
   const usageOwner = membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId: input.customerUserId };
   const [initialReportConsumed, rollingSpotChecks] = await Promise.all([
     transaction.membershipUsage.count({
-      where: { ...usageOwner, type: "INITIAL_REPORT", ...(membership.plan === "FREE" ? {} : { countedAt: { gte: membership.entitlementStartedAt } }) },
+      where: { correction: null, ...usageOwner, type: "INITIAL_REPORT", ...(membership.plan === "FREE" ? {} : { countedAt: { gte: membership.entitlementStartedAt } }) },
     }).then((count) => count > 0),
     transaction.membershipUsage.count({
       where: {
         ...usageOwner,
+        correction: null,
         type: "SPOT_CHECK",
         countedAt: { gte: membership.plan === "FREE" ? rollingStart : rollingStart > membership.entitlementStartedAt ? rollingStart : membership.entitlementStartedAt },
       },
@@ -190,9 +191,9 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
   const benefitGroup = await prisma.benefitGroup.findUniqueOrThrow({ where: { id: customer.benefitGroupId } });
   const rollingStart = new Date(now.getTime() - 30 * 86_400_000);
   const [initialReports, rollingSpotChecks, oldestRollingSpotCheck, pricingUnits] = await Promise.all([
-    prisma.membershipUsage.count({ where: { ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "INITIAL_REPORT", ...(membership.plan === "FREE" ? {} : { countedAt: { gte: membership.entitlementStartedAt } }) } }),
-    prisma.membershipUsage.count({ where: { ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: membership.plan === "FREE" ? rollingStart : rollingStart > membership.entitlementStartedAt ? rollingStart : membership.entitlementStartedAt } } }),
-    prisma.membershipUsage.findFirst({ where: { ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: membership.plan === "FREE" ? rollingStart : rollingStart > membership.entitlementStartedAt ? rollingStart : membership.entitlementStartedAt } }, orderBy: { countedAt: "asc" }, select: { countedAt: true } }),
+    prisma.membershipUsage.count({ where: { correction: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "INITIAL_REPORT", ...(membership.plan === "FREE" ? {} : { countedAt: { gte: membership.entitlementStartedAt } }) } }),
+    prisma.membershipUsage.count({ where: { correction: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: membership.plan === "FREE" ? rollingStart : rollingStart > membership.entitlementStartedAt ? rollingStart : membership.entitlementStartedAt } } }),
+    prisma.membershipUsage.findFirst({ where: { correction: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: membership.plan === "FREE" ? rollingStart : rollingStart > membership.entitlementStartedAt ? rollingStart : membership.entitlementStartedAt } }, orderBy: { countedAt: "asc" }, select: { countedAt: true } }),
     prisma.customerPricingUnit.findMany({
       where: { customerUserId },
       orderBy: [{ active: "desc" }, { activatedAt: "asc" }],
@@ -284,7 +285,7 @@ export async function getPricingUnitDetail(customerUserId: string, pricingUnitId
 
   const [recentObservations, latestCheck] = await Promise.all([
     prisma.rateObservation.findMany({
-      where: { sellableUnitId: pricingUnit.sellableUnitId },
+      where: { quarantine: null, sellableUnitId: pricingUnit.sellableUnitId },
       orderBy: { collectedAt: "desc" },
       take: 10,
       select: {
@@ -426,5 +427,8 @@ export function stripeSubscriptionStatus(status: string): MembershipSubscription
 }
 
 function isSerializableConflict(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  if (error.code === "P2034") return true;
+  if (error.code !== "P2010" || !("meta" in error) || typeof error.meta !== "object" || error.meta === null) return false;
+  return "code" in error.meta && error.meta.code === "40001";
 }

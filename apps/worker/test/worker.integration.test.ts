@@ -71,7 +71,7 @@ describe("Worker baseline pipeline", () => {
       expect(new Set(versions.map((version) => version.startsAt?.toISOString()))).toEqual(new Set([normalised!.startsAt.toISOString(), moved.sourceOccurrence.startsAt.toISOString()]));
       expect(await prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id, sourceEvent: { externalId: sourceEventId } } })).toBe(before);
     } finally {
-      await prisma.publicFactVersion.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: sourceEventId } } });
+      // Source fact versions are immutable history. Dispose of the isolated database after the suite.
       const sourceEvent = await prisma.sourceEvent.findUnique({ where: { dataSourceId_externalId: { dataSourceId: source.id, externalId: sourceEventId } }, include: { canonicalLinks: true, occurrences: { include: { canonicalLinks: true } } } });
       const canonicalEventIds = sourceEvent?.canonicalLinks.map((link) => link.canonicalEventId) ?? [];
       const occurrenceIds = [...new Set(sourceEvent?.occurrences.flatMap((occurrence) => occurrence.canonicalLinks.map((link) => link.eventOccurrenceId)) ?? [])];
@@ -461,6 +461,14 @@ describe("Worker baseline pipeline", () => {
       const deliveries = await prisma.emailDelivery.findMany({ where: { analysisRequestId: request!.id } });
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0]).toMatchObject({ type: "RESULT_READY", status: "SENT" });
+      const generated = result!.resultVersions[0];
+      const generationJobId = (generated.payload as Prisma.JsonObject).generationJobId;
+      expect(typeof generationJobId).toBe("string");
+      const originalRequest = await prisma.workerAnalysisRequest.findUniqueOrThrow({ where: { id: request!.id } });
+      const replayed = await Promise.all([1, 2].map(() => service.publishFormalResult(originalRequest, generated.marketSnapshotId!, result!.priceAnalyses[0].id, generated.confidence, [], generationJobId as string)));
+      expect(replayed.map(row => row.id)).toEqual([generated.id, generated.id]);
+      expect(await prisma.resultVersion.count({ where: { analysisRequestId: request!.id } })).toBe(1);
+      expect(await prisma.emailDelivery.count({ where: { analysisRequestId: request!.id } })).toBe(1);
       const signalRuns = await prisma.collectionRun.findMany({ where: { analysisRequestId: request!.id }, include: { dataSource: true } });
       expect(signalRuns.some((run) => run.dataSource.key === "public_holidays_nz" && run.status === "SUCCEEDED")).toBe(true);
       expect(signalRuns.some((run) => run.dataSource.key === "eventfinda")).toBe(true);
@@ -667,7 +675,7 @@ describe("Worker baseline pipeline", () => {
       expect(versions).toHaveLength(4);
       expect(new Set(versions.map((version) => (version.payload as { confidence: number }).confidence))).toEqual(new Set([0.5, 0.6]));
     } finally {
-      await prisma.publicFactVersion.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } } });
+      // Source fact versions remain append-only in the disposable test database.
       await prisma.sourceMarketSignal.deleteMany({ where: { dataSourceId: source.id, externalId: { startsWith: externalPrefix } } });
       await prisma.marketSignal.deleteMany({ where: { id: { in: canonicalIds } } });
       await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });
@@ -844,7 +852,7 @@ describe("Worker baseline pipeline", () => {
     await prisma.rawArtifact.update({ where: { id: artifact.id }, data: { expiresAt: new Date(Date.now() - 1_000) } });
     const cleanup = await retentionService.retentionCleanup();
     expect(cleanup.rawArtifactsDeleted).toBeGreaterThanOrEqual(1);
-    expect(await prisma.rawArtifact.findUnique({ where: { id: artifact.id } })).toMatchObject({ storageRef: "DELETED", payload: null });
+    expect(await prisma.rawArtifact.findUnique({ where: { id: artifact.id } })).toMatchObject({ storageRef: artifact.storageRef, contentHash: artifact.contentHash, payload: null, deletedAt: expect.any(Date) });
   });
 
   it("applies the Release 1.5 retention windows without deleting active formal-report ownership", async () => {

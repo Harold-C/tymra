@@ -1,5 +1,6 @@
 import { prisma, recordFunnelEvent } from "@tymra/db";
 import { membershipHistoryCutoff } from "./membership";
+import { nextAction } from "../price-checks";
 
 const terminalStatuses = new Set([
   "PUBLISHED",
@@ -19,7 +20,8 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
   const check = await prisma.priceCheck.findFirst({
     where: { id: checkId, customerUserId, createdAt: { gte: historyCutoff }, status: { not: "ARCHIVED" } },
     include: {
-      property: { select: { canonicalName: true, city: true } },
+      property: { select: { canonicalName: true, city: true, units: { where: { status: "ACTIVE" }, select: { id: true } } } },
+      exceptions: { where: { status: { in: ["OPEN", "IN_PROGRESS"] }, blockingUser: true, type: { in: ["PROPERTY_MATCH", "UNIT_MATCH"] } }, select: { type: true } },
       unit: { select: { officialName: true } },
       stayQuery: true,
       resultVersions: {
@@ -42,6 +44,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
     id: check.id,
     analysisType: check.analysisType,
     status: check.status,
+    confirmationStep: check.status === "NEEDS_CONFIRMATION" ? ({ CONFIRM_PROPERTY: "property", CONFIRM_UNIT: "unit", CONFIRM_LISTING: "listing", CONFIRM_QUERY: "query", WAIT: null } as Record<string, string | null>)[nextAction(check)] ?? null : null,
     terminal: terminalStatuses.has(check.status),
     createdAt: check.createdAt,
     updatedAt: check.updatedAt,

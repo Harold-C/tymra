@@ -22,8 +22,8 @@ export type EnqueueJobInput = {
   runAt?: Date;
 };
 
-export async function enqueueJob(input: EnqueueJobInput): Promise<Job> {
-  return prisma.job.upsert({
+export async function enqueueJob(input: EnqueueJobInput, client?: Prisma.TransactionClient): Promise<Job> {
+  return (client ?? prisma).job.upsert({
     where: { idempotencyKey: input.idempotencyKey },
     create: {
       type: input.type,
@@ -190,6 +190,7 @@ export function queueNameForJobType(type: JobType): string {
     case "AVAILABILITY_COLLECTION": return "availability-collection";
     case "POLICY_COLLECTION": return "policy-collection";
     case "PUBLIC_DATA_COLLECTION": return "public-data-collection";
+    case "BACKFILL_IMPORT": return "public-data-collection";
     case "EVENT_COLLECTION": return "event-collection";
     case "WEATHER_COLLECTION": return "weather-collection";
     case "TRANSPORT_COLLECTION": return "transport-collection";

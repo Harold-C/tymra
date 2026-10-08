@@ -1,27 +1,32 @@
 "use client";
-
 import { useState } from "react";
-
+import { useRouter } from "next/navigation";
 import { formatAdminValue } from "@/lib/admin-i18n";
 
 type Locale = "en" | "zh";
-
 export function CustomerAdminActions({ customerId, locale, plan, status, riskCases = [] }: { customerId: string; locale: Locale; plan: string; status: string; riskCases?: Array<{ id: string; action: string; outcome: string; reasonCodes: string[]; appealReason: string | null; status: string }> }) {
-  const t = locale === "zh" ? zh : en;
-  const [reason, setReason] = useState(""); const [selectedPlan, setSelectedPlan] = useState(plan); const [selectedStatus, setSelectedStatus] = useState(status); const [pending, setPending] = useState(false); const [message, setMessage] = useState<string | null>(null);
+  const zh = locale === "zh";
+  const router = useRouter();
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
   const ready = !pending && reason.trim().length >= 3;
-  const run = async (action: string, value?: string, confirmation?: string) => {
-    if (confirmation && !window.confirm(confirmation)) return;
-    setPending(true); setMessage(null);
+  async function run(action: string, value?: string) {
+    if (["REVOKE_SESSIONS", "SUSPEND_CUSTOMER"].includes(action) && !window.confirm(zh ? "这会终止当前访问，确定执行吗？" : "This will terminate current access. Continue?")) return;
+    setPending(true); setMessage("");
     try {
-      const response = await fetch(`/api/v1/admin/customers/${customerId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, value, reason }) });
+      const response = await fetch(`/api/v1/admin/customers/${customerId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...(value ? { value } : {}), reason }) });
       const payload = await response.json() as { error?: { message?: string } };
-      if (!response.ok) throw new Error(payload.error?.message ?? t.failed);
-      setMessage(t.completed); window.location.reload();
-    } catch (error) { setMessage(error instanceof Error ? error.message : t.failed); setPending(false); }
-  };
-  return <section className="admin-detail-section"><div className="admin-section-heading"><div><span>{t.audited}</span><h2>{t.title}</h2></div></div><p className="action-message">{t.safety}</p><div className="customer-action-grid"><label><span>{t.reason}</span><input value={reason} onChange={(event) => setReason(event.target.value)} minLength={3} required /></label><div className="customer-staged-action"><label><span>{t.plan}</span><select value={selectedPlan} onChange={(event) => setSelectedPlan(event.target.value)} disabled={pending}>{["FREE", "HOST", "PRO", "PORTFOLIO"].map((value) => <option key={value}>{value}</option>)}</select></label><button className="button button-secondary" disabled={!ready || selectedPlan === plan} onClick={() => void run("SET_PLAN", selectedPlan, t.planConfirm.replace("{value}", selectedPlan))}>{t.applyPlan}</button></div><div className="customer-staged-action"><label><span>{t.status}</span><select value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)} disabled={pending}>{["ACTIVE", "PAST_DUE", "CANCELLED", "INCOMPLETE", "PAUSED"].map((value) => <option key={value} value={value}>{formatAdminValue(locale, value)}</option>)}</select></label><button className="button button-secondary" disabled={!ready || selectedStatus === status} onClick={() => void run("SET_MEMBERSHIP_STATUS", selectedStatus, t.statusConfirm.replace("{value}", formatAdminValue(locale, selectedStatus)))}>{t.applyStatus}</button></div><div className="customer-action-buttons"><button className="button button-secondary" disabled={!ready} onClick={() => void run("MARK_EMAIL_VERIFIED")}>{t.verify}</button><button className="button button-secondary" disabled={!ready} onClick={() => void run("RELEASE_BENEFIT_GROUP", undefined, t.releaseConfirm)}>{t.release}</button><button className="button button-danger" disabled={!ready} onClick={() => void run("REVOKE_SESSIONS", undefined, t.revokeConfirm)}>{t.revoke}</button></div></div>{riskCases.filter((item) => item.status === "OPEN").map((item) => <div className="admin-filter-bar" key={item.id}><span><strong>{formatAdminValue(locale, item.action)} · {formatAdminValue(locale, item.outcome)}</strong><br />{item.reasonCodes.map((value) => formatAdminValue(locale, value)).join(", ")}{item.appealReason ? ` · ${t.appeal}: ${item.appealReason}` : ""}</span><button className="button button-secondary" disabled={!ready} onClick={() => void run("RESOLVE_RISK_ALLOW", item.id, t.allowConfirm)}>{t.allow}</button><button className="button button-danger" disabled={!ready} onClick={() => void run("RESOLVE_RISK_DENY", item.id, t.denyConfirm)}>{t.deny}</button></div>)}{message ? <p className="action-message" role="status">{message}</p> : null}</section>;
+      if (!response.ok) throw new Error(payload.error?.message ?? (zh ? "操作未完成" : "Action failed"));
+      setMessage(zh ? "操作完成并已记录审计。" : "Action completed and audited.");
+      router.refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Action failed"); }
+    finally { setPending(false); }
+  }
+  return <section className="admin-detail-section"><div className="admin-section-heading"><h2>{zh ? "账号与权益支持" : "Account and entitlement support"}</h2></div><p>{plan} · {formatAdminValue(locale, status)}. {zh ? "权益按已关联支付事实对账；邮箱通过用户验证流程确认。" : "Reconcile entitlement from linked payment facts. Email verification uses the customer verification flow."}</p><label>{zh ? "事件、证据及处置原因" : "Incident, evidence and reason"}<textarea value={reason} minLength={3} maxLength={1000} onChange={event => setReason(event.target.value)} /></label><div className="header-pills">
+    <button className="button button-secondary" disabled={!ready} onClick={() => void run("RECONCILE_BILLING")}>{zh ? "核对支付并恢复权益" : "Reconcile billing and entitlement"}</button>
+    <button className="button button-secondary" disabled={!ready} onClick={() => void run("REVOKE_SESSIONS")}>{zh ? "撤销全部会话" : "Revoke sessions"}</button>
+    <button className="button button-danger" disabled={!ready} onClick={() => void run("SUSPEND_CUSTOMER")}>{zh ? "暂停访问" : "Suspend access"}</button>
+    <button className="button button-secondary" disabled={!ready} onClick={() => void run("ACTIVATE_CUSTOMER")}>{zh ? "恢复访问" : "Restore access"}</button>
+  </div>{riskCases.filter(item => item.status === "OPEN").map(item => <div className="admin-filter-bar" key={item.id}><span><small>{item.id}</small><br /><strong>{formatAdminValue(locale, item.action)} · {formatAdminValue(locale, item.outcome)}</strong><br />{item.reasonCodes.map(value => formatAdminValue(locale, value)).join(", ")}{item.appealReason ? ` · ${item.appealReason}` : ""}</span><button className="button button-secondary" disabled={!ready} onClick={() => void run("RESOLVE_RISK_ALLOW", item.id)}>{zh ? "审核后放行" : "Allow after review"}</button><button className="button button-danger" disabled={!ready} onClick={() => void run("RESOLVE_RISK_DENY", item.id)}>{zh ? "审核后拒绝" : "Deny after review"}</button></div>)}{message ? <p className="action-message" role="status">{message}</p> : null}</section>;
 }
-
-const en = { audited: "Audited actions", title: "Membership and risk controls", safety: "Changes are staged until you select Apply. High-impact actions require confirmation and every action records the reason below.", reason: "Operational reason (required)", plan: "Plan", status: "Status", applyPlan: "Apply plan", applyStatus: "Apply status", verify: "Mark email verified", release: "Release benefit group", revoke: "Revoke all sessions", appeal: "Appeal", allow: "Allow", deny: "Deny", planConfirm: "Change this membership to {value}?", statusConfirm: "Change membership status to {value}?", releaseConfirm: "Release this customer from the shared benefit group?", revokeConfirm: "Revoke every active session for this customer?", allowConfirm: "Resolve this risk case and allow the customer?", denyConfirm: "Resolve this risk case and deny the customer?", completed: "Customer controls updated.", failed: "The customer action failed." };
-const zh: typeof en = { audited: "受审计操作", title: "会员与风控管理", safety: "选择“应用”前不会提交变更；高影响操作需要二次确认，所有操作都会记录下方原因。", reason: "操作原因（必填）", plan: "方案", status: "状态", applyPlan: "应用方案", applyStatus: "应用状态", verify: "标记邮箱已验证", release: "解除权益组关联", revoke: "撤销全部会话", appeal: "申诉", allow: "允许", deny: "拒绝", planConfirm: "确定将会员方案改为 {value} 吗？", statusConfirm: "确定将会员状态改为“{value}”吗？", releaseConfirm: "确定解除该客户的共享权益组关联吗？", revokeConfirm: "确定撤销该客户的全部有效会话吗？", allowConfirm: "确定放行该客户并解决此风控案件吗？", denyConfirm: "确定拒绝该客户并解决此风控案件吗？", completed: "客户控制已更新。", failed: "客户操作失败。" };

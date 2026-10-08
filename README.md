@@ -35,8 +35,11 @@ changed, and a source mount/watch process can make an edit take effect immediate
 
 ## Local operation
 
-These are runtime actions, not document checks. Compose startup builds the image, starts services,
-and runs migration and development seed. Use only the intended local database and data volumes.
+These are runtime actions, not document checks. Compose startup prepares Linux dependencies,
+generates Prisma, starts services and applies pending migrations. Use only the intended local
+database and data volumes. Development seed is an explicit first-time bootstrap action:
+`docker compose --profile bootstrap run --rm seed`. Routine startup preserves existing accounts
+and data instead of reseeding them.
 
 ```sh
 pnpm compose:up
@@ -44,7 +47,13 @@ docker compose ps
 ```
 
 Local services share `tymra-app-dev:local`: Web, Fastify API and Worker, with PostgreSQL,
-Redis and Mailpit. Argus is a separate shared service, not a Tymra browser container.
+Redis and Mailpit. They bind the current engineering checkout into `/app`; container dependencies
+and the pnpm/Next development caches use separate named volumes, leaving host dependencies intact.
+`https://ops.tymra.test/admin` is the current checkout's development surface. Web source edits
+use Next Fast Refresh; Worker/API edits, including shared packages, restart their watched process.
+No image rebuild is needed for ordinary source changes. Dependency changes require
+`pnpm compose:up`; schema changes also require a reviewed migration and Prisma generation.
+Argus is a separate shared service, not a Tymra browser container.
 Scheduler is an opt-in Compose profile; development hard-disables automatic source scheduling
 even when its process is started. Do not use profile startup as a source-acceptance shortcut.
 

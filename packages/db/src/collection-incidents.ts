@@ -17,10 +17,9 @@ export async function syncCollectionIncident(collectionRunId: string, db: Prisma
       await db.collectionIncident.update({
         where: { id: retryParent.id },
         data: {
-          status: "RESOLVED",
-          resolutionAction: "RETRY_SUCCEEDED",
-          resolutionReason: `Retry collection run ${run.id} succeeded`,
-          resolvedAt: run.finishedAt ?? new Date(),
+          status: "IN_PROGRESS",
+          resolutionAction: "RECOVERY_AWAITING_VERIFICATION",
+          resolutionReason: `Run ${run.id} succeeded; matching scope, full pipeline and evidence delivery still require verification`,
         },
       });
     }
@@ -56,9 +55,9 @@ export async function syncCollectionIncident(collectionRunId: string, db: Prisma
       collectionRun: { dataSourceId: run.dataSourceId },
     },
     data: {
-      status: "RESOLVED",
+      status: "DISMISSED",
       resolutionAction: "SUPERSEDED_BY_LATER_RUN",
-      resolutionReason: `Superseded by collection incident ${incident.id}`,
+      resolutionReason: `Repeated fault is tracked by incident ${incident.id}; service recovery is not verified`,
       resolvedAt: run.finishedAt ?? new Date(),
     },
   });
@@ -67,9 +66,9 @@ export async function syncCollectionIncident(collectionRunId: string, db: Prisma
     await db.collectionIncident.update({
       where: { id: retryParent.id },
       data: {
-        status: "RESOLVED",
+        status: "DISMISSED",
         resolutionAction: "RETRY_SUPERSEDED",
-        resolutionReason: `Retry created follow-up incident ${incident.id}`,
+        resolutionReason: `Retry created follow-up incident ${incident.id}; service recovery is not verified`,
         resolvedAt: run.finishedAt ?? new Date(),
       },
     });

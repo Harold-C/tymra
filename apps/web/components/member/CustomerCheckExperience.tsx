@@ -68,6 +68,9 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
   if (!check) return <AccountState locale={locale} title={copy.loadingTitle} body={copy.loadingBody} loading />;
 
   const statusCopy = copy.status[check.status as keyof typeof copy.status] ?? check.status;
+  if (check.status === "NEEDS_CONFIRMATION" && check.confirmationStep) {
+    return <section className="customer-check-page"><section className="customer-status-band"><div className="rough-shell customer-status"><AlertTriangle aria-hidden="true" /><span>{copy.formalCheck}</span><h1>{locale === "zh" ? "请确认你的房源信息" : "Confirm your property details"}</h1><p>{locale === "zh" ? "服务支持已将此请求交回给你。请核对房源、房型及原查询条件后继续，恢复原请求不会重复扣除额度。" : "Service support has returned this request to you. Confirm the property, room and original query before continuing. Resuming this request does not consume another allowance."}</p><Link className="button button-primary" href={`/${locale}/check/${checkId}/${check.confirmationStep}`}>{locale === "zh" ? "确认并继续" : "Confirm and continue"}<ArrowRight aria-hidden="true" /></Link></div></section></section>;
+  }
   if (!check.terminal) {
     return (
       <section className="customer-check-page">

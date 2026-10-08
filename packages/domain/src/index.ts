@@ -9,5 +9,7 @@ export * from "./pricing";
 export * from "./query";
 export * from "./quality-gates";
 export * from "./schemas";
+export * from "./service-assurance";
+export * from "./historical-facts";
 export * from "./state-machine";
 export * from "./worker-pricing";

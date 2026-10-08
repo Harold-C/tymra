@@ -1,0 +1,10 @@
+import { prisma } from "@tymra/db";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getAdminLocale } from "@/lib/server/admin-locale";
+import { MappingRepairForm } from "@/components/admin/MappingRepairForm";
+import { redactServicePayload } from "@/lib/server/service-payload";
+export default async function Page({ params }: { params: { listingId: string } }) {
+  const locale = getAdminLocale(); const listing = await prisma.listing.findFirst({ where: { id: params.listingId, isDemo: false }, include: { property: { include: { units: { where: { isDemo: false, status: "ACTIVE" } } } }, unit: true, dataSource: true, versions: { orderBy: { version: "desc" } } } }); if (!listing) notFound(); const repairs = await prisma.serviceDataRepair.findMany({ where: { listingId: listing.id }, orderBy: { createdAt: "desc" } });
+  return <section className="admin-page"><header className="admin-page-header"><div><h1>{listing.platformUnitName}</h1><p>{listing.id} · {listing.dataSource.name}</p></div></header><p><Link href={`/admin/accommodations/${listing.propertyId}`}>{listing.property.canonicalName}</Link> · {listing.unit.officialName} · <a href={listing.canonicalUrl} rel="noreferrer">{locale === "zh" ? "来源页面" : "Source listing"}</a></p><section className="admin-detail-section"><h2>{locale === "zh" ? "标准身份与渠道映射修复" : "Canonical identity and channel mapping repair"}</h2><MappingRepairForm locale={locale} listingId={listing.id} units={listing.property.units.filter(unit => unit.id !== listing.unitId)} /></section><section className="admin-detail-section"><h2>{locale === "zh" ? "映射版本与修复历史" : "Mapping versions and repair history"}</h2>{listing.versions.map(version => <p key={version.id}>v{version.version} · {version.changeType} · {version.sellableUnitId} · {version.collectedAt.toISOString()}</p>)}{repairs.map(repair => <article key={repair.id}><strong>{repair.reason}</strong><p><Link href={`/admin/data-explorer/raw/${repair.evidenceArtifactId}`}>{locale === "zh" ? "证据" : "Evidence"}</Link> · {repair.evidenceHash}</p><pre>{JSON.stringify(redactServicePayload(repair.impact), null, 2)}</pre></article>)}</section></section>;
+}

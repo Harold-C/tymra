@@ -1,16 +1,8 @@
-import { getEnvironment } from "@tymra/config";
-import { addNzCalendarDays, nzDateKey } from "@tymra/domain";
+import Link from "next/link";
+import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
+import { getAdminLocale } from "@/lib/server/admin-locale";
 
-import { InternalOnDemandForm } from "@/components/admin/InternalOnDemandForm";
-
-export const dynamic = "force-dynamic";
-
-export default function InternalOnDemandPage() {
-  const environment = getEnvironment();
-  const checkIn = addNzCalendarDays(nzDateKey(new Date()), 30);
-  const checkOut = addNzCalendarDays(checkIn, 1);
-  return <main className="admin-page">
-    <header className="admin-page-header"><div><p className="eyebrow">National Data Core</p><h1>On-demand collection</h1><p>Launch an auditable, bounded address benchmark or OTA listing price collection without creating a customer account.</p></div></header>
-    <InternalOnDemandForm defaults={{ checkIn, checkOut }} enabled={environment.INTERNAL_ON_DEMAND_ENABLED} />
-  </main>;
+export default function OnDemandPage() {
+  const zh = getAdminLocale() === "zh";
+  return <section className="admin-page"><AdminPageHeader title={zh ? "服务诊断与恢复" : "Service diagnostics and recovery"} description={zh ? "从关联事件恢复原始请求，或从已批准的数据来源执行有界验证。客户的分析条件由其自己的后台管理。" : "Recover the original request from its incident, or validate an approved data supply workflow. Customers manage analysis conditions in their own account."} /><div className="header-pills"><Link className="button button-primary" href="/admin/exceptions">{zh ? "查看事件" : "Open incidents"}</Link><Link className="button button-secondary" href="/admin/collection-control">{zh ? "验证数据供应" : "Validate data supply"}</Link></div></section>;
 }

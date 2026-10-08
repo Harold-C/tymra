@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const session = await requireCustomerSession(request);
     const customer = await prisma.customerUser.findUniqueOrThrow({
       where: { id: session.customerUserId },
-      include: { dataRequests: { orderBy: { requestedAt: "desc" }, take: 10 } },
+      include: { dataRequests: { orderBy: { requestedAt: "desc" }, take: 10, select: { id: true, type: true, status: true, requestedAt: true, completedAt: true, exportReadyAt: true, exportExpiresAt: true, downloadedAt: true } } },
     });
     return apiSuccess({
       email: decryptPersonalData(customer.encryptedEmail, getEnvironment().DATA_ENCRYPTION_KEY),
@@ -57,8 +57,9 @@ export async function POST(request: NextRequest) {
     const session = await requireCustomerSession(request);
     const input = requestSchema.parse(await request.json());
     const existing = await prisma.customerDataRequest.findFirst({ where: { customerUserId: session.customerUserId, type: input.type, status: { in: ["PENDING", "IN_PROGRESS"] } } });
-    if (existing) return apiSuccess(existing);
-    return apiSuccess(await prisma.customerDataRequest.create({ data: { customerUserId: session.customerUserId, ...input } }), { status: 201 });
+    if (existing) return apiSuccess({ id: existing.id, type: existing.type, status: existing.status, requestedAt: existing.requestedAt });
+    const created = await prisma.customerDataRequest.create({ data: { customerUserId: session.customerUserId, ...input } });
+    return apiSuccess({ id: created.id, type: created.type, status: created.status, requestedAt: created.requestedAt }, { status: 201 });
   } catch (error) {
     if (error instanceof CustomerAuthenticationError) return apiError(401, "CUSTOMER_AUTH_REQUIRED", error.message);
     return apiException(error);

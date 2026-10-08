@@ -1,5 +1,5 @@
 import { type Environment } from "@tymra/config";
-import { prisma, type EmailType, type Job } from "@tymra/db";
+import { prisma, processHistoricalBackfill, type EmailType, type Job } from "@tymra/db";
 import { WorkerService } from "../services/worker-service";
 import { enqueueDueMembershipAnalyses } from "../membership/scheduler";
 import { acknowledgePersistedArgusResults, pollArgusExecution } from "../services/argus-orchestrator";
@@ -13,10 +13,17 @@ import { syncIncidentSafely, checkSourceHealth, enqueueNext } from "./handlers/s
 import { asObject, requiredString, optionalString, optionalNumber, optionalBoolean, optionalDate, eventCollectionPhase } from "./handlers/payload";
 
 export async function handleJob(job: Job, environment: Environment): Promise<void> {
+  if (job.priceCheckId) {
+    const check = await prisma.priceCheck.findUnique({ where: { id: job.priceCheckId }, select: { status: true, customerUser: { select: { status: true } } } });
+    if (!check || ["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") return;
+  }
   const payload = asObject(job.payload);
   const analysisRequestId = optionalString(payload, "analysisRequestId");
   const workerService = analysisRequestId ? new WorkerService(environment) : null;
   switch (job.type) {
+    case "BACKFILL_IMPORT":
+      await processHistoricalBackfill(requiredString(payload, "backfillId"), job.id);
+      return;
     case "MEMBERSHIP_SCHEDULE":
       await enqueueDueMembershipAnalyses();
       return;
@@ -60,6 +67,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
         requiredString(payload, "priceCheckId"),
         requiredString(payload, "emailType") as EmailType,
         requiredString(payload, "suffix"),
+        optionalString(payload, "resultVersionId"),
       );
       return;
     case "SOURCE_HEALTH_CHECK":

@@ -1,12 +1,13 @@
 import { createHash, createHmac } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
-import { decryptPersonalData, prisma } from "@tymra/db";
+import { decryptPersonalData, prisma, type Prisma } from "@tymra/db";
 import { isMembershipPlan, membershipEntitlements, membershipPlanRank, type MembershipPlanId } from "@tymra/domain";
 import Stripe from "stripe";
 
 import { ensureFreeMembership, stripeSubscriptionStatus } from "./membership";
 import { openRiskCase } from "./member-risk";
+import { ServiceRecoveryError, writeServiceAudit } from "../service-recovery";
 
 let stripeClient: Stripe | undefined;
 let stripeTestEnvironment: Environment | undefined;
@@ -243,9 +244,13 @@ export async function processStripeEvent(event: Stripe.Event, rawBody: string) {
   });
   if (recorded.processedAt) return { duplicate: true };
   if (recorded.payloadHash !== payloadHash || recorded.eventType !== event.type) throw new Error("Stripe event identity collision.");
+  return applyRecordedStripeEvent(event, recorded, eventCreatedAt);
+}
+
+async function applyRecordedStripeEvent(event: Stripe.Event, recorded: { id: string }, eventCreatedAt: Date) {
   const claim = await prisma.stripeBillingEvent.updateMany({
-    where: { id: recorded.id, processedAt: null, OR: [{ processingError: null }, { NOT: { processingError: "PROCESSING" } }] },
-    data: { processingError: "PROCESSING" },
+    where: { id: recorded.id, processedAt: null, OR: [{ processingError: null }, { NOT: { processingError: "PROCESSING" } }, { processingStartedAt: { lt: new Date(Date.now() - 300000) } }] },
+    data: { processingError: "PROCESSING", processingStartedAt: new Date() },
   });
   if (claim.count !== 1) throw new Error("Stripe event is already being processed.");
 
@@ -279,12 +284,49 @@ export async function processStripeEvent(event: Stripe.Event, rawBody: string) {
       const charge = typeof review.charge === "string" ? await stripe().charges.retrieve(review.charge) : review.charge;
       if (charge) await resolveRadarReview(charge);
     }
-    await prisma.stripeBillingEvent.update({ where: { id: recorded.id }, data: { processedAt: new Date(), processingError: null } });
+    await prisma.stripeBillingEvent.update({ where: { id: recorded.id }, data: { processedAt: new Date(), processingError: null, processingStartedAt: null } });
     return { duplicate: false };
   } catch (error) {
-    await prisma.stripeBillingEvent.update({ where: { id: recorded.id }, data: { processingError: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown billing error" } });
+    await prisma.stripeBillingEvent.update({ where: { id: recorded.id }, data: { processingError: error instanceof Error ? error.message.slice(0, 1_000) : "Unknown billing error", processingStartedAt: null } });
     throw error;
   }
+}
+
+/** Fetches facts from the configured Stripe account; accepts no caller-supplied plan or state. */
+export async function reconcileCustomerBilling(customerUserId: string, adminId: string, reason: string) {
+  const before = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
+  if (!before?.stripeSubscriptionId || !before.stripeCustomerId) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "There is no linked Stripe subscription to reconcile.");
+  const observedAt = new Date();
+  const subscription = await stripe().subscriptions.retrieve(before.stripeSubscriptionId, { expand: ["latest_invoice"] });
+  const stripeCustomerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  if (subscription.id !== before.stripeSubscriptionId || stripeCustomerId !== before.stripeCustomerId) throw new Error("Stripe subscription ownership mismatch.");
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${customerUserId} FOR UPDATE`;
+    const customer = await tx.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
+    if (customer.status === "DELETED") throw new ServiceRecoveryError("CUSTOMER_DELETED");
+    await tx.$queryRaw`SELECT id FROM "MembershipSubscription" WHERE id = ${before.id} FOR UPDATE`;
+    const current = await tx.membershipSubscription.findUniqueOrThrow({ where: { id: before.id } });
+    if (current.version !== before.version || current.stripeSubscriptionId !== subscription.id || current.stripeCustomerId !== stripeCustomerId) throw new ServiceRecoveryError("BILLING_FACTS_CHANGED");
+    await syncStripeSubscription(subscription, observedAt, tx);
+    const invoice = typeof subscription.latest_invoice === "object" ? subscription.latest_invoice : null;
+    const billedPlan = planForPriceId(subscription.items.data[0]?.price.id);
+    if (subscription.status === "active" && invoice?.status === "paid" && current.pendingPlan && billedPlan === current.pendingPlan && membershipPlanRank(billedPlan) > membershipPlanRank(current.plan)) {
+      await tx.membershipSubscription.update({ where: { id: current.id }, data: { plan: billedPlan, pendingPlan: null, status: "ACTIVE", graceEndsAt: null, version: { increment: 1 } } });
+    }
+    const after = await tx.membershipSubscription.findUniqueOrThrow({ where: { customerUserId } });
+    await writeServiceAudit(tx, adminId, "customer_billing_reconciled", "CustomerUser", customerUserId, { reason, stripeSubscriptionId: subscription.id, stripePriceId: subscription.items.data[0]?.price.id ?? null, latestInvoiceId: invoice?.id ?? null, latestInvoiceStatus: invoice?.status ?? "UNEXPANDED", observedAt: observedAt.toISOString(), before: { plan: before.plan, status: before.status, version: before.version }, after: { plan: after.plan, status: after.status, version: after.version } });
+    return { reconciled: true, plan: after.plan, status: after.status, version: after.version };
+  });
+}
+
+export async function reconcileBillingEvent(eventId: string, adminId: string, reason: string) {
+  const recorded = await prisma.stripeBillingEvent.findUniqueOrThrow({ where: { id: eventId } });
+  if (recorded.processedAt) return { duplicate: true };
+  const event = await stripe().events.retrieve(recorded.stripeEventId);
+  if (event.id !== recorded.stripeEventId || event.type !== recorded.eventType || event.created * 1000 !== recorded.eventCreatedAt.getTime()) throw new Error("Stripe event identity mismatch.");
+  const result = await applyRecordedStripeEvent(event, recorded, recorded.eventCreatedAt);
+  await prisma.$transaction(tx => writeServiceAudit(tx, adminId, "billing_event_reconciled", "StripeBillingEvent", recorded.id, { reason, stripeEventId: event.id, eventType: event.type, originalPayloadHash: recorded.payloadHash, retrievedPayloadHash: createHash("sha256").update(JSON.stringify(event)).digest("hex"), source: "STRIPE_EVENT_RETRIEVAL" }));
+  return result;
 }
 
 async function recordPaymentInstrument(charge: Stripe.Charge, status: "ACTIVE" | "REFUNDED" | "DISPUTED", observedAt: Date) {
@@ -346,22 +388,26 @@ export async function claimPromotion(customerUserId: string, promotionKey: strin
   }, { isolationLevel: "Serializable" });
 }
 
-async function syncStripeSubscription(subscription: Stripe.Subscription, eventCreatedAt: Date) {
+async function syncStripeSubscription(subscription: Stripe.Subscription, eventCreatedAt: Date, client?: Prisma.TransactionClient): Promise<void> {
+  if (!client) return prisma.$transaction(tx => syncStripeSubscription(subscription, eventCreatedAt, tx));
+  const database = client;
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const item = subscription.items.data[0];
   const priceId = item?.price.id ?? null;
-  const plan = (isMembershipPlan(subscription.metadata.membershipPlan) ? subscription.metadata.membershipPlan : planForPriceId(priceId));
+  const plan = planForPriceId(priceId);
   if (!plan || plan === "FREE") throw new BillingError("INVALID_PRICE_CONFIGURATION", "The Stripe subscription Price is not mapped to a Tymra plan.");
-  const existing = await prisma.membershipSubscription.findFirst({
+  let existing = await database.membershipSubscription.findFirst({
     where: { OR: [{ stripeSubscriptionId: subscription.id }, { stripeCustomerId: customerId }] },
   });
+  if (existing) { await database.$queryRaw`SELECT id FROM "MembershipSubscription" WHERE id = ${existing.id} FOR UPDATE`; existing = await database.membershipSubscription.findUniqueOrThrow({ where: { id: existing.id } }); }
   if (existing?.lastStripeEventAt && existing.lastStripeEventAt > eventCreatedAt) return;
   const customerUserId = existing?.customerUserId ?? subscription.metadata.customerUserId;
   if (!customerUserId) throw new Error("Stripe subscription is missing customerUserId metadata.");
+  if (!(await database.customerUser.findFirst({ where: { id: customerUserId, status: { not: "DELETED" } } }))) throw new ServiceRecoveryError("CUSTOMER_DELETED");
   const status = stripeSubscriptionStatus(subscription.status);
-  const pendingUpgrade = existing?.pendingPlan === plan && membershipPlanRank(plan) > membershipPlanRank(existing.plan);
-  const effectivePlan = pendingUpgrade ? existing.plan : plan;
-  await prisma.membershipSubscription.upsert({
+  const pendingUpgrade = existing !== null && existing.pendingPlan === plan && membershipPlanRank(plan) > membershipPlanRank(existing.plan);
+  const effectivePlan = pendingUpgrade && existing ? existing.plan : plan;
+  await database.membershipSubscription.upsert({
     where: { customerUserId },
     create: {
       customerUserId,
@@ -392,14 +438,12 @@ async function syncStripeSubscription(subscription: Stripe.Subscription, eventCr
   });
   if (status === "CANCELLED") {
     const now = new Date();
-    const activeUnits = await prisma.customerPricingUnit.findMany({ where: { customerUserId, active: true }, select: { sellableUnitId: true } });
-    await prisma.$transaction([
-      prisma.customerPricingUnit.updateMany({ where: { customerUserId, active: true }, data: { active: false, deactivatedAt: now } }),
-      prisma.job.updateMany({
+    const activeUnits = await database.customerPricingUnit.findMany({ where: { customerUserId, active: true }, select: { sellableUnitId: true } });
+    await database.customerPricingUnit.updateMany({ where: { customerUserId, active: true }, data: { active: false, deactivatedAt: now } });
+    await database.job.updateMany({
         where: { sellableUnitId: { in: activeUnits.map((unit) => unit.sellableUnitId) }, status: "PENDING", payload: { path: ["scheduled"], equals: true } },
         data: { status: "CANCELLED", completedAt: now },
-      }),
-    ]);
+      });
   }
 }
 

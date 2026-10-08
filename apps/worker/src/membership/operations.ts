@@ -1,9 +1,11 @@
 import { Prisma, prisma } from "@tymra/db";
 import { membershipPlans } from "@tymra/domain";
+import { cleanupExpiredEvidence } from "../operations/evidence-retention";
 
 const DAY_MS = 86_400_000;
 
 export async function cleanupMembershipRetention(now = new Date()) {
+  const evidence = await cleanupExpiredEvidence(now);
   const tokenMetadataCutoff = new Date(now.getTime() - 30 * DAY_MS);
   const securityHashCutoff = new Date(now.getTime() - 90 * DAY_MS);
   const riskIdentityCutoff = new Date(now.getTime() - 180 * DAY_MS);
@@ -24,7 +26,7 @@ export async function cleanupMembershipRetention(now = new Date()) {
       const archived = await transaction.priceCheck.updateMany({ where: { customerUserId: membership.customerUserId, status: { not: "ARCHIVED" } }, data: { status: "ARCHIVED" } });
       membershipHistoryArchived += archived.count;
     }
-    const artifacts = await transaction.rawArtifact.updateMany({ where: { expiresAt: { lte: now }, deletedAt: null }, data: { deletedAt: now, storageRef: "DELETED", payload: Prisma.JsonNull } });
+    const exports = await transaction.customerDataRequest.updateMany({ where: { encryptedExport: { not: null }, exportExpiresAt: { lte: now } }, data: { encryptedExport: null } });
     const magicLinks = await transaction.magicLink.updateMany({ where: { expiresAt: { lte: now }, status: "PENDING" }, data: { status: "EXPIRED" } });
     const terminalMagicLinks = await transaction.magicLink.deleteMany({ where: { status: { in: ["CONSUMED", "EXPIRED", "REVOKED", "BLOCKED"] }, createdAt: { lte: tokenMetadataCutoff } } });
     const verificationEmails = await transaction.emailDelivery.deleteMany({ where: { type: "VERIFY_AND_SIGN_IN", createdAt: { lte: tokenMetadataCutoff } } });
@@ -35,7 +37,7 @@ export async function cleanupMembershipRetention(now = new Date()) {
     const riskIdentities = await transaction.riskIdentity.deleteMany({ where: { subjectType: { in: ["DEVICE", "IP_PREFIX", "QUERY_SIGNATURE", "GEO_TILE", "OTA_LISTING"] }, lastSeenAt: { lte: riskIdentityCutoff } } });
     const paymentInstruments = await transaction.paymentInstrumentIdentity.deleteMany({ where: { lastSeenAt: { lte: paymentRiskCutoff } } });
     const riskCases = await transaction.membershipRiskCase.deleteMany({ where: { status: { in: ["APPROVED", "DENIED", "RESOLVED"] }, resolvedAt: { lte: paymentRiskCutoff }, appealReason: null } });
-    return { rawArtifactsDeleted: artifacts.count, anonymousChecksDeleted: anonymousChecks.count, magicLinksExpired: magicLinks.count, terminalMagicLinksDeleted: terminalMagicLinks.count, verificationEmailsDeleted: verificationEmails.count, customerSessionsDeleted: sessions.count, usageLedgerDeleted: usageLedger.count, abuseDecisionsDeleted: abuseDecisions.count, riskIdentitiesDeleted: riskIdentities.count, paymentInstrumentsDeleted: paymentInstruments.count, riskCasesDeleted: riskCases.count, membershipHistoryArchived };
+    return { ...evidence, expiredExportsCleared: exports.count, anonymousChecksDeleted: anonymousChecks.count, magicLinksExpired: magicLinks.count, terminalMagicLinksDeleted: terminalMagicLinks.count, verificationEmailsDeleted: verificationEmails.count, customerSessionsDeleted: sessions.count, usageLedgerDeleted: usageLedger.count, abuseDecisionsDeleted: abuseDecisions.count, riskIdentitiesDeleted: riskIdentities.count, paymentInstrumentsDeleted: paymentInstruments.count, riskCasesDeleted: riskCases.count, membershipHistoryArchived };
   });
 }
 
@@ -45,7 +47,7 @@ export async function membershipOperationalMetrics(now = new Date()) {
   const [byPlan, byStatus, usageLast30Days, activePricingUnits, billingFailures, billingFailuresLast24Hours, openRiskCases, scheduledJobs, oldestPending, manualRequired] = await Promise.all([
     prisma.membershipSubscription.groupBy({ by: ["plan"], _count: { _all: true } }),
     prisma.membershipSubscription.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.membershipUsage.groupBy({ by: ["type"], where: { countedAt: { gte: last30Days } }, _count: { _all: true } }),
+    prisma.membershipUsage.groupBy({ by: ["type"], where: { correction: null, countedAt: { gte: last30Days } }, _count: { _all: true } }),
     prisma.customerPricingUnit.count({ where: { active: true } }),
     prisma.stripeBillingEvent.count({ where: { processingError: { not: null } } }),
     prisma.stripeBillingEvent.count({ where: { processingError: { not: null }, createdAt: { gte: last24Hours } } }),
@@ -58,7 +60,7 @@ export async function membershipOperationalMetrics(now = new Date()) {
     const [activeSubscriptions, units, analyses] = await Promise.all([
       prisma.membershipSubscription.count({ where: { plan, status: "ACTIVE" } }),
       prisma.customerPricingUnit.count({ where: { active: true, customerUser: { membership: { is: { plan } } } } }),
-      prisma.membershipUsage.count({ where: { countedAt: { gte: last30Days }, customerUser: { membership: { is: { plan } } } } }),
+      prisma.membershipUsage.count({ where: { correction: null, countedAt: { gte: last30Days }, customerUser: { membership: { is: { plan } } } } }),
     ]);
     return { plan, activeSubscriptions, activePricingUnits: units, analysesLast30Days: analyses };
   }));

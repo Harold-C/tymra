@@ -366,11 +366,27 @@ P0 为数据泄露、错误公开结果或系统性来源污染；P1 为阻塞�
 
 ## 12.3 允许动作
 
-ACCEPT\_SUGGESTION、SELECT\_PROPERTY、SELECT\_UNIT、EXCLUDE\_COMPETITOR、CHANGE\_COMPETITOR\_ROLE、EDIT\_NORMALIZED\_VALUE、RECOLLECT、REANALYSE、LOWER\_CONFIDENCE、MARK\_PARTIAL、MARK\_INSUFFICIENT、APPROVE\_AND\_PUBLISH、WITHDRAW\_RESULT。
+整体后台只执行服务恢复。允许动作是原条件重新采集／分析、关联失败任务恢复、已发布错误结果撤回、
+转交用户确认、基于实际恢复证据关闭，以及有证据和影响预览的平台数据修复。
+状态、置信度、竞品角色及业务结论由领域规则或客户自己的操作决定。
+
+旧记录中的 ACCEPT\_SUGGESTION、SELECT\_PROPERTY、SELECT\_UNIT、EXCLUDE\_COMPETITOR、
+CHANGE\_COMPETITOR\_ROLE、LOWER\_CONFIDENCE、MARK\_PARTIAL、MARK\_INSUFFICIENT、
+APPROVE\_AND\_PUBLISH 不授予 Admin 对应权限；旧 HTTP 入口必须拒绝越界动作。
+EDIT\_NORMALIZED\_VALUE 的任意价格覆盖退休，改为关联原始观察和证据的版本修复工作流。
+原枚举可以用于识别历史审计，但不得显示为可执行建议。
+
+每个恢复动作要求事件仍可处置、明确原因、输入校验和原子审计。恢复保留客户、原始输入和查询条件；
+任务和通知采用稳定幂等标识，重复点击及并发不额外扣额或创建冲突任务。
+已提交动作保持 IN\_PROGRESS；只有实际任务、结果／通知或数据修复证据验证通过后才 RESOLVED。
+通知发送不是客户收件证明。等待客户确认不由 Admin 决定候选。
+撤回需要真实已发布版本和原因，仅停止错误交付，不伪造另一份结论。
 
 ## 12.4 单人效率
 
-后台只显示异常；系统提供建议、差异、证据和结果预览。所有动作自动保存并写 Audit Event。稳定运行目标：人工介入率不高于 20%，单个异常处理中位时间不高于 5 分钟。
+后台默认显示待处理异常；正常任务通过任务与交付查询。系统提供影响、差异、证据、具体动作和恢复验证。
+同源事件归并显示，历史事件保留可检索。关闭、忽略和豁免不覆盖来源健康。
+稳定运行目标：人工介入率不高于 20%，单个异常处理中位时间不高于 5 分钟。
 
 # \[BR-DATA\] 十三、市场数据库与历史
 

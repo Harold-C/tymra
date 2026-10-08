@@ -1,0 +1,173 @@
+{
+  "verifiedDateNZ": "2026-10-09",
+  "scope": "LOCAL_FINAL_SERVICE_ASSURANCE_ADMIN",
+  "candidate": {
+    "branch": "main",
+    "baselineHead": "e0fb73d794e0044189f78c6abaab2339d2fa6573",
+    "uncommittedChanges": true,
+    "sourceAndTestFiles": 604,
+    "fingerprintPathScopes": ["apps", "packages", "scripts", "test", "Dockerfile", "docker-compose.yml", "docker-compose.prod.yml", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "tsconfig.json", "vitest.config.ts", "vitest.integration.config.ts", "playwright.config.ts", "playwright.member-matrix.config.ts"],
+    "contentFingerprint": "bd66f87d107cadda7d873436322ab3674dfecb903d4c892794a74b746cec7cc9",
+    "fingerprintMethod": "Sorted Git tracked and non-ignored untracked paths; path NUL file SHA-256 newline, then aggregate SHA-256. Includes apps/packages/scripts/test and root toolchain/runtime configuration; excludes docs, environment secrets and generated output.",
+    "lockfileSha256": "3480841d013a575c8debab942cdb270066c63b8b7b57cc2d92b8aefbfb171398"
+  },
+  "runtime": {
+    "node": "24.18.0",
+    "pnpm": "11.7.0",
+    "composeProject": "tymra-test-admin",
+    "postgres": "17",
+    "redis": "7.4",
+    "postgresPort": 55439,
+    "redisPort": 56389,
+    "integrationDatabase": "tymra_test_admin_complete",
+    "offlineDatabase": "tymra_test_admin_final_offline_test",
+    "qaDatabase": "tymra_test_admin_qa",
+    "webPort": 43319,
+    "apiPort": 43419,
+    "schedulerEnabled": false,
+    "emailProvider": "log",
+    "syntheticData": true,
+    "productionTouched": false
+  },
+  "checks": {
+    "moduleBoundaries": {
+      "status": "passed",
+      "sourceModules": 526
+    },
+    "lint": "passed",
+    "typecheck": "passed",
+    "unit": {
+      "rootPassed": 268,
+      "workerPassed": 502,
+      "totalPassed": 770,
+      "externalConditionalSkipped": 5
+    },
+    "integration": {
+      "passed": 158,
+      "offlineConditionalSkipped": 6
+    },
+    "offlineOTA": {
+      "passed": 6,
+      "freshUnseededDatabase": true,
+      "externalFetchBlocked": true
+    },
+    "integrationTotalPassed": 164,
+    "productionShapedBuild": "passed",
+    "workerEntrypointsBuild": "passed"
+  },
+  "ui": {
+    "status": "passed",
+    "renderChecks": 51,
+    "widths": [
+      320,
+      390,
+      1440
+    ],
+    "locales": [
+      "en",
+      "zh"
+    ],
+    "axeCheckedRenders": 8,
+    "actions": [
+      "Admin UI password sign-in",
+      "Failed job recovery through UI; original payload retained",
+      "Pending request work cancelled with confirmation; immutable audit and original payload retained",
+      "Identity incident handed to original customer through UI",
+      "Historical file preview, reviewed import, Worker handler and durable detail; invalid row quarantined",
+      "Single schedule temporary waiver saved through UI",
+      "Export prepared in Admin; remains awaiting owner download",
+      "Customer UI sign-in, room confirmation and actual personal-data file download at 390px"
+    ],
+    "pageErrors": 0
+  },
+  "additional": {
+    "status": "passed",
+    "keyboardNavigation": "open, focus trap, Escape and focus restore passed",
+    "reducedMotion": "rendered with reduce preference",
+    "mappingDetail": "1440, 390 and 320 CSS pixels; serious/critical accessibility checks passed"
+  },
+  "ownerContinuation": {
+    "status": "passed",
+    "ownerUiConfirmation": true,
+    "savedStatus": "QUEUED",
+    "pendingCollectionJobs": 1,
+    "usageReservations": 1,
+    "actualExternalCollection": false
+  },
+  "restoration": {
+    "environment": "development",
+    "scope": "ISOLATED_SYNTHETIC_CANDIDATE",
+    "sourceDatabase": "tymra_test_admin_qa",
+    "restoredDatabase": "tymra_test_admin_restore_complete",
+    "backupChecksum": "e25c3c49566d81c54bd78d794ddc4db6b93915717cd3f24775d63b4a1b80b3c2",
+    "restoredTables": 89,
+    "restoredRows": 944,
+    "rowCountsAndContentMatch": true,
+    "constraintsAndHistoryGuardsMatch": true,
+    "immutableMutationRejections": 2,
+    "releaseVersion": "local-service-assurance-final",
+    "candidateFingerprint": "bd66f87d107cadda7d873436322ab3674dfecb903d4c892794a74b746cec7cc9",
+    "verifiedAt": "2026-10-08T12:23:51.306Z",
+    "productionVerification": false
+  },
+  "notVerified": [
+    "production deployment and migration",
+    "production paired backup restoration",
+    "live external provider/Argus source acceptance and manual handoff",
+    "Stripe live",
+    "actual SMTP recipient delivery",
+    "customer production ingress",
+    "production alert routing, physical devices, capacity and long-term operation"
+  ],
+  "regression": {
+    "dateNZ": "2026-10-09",
+    "scope": "LOCAL_ADMIN_REGRESSION_AND_MEMBERSHIP_RISK_COMPLETENESS",
+    "candidate": {
+      "baselineHead": "e0fb73d794e0044189f78c6abaab2339d2fa6573",
+      "uncommittedChanges": true,
+      "sourceAndTestFiles": 607,
+      "contentFingerprint": "e3f2aeed75a3787dae40a83f2d727fc24393a9c6a69e0f53e4abc9f21a04f931"
+    },
+    "fixed": [
+      "Risk summaries aggregate all recent records beyond 1000",
+      "All-date open risk work remains visible and customer cases are paginated and focusable",
+      "Missing, unknown and already reviewed risk actions return 422, 404 and 409 without duplicate audit",
+      "Usage without a request does not link to checks/null"
+    ],
+    "checks": {
+      "sourceBoundariesPassed": 528,
+      "lint": "passed",
+      "typecheck": "passed",
+      "existingUnitPassed": 770,
+      "externalConditionalUnitSkipped": 5,
+      "existingIntegrationPassed": 158,
+      "affectedIntegrationAfterFixPassed": 36,
+      "newRegressionCasesPassed": 5,
+      "offlineOtaPassed": 6,
+      "offlineDatabase": "tymra_test_regression_e5b3af0e_offline_test",
+      "offlineFreshUnseeded": true,
+      "initialOfflineAttempt": "reused nonempty test database rejected by source history guard; superseded by fresh-database pass"
+    },
+    "ui": {
+      "dailyOrigin": "https://ops.tymra.test",
+      "dailyMainRoutesPassed": 13,
+      "dailyOlderOpenCasesVisible": 19,
+      "dailyBusinessMutations": false,
+      "webMountedChangedFilesMatch": 5,
+      "syntheticQaReviewPersisted": true,
+      "duplicateReviewHttp": 409,
+      "wrongOriginHttp": 403,
+      "locales": ["en", "zh"],
+      "widths": [1440, 390, 320],
+      "seriousCriticalAccessibilityViolations": 0,
+      "pageAndConsoleErrors": 0,
+      "consoleWarnings": 0,
+      "mobileEscapeAndFocusRestore": "passed",
+      "syntheticCustomerAndCasesRemoved": true
+    },
+    "productionTouched": false,
+    "productionShapedBuildRerun": false,
+    "backupRestoreRerun": false,
+    "externalAcceptance": "not verified by this local regression"
+  }
+}

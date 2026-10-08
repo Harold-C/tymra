@@ -3,6 +3,7 @@ import { claimNextJob, deferClaimedJob, markJobFailed, markJobSucceeded, prisma,
 import { DeferredJobError } from "./jobs/deferred-job";
 import { classifyJobFailure } from "./jobs/job-failure";
 import { handleJob } from "./jobs/job-handlers";
+import { recordRuntimeHeartbeat } from "./operations/runtime-heartbeat";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -26,8 +27,10 @@ process.on("SIGINT", () => {
 
 await recoverExpiredJobs();
 let lastLeaseRecoveryAt = Date.now();
+let lastRuntimeHeartbeatAt = 0;
 
 while (!stopping) {
+  if (Date.now() - lastRuntimeHeartbeatAt > 30000) { await recordRuntimeHeartbeat("worker", environment); lastRuntimeHeartbeatAt = Date.now(); }
   if (Date.now() - lastLeaseRecoveryAt >= Math.max(30_000, environment.WORKER_LEASE_SECONDS * 1_000)) {
     await recoverExpiredJobs();
     lastLeaseRecoveryAt = Date.now();
@@ -43,6 +46,7 @@ while (!stopping) {
   let heartbeatError: unknown;
   const heartbeat = setInterval(() => {
     void renewJobLease(job.id, environment.WORKER_ID, environment.WORKER_LEASE_SECONDS).catch((error) => { heartbeatError = error; });
+    if (Date.now() - lastRuntimeHeartbeatAt > 30000) { lastRuntimeHeartbeatAt = Date.now(); void recordRuntimeHeartbeat("worker", environment).catch((error) => { heartbeatError = error; }); }
   }, Math.max(5_000, Math.floor(environment.WORKER_LEASE_SECONDS * 1_000 / 3)));
   try {
     await handleJob(job, environment);
@@ -83,6 +87,7 @@ while (!stopping) {
   }
 }
 
+await recordRuntimeHeartbeat("worker", environment, "STOPPED");
 await prisma.$disconnect();
 
 function wait(milliseconds: number): Promise<void> {

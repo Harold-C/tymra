@@ -1,5 +1,5 @@
 import { getEnvironment, type Environment } from "@tymra/config";
-import { enqueueJob, prisma, type Prisma } from "@tymra/db";
+import { enqueueJob, hashOpaqueToken, prisma, type Prisma } from "@tymra/db";
 import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence } from "@tymra/domain";
 import { DemoProvider } from "@tymra/providers/demo";
 import { WorkerService } from "../../services/worker-service";
@@ -196,6 +196,7 @@ export async function loadManualRates(propertyId: string, unitId: string, checkI
   const observations = await prisma.rateObservation.findMany({
     where: {
       dataSourceId,
+      quarantine: null,
       listing: { unitId, unit: { propertyId } },
       stayQuery: { checkIn, checkOut },
     },
@@ -232,7 +233,7 @@ export async function buildCompetitors(priceCheckId: string, sourceJobId: string
 export async function analyse(priceCheckId: string, sourceJobId: string) {
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { collectionRuns: true } });
   const observations = await prisma.rateObservation.findMany({
-    where: { collectionRun: { priceCheckId } },
+    where: { quarantine: null, collectionRun: { priceCheckId } },
     orderBy: { effectiveNightlyTotalMinor: "asc" },
   });
   const latest = observations.reduce<Date | null>((value, item) => (!value || item.collectedAt > value ? item.collectedAt : value), null);
@@ -257,7 +258,7 @@ export async function analyse(priceCheckId: string, sourceJobId: string) {
 
 export async function autoValidate(priceCheckId: string, sourceJobId: string, environment: Environment) {
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { property: { select: { supportStatus: true } } } });
-  const observations = await prisma.rateObservation.findMany({ where: { collectionRun: { priceCheckId } } });
+  const observations = await prisma.rateObservation.findMany({ where: { quarantine: null, collectionRun: { priceCheckId } } });
   const targetObservations = observations.filter((item) => item.sellableUnitId === check.unitId && (item.displayedAmountMinor ?? item.totalAmountMinor) > 0);
   const publishableObservations = check.analysisType === "LOCATION_BENCHMARK"
     ? observations.filter((item) => (item.displayedAmountMinor ?? item.totalAmountMinor) > 0)
@@ -325,10 +326,15 @@ export async function autoValidate(priceCheckId: string, sourceJobId: string, en
 }
 
 export async function generateResult(priceCheckId: string, payload: JsonObject, sourceJobId: string) {
+  return prisma.$transaction(async (prisma) => {
+  await prisma.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${priceCheckId} FOR UPDATE`;
+  const replay = await prisma.resultVersion.findFirst({ where: { priceCheckId, analysisVersion: `tymra-release-1-v1.1:${sourceJobId}` } });
+  if (replay) return;
   const confidence = requiredString(payload, "confidence") as "HIGH" | "MEDIUM" | "LOW";
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { customerUser: { select: { status: true } } } });
+  if (["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") return;
   const observations = await prisma.rateObservation.findMany({
-    where: { collectionRun: { priceCheckId } },
+    where: { quarantine: null, collectionRun: { priceCheckId } },
     orderBy: { effectiveNightlyTotalMinor: "asc" },
     include: { dataSource: { select: { key: true } }, listing: { select: { canonicalUrl: true } } },
   });
@@ -406,44 +412,31 @@ export async function generateResult(priceCheckId: string, payload: JsonObject, 
     },
     update: {},
   });
-  await setCheckStatus(priceCheckId, "READY", "result_generated");
-  await enqueueNext(priceCheckId, "RESULT_PUBLICATION", "publication", sourceJobId);
+  await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { status: "READY" } });
+  await prisma.auditEvent.create({ data: { eventType: "result_generated", entityType: "PriceCheck", entityId: priceCheckId, payload: { status: "READY", sourceJobId, resultVersionId: result.id }, eventHash: hashOpaqueToken(`${priceCheckId}:result_generated:${sourceJobId}`, getEnvironment().ACCESS_KEY_SECRET) } });
+  const priority = (await prisma.job.findUnique({ where: { id: sourceJobId }, select: { priority: true } }))?.priority ?? 100;
+  await enqueueJob({ type: "RESULT_PUBLICATION", payload: { priceCheckId }, idempotencyKey: `${priceCheckId}:publication:${sourceJobId}`, priceCheckId, priority }, prisma);
+  });
 }
 
 export async function publishResult(priceCheckId: string) {
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { resultVersions: true } });
+  return prisma.$transaction(async (transaction) => {
+  await transaction.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${priceCheckId} FOR UPDATE`;
+  const check = await transaction.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, include: { resultVersions: true, customerUser: { select: { status: true } } } });
+  if (["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") return;
   const result = check.resultVersions.filter((item) => item.status === "DRAFT").sort((a, b) => b.version - a.version)[0];
   if (!result) {
     if (check.status === "PUBLISHED") return;
     throw new Error("No draft Result Version is available for publication");
   }
   const current = check.resultVersions.filter((item) => item.status === "PUBLISHED").sort((a, b) => b.version - a.version)[0];
-  await prisma.$transaction(async (transaction) => {
-    if (current) await transaction.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
+    if (current) {
+      await transaction.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
+      await transaction.emailDelivery.updateMany({ where: { resultVersionId: current.id, status: { in: ["PENDING", "FAILED"] } }, data: { status: "CANCELLED", lastError: "Result superseded" } });
+    }
     await transaction.resultVersion.update({ where: { id: result.id }, data: { status: "PUBLISHED", outcome: "PUBLISHED", publishedAt: new Date() } });
     await transaction.priceCheck.update({ where: { id: priceCheckId }, data: { status: "PUBLISHED", currentResultVersionNumber: result.version } });
-  });
-  if (check.customerUserId) {
-    await queueTerminalEmail(priceCheckId, "RESULT_READY", `result-ready:${result.version}`, getEnvironment());
-    return;
-  }
-  const delivery = await prisma.emailDelivery.create({
-    data: {
-      priceCheckId,
-      resultVersionId: result.id,
-      type: "RESULT_READY",
-      locale: check.locale,
-      recipientHash: check.emailHash,
-      encryptedRecipient: check.encryptedEmail,
-      provider: "pending",
-      idempotencyKey: `${priceCheckId}:result-ready:${result.version}`,
-    },
-  });
-  await enqueueJob({
-    type: "EMAIL_DELIVERY",
-    payload: { deliveryId: delivery.id },
-    idempotencyKey: `${priceCheckId}:email-delivery:${result.version}`,
-    priceCheckId,
+  await queueTerminalEmail(priceCheckId, "RESULT_READY", `result-ready:${result.version}`, getEnvironment(), transaction, result.id);
   });
 }
 

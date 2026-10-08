@@ -6,16 +6,19 @@ import { notFound } from "next/navigation";
 import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
 import { StatusPill } from "@/components/admin/AdminTable";
 import { adminDateLocale, type AdminLocale } from "@/lib/admin-i18n";
+import { redactServicePayload } from "@/lib/server/service-payload";
+import { recordAdminSensitiveAccess } from "@/lib/server/admin-sensitive-access";
 import { getAdminLocale } from "@/lib/server/admin-locale";
 import { canReadArtifactContent } from "@/lib/server/raw-artifact-content";
 
 export default async function RawArtifactDetailPage({ params }: { params: { artifactId: string } }) {
   const locale = getAdminLocale();
+  await recordAdminSensitiveAccess("RawArtifact", params.artifactId, "evidence-metadata-and-public-content");
   const text = copy(locale);
   const artifact = await prisma.rawArtifact.findUnique({ where: { id: params.artifactId } });
   if (!artifact) notFound();
   const source = await prisma.dataSource.findFirst({
-    where: { id: artifact.dataSourceId, providerType: { in: ["PUBLIC", "MANUAL"] }, sourceType: { in: ["PUBLIC_DATA", "MANUAL_IMPORT"] }, isDemo: false },
+    where: { id: artifact.dataSourceId, providerType: { in: ["PUBLIC", "OTA", "MANUAL"] }, sourceType: { in: ["PUBLIC_DATA", "OTA", "MANUAL_IMPORT"] }, isDemo: false },
     select: { name: true, key: true },
   });
   if (!source) notFound();
@@ -55,7 +58,7 @@ export default async function RawArtifactDetailPage({ params }: { params: { arti
         <section>
           <h2>{text.content}</h2>
           {artifact.containsSensitiveData ? <div className="admin-empty compact"><h2>{text.sensitiveTitle}</h2><p>{text.sensitiveBody}</p></div> : artifact.deletedAt ? <div className="admin-empty compact"><h2>{text.deletedTitle}</h2><p>{text.deletedBody}</p></div> : screenshot ? <div className="artifact-image"><Image src={contentUrl} alt={text.screenshotAlt} width={1440} height={900} unoptimized /></div> : contentAvailable ? <a className="admin-secondary-action" href={contentUrl} target="_blank" rel="noreferrer">{text.openContent}</a> : <p className="empty-inline">{text.noFile}</p>}
-          {payloadVisible ? <><h3>{text.payload}</h3><pre className="evidence-block data-payload">{JSON.stringify(artifact.payload, null, 2)}</pre></> : null}
+          {payloadVisible ? <><h3>{text.payload}</h3><pre className="evidence-block data-payload">{JSON.stringify(redactServicePayload(artifact.payload), null, 2)}</pre></> : null}
         </section>
         <section>
           <h2>{text.derived}</h2>

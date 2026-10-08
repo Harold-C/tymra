@@ -1,10 +1,13 @@
 import { getEnvironment } from "@tymra/config";
 import { prisma, type JobType, type Prisma } from "@tymra/db";
+import { serviceCollectionJobTypes } from "@tymra/domain";
 
 import { CollectionControlPanel, type CollectionControlView } from "@/components/admin/CollectionControlPanel";
 import { getAdminLocale } from "@/lib/server/admin-locale";
+import { ServiceWaiverForm } from "@/components/admin/ServiceWaiverForm";
+import { ServiceRecoveryAction } from "@/components/admin/ServiceRecoveryAction";
 
-const collectionJobTypes: JobType[] = ["PUBLIC_DATA_COLLECTION", "EVENT_COLLECTION", "WEATHER_COLLECTION", "TRANSPORT_COLLECTION"];
+const collectionJobTypes: JobType[] = [...serviceCollectionJobTypes];
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +21,7 @@ export default async function CollectionControlPage() {
   const sourceKeys = [...new Set(schedules.map((schedule) => stringValue(jsonObject(schedule.payload).sourceId)).filter(Boolean))];
   const [sources, runs, jobs, groupedJobs] = await Promise.all([
     prisma.dataSource.findMany({
-      where: { key: { in: sourceKeys }, providerType: "PUBLIC", sourceType: "PUBLIC_DATA", isDemo: false },
+      where: { key: { in: sourceKeys }, providerType: { in: ["PUBLIC", "OTA"] }, sourceType: { in: ["PUBLIC_DATA", "OTA"] }, isDemo: false },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -106,7 +109,8 @@ export default async function CollectionControlPage() {
       lastErrorCode: job.lastErrorCode,
     })),
   };
-  return <CollectionControlPanel locale={locale} view={view} />;
+  const waivers = await prisma.serviceWaiver.findMany({ include: { schedule: { select: { key: true } } }, orderBy: { createdAt: "desc" }, take: 50 });
+  return <><CollectionControlPanel locale={locale} view={view} /><section className="admin-detail-section"><h2>{locale === "zh" ? "临时计划豁免" : "Temporary schedule waivers"}</h2><p>{locale === "zh" ? "豁免只跳过指定时间窗内的计划，不改变来源健康、质量门槛或预算。历史保持可查。" : "A waiver skips one schedule within its time window. Health, quality gates and budgets remain unchanged."}</p><ServiceWaiverForm schedules={schedules.filter(s => s.enabled)} locale={locale} />{waivers.map(waiver => <article key={waiver.id} className="admin-detail-section"><strong>{waiver.schedule.key}</strong><p>{waiver.reason} · {waiver.expiresAt.toISOString()} · {waiver.revokedAt ? "REVOKED" : waiver.expiresAt > new Date() ? "ACTIVE" : "EXPIRED"}</p>{!waiver.revokedAt && waiver.expiresAt > new Date() ? <ServiceRecoveryAction locale={locale} endpoint={`/api/v1/admin/waivers/${waiver.id}/actions`} action="REVOKE" label={locale === "zh" ? "提前结束豁免" : "End waiver"} completedMessage={locale === "zh" ? "豁免已结束，已恢复原计划。" : "Waiver ended; original schedule restored."} /> : null}</article>)}</section></>;
 }
 
 function workflowLabel(payloadValue: Prisma.JsonValue, fallback: string) {

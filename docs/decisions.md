@@ -718,6 +718,25 @@ public responsiveness and reduced motion remain global.
 reduce coupled imports and large mixed-purpose files while preserving business contracts, query
 filters, retry/lease behavior and evidence-before-ACK guarantees.
 
+## D-053 Restrict Overall Admin To Complete Service Assurance
+
+- Date: 2026-10-08
+- Decision: the overall Admin owns service availability, correct execution and traceable delivery.
+  Customers own business inputs, portfolio/preferences, competitor choices and analysis/forecast use.
+  Implement the complete target in requirements §3.7; no reduced first-release completion definition.
+- Navigation: service overview, incidents, tasks/delivery, data supply, account/entitlement support,
+  system/audit. All existing supported public and OTA sources must have consistent read/action paths.
+- Recovery: retain original request ownership and business input, use idempotent tasks, preserve
+  immutable evidence/versions, verify real outcomes before resolving an incident. Acknowledgement,
+  archive, dismissal or an expiring waiver must never turn observed health green.
+- Retired authority: generic accept-suggestion, business candidate choice, competitor overrides,
+  confidence/outcome editing, arbitrary prices, manual business approval and unsupported grants.
+  Historical enum values remain readable but cannot authorize an API call.
+- Customer migration: deliver the customer-owned flow and ownership checks before switching its
+  old entry. Platform data and entitlement correction requires evidence, bounded impact and audit.
+- Status: approved target; implementation and verification are tracked separately. This decision
+  does not deploy code, change production schedules or open customer ingress.
+
 ## 文档与运行阶段变迁
 
 本节只记录影响后续判断的变迁。删除仓库文件的完整旧内容可在 Git 提交

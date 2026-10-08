@@ -9,7 +9,7 @@
   },
   "scripts": {
     "cli": "tsx --env-file=.env apps/worker/src/cli.ts",
-    "compose:up": "docker compose build web && docker compose up -d",
+    "compose:up": "sh scripts/start-local-dev.sh",
     "compose:down": "docker compose down --remove-orphans",
     "compose:scheduler:up": "SCHEDULER_ENABLED=true docker compose --profile scheduler up -d scheduler",
     "compose:scheduler:down": "docker compose --profile scheduler rm --stop --force scheduler",

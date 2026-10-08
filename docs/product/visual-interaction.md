@@ -336,11 +336,11 @@ Ready 和 Published 使用 Success，但不使用庆祝动画或夸张绿色整�
 
 ## 11.1 Admin Shell
 
-桌面侧栏宽 248px，顶部栏高 64px；Canvas 使用 \#F8FAFC，内容卡白色。侧栏分组：Work、Market、Operations、Governance。当前项使用 primary-soft 背景和蓝色左标。
+桌面侧栏宽 248px，顶部栏高 64px；Canvas 使用 \#F8FAFC，内容卡白色。导航为服务总览及异常处理、任务与交付、数据供应、账户与权益支持、系统与审计。当前项使用 primary-soft 背景和蓝色左标。
 
 ## 11.2 Top Bar
 
-全局搜索、Source Health 汇总、Auto-publish 状态、系统状态和用户菜单。自动发布开关为高影响控制，切换必须 Dialog 确认并说明影响。
+全局搜索、来源健康、系统状态和用户菜单；实际环境、版本和检查时间可核验。正常结果自动交付，平台配置通过受控发布维护，不提供逐单批准发布。
 
 ## 11.3 Exception Inbox
 
@@ -352,15 +352,15 @@ Ready 和 Published 使用 Success，但不使用庆祝动画或夸张绿色整�
 
 ## 11.5 DiffField
 
-显示 Current、Suggested、Source、Updated at 和 Impact。差异字符可高亮，但不能只用红绿。可接受建议、编辑或恢复。
+显示 Current、Evidence、Source、Updated at 和 Impact。差异可高亮但不能只用红绿。事实修复只在证据和影响预览通过后创建新版本；业务条件交回用户。
 
 ## 11.6 Action Bar
 
-右栏底部 Sticky；Primary 只用于当前推荐的安全动作。Approve and publish 与 Withdraw 属高影响动作，必须显示最终状态和确认。完成后 Toast \+ 自动下一任务。
+右栏底部 Sticky；Primary 只用于当前允许的服务动作。撤回结果、暂停或会话撤销显示对象和影响并确认。提交动作后显示持久结果与状态，不把提交成功当作恢复验证成功。
 
 ## 11.7 Keyboard
 
-J/K 下一/上一任务；A 接受建议；R Recollect；E Edit；P Publish，仅在按钮可用时生效。快捷键必须可发现、可关闭且不覆盖浏览器保留键。
+可提供可发现、可关闭的导航和服务恢复快捷键，不覆盖浏览器保留键。不绑定修改业务值或批准发布的快捷键。
 
 ## 11.8 Price Check Detail
 

@@ -1,10 +1,12 @@
 import { getEnvironment } from "@tymra/config";
-import { enqueueJob, prisma, type Prisma } from "@tymra/db";
+import { prisma, type Prisma } from "@tymra/db";
 import { automaticSchedulingAllowed, sourceCollectionBlockers } from "./operations/source-access";
 import { firstPublicPriorJobAction } from "./operations/production-public-schedules";
 import { classifySchedule, sourceMeetsSchedulePolicy } from "./operations/schedule-policy";
 import { ACTIVE_OTA_SOURCE_KEYS } from "./operations/ota-health";
 import { isCollectionScheduleJobType, nextCollectionOutsideOfficeHours } from "./operations/collection-office-hours";
+import { enqueueScheduleIfDue } from "./operations/schedule-enqueue";
+import { recordRuntimeHeartbeat } from "./operations/runtime-heartbeat";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -16,14 +18,16 @@ const schedulingAllowed = automaticSchedulingAllowed(environment.NODE_ENV, envir
 process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "scheduler_started", enabled: schedulingAllowed, configuredEnabled: environment.SCHEDULER_ENABLED, environment: environment.NODE_ENV })}\n`);
 
 while (!stopping) {
+  await recordRuntimeHeartbeat("scheduler", environment, schedulingAllowed ? "RUNNING" : "DISABLED_BY_POLICY");
   if (schedulingAllowed) await enqueueDueSchedules();
   await wait(30_000);
 }
 
+await recordRuntimeHeartbeat("scheduler", environment, "STOPPED");
 await prisma.$disconnect();
 
 async function enqueueDueSchedules(now = new Date()) {
-  const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
+  const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, waivers: { none: { revokedAt: null, expiresAt: { gt: now } } }, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
   for (const schedule of schedules) {
     const policy = classifySchedule(schedule);
     const otaSchedule = policy?.kind === "ota";
@@ -71,9 +75,7 @@ async function enqueueDueSchedules(now = new Date()) {
       }
     }
     const intervalMs = intervalMsFor(schedule.cronExpression);
-    const bucket = Math.floor(now.getTime() / intervalMs);
-    await enqueueJob({ type: schedule.jobType, queueName: schedule.queueName, payload: schedule.payload as Prisma.InputJsonValue, idempotencyKey: `schedule:${schedule.key}:${bucket}`, runAt: now, sourceId: typeof payload.sourceId === "string" ? payload.sourceId : undefined, maxAttempts: environment.NODE_ENV === "production" ? 1 : undefined });
-    await prisma.scheduleDefinition.update({ where: { id: schedule.id }, data: { lastEnqueuedAt: now, nextRunAt: new Date(now.getTime() + intervalMs) } });
+    await enqueueScheduleIfDue(schedule.id, now, intervalMs, environment);
   }
 }
 

@@ -92,7 +92,7 @@ export async function pauseProductionOta(sourceId: string, nodeEnv: string) {
   if (!["production", "development"].includes(nodeEnv)) throw new Error("OTA pause requires a live production or development environment");
   await prisma.$transaction([
     prisma.scheduleDefinition.updateMany({ where: { key: `pilot-ota-${sourceId}-daily` }, data: { enabled: false, nextRunAt: null } }),
-    prisma.dataSource.updateMany({ where: { key: sourceId, metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: { enabled: false, lifecycle: "SUSPENDED", healthStatus: "DEGRADED", lastReviewedAt: new Date() } }),
+    prisma.dataSource.updateMany({ where: { key: sourceId, metadata: { path: ["productionOta"], equals: OTA_PILOT_VERSION } }, data: { enabled: false, lifecycle: "SUSPENDED", operationalStatus: "DEGRADED", healthStatus: "DEGRADED", lastReviewedAt: new Date() } }),
   ]);
   return { sourceId, scheduleEnabled: false, mutationPerformed: true };
 }
@@ -153,9 +153,11 @@ export async function beginProductionOtaRepairAcceptance(
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: string) {
+  return prisma.$transaction(tx => enableProductionOtaScheduleTransaction(tx, sourceId, nodeEnv), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+export async function enableProductionOtaScheduleTransaction(tx: Prisma.TransactionClient, sourceId: string, nodeEnv: string) {
   requireOtaSource(sourceId);
   if (nodeEnv !== "production") throw new Error("OTA production schedules require production");
-  return prisma.$transaction(async (tx) => {
     const source = await tx.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
     if (!otaSourceApproved(source)) throw new Error("Source is not an approved enabled public OTA pilot");
     const now = new Date();
@@ -164,7 +166,7 @@ export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: str
     const recentExecutions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: cutoff } } });
     const parserArtifactFailures = await tx.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } });
     const positiveListingCount = await tx.listing.count({ where: positiveOtaListingEvidenceWhere(source.id, cutoff, recentRuns, now) });
-    const positiveRateCount = await tx.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
+    const positiveRateCount = await tx.rateObservation.count({ where: { quarantine: null, dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
     const metrics = calculateOtaHealthMetrics({ key: source.key, enabled: true, lifecycle: "PILOT", operationalStatus: "HEALTHY", runs: recentRuns, executions: recentExecutions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListingAt: null, latestRateAt: null });
     // Actual listing/price counts are checked for each exact trial below. This check
     // retains D-039's thresholds after an explicitly frozen repair boundary. Without
@@ -195,5 +197,4 @@ export async function enableProductionOtaSchedule(sourceId: string, nodeEnv: str
     await tx.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "HEALTHY", healthStatus: "HEALTHY", lastSuccessAt: new Date(), healthSummary: { approvedJobs: jobs.map((job) => job.id), policyVersion: OTA_PILOT_VERSION, acceptanceWindow: otaRepairAcceptanceWindow(source.metadata, now), evidenceWindowStartedAt: cutoff.toISOString() } } });
     await tx.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: true, nextRunAt } });
     return { sourceId, nextRunAt, acceptedJobs: jobs.map((job) => job.id), mutationPerformed: true };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

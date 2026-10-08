@@ -50,10 +50,10 @@ export async function inheritedJobPriority(sourceJobId: string) {
 export async function ensureWorkerException(priceCheckId: string, type: "PROPERTY_MATCH" | "UNIT_MATCH" | "HIGH_PRIORITY_REVIEW", recommendation: string, sourceKey: string) {
   const id = `worker-exception:${priceCheckId}:${sourceKey}`;
   const allowedActions = type === "PROPERTY_MATCH"
-    ? ["SELECT_PROPERTY", "MARK_INSUFFICIENT"]
+    ? ["ACKNOWLEDGE", "REQUEST_USER_CONFIRMATION", "VERIFY_RECOVERY"]
     : type === "UNIT_MATCH"
-      ? ["SELECT_UNIT", "MARK_INSUFFICIENT"]
-      : ["REANALYSE", "LOWER_CONFIDENCE", "APPROVE_AND_PUBLISH"];
+      ? ["ACKNOWLEDGE", "REQUEST_USER_CONFIRMATION", "VERIFY_RECOVERY"]
+      : ["ACKNOWLEDGE", "REANALYSE", "WITHDRAW_RESULT", "VERIFY_RECOVERY"];
   await prisma.exceptionCase.upsert({
     where: { id },
     create: {

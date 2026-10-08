@@ -1,10 +1,18 @@
 import { type Environment } from "@tymra/config";
-import { decryptPersonalData, enqueueJob, prisma, type EmailType } from "@tymra/db";
+import { decryptPersonalData, enqueueJob, hashOpaqueToken, prisma, type EmailType, type Prisma } from "@tymra/db";
 import { buildServiceEmail, LogEmailProvider, SmtpEmailProvider, type EmailProvider } from "@tymra/providers/email";
 
 export async function deliverEmail(deliveryId: string, environment: Environment) {
   const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
-  if (delivery.status === "SENT") return;
+  if (["SENT", "CANCELLED"].includes(delivery.status)) return;
+  if (delivery.status === "SENDING") throw new Error("DELIVERY_OUTCOME_UNVERIFIED");
+  if (delivery.resultVersionId) {
+    const result = await prisma.resultVersion.findUnique({ where: { id: delivery.resultVersionId }, select: { status: true } });
+    if (!result || result.status !== "PUBLISHED") {
+      await prisma.emailDelivery.updateMany({ where: { id: delivery.id, status: { in: ["PENDING", "FAILED"] } }, data: { status: "CANCELLED", lastError: "Result is no longer deliverable" } });
+      return;
+    }
+  }
   const recipient = decryptPersonalData(delivery.encryptedRecipient, environment.DATA_ENCRYPTION_KEY);
   let safeActionUrl: string | undefined;
   if (delivery.resultVersionId) {
@@ -41,22 +49,43 @@ export async function deliverEmail(deliveryId: string, environment: Environment)
     safeActionUrl,
     referenceId: delivery.priceCheckId ?? delivery.id,
   });
-  await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENDING", attemptCount: { increment: 1 }, lastError: null } });
+  const claimed = await prisma.$transaction(async tx => {
+    if (delivery.priceCheckId) {
+      await tx.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${delivery.priceCheckId} FOR UPDATE`;
+      const check = await tx.priceCheck.findUniqueOrThrow({ where: { id: delivery.priceCheckId }, include: { customerUser: { select: { status: true } } } });
+      if (["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") {
+        await tx.emailDelivery.updateMany({ where: { id: delivery.id, status: { in: ["PENDING", "FAILED"] } }, data: { status: "CANCELLED", lastError: "Request is no longer deliverable" } });
+        return false;
+      }
+    }
+    if (delivery.resultVersionId && !(await tx.resultVersion.findFirst({ where: { id: delivery.resultVersionId, status: "PUBLISHED" } }))) return false;
+    return (await tx.emailDelivery.updateMany({ where: { id: delivery.id, status: { in: ["PENDING", "FAILED"] } }, data: { status: "SENDING", attemptCount: { increment: 1 }, lastError: null } })).count === 1;
+  });
+  if (!claimed) return;
   try {
-    await provider.send(message);
-    await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENT", provider: environment.EMAIL_PROVIDER, sentAt: new Date() } });
+    const outcome = await provider.send(message);
+    if (!outcome.accepted) throw Object.assign(new Error("Provider rejected the recipient"), { definitelyNotSent: true });
+    const now = new Date();
+    await prisma.$transaction(async tx => {
+      await tx.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENT", provider: environment.EMAIL_PROVIDER, sentAt: now } });
+      await tx.auditEvent.create({ data: { eventType: "notification_provider_accepted", entityType: "EmailDelivery", entityId: delivery.id, payload: { provider: environment.EMAIL_PROVIDER, providerMessageId: outcome.providerMessageId, acceptedAt: now.toISOString(), recipientReceiptVerified: false }, eventHash: hashOpaqueToken(`${delivery.id}:${outcome.providerMessageId}:${now.toISOString()}`, environment.ACCESS_KEY_SECRET) } });
+    });
   } catch (error) {
-    await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 1_000) : "Email delivery failed" } });
+    const detail = error as { definitelyNotSent?: boolean; responseCode?: number };
+    const definitelyNotSent = detail.definitelyNotSent === true || (typeof detail.responseCode === "number" && detail.responseCode >= 400);
+    await prisma.emailDelivery.updateMany({ where: { id: delivery.id, status: "SENDING" }, data: { status: definitelyNotSent ? "FAILED" : "SENDING", lastError: definitelyNotSent ? "PROVIDER_REJECTED" : "DELIVERY_OUTCOME_UNVERIFIED" } });
     throw error;
   }
 }
 
-export async function queueWorkerEmail(priceCheckId: string, type: EmailType, suffix: string) {
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
-  const delivery = await prisma.emailDelivery.upsert({
+export async function queueWorkerEmail(priceCheckId: string, type: EmailType, suffix: string, transaction?: Prisma.TransactionClient, resultVersionId?: string) {
+  const db = transaction ?? prisma;
+  const check = await db.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId } });
+  const delivery = await db.emailDelivery.upsert({
     where: { idempotencyKey: `${priceCheckId}:worker-email:${suffix}` },
     create: {
       priceCheckId,
+      resultVersionId,
       type,
       locale: check.locale,
       recipientHash: check.emailHash,
@@ -66,28 +95,31 @@ export async function queueWorkerEmail(priceCheckId: string, type: EmailType, su
     },
     update: {},
   });
-  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${priceCheckId}:worker-email-job:${suffix}`, priceCheckId });
+  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${priceCheckId}:worker-email-job:${suffix}`, priceCheckId, resultVersionId }, transaction);
 }
 
-export async function queueTerminalEmail(priceCheckId: string, type: EmailType, suffix: string, environment: Environment) {
-  const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { customerUserId: true } });
+export async function queueTerminalEmail(priceCheckId: string, type: EmailType, suffix: string, environment: Environment, transaction?: Prisma.TransactionClient, resultVersionId?: string) {
+  const db = transaction ?? prisma;
+  const check = await db.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { customerUserId: true } });
   if (!check.customerUserId) {
-    await queueWorkerEmail(priceCheckId, type, suffix);
+    await queueWorkerEmail(priceCheckId, type, suffix, transaction, resultVersionId);
     return;
   }
   const graceEndsAt = new Date(Date.now() + environment.RESULT_NOTIFICATION_GRACE_SECONDS * 1_000);
-  await prisma.priceCheck.update({ where: { id: priceCheckId }, data: { notificationGraceEndsAt: graceEndsAt } });
+  await db.priceCheck.update({ where: { id: priceCheckId }, data: { notificationGraceEndsAt: graceEndsAt } });
   await enqueueJob({
     type: "RESULT_NOTIFICATION",
-    payload: { priceCheckId, emailType: type, suffix },
+    payload: { priceCheckId, emailType: type, suffix, ...(resultVersionId ? { resultVersionId } : {}) },
     idempotencyKey: `${priceCheckId}:terminal-notification:${suffix}`,
     priceCheckId,
+    resultVersionId,
     runAt: graceEndsAt,
-  });
+  }, transaction);
 }
 
-export async function sendTerminalNotification(priceCheckId: string, type: EmailType, suffix: string) {
+export async function sendTerminalNotification(priceCheckId: string, type: EmailType, suffix: string, resultVersionId?: string) {
+  if (resultVersionId && !(await prisma.resultVersion.findFirst({ where: { id: resultVersionId, priceCheckId, status: "PUBLISHED" } }))) return;
   const check = await prisma.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { inPageDeliveredAt: true } });
   if (check.inPageDeliveredAt) return;
-  await queueWorkerEmail(priceCheckId, type, suffix);
+  await queueWorkerEmail(priceCheckId, type, suffix, undefined, resultVersionId);
 }

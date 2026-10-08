@@ -97,10 +97,10 @@ export async function otaHealth(this: WorkerContext, windowDays = 30) {
           select: { status: true, result: true, errorCategory: true, submittedAt: true, completedAt: true },
         }),
         prisma.listing.count({ where: listingWhere }),
-        prisma.rateObservation.count({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
+        prisma.rateObservation.count({ where: { quarantine: null, dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } }),
         prisma.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } }),
         prisma.listing.findFirst({ where: listingWhere, orderBy: { lastConfirmedAt: "desc" }, select: { lastConfirmedAt: true } }),
-        prisma.rateObservation.findFirst({ where: { dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
+        prisma.rateObservation.findFirst({ where: { quarantine: null, dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } }, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } }),
       ]);
       return calculateOtaHealthMetrics({
         key: source.key,
@@ -252,6 +252,8 @@ export async function enqueueOperationalJob(this: WorkerContext, type: "CATALOG_
 
 export async function health(this: WorkerContext) {
   const last24Hours = new Date(Date.now() - 86_400_000);
+  const [heartbeats, retentionEvidence] = await Promise.all([prisma.serviceRuntimeHeartbeat.findMany(), prisma.auditEvent.findFirst({ where: { eventType: "evidence_retention_executed" }, orderBy: { createdAt: "desc" } })]);
+  const fresh = (serviceId: string) => heartbeats.find(row => row.serviceId === serviceId && row.environment === this.environment.NODE_ENV && row.status === "RUNNING" && row.observedAt.getTime() > Date.now() - 90000);
   const [database, redis, queueDepth, failedJobs, failedJobsLast24Hours, sources, jobMetrics, cacheMetrics, emailMetrics, coverage, argus, membershipMetrics] = await Promise.all([
     prisma.$queryRaw<Array<{ ok: number }>>`SELECT 1 AS ok`.then(() => ({ healthy: true, message: "connected" })).catch((error: unknown) => ({ healthy: false, message: error instanceof Error ? error.message : "database failed" })),
     redisHealth(this.environment.REDIS_URL),
@@ -285,13 +287,14 @@ export async function health(this: WorkerContext) {
   });
   return {
     process: { healthy: true, pid: process.pid, uptimeSeconds: process.uptime() },
+    worker: { healthy: Boolean(fresh("worker")), heartbeat: heartbeats.find(row => row.serviceId === "worker") ?? null },
     database,
     redis,
     queue: { healthy: database.healthy, depth: queueDepth, failed: failedJobs },
     argus,
     sources,
-    scheduler: { healthy: true, enabled: this.environment.SCHEDULER_ENABLED },
-    retention: { healthy: true, rawArtifactTtlHours: this.environment.RAW_ARTIFACT_TTL_HOURS },
+    scheduler: { healthy: this.environment.SCHEDULER_ENABLED ? Boolean(fresh("scheduler")) : null, enabled: this.environment.SCHEDULER_ENABLED, heartbeat: heartbeats.find(row => row.serviceId === "scheduler") ?? null },
+    retention: { healthy: retentionEvidence && retentionEvidence.createdAt > last24Hours ? jsonRecord(retentionEvidence.payload).failures === 0 : null, verifiedAt: retentionEvidence?.createdAt ?? null, rawArtifactTtlHours: this.environment.RAW_ARTIFACT_TTL_HOURS },
     alerts,
     metrics: {
       jobs: jobMetrics,

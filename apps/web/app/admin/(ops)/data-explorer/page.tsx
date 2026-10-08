@@ -34,8 +34,8 @@ export default async function DataExplorerPage({ searchParams }: { searchParams:
   const q = searchParams.q?.trim().slice(0, 100) ?? "";
   const sources = await prisma.dataSource.findMany({
     where: {
-      providerType: { in: ["PUBLIC", "MANUAL"] },
-      sourceType: { in: ["PUBLIC_DATA", "MANUAL_IMPORT"] },
+      providerType: { in: ["PUBLIC", "OTA", "MANUAL"] },
+      sourceType: { in: ["PUBLIC_DATA", "OTA", "MANUAL_IMPORT"] },
       isDemo: false,
     },
     orderBy: { name: "asc" },
@@ -83,7 +83,7 @@ export default async function DataExplorerPage({ searchParams }: { searchParams:
 
 async function loadSummary(sourceIds: string[]) {
   if (!sourceIds.length) return { standard: 0, source: 0, raw: 0, lineage: 0, frontier: 0 };
-  const [occurrences, signals, rates, sourceOccurrences, sourceSignals, raw, occurrenceLinks, signalLinks, frontier] = await Promise.all([
+  const [occurrences, signals, rates, sourceOccurrences, sourceSignals, raw, occurrenceLinks, signalLinks, frontier, history] = await Promise.all([
     prisma.eventOccurrence.count({ where: { isDemo: false, sourceLinks: { some: { sourceEventOccurrence: { dataSourceId: { in: sourceIds } } } } } }),
     prisma.marketSignal.count({
       where: {
@@ -101,8 +101,9 @@ async function loadSummary(sourceIds: string[]) {
     prisma.eventOccurrenceSourceLink.count({ where: { sourceEventOccurrence: { dataSourceId: { in: sourceIds } } } }),
     prisma.marketSignalSourceLink.count({ where: { sourceMarketSignal: { dataSourceId: { in: sourceIds } } } }),
     prisma.sourceCrawlTarget.count({ where: { dataSourceId: { in: sourceIds } } }),
+    prisma.publicFactVersion.count({ where: { dataSourceId: { in: sourceIds } } }),
   ]);
-  return { standard: occurrences + signals + rates, source: sourceOccurrences + sourceSignals, raw, lineage: occurrenceLinks + signalLinks, frontier };
+  return { standard: occurrences + signals + rates, source: sourceOccurrences + sourceSignals + history, raw, lineage: occurrenceLinks + signalLinks, frontier };
 }
 
 async function loadLayer(input: { layer: ExplorerLayer; dataset: string; sourceIds: string[]; q: string; page: number; locale: AdminLocale }): Promise<ExplorerResult> {
@@ -157,6 +158,11 @@ async function loadStandard(input: LoaderInput): Promise<ExplorerResult> {
 
 async function loadSource(input: LoaderInput): Promise<ExplorerResult> {
   const { dataset, sourceIds, q, page, locale } = input;
+  if (dataset === "history") {
+    const where: Prisma.PublicFactVersionWhereInput = { isDemo: false, dataSourceId: { in: sourceIds }, ...(q ? { OR: [{ id: { contains: q } }, { externalId: { contains: q, mode: "insensitive" } }, { factKind: { contains: q, mode: "insensitive" } }] } : {}) };
+    const [total, items] = await Promise.all([prisma.publicFactVersion.count({ where }), prisma.publicFactVersion.findMany({ where, orderBy: { observedAt: "desc" }, skip: offset(page), take: pageSize })]);
+    return table(locale, ["External ID", "Type", "Collected", "Starts", "Ends", "Collection Run", "Content hash"], items.map(item => [item.externalId, item.factKind, date(item.observedAt, locale), date(item.startsAt, locale), date(item.endsAt, locale), <Link key={item.id} href={`/admin/collection-runs/${item.collectionRunId}`}>{item.collectionRunId}</Link>, item.contentHash]), total);
+  }
   if (dataset === "events") {
     const where: Prisma.SourceEventWhereInput = { isDemo: false, dataSourceId: { in: sourceIds }, ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" } }, { externalId: { contains: q, mode: "insensitive" } }, { status: { contains: q, mode: "insensitive" } }] } : {}) };
     const [total, items] = await Promise.all([
@@ -275,7 +281,7 @@ function compactUrl(value: string) { try { const url = new URL(value); return `$
 function normalizeLayer(value: string | undefined): ExplorerLayer { return layers.includes(value as ExplorerLayer) ? value as ExplorerLayer : "standard"; }
 function datasets(layer: ExplorerLayer): string[] {
   if (layer === "standard") return ["events", "signals", "rates"];
-  if (layer === "source") return ["events", "occurrences", "signals"];
+  if (layer === "source") return ["events", "occurrences", "signals", "history"];
   if (layer === "lineage") return ["events", "occurrences", "signals"];
   return [layer === "raw" ? "artifacts" : "targets"];
 }
@@ -293,11 +299,11 @@ function explorerHref(input: { layer: ExplorerLayer; dataset: string; source?: s
 function datasetLabel(locale: AdminLocale, layer: ExplorerLayer, dataset: string) {
   const labels = locale === "zh" ? {
     "standard:events": "标准事件场次", "standard:signals": "标准市场信号", "standard:rates": "价格观测",
-    "source:events": "来源事件", "source:occurrences": "来源事件场次", "source:signals": "来源市场信号",
+    "source:events": "来源事件", "source:occurrences": "来源事件场次", "source:signals": "来源市场信号", "source:history": "历史事实版本",
     "raw:artifacts": "原始证据", "lineage:events": "事件血缘", "lineage:occurrences": "事件场次血缘", "lineage:signals": "市场信号血缘", "frontier:targets": "抓取目标",
   } : {
     "standard:events": "Canonical event occurrences", "standard:signals": "Canonical market signals", "standard:rates": "Rate observations",
-    "source:events": "Source events", "source:occurrences": "Source event occurrences", "source:signals": "Source market signals",
+    "source:events": "Source events", "source:occurrences": "Source event occurrences", "source:signals": "Source market signals", "source:history": "Historical fact versions",
     "raw:artifacts": "Raw evidence", "lineage:events": "Event lineage", "lineage:occurrences": "Occurrence lineage", "lineage:signals": "Signal lineage", "frontier:targets": "Crawl targets",
   };
   return labels[`${layer}:${dataset}` as keyof typeof labels] ?? dataset;
@@ -305,17 +311,17 @@ function datasetLabel(locale: AdminLocale, layer: ExplorerLayer, dataset: string
 
 function copy(locale: AdminLocale) {
   return locale === "zh" ? {
-    title: "数据浏览器", description: "查看非 OTA 采集数据的原始证据、来源记录、标准数据、血缘关系和抓取前沿。", layersLabel: "数据层", datasetsLabel: "数据集",
+    title: "数据浏览器", description: "查看公共及 OTA 采集数据的原始证据、来源记录、标准数据、血缘关系和抓取前沿。", layersLabel: "数据层", datasetsLabel: "数据集",
     layers: { standard: "标准数据", source: "来源数据", raw: "原始证据", lineage: "数据血缘", frontier: "抓取前沿" },
     standardRecords: "标准记录", sourceRecords: "来源记录", rawArtifacts: "原始证据", lineageLinks: "血缘链接", crawlTargets: "抓取目标",
-    source: "数据来源", allSources: "全部非 OTA 来源", search: "搜索", searchPlaceholder: "标题、ID、地点、状态或 URL", apply: "应用筛选", reset: "重置",
+    source: "数据来源", allSources: "全部公共及 OTA 来源", search: "搜索", searchPlaceholder: "标题、ID、地点、状态或 URL", apply: "应用筛选", reset: "重置",
     total: "共 {count} 条", emptyTitle: "暂无数据", emptyBody: "当前来源和筛选条件下没有记录。", pagination: "数据分页", previous: "上一页", next: "下一页", page: "第 {page} / {total} 页",
     safe: "可查看", deleted: "已删除", yes: "是", no: "否",
   } : {
-    title: "Data Explorer", description: "Inspect raw evidence, source records, canonical data, lineage and crawl frontiers for non-OTA collection.", layersLabel: "Data layers", datasetsLabel: "Datasets",
+    title: "Data Explorer", description: "Inspect raw evidence, source records, canonical data, lineage and crawl frontiers for public and OTA collection.", layersLabel: "Data layers", datasetsLabel: "Datasets",
     layers: { standard: "Canonical", source: "Source", raw: "Raw evidence", lineage: "Lineage", frontier: "Crawl frontier" },
     standardRecords: "Canonical records", sourceRecords: "Source records", rawArtifacts: "Raw artifacts", lineageLinks: "Lineage links", crawlTargets: "Crawl targets",
-    source: "Data source", allSources: "All non-OTA sources", search: "Search", searchPlaceholder: "Title, ID, location, status or URL", apply: "Apply filters", reset: "Reset",
+    source: "Data source", allSources: "All public and OTA sources", search: "Search", searchPlaceholder: "Title, ID, location, status or URL", apply: "Apply filters", reset: "Reset",
     total: "{count} total", emptyTitle: "No data", emptyBody: "No records match the selected source and filters.", pagination: "Data pagination", previous: "Previous", next: "Next", page: "Page {page} of {total}",
     safe: "Viewable", deleted: "Deleted", yes: "Yes", no: "No",
   };

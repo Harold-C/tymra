@@ -1,4 +1,4 @@
-import { enqueueJob, prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordQualityAssessments, recordTransformation, type WorkerAnalysisRequest } from "@tymra/db";
+import { enqueueJob, prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordQualityAssessments, recordTransformation, serviceMappedUnitId, type WorkerAnalysisRequest } from "@tymra/db";
 import { calculateAvailabilityCompression, calculatePriceDistribution, calculateTargetPercentile, collapseDuplicateListings, confidenceForDate, evaluateBlockingQualityGates, addNzCalendarDays, nzCalendarDayDifference, nzDateKey, nzDateStorageValue, nzStartOfDay, type ComparableRate, type QueryPlanDate } from "@tymra/domain";
 import { normalizeAddressQuery } from "@tymra/providers/address-identity";
 import { matchOtaListingToConfirmedAddress } from "@tymra/providers/ota-address-match";
@@ -193,7 +193,7 @@ export async function validatePriceCheckOtaListing(this: WorkerContext, priceChe
   const unitIds: string[] = [];
   await prisma.$transaction(async (transaction) => {
     for (const unit of usableUnits) {
-      const unitId = stableId("ota-unit", `${source.id}:${extraction.sourceListingId}:${unit.externalId}`);
+      const unitId = await serviceMappedUnitId(source.id, `${extraction.sourceListingId}:${unit.externalId}`, stableId("ota-unit", `${source.id}:${extraction.sourceListingId}:${unit.externalId}`), unit, transaction);
       unitIds.push(unitId);
       await transaction.sellableUnit.upsert({
         where: { id: unitId },
@@ -403,7 +403,8 @@ export async function collectAnalysis(this: WorkerContext, analysisRequestId: st
     await this.setStatus(request, "CHECKING_CACHE");
 
     const cache = await prisma.queryCacheEntry.findUnique({ where: { querySignatureHash_collectionProfileKey: { querySignatureHash: plan.querySignatureHash, collectionProfileKey } } });
-    if (cache && cache.validUntil > new Date() && jsonStringArray(cache.observationIds).length > 0) {
+    const currentJob = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { correlationId: true } });
+    if (!currentJob.correlationId?.startsWith("service-recovery:") && cache && cache.validUntil > new Date() && jsonStringArray(cache.observationIds).length > 0) {
       await prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { cacheHitType: "EXACT_FRESH", status: "COLLECTING_COMPETITORS" } });
       await this.enqueueWorkerJob(request, "COMPETITOR_BUILD", { cacheObservationIds: cache.observationIds }, `${jobId}:competitors`);
       return;
@@ -545,7 +546,7 @@ export async function buildSnapshots(this: WorkerContext, analysisRequestId: str
   const plan = request.queryPlans[0] ?? await this.ensureQueryPlan(request);
   const competitorSet = await prisma.competitorSetVersion.findFirstOrThrow({ where: { analysisRequestId }, orderBy: { version: "desc" }, include: { members: true } });
   const observationIds = await this.analysisObservationIds(request, plan.querySignatureHash);
-  const observations = await prisma.rateObservation.findMany({ where: { id: { in: observationIds } }, orderBy: { collectedAt: "asc" } });
+  const observations = await prisma.rateObservation.findMany({ where: { quarantine: null, id: { in: observationIds } }, orderBy: { collectedAt: "asc" } });
   const addressCoverage = resolveNzAddressSignalCoverage(request.property ?? {});
   if (!addressCoverage) throw new WorkerRequestError("INVALID_MARKET_SCOPE", "The confirmed property is not mapped to New Zealand", 422);
   const analysisMarketKey = addressCoverage.marketKey;
@@ -766,43 +767,52 @@ export async function ensureStayQueryForDate(this: WorkerContext, date: string, 
 }
 
 export async function analysisObservationIds(this: WorkerContext, request: WorkerAnalysisRequest, querySignatureHash: string) {
-  const runs = await prisma.rateObservation.findMany({ where: { collectionRun: { analysisRequestId: request.id } }, select: { id: true } });
+  const runs = await prisma.rateObservation.findMany({ where: { quarantine: null, collectionRun: { analysisRequestId: request.id } }, select: { id: true } });
   const cache = await prisma.queryCacheEntry.findUnique({ where: { querySignatureHash_collectionProfileKey: { querySignatureHash, collectionProfileKey } } });
   return [...new Set([...runs.map((item) => item.id), ...jsonStringArray(cache?.observationIds)])];
 }
 
 export async function publishFormalResult(this: WorkerContext, request: WorkerAnalysisRequest, marketSnapshotId: string, priceAnalysisId: string, confidence: "HIGH" | "MEDIUM" | "LOW", keyDates: Array<{ date: string; target: number; median: number; gap: number; confidence: string; marketSignalIds: string[]; hasMajorEvent: boolean }>, jobId: string) {
   if (!request.priceCheckId || !request.emailHash || !request.encryptedEmail) throw new Error("Formal analysis is missing PriceCheck or email delivery identity");
+  return prisma.$transaction(async (prisma) => {
+  if (!request.priceCheckId || !request.emailHash || !request.encryptedEmail) throw new Error("FORMAL_IDENTITY_REQUIRED");
+  await prisma.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${request.priceCheckId} FOR UPDATE`;
+  const owner = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request.priceCheckId! }, include: { customerUser: { select: { status: true } } } });
+  if (["CANCELLED", "EXPIRED", "ARCHIVED"].includes(owner.status) || owner.customerUser?.status === "DELETED") throw new Error("REQUEST_NOT_DELIVERABLE");
+  const replay = await prisma.resultVersion.findFirst({ where: { priceCheckId: request.priceCheckId, payload: { path: ["generationJobId"], equals: jobId } } });
+  if (replay) return replay;
   const current = await prisma.resultVersion.findFirst({ where: { priceCheckId: request.priceCheckId, status: "PUBLISHED" }, orderBy: { version: "desc" } });
   const latest = await prisma.resultVersion.aggregate({ where: { priceCheckId: request.priceCheckId }, _max: { version: true } });
   const snapshot = await prisma.marketSnapshot.findUniqueOrThrow({ where: { id: marketSnapshotId }, select: { marketScope: true, observationIds: true } });
-  const observedSources = request.sellableUnitId ? await prisma.rateObservation.findMany({ where: { id: { in: jsonStringArray(snapshot.observationIds) }, sellableUnitId: request.sellableUnitId }, distinct: ["dataSourceId"], select: { dataSourceId: true } }) : [];
+  const observedSources = request.sellableUnitId ? await prisma.rateObservation.findMany({ where: { quarantine: null, id: { in: jsonStringArray(snapshot.observationIds) }, sellableUnitId: request.sellableUnitId }, distinct: ["dataSourceId"], select: { dataSourceId: true } }) : [];
   const publicSignalCoverage = jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage);
   const addressCoverage = jsonRecord(publicSignalCoverage.addressCoverage);
   const publicSignalIncomplete = publicSignalCoverage.complete === false || addressCoverage.level !== "FULL";
-  const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, priceResultStatus: "COMPLETED", recommendationStatus: publicSignalIncomplete ? "LIMITED_EVIDENCE" : "COMPLETED", observedSourceCount: observedSources.length, priceEvidenceStatus: observedSources.length > 1 ? "OBSERVED_MULTI_SOURCE" : "OBSERVED_SINGLE_SOURCE", recommendationReasonCode: publicSignalIncomplete ? "PUBLIC_SIGNAL_COVERAGE_INCOMPLETE" : null, payload: { priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length, publicSignalCoverage }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
+  const result = await prisma.resultVersion.create({ data: { priceCheckId: request.priceCheckId, analysisRequestId: request.id, version: (latest._max.version ?? 0) + 1, status: "PUBLISHED", outcome: "PUBLISHED", generatedAt: new Date(), publishedAt: new Date(), dataLastCheckedAt: new Date(), analysisVersion: "worker-baseline-v1", confidence, priceResultStatus: "COMPLETED", recommendationStatus: publicSignalIncomplete ? "LIMITED_EVIDENCE" : "COMPLETED", observedSourceCount: observedSources.length, priceEvidenceStatus: observedSources.length > 1 ? "OBSERVED_MULTI_SOURCE" : "OBSERVED_SINGLE_SOURCE", recommendationReasonCode: publicSignalIncomplete ? "PUBLIC_SIGNAL_COVERAGE_INCOMPLETE" : null, payload: { generationJobId: jobId, priceAnalysisId, fixture: request.isFixture, disclaimer: request.isFixture ? "Development fixture data. Not real market data." : null, dateRangeDays: 30, keyDateCount: keyDates.length, publicSignalCoverage }, supersedesId: current?.id, isDemo: request.isFixture, marketSnapshotId } });
   if (current) await prisma.resultVersion.update({ where: { id: current.id }, data: { status: "SUPERSEDED" } });
   const insightIds: string[] = [];
   for (const [index, item] of keyDates.entries()) {
     const insight = await prisma.insight.create({ data: { id: `${result.id}:insight:${index + 1}`, resultVersionId: result.id, stayDate: nzDateStorageValue(item.date), risk: item.gap > item.median * 0.15 ? "REVIEW" : "WATCH", reasonCodes: item.gap > 0 ? ["BELOW_COMPARABLE_RANGE", ...(item.hasMajorEvent ? ["MAJOR_LOCAL_EVENT"] : [])] : [], marketSignalIds: item.marketSignalIds, targetPriceMinor: item.target, competitorMedianMinor: item.median, competitorLowMinor: Math.round(item.median * 0.9), competitorHighMinor: Math.round(item.median * 1.1), recommendedAction: item.gap > 0 ? "REVIEW_RATE_UPWARD" : "MONITOR_DATE", confidence: item.confidence as "HIGH" | "MEDIUM" | "LOW", limitations: [...(request.isFixture ? ["Development fixture data. Not real market data."] : []), ...(publicSignalIncomplete ? ["PUBLIC_SIGNAL_COVERAGE_INCOMPLETE"] : [])], explanation: { whatChanged: "The observed public target rate is compared with the unique CORE cohort.", whyItMatters: item.hasMajorEvent ? "A promoted local event corroborates the price comparison for this date; it does not prove causation by itself." : "This date may warrant a rate review; this is not a guaranteed optimal price.", suggestedAction: item.gap > 0 ? "Review the public rate and operational context before changing price." : "Monitor this date." } } });
     insightIds.push(insight.id);
   }
-  await recordTransformation({ transformationType: "PUBLISH_PRICING_RESULT", transformationVersion: "worker-baseline-v1", inputs: [{ type: "MARKET_SNAPSHOT", id: marketSnapshotId }, { type: "NORMALIZED_FACT", id: priceAnalysisId }], outputs: [{ type: "RESULT_VERSION", id: result.id }, ...insightIds.map((id) => ({ type: "INSIGHT" as const, id }))], metadata: { jobId, confidence } });
-  await prisma.$transaction([
+  await recordTransformation({ transformationType: "PUBLISH_PRICING_RESULT", transformationVersion: "worker-baseline-v1", inputs: [{ type: "MARKET_SNAPSHOT", id: marketSnapshotId }, { type: "NORMALIZED_FACT", id: priceAnalysisId }], outputs: [{ type: "RESULT_VERSION", id: result.id }, ...insightIds.map((id) => ({ type: "INSIGHT" as const, id }))], metadata: { jobId, confidence } }, prisma);
+  await Promise.all([
     prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { status: "COMPLETED", completedAt: new Date() } }),
     prisma.priceCheck.update({ where: { id: request.priceCheckId }, data: { status: "PUBLISHED", currentResultVersionNumber: result.version, dataSnapshotVersion: marketSnapshotId } }),
   ]);
-  const emailKey = `${request.id}:${request.emailHash}:result-ready-v1`;
+  await prisma.emailDelivery.updateMany({ where: { priceCheckId: request.priceCheckId, resultVersionId: { not: result.id }, status: { in: ["PENDING", "FAILED"] } }, data: { status: "CANCELLED", lastError: "Superseded result version" } });
+  const emailKey = `${request.id}:${request.emailHash}:result-ready:${result.id}`;
   const delivery = await prisma.emailDelivery.upsert({ where: { idempotencyKey: emailKey }, create: { analysisRequestId: request.id, priceCheckId: request.priceCheckId, resultVersionId: result.id, type: "RESULT_READY", locale: request.locale, recipientHash: request.emailHash, encryptedRecipient: request.encryptedEmail, provider: "pending", idempotencyKey: emailKey }, update: {} });
-  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${emailKey}:job`, analysisRequestId: request.id, priceCheckId: request.priceCheckId, correlationId: request.correlationId, snapshotId: marketSnapshotId, resultVersionId: result.id });
+  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${emailKey}:job`, analysisRequestId: request.id, priceCheckId: request.priceCheckId, correlationId: request.correlationId, snapshotId: marketSnapshotId, resultVersionId: result.id }, prisma);
   return result;
+  }, { timeout: 15000 });
 }
 
 export async function publishObservedOnlyResult(this: WorkerContext, request: WorkerAnalysisRequest, marketSnapshotId: string, dates: Array<{ stayDate: Date; targetRateMinor: number | null; qualityFlags: Prisma.JsonValue }>, jobId: string) {
   if (!request.priceCheckId || !request.emailHash || !request.encryptedEmail || !request.sellableUnitId) throw new Error("Formal analysis is missing customer or target identity");
   const snapshot = await prisma.marketSnapshot.findUniqueOrThrow({ where: { id: marketSnapshotId }, select: { observationIds: true, marketScope: true } });
   const observations = await prisma.rateObservation.findMany({
-    where: { id: { in: jsonStringArray(snapshot.observationIds) }, sellableUnitId: request.sellableUnitId, availabilityStatus: "AVAILABLE" },
+    where: { quarantine: null, id: { in: jsonStringArray(snapshot.observationIds) }, sellableUnitId: request.sellableUnitId, availabilityStatus: "AVAILABLE" },
     include: { dataSource: { select: { key: true } }, listing: { select: { canonicalUrl: true } } },
     orderBy: { collectedAt: "desc" },
   });
@@ -810,6 +820,13 @@ export async function publishObservedOnlyResult(this: WorkerContext, request: Wo
     await this.failBusiness(request, "INSUFFICIENT_DATA", "NO_TARGET_PRICE", "No valid target-property OTA price was observed");
     return;
   }
+  return prisma.$transaction(async (prisma) => {
+  if (!request.priceCheckId || !request.emailHash || !request.encryptedEmail) throw new Error("FORMAL_IDENTITY_REQUIRED");
+  await prisma.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${request.priceCheckId} FOR UPDATE`;
+  const owner = await prisma.priceCheck.findUniqueOrThrow({ where: { id: request.priceCheckId! }, include: { customerUser: { select: { status: true } } } });
+  if (["CANCELLED", "EXPIRED", "ARCHIVED"].includes(owner.status) || owner.customerUser?.status === "DELETED") throw new Error("REQUEST_NOT_DELIVERABLE");
+  const replay = await prisma.resultVersion.findFirst({ where: { priceCheckId: request.priceCheckId, payload: { path: ["generationJobId"], equals: jobId } } });
+  if (replay) return replay;
   const current = await prisma.resultVersion.findFirst({ where: { priceCheckId: request.priceCheckId, status: "PUBLISHED" }, orderBy: { version: "desc" } });
   const latest = await prisma.resultVersion.aggregate({ where: { priceCheckId: request.priceCheckId }, _max: { version: true } });
   const observedPrices = observations.map((item) => ({ source: item.dataSource.key, amountMinor: item.displayedAmountMinor ?? item.totalAmountMinor, currency: item.currency, basis: item.priceBasis, feeCompleteness: item.feeCompleteness, sourceUrl: item.listing.canonicalUrl, asOf: item.collectedAt.toISOString() }));
@@ -831,7 +848,7 @@ export async function publishObservedOnlyResult(this: WorkerContext, request: Wo
       observedSourceCount,
       priceEvidenceStatus: observedSourceCount > 1 ? "OBSERVED_MULTI_SOURCE" : "OBSERVED_SINGLE_SOURCE",
       recommendationReasonCode: "NOT_ENOUGH_COMPARABLE_EVIDENCE",
-      payload: { observedPrices, publicSignalCoverage: jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage), recommendationUnavailable: true },
+      payload: { generationJobId: jobId, observedPrices, publicSignalCoverage: jsonRecord(jsonRecord(snapshot.marketScope).publicSignalCoverage), recommendationUnavailable: true },
       supersedesId: current?.id,
       isDemo: request.isFixture,
       marketSnapshotId,
@@ -860,15 +877,17 @@ export async function publishObservedOnlyResult(this: WorkerContext, request: Wo
     });
     insightIds.push(insight.id);
   }
-  await recordTransformation({ transformationType: "PUBLISH_OBSERVED_PRICE_RESULT", transformationVersion: "worker-observed-price-v1", inputs: [{ type: "MARKET_SNAPSHOT", id: marketSnapshotId }, ...observations.map((observation) => ({ type: "NORMALIZED_FACT" as const, id: observation.id }))], outputs: [{ type: "RESULT_VERSION", id: result.id }, ...insightIds.map((id) => ({ type: "INSIGHT" as const, id }))], metadata: { jobId, observedSourceCount } });
-  await prisma.$transaction([
+  await recordTransformation({ transformationType: "PUBLISH_OBSERVED_PRICE_RESULT", transformationVersion: "worker-observed-price-v1", inputs: [{ type: "MARKET_SNAPSHOT", id: marketSnapshotId }, ...observations.map((observation) => ({ type: "NORMALIZED_FACT" as const, id: observation.id }))], outputs: [{ type: "RESULT_VERSION", id: result.id }, ...insightIds.map((id) => ({ type: "INSIGHT" as const, id }))], metadata: { jobId, observedSourceCount } }, prisma);
+  await Promise.all([
     prisma.workerAnalysisRequest.update({ where: { id: request.id }, data: { status: "COMPLETED", completedAt: new Date() } }),
     prisma.priceCheck.update({ where: { id: request.priceCheckId }, data: { status: "PUBLISHED", currentResultVersionNumber: result.version, dataSnapshotVersion: marketSnapshotId } }),
   ]);
-  const emailKey = `${request.id}:${request.emailHash}:observed-price-ready-v1`;
+  await prisma.emailDelivery.updateMany({ where: { priceCheckId: request.priceCheckId, resultVersionId: { not: result.id }, status: { in: ["PENDING", "FAILED"] } }, data: { status: "CANCELLED", lastError: "Superseded result version" } });
+  const emailKey = `${request.id}:${request.emailHash}:observed-price-ready:${result.id}`;
   const delivery = await prisma.emailDelivery.upsert({ where: { idempotencyKey: emailKey }, create: { analysisRequestId: request.id, priceCheckId: request.priceCheckId, resultVersionId: result.id, type: "RESULT_READY", locale: request.locale, recipientHash: request.emailHash, encryptedRecipient: request.encryptedEmail, provider: "pending", idempotencyKey: emailKey }, update: {} });
-  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${emailKey}:job:${jobId}`, analysisRequestId: request.id, priceCheckId: request.priceCheckId, correlationId: request.correlationId, snapshotId: marketSnapshotId, resultVersionId: result.id });
+  await enqueueJob({ type: "EMAIL_DELIVERY", payload: { deliveryId: delivery.id }, idempotencyKey: `${emailKey}:job`, analysisRequestId: request.id, priceCheckId: request.priceCheckId, correlationId: request.correlationId, snapshotId: marketSnapshotId, resultVersionId: result.id }, prisma);
   return result;
+  }, { timeout: 15000 });
 }
 
 export function fixtureEnabled(this: WorkerContext) {

@@ -6,6 +6,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 
 import { WorkerRequestError, WorkerService } from "./services/worker-service";
+import { runOtaServiceCommand, ServiceControlError } from "./operations/service-control";
 
 const environment = getEnvironment();
 const service = new WorkerService(environment);
@@ -43,6 +44,7 @@ app.get("/worker/ota-health", async (request) => {
 app.get("/worker/markets", async () => prisma.marketCoverage.findMany({ orderBy: { key: "asc" } }));
 app.get("/worker/markets/:key/coverage", async (request, reply) => sendFound(reply, await prisma.marketCoverage.findUnique({ where: { key: pathId(request.params) } })));
 app.get("/worker/health", async () => service.health());
+app.post("/worker/service-control/ota", async request => runOtaServiceCommand(request.body, String(request.headers["x-service-signature"] ?? ""), environment));
 app.get("/worker/alerts", async () => ({ alerts: (await service.health()).alerts }));
 app.get("/worker/readiness", async (_request, reply) => {
   const health = await service.health();
@@ -51,6 +53,7 @@ app.get("/worker/readiness", async (_request, reply) => {
 });
 
 app.setErrorHandler((error, request, reply) => {
+  if (error instanceof ServiceControlError) return reply.code(error.statusCode).send({ error: error.code, correlationId: request.id });
   if (error instanceof WorkerRequestError) return reply.code(error.statusCode).send({ error: error.code, message: error.message, correlationId: request.id });
   if (error instanceof z.ZodError) return reply.code(422).send({ error: "VALIDATION_ERROR", issues: error.issues, correlationId: request.id });
   request.log.error(error);

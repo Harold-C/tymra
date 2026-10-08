@@ -27,7 +27,7 @@ describe("collection incident lifecycle", () => {
     await prisma.$disconnect();
   });
 
-  it("creates an incident, supersedes a repeated failure and closes it after a successful retry", async () => {
+  it("tracks repeated failures without claiming recovery and keeps a succeeded retry pending verification", async () => {
     const firstRun = await prisma.collectionRun.create({
       data: {
         dataSourceId: sourceId,
@@ -60,7 +60,7 @@ describe("collection incident lifecycle", () => {
     });
     const repeatedIncident = await syncCollectionIncident(repeatedRun.id);
     expect(repeatedIncident).toMatchObject({ status: "OPEN", category: "PARSING_ERROR" });
-    expect(await prisma.collectionIncident.findUniqueOrThrow({ where: { id: firstIncident!.id } })).toMatchObject({ status: "RESOLVED", resolutionAction: "SUPERSEDED_BY_LATER_RUN" });
+    expect(await prisma.collectionIncident.findUniqueOrThrow({ where: { id: firstIncident!.id } })).toMatchObject({ status: "DISMISSED", resolutionAction: "SUPERSEDED_BY_LATER_RUN" });
 
     const retryJob = await prisma.job.create({
       data: {
@@ -87,6 +87,6 @@ describe("collection incident lifecycle", () => {
     });
 
     expect(await syncCollectionIncident(successfulRun.id)).toBeNull();
-    expect(await prisma.collectionIncident.findUniqueOrThrow({ where: { id: repeatedIncident!.id } })).toMatchObject({ status: "RESOLVED", resolutionAction: "RETRY_SUCCEEDED" });
+    expect(await prisma.collectionIncident.findUniqueOrThrow({ where: { id: repeatedIncident!.id } })).toMatchObject({ status: "IN_PROGRESS", resolutionAction: "RECOVERY_AWAITING_VERIFICATION", resolvedAt: null });
   });
 });

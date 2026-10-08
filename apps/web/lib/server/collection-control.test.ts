@@ -13,7 +13,7 @@ const pendingSource = {
 
 describe("collection control safety", () => {
   it("validates a closed action vocabulary", () => {
-    expect(collectionControlActionSchema.safeParse({ action: "enqueue", scheduleKey: "eventfinda-discovery-daily" }).success).toBe(true);
+    expect(collectionControlActionSchema.safeParse({ action: "enqueue", scheduleKey: "eventfinda-discovery-daily", reason: "Incident source diagnosis" }).success).toBe(true);
     expect(collectionControlActionSchema.safeParse({ action: "kill_running_job", jobId: "job-1" }).success).toBe(false);
     expect(collectionControlActionSchema.safeParse({ action: "set_source_enabled", sourceKey: "eventfinda", enabled: "yes" }).success).toBe(false);
   });

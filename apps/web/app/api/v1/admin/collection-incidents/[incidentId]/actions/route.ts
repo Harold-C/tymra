@@ -11,6 +11,10 @@ const incidentMessages: Record<string, [number, string]> = {
   RETRY_ALREADY_QUEUED: [409, "This incident already has a retry job."],
   RETRY_WORKFLOW_NOT_FOUND: [409, "No safe collection workflow matches this run."],
   RETRY_ENQUEUE_FAILED: [409, "The retry job could not be created."],
+  RECOVERY_EVIDENCE_REQUIRED: [409, "A linked recovery job and successful collection run are required before resolving."],
+  RECOVERY_JOB_NOT_SUCCEEDED: [409, "The recovery job has not succeeded."],
+  NO_SUCCESSFUL_RECOVERY_RUN: [409, "No matching successful recovery collection run was found."],
+  INCIDENT_NOT_DISMISSIBLE: [403, "A high-priority incident must be remediated and verified."],
 };
 
 const controlMessages: Record<string, [number, string]> = {

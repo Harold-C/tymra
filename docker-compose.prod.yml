@@ -5,6 +5,9 @@ x-app-image: &app-image
   build:
     context: .
     target: production
+    args:
+      TYMRA_RELEASE_VERSION: ${TYMRA_RELEASE_VERSION:-UNREPORTED}
+      TYMRA_SOURCE_REVISION: ${TYMRA_SOURCE_REVISION:-UNREPORTED}
 
 x-app-environment: &app-environment
   NODE_ENV: production
