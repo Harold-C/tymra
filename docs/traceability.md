@@ -57,7 +57,7 @@ healthSummary、lastSuccessAt、固定版本窗口、原凌晨失败及 Chatham 
 当前剩余：查明并修复 Hawke's Bay 目的地选择及 Otago 内部错误，完成最新连续两轮
 成功与自然周期。受保护证据在 `runtime/release-candidates/booking-popup-20261009/quality-immediate-*`。
 
-## 2026-10-09 Booking 早间质量复验：检查完成，标准门槛未通过
+## 2026-10-09 Booking 质量复验：检查完成，标准门槛未通过
 
 以下为 NZ 11:34–11:43 历史快照；当前用量、追加结果、计划和跟进状态以上节为准。
 

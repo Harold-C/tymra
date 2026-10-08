@@ -535,8 +535,8 @@ test.describe("admin Release 1", () => {
     }
   });
 
-  test("signs in and opens the operational workspaces", async ({ page }, testInfo) => {
-    test.skip(isMobileProject(testInfo), "The operations workspace is a desktop-only surface.");
+  test("signs in and opens the service assurance workspaces", async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
     await gotoAdmin(page, "/admin/sign-in");
     await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
     await page.getByLabel("Email").fill(e2eAdminEmail);
@@ -545,9 +545,19 @@ test.describe("admin Release 1", () => {
     await expect(page).toHaveURL(adminUrl("/admin/exceptions"), { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Inbox & incidents" })).toBeVisible();
     await gotoAdmin(page, "/admin/checks");
-    await expect(page.getByRole("heading", { name: "Price Checks", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Service requests", exact: true })).toBeVisible();
     await gotoAdmin(page, "/admin/checks/demo-check-normal-high");
-    await expect(page.getByRole("heading", { name: "Price Check Detail" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Service request detail", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Request", exact: true })).toBeVisible();
+    await expect(page.getByText("Request owner", { exact: true })).toBeVisible();
+    await gotoAdmin(page, "/admin/deliveries");
+    await expect(page.getByRole("heading", { name: "Notifications and delivery", exact: true })).toBeVisible();
+    await gotoAdmin(page, "/admin/backfills");
+    await expect(page.getByRole("heading", { name: "Historical data backfill", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Backfill history", exact: true })).toBeVisible();
+    await gotoAdmin(page, "/admin/on-demand");
+    await expect(page.getByRole("heading", { name: "Service diagnostics and recovery", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open incidents", exact: true })).toBeVisible();
     await gotoAdmin(page, "/admin/data-sources");
     await expect(page.getByRole("heading", { name: "Data Sources" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Manual import", exact: true })).toBeVisible();
@@ -556,5 +566,12 @@ test.describe("admin Release 1", () => {
     await expect(page.getByRole("heading", { name: "Canary safety boundary" })).toBeVisible();
     const serious = (await new AxeBuilder({ page }).analyze()).violations.filter((item) => ["critical", "serious"].includes(item.impact ?? ""));
     expect(serious).toEqual([]);
+    if (isMobileProject(testInfo)) {
+      await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toBeHidden();
+      await expect(page.getByRole("button", { name: "Open navigation", exact: true })).toBeFocused();
+    }
   });
 });
