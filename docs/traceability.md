@@ -1,10 +1,12 @@
 # Tymra 实现与验收追踪
 
-更新：2026-10-09。整体后台最终改造、日常开发热更新及后台回归修复仍只在本地，见本文同日记录。
-生产仍为 Argus `824e0dd5`、Tymra `2024961`。用户要求立即追加后，已取得
+更新：2026-10-09。整体后台最终改造与回归修复已推送并发布，当前生产为
+Tymra `c8e9e12`／`service-assurance-20261009`，Argus 保持 `824e0dd5`；
+发布、配对恢复和生产页面验证见[同日发布记录](#2026-10-09-服务保障后台生产发布与验证)。
+用户要求立即追加后，已取得
 Gisborne NZD 248、Canterbury NZD 566 两份完整匿名含税费报价；中间的
 Hawke's Bay 目的地选择失败，随后 Otago 报价内部错误，所以不是连续两轮成功，
-标准质量验收仍为 NOT_PASSED／DEGRADED。NZ 10-09 12:25 读回 84/84 计划
+标准质量验收仍为 NOT_PASSED／DEGRADED。NZ 10-09 13:13 读回 84/84 计划
 开启，Booking 下一次为 NZ 10-10 01:33:25。两层临时额度全部撤回，当日 20 次
 执行保留；原失败、参考价及固定窗口保持。原定凌晨的额外试采跟进已暂停；
 当前两份公开报价已交付，余下质量修复及自然周期仍未完成。
@@ -459,9 +461,9 @@ EN/ZH、1440/390px、直接公开路由及未认证拒绝；付费归属和生�
 | PRD-GOALS, PRD-PRINCIPLES, PRD-AUTOMATION | Domain decisions, worker pipeline, publication policy | Decision and worker integration tests | development_verified |
 | PRD-SCOPE unified production deployment | Existing Admin/client routes, APIs, Worker and database; dated isolated `DEPLOYED_HIDDEN` discovery/direct-route check passed | Nationwide depth and complete client production acceptance remain open; Admin-only backend has been deployed | implemented_not_live_accepted |
 | PRD-DATA 6.1–6.7 | Prisma market models, append-only services, provider metadata and collection modes | Database integration tests | development_verified |
-| DATA-CORE-001..022 / D-049 / D-050 | Capability registry, 17-Region frontier/coverage, representative panel, versioned identity/history, generic lineage, address-mode snapshot, hidden client discovery and bounded Admin on-demand workflow are implemented | Clean migration/seed/drift and isolated integration pass; push-time browser matrix plus non-demo nationwide operating acceptance remain | implemented_not_live_accepted |
-| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | Prior isolated Web types and invalid-session/API rejection passed; no bearer-result route was found in that source audit. Fresh complete ownership/browser and production acceptance remain | implemented_not_live_accepted |
-| PRD-OPS / requirements §3.7 / D-053 | Complete six-module service assurance Admin, bounded recovery/cancellation, data correction/backfill, entitlement/privacy support and audit; customer-owned business decisions | 2026-10-09 fixed-content local lint/types/unit/integration/build/browser and actual restoration evidence below; no production deployment | development_verified_not_deployed |
+| DATA-CORE-001..022 / D-049 / D-050 | Capability registry, 17-Region frontier/coverage, representative panel, versioned identity/history, generic lineage, address-mode snapshot, hidden client discovery and bounded Admin on-demand workflow are implemented | 2026-10-09 fixed-candidate verify, six fresh offline OTA pipelines and isolated cloud browser/member matrix passed; non-demo nationwide operating acceptance remains | implemented_not_live_accepted |
+| PRD-RESULT | Result versions, insights, authenticated ownership and feedback | 2026-10-09 isolated API/integration and cloud browser/member matrix passed; no bearer-result route remains. Complete real-provider and customer production acceptance remains separate | implemented_not_live_accepted |
+| PRD-OPS / requirements §3.7 / D-053 | Complete six-module service assurance Admin, bounded recovery/cancellation, data correction/backfill, entitlement/privacy support and audit; customer-owned business decisions | 2026-10-09 fixed-candidate local/cloud gates, actual production-copy restoration/migration/previous-image reads, production Admin HTTPS pages and runtime/evidence integrity passed; real customer/provider support writes remain separately scoped | production_admin_verified |
 | PRD-MARKET | Market records, NZ eligibility and locale behaviour | Domain and bilingual flow tests | development_verified |
 | PRD-COMMERCIAL, PRD-ROLES | Single-admin and customer/member surfaces exist; isolated hidden navigation and direct routes pass | Paid plans, real provider, Stripe, production authentication and customer ingress remain unaccepted | local_hidden_gate_verified_production_not_accepted |
 | PRD-METRICS | Event contracts and operational aggregates | Event payload and metrics tests | development_verified |
@@ -591,8 +593,8 @@ The statuses below separate existing implementation from production acceptance. 
 | `MEM-PORT-001` | Pro/Portfolio view, bulk controls, exports and Portfolio API/webhooks | Export/API enforce membership, entitlement, independent quota and idempotency; production credential/webhook delivery still needs acceptance | `implemented_not_verified` |
 | `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe and isolated PostgreSQL lifecycle pass; dated Sandbox evidence covered the full lifecycle and 37 webhooks. A later hosted Checkout attempt timed out before return, so production deployment acceptance remains open | `implemented_not_verified` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `development_verified` |
-| `MEM-OPS-001` | Factual billing reconciliation, proven duplicate usage correction, session/risk/account support and owner-delivered export/deletion | 2026-10-09 isolation verifies retired arbitrary plan/email actions denied, linked Price/invoice facts, immutable usage correction, active-delivery deletion refusal and actual owner download; real Stripe/provider acceptance remains separate | `development_verified_not_deployed` |
-| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | Worker health 与 `/worker/alerts` 返回机器错误码、等级、聚合值和阈值且不含 PII；生产 dashboard、通知路由与注入验收仍是部署门槛 | `implemented_not_verified` |
+| `MEM-OPS-001` | Factual billing reconciliation, proven duplicate usage correction, session/risk/account support and owner-delivered export/deletion | 2026-10-09 isolated action/owner-download contracts and production support pages passed; current production has zero customers, so real Stripe/customer support writes remain separate | `deployed_real_provider_acceptance_pending` |
+| `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | 2026-10-09 production Admin pages, version-bound worker/scheduler heartbeats and dependency readiness passed; existing failed-job alerts remain visible. Alert delivery/injection and real-member operating acceptance remain | `production_runtime_verified_alert_delivery_pending` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; dated 2026-08-12 candidate result | `development_verified` |
 | `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Dated Free fixture and real-provider runs exist; the final client candidate still needs complete live member acceptance, independently of six-OTA backend trials | `implemented_not_verified` |
 
@@ -736,7 +738,7 @@ CI 的 verify/browser 及空库 OTA delivery 配置已落地。推送后的实�
 本轮未重做生产形态构建或备份恢复，也不代替真实外部／生产验收。
 脱敏回归补充记录在[既有本地证据](evidence/service-assurance-admin-local-2026-10-09.json)的 `regression`。
 
-## 2026-10-09 服务保障后台生产发布候选
+## 2026-10-09 服务保障后台生产发布与验证
 
 用户已授权推送全部本地代码并发布生产。发布比较以实际生产 `2024961` 为基线；
 已把生产 Booking 参考价保留／继续采集修复合入重构后的 Worker，避免发布回退该行为。
@@ -746,5 +748,35 @@ CI 的 verify/browser 及空库 OTA delivery 配置已落地。推送后的实�
 163 项数据库/API/Worker 集成、生产形态 Web／Worker 构建。
 默认跳过的六 OTA 合同另在新空隔离数据库全部通过，包含 Booking 参考价后继续正价采集、
 重复调用不收费、不生成伪公开价格、不可变历史及证据交付／ACK。
-发布候选还须绑定提交、云端浏览器门禁、生产备份实际恢复与六个增量迁移检查；
-本条是准备记录，不证明生产已经切换。部署读回完成后在本节补充实际结果。
+全部本地改动以 `c8e9e126b9b19fb468e37ee59d54f978a729ec5d` 推送至 `origin/main`；
+浏览器验收随后以 `bfb835507a333193a14adf99b75f5483942f68d8` 修正旧页面标题并恢复手机场景。
+两提交仅测试与文档不同，492 个运行文件完全一致，指纹为
+`e55670f40d2df43ecf2648236a871950aee6aede8d837e19f2d1cf1711520cc2`。
+[最终云端 CI](https://github.com/Harold-C/tymra/actions/runs/37860545792) 的 verify／browser
+均成功；完整浏览器 29 通过、1 个条件场景跳过，会员矩阵 8 通过。
+首个候选云端 browser 因旧标题断言失败的记录保留；跳过不计入通过。
+
+NZ 2026-10-09 13:13 的生产读回如下：
+
+| 项目 | 实际结果 |
+| --- | --- |
+| 运行候选 | `c8e9e12`／`service-assurance-20261009`；Web、API、Worker、Scheduler 同一实际镜像 `sha256:4fce5920a1f48a070da88a814ebceba9b04152fdf42e4a82f916de0f76d6ba43`，四应用运行／重启零，Web 与 API healthy |
+| 迁移与数据 | 六个增量迁移实际完成，35 → 41；新增八张业务表。80 张原业务表的逐表行数与全行摘要保持，允许的恢复／浏览器访问审计和管理员会话另行计入；39 条价格、零客户、84/84 计划及原 nextRun／预算／质量窗口保持 |
+| 配对恢复 | 切换前最新数据库与 evidence 备份实际恢复到独立内部网络，80 张原业务表、索引／约束／触发器和 822 份证据的内容／权限／属主匹配；在恢复副本应用最终迁移后，旧镜像 80 模型及候选 88 模型均完成只读 count／findFirst，业务数据一致 |
+| 运行完整性 | 824 个未删除证据指针逐一验证实际文件与哈希，822 份 volume 文件保持；DB／Redis／Argus health/readiness 正常，Worker／Scheduler 生产心跳绑定本次版本与提交；主 Scheduler 保持开启、高频关闭 |
+| 配置与其他服务 | 使用实际旧容器环境生成发布及回滚配置，并以未启动的临时容器验证；仅增加两个版本字段，原秘密、入口、命令、挂载和网络保持。PG／Redis、Spicy Maggie 网站及 Traefik 的容器身份、镜像、环境与挂载保持；挂载按实际条目核对，不依赖返回顺序 |
+| HTTPS 与页面 | `https://ops.tymra.nz` 的 13 个主要 Admin 路由返回 200；设置显示实际版本和持久恢复验证，保留截图证据经实际 GET／哈希／sandbox 验证；EN/ZH、1440／390／320px、无横向溢出、axe serious/critical 零、手机 Escape 焦点及会员风控默认全部日期通过，浏览器错误／警告零 |
+| 访问与认证范围 | 生产仍为 Admin-only；客户／公开检查／Stripe 路由拒绝、无会话 Admin API 403。页面验证使用现有管理员关联的临时审计会话，完成后已撤销；现有管理员记录保持，本轮未重新输入真实密码验证登录 |
+| 保留问题 | 既有 `FAILED_JOBS_PRESENT` 四条失败任务仍告警；Booking enabled／PILOT、运行许可 HEALTHY、质量 DEGRADED、每日六次／并发一保持。发布不算新的公开报价、连续质量门槛或自然周期通过 |
+
+最终镜像仅重建 Tymra 四应用；Argus `824e0dd5` 的实际运行候选保持，复用其同候选
+已完成的生产目录／owner 验收，并以 Tymra 现有凭证读取已交付 Job 200／result 410。
+Tymra 凭证的 connector 目录读取为 403，没有扩大权限；本次未新增来源抓取、额度豁免、
+真实邮件、Stripe 或客户入口开放。
+
+受保护恢复材料在 `/srv/apps/tymra/backups/service-assurance-20261009-cutover`，旧镜像、
+精确回滚配置和发布 helper 在 `/srv/apps/tymra/releases/service-assurance-20261009` 保留；
+回滚须核对后续回填／豁免／扣额纠正／修复活动，保留已迁移的业务数据与证据。
+恢复结果已持久为 `production_backup_restore_verified` 并在设置页显示。
+本机收据、构建／云端门禁及生产页面截图在 `runtime/release-candidates/service-assurance-20261009`；
+两套本次演练的临时容器／网络／副本 volume 按标签核对后移除，正式备份和原生产数据保留。
