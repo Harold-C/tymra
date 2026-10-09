@@ -1,18 +1,123 @@
 # Tymra 实现与验收追踪
 
 更新：2026-10-09。整体后台最终改造与回归修复已推送并发布，当前生产为
-Tymra `c8e9e12`／`service-assurance-20261009`，Argus 保持 `824e0dd5`；
+Tymra `c8e9e12`／`service-assurance-20261009`，Argus 为 `eaed587a`／`argus-release-20261009-5`；
 发布、配对恢复和生产页面验证见[同日发布记录](#2026-10-09-服务保障后台生产发布与验证)。
-用户要求立即追加后，已取得
-Gisborne NZD 248、Canterbury NZD 566 两份完整匿名含税费报价；中间的
-Hawke's Bay 目的地选择失败，随后 Otago 报价内部错误，所以不是连续两轮成功，
-标准质量验收仍为 NOT_PASSED／DEGRADED。NZ 10-09 13:13 读回 84/84 计划
-开启，Booking 下一次为 NZ 10-10 01:33:25。两层临时额度全部撤回，当日 20 次
-执行保留；原失败、参考价及固定窗口保持。原定凌晨的额外试采跟进已暂停；
-当前两份公开报价已交付，余下质量修复及自然周期仍未完成。
+用户回家后 SSH 已恢复。原弹窗及追加搜索／人数／可见详情修复均已部署，最终零人数
+报价修复 `eaed587a` 已完成完整门禁、最新配对恢复与生产切换。固定Hawke's Bay、Otago
+连续两轮完整公开报价分别NZD280／297，证据及交付核验通过，正式门槛PASSED，Booking
+HEALTHY。临时额度撤回，原日计划恢复NZ10-10 01:33:25，当日实际33次未重置；82/84
+计划开启，Agoda／Eventfinda既有停用保持，凌晨额外试采跟进保持暂停。旧失败、价格和
+验收窗口保留；Booking下一个自然周期仍待核验。
 本文件维护当前实现、最近已记录的环境和验收缺口；下一步见[实施计划](implementation-plan.md)，
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
+
+## 2026-10-09 Booking 两项追加失败：修复已发布，两轮公开报价及正式质量通过
+
+用户确认“修复上面两项”，随后要求“暂时不要发起ssh，我在外面，等我回家”。
+Argus 候选 `24153d15f9b715ab0d808b603553597864712bb8`／`argus-release-20261009-3`
+基于实际生产 `824e0dd5` 修复公开导航、报价快照和提取失败证据，不发布 main 其他
+未上线私有执行器修改。Tymra 应用源码未因本候选修改，生产业务变更仅为已授权有界复测。
+
+| 原失败 | 已核实原因及修复 |
+| --- | --- |
+| Hawke's Bay／`cmv05abu50000t85tdv0ibh06` | 保留页面的新 “Search in your own words” 控件没有目的地候选。只对该明确控件允许有界文本提交，并在实际结果验证可见目标地区、新西兰酒店链接和精确入住条件；普通控件仍要求新西兰候选。另修正地名撇号在 Patchright 选择器中的正则拼接错误 |
+| Otago／`cmv05m46t0000t89thkculpab` | 六段报价编号第三段为零，实际成人数在第四段；旧快照把两成人报价读成零成人而过滤，回放复现 `OTA_REQUESTED_UNIT_NOT_FOUND`。修复成人／儿童字段并保留单位、人数与费用筛选；INTERNAL_ERROR 也保留送入提取器的结构化快照 |
+
+新增浏览器 9 项、原弹窗 6 项、费用／单位 25 项、类型和构建通过。原失败 HTML
+的禁止网络回放正确解析 Lake Resort by Marsden／Mountain View Studio - Ground Floor，
+单位 `17967309`，2026-10-16–17、2 成人／0 儿童／1 单元、匿名含税费 NZD 297。
+这是历史源页回放，不是新采集报价，也没有新增公开 RateObservation。
+完整发布检查的[固定运行](https://github.com/Harold-C/argus/actions/runs/37884658331)
+已通过：源码 928、固定镜像 Chrome 1,140 通过，零失败，195／13 个条件用例分别在
+对应另一层实际执行；合成配对恢复、运行和故障恢复通过。
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37888575774)通过。证据继续保存在 Argus
+`runtime/production-releases/argus-release-20261009-3` 及 Tymra 原目录的 `search-occupancy-*`。
+
+用户回家后 SSH 已恢复；读回 Tymra `c8e9e12`、Argus `824e0dd5` 和空队列。
+当前 82/84 计划开启，Agoda 和 Eventfinda 的既有停用状态作为操作前基线保持。
+最新闭合配对备份实际恢复 1,050 Job、2 账号和 62,334 私有条目；数据、文件字节／
+模式／属主／链接、权限隔离和禁止网络 Profile 打开通过。仅替换 Argus browser，
+实际镜像 `sha256:fc225dfbaa1cb6467da295b764f8d018b10623fed1cbd7235b0d308b20c5f6d0`，
+暂停 256.442 秒，PG／tunnel、共享服务、配置和挂载保持；健康／就绪、接口及权限检查
+通过。备份 AES-256 已卸载封存，独立恢复副本已清理，未改变防火墙。
+
+| 新父 Job／固定地区 | 实站结果 |
+| --- | --- |
+| `cmv0k0hf10000lx32um65eiaa`／Hawke's Bay | 搜索成功；The Crown Hotel 未带日期的房型表解析错误，FAILED／PARSING_ERROR，无公开价 |
+| `cmv0kiork0000lx630phb6v9b`／Otago | 发现及报价均 1 成功／0 失败；Lake Resort by Marsden／Mountain View Studio - Ground Floor、2026-10-16–17、2 成人／0 儿童／1 单元、NZD 297，PUBLIC／AVAILABLE／COMPLETE，单次成功 |
+
+八份原始文件字节哈希、四份 wire 摘要及交付、ACK 后 410/PURGED 验证通过；解析
+失败文件保留 parserFailure，未将取证完成当作报价成功。新窗口起点为 Hawke's Bay
+父 Job，绑定 Tymra `c8e9e12`／Argus `24153d15`，所有旧窗口与失败保持。正式连续
+该批次质量门槛拒绝，NOT_PASSED／DEGRADED；临时最多两个父 Job／六次执行额度已撤回，
+普通 Tymra 六次／并发一、Argus 十二次保持，当日实际 20→24 未重置。两个目标原
+priority／nextFetchAt 恢复，保留新实际状态与历史；Booking 原日计划恢复 NZ 10-10
+01:33:25，其他来源／计划摘要不变，82/84 开启。
+
+详情失败已定位为优先读取隐藏的报错面板，遗漏可见未带日期的房型行。补充 Argus
+`d2dfc536` 优先读取房型名所在普通行并使用渲染文本；八项本地浏览器回归、六来源
+费用快照、类型／构建及原失败页重放通过。
+[完整发布检查](https://github.com/Harold-C/argus/actions/runs/37892712511)和
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37895614751)通过，源码928／
+固定镜像Chrome1,141通过、零失败，196／13个条件用例全部由对应环境覆盖。
+最新配对备份实际恢复1,057 Job、2账号、62,739私有条目，数据／完整文件／权限、
+wire摘要及无网络Profile校验通过。UTC07:05:30仅替换Argus browser，镜像
+`sha256:e6f56bcc72ea9baf52bb7721953916cf7eac7b73659ac1a03e6d6f471f194055`，
+暂停463.373秒；共享服务、PG／tunnel和配置／挂载保留，接口及权限核验通过。
+AES-256备份封存、独立副本已清理；Tymra应用及普通预算未改变。
+
+| `d2dfc536` 新父Job／地区 | 实站结果 |
+| --- | --- |
+| `cmv0mift50000lxa46ih6c0yi`／Hawke's Bay | 搜索与The Crown Hotel／Premier Studio／`29758205`详情成功；报价INTERNAL_ERROR，未生成公开价 |
+| `cmv0mupsk0000lxd4mg1s71tl`／Otago | Lake Resort by Marsden／原精确房型／2026-10-16–17／2成人0儿童1单元，含税费NZD297，PUBLIC／AVAILABLE／COMPLETE，单次成功 |
+
+十份文件字节哈希、五份wire交付及ACK后410/PURGED通过。新窗口从Hawke's Bay父Job
+绑定Tymra `c8e9e12`／Argus `d2dfc536`；所有旧窗口、失败与价格保持。该批次正式门槛拒绝，
+质量NOT_PASSED／DEGRADED；例外撤回，原目标priority／nextFetchAt及原计划恢复，
+82/84开启，当日实际24→29未重置。
+
+报价失败的精确快照与原HTML禁止网络重放证明：页面有该单位含税费NZD280、同一行
+明确两成人，但六段报价编号成人字段为零，D2校验拒绝该行。并非目标单位缺失。
+最终修复 `eaed587a` 只在成人／儿童字段均零的成人请求中读取同一行唯一可见的严格
+`Sleeps: N adults`；隐藏、歧义、儿童、请求回显和物理容量不替代报价人数。两项浏览器
+回归、六来源费用快照、类型／构建及原保留页面正确NZD280重放通过。
+[最终完整发布检查](https://github.com/Harold-C/argus/actions/runs/37898953124)及
+[固定导出](https://github.com/Harold-C/argus/actions/runs/37902004201)通过，源码928／
+固定镜像Chrome1,142通过、零失败，197／13个条件用例全部由对应环境实际覆盖。
+最新闭合配对备份实际恢复1,062 Job、2账号、62,956私有条目，数据库行／索引／约束
+及完整文件／权限／属主／链接一致；账号隔离、wire摘要及两个无网络Profile打开通过。
+UTC08:16:07仅替换Argus browser，实际镜像
+`sha256:70447a79203263496ae38ee4047855dc511ed9b21ca28e2dd3123e9ead953148`，
+暂停493.734秒，共享服务、PG／tunnel、客户端和配置／挂载保持、重启零；实际HTTPS
+健康／就绪、44工作流／OpenAPI及权限核验通过。配对AES-256备份已卸载封存、0600，
+SHA-256 `5b30d3a6eafe4a072b32b70f1f01404dcb83a0c2ff1bbb423bdd0a207f33ae79`；
+独立恢复副本已清理，兼容回退镜像／受保护配置保留。Tymra应用源码和镜像未改变。
+
+| 最终固定父Job／地区 | 已核实完整公开报价 |
+| --- | --- |
+| `cmv0p31gf0000lxh5x550m6bu`／Hawke's Bay | The Crown Hotel／Premier Studio／`29758205`，NZD280 |
+| `cmv0p9yt70000lxjvrgttqtyc`／Otago | Lake Resort by Marsden／Mountain View Studio - Ground Floor／`17967309`，NZD297 |
+
+均为2026-10-16–17一晚、2成人／0儿童／1单元、匿名公开含税费，PUBLIC／AVAILABLE／
+COMPLETE；各最大／实际尝试一次，发现及报价Run各1成功／0失败。有效身份缓存各
+复用一次，两父Job共四次执行；八份保留文件实际字节哈希、四份wire摘要与交付及
+ACK后410/PURGED通过。最新页面／快照与入库的单位、日期、人数及金额一致；Hawke's
+Bay的实际零成人编号已正确读取为可见两成人，未借用其他单位或请求人数。
+本代码版本只追加一个冻结窗口，起点为第一父Job／UTC08:19:54.783，绑定Tymra
+`c8e9e12`／Argus `eaed587a`，前序D2窗口与全部失败／价格逐项保留。
+
+UTC08:30正式 `ota:production:enable` 通过，接受最新两个精确父Job，质量复验
+PASSED、来源操作及健康HEALTHY；D-039当前窗口四Run全成功、两个正价，零解析／
+挑战／限流。例外撤回，普通Tymra六次／并发一及Argus十二次保持，当日实际29→33
+未重置。提前目标原priority／nextFetchAt恢复，原Booking日计划恢复NZ10-10
+01:33:25.518，82/84开启，Agoda／Eventfinda既有停用保持。
+完整发布检查期间MBIE、GeoNet、公共假日、Stats NZ四个既有自然作业成功，改变了
+其他来源及计划摘要；原预检和变化取证保留，只读核实后刷新本次切换基线，未覆盖
+其结果及nextRun。收尾与新基线一致。额外试采跟进保持暂停，Booking下一自然周期待验。
+证据仍在Argus `runtime/production-releases/argus-release-20261009-5` 与Tymra原目录
+`runtime/release-candidates/booking-popup-20261009/zero-adults-*`。
 
 ## 2026-10-09 Booking 即时追加：两份完整公开报价，连续质量门槛未通过
 
@@ -24,7 +129,7 @@ Hawke's Bay 目的地选择失败，随后 Otago 报价内部错误，所以不�
 | `cmv056ptm0000t841uw9bn953`／Gisborne | Portside Hotel Gisborne／Standard Studio，NZD 248；发现及报价 Run 均 1 成功、0 失败 | 是；SUCCEEDED，单次尝试 |
 | `cmv05abu50000t85tdv0ibh06`／Hawke's Bay | `destination-suggestion:failed`；输入完整地区后没有可选目的地，非弹窗或验证码 | 否；DEAD_LETTER／NAVIGATION_ERROR |
 | `cmv05i9yf0000t883shbw03v4`／Canterbury | Fable Terrace Downs Resort by MGallery／Deluxe Two Bedroom Villa，NZD 566，含早餐；两个 Run 均 1 成功、0 失败 | 是；SUCCEEDED，单次尝试 |
-| `cmv05m46t0000t89thkculpab`／Otago | 搜索及 Lake Resort by Marsden 身份确认成功；报价返回 INTERNAL_ERROR，无公开 RateObservation | 否；DEAD_LETTER，内部错误根因尚未查明 |
+| `cmv05m46t0000t89thkculpab`／Otago | 搜索及 Lake Resort by Marsden 身份确认成功；报价返回 INTERNAL_ERROR，无公开 RateObservation | 否；DEAD_LETTER，当时根因未知；后续已定位人数解析，见上节候选 |
 
 两份成功报价均为 2026-10-16–17、一晚、2 成人、0 儿童、1 单元，NZD，
 `PUBLIC`／`AVAILABLE`／`COMPLETE`；原始截图逐项核对房型、人数、日期与
@@ -56,8 +161,8 @@ healthSummary、lastSuccessAt、固定版本窗口、原凌晨失败及 Chatham 
 `01:33:25.518`。NZ 12:25 收尾核对 84/84 计划、队列／租约空、健康／readiness
 200；其他来源和 83 个计划、Tymra 六容器及 Argus 三容器身份／配置／挂载保持。
 此前 `booking` 凌晨额外试采跟进已暂停，避免重复追加；不是质量验收通过后暂停。
-当前剩余：查明并修复 Hawke's Bay 目的地选择及 Otago 内部错误，完成最新连续两轮
-成功与自然周期。受保护证据在 `runtime/release-candidates/booking-popup-20261009/quality-immediate-*`。
+该次收尾剩余为两个问题修复、最新连续两轮及自然周期；后续修复候选与暂停位置见上节。
+受保护证据在 `runtime/release-candidates/booking-popup-20261009/quality-immediate-*`。
 
 ## 2026-10-09 Booking 质量复验：检查完成，标准门槛未通过
 
