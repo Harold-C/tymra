@@ -351,14 +351,27 @@ export async function downloadArgusEvidence(
 
 export async function getArgusHealth(environment: Environment) {
   const startedAt = Date.now();
+  const probe = async (path: string) => {
+    const response = await fetch(new URL(path, environment.ARGUS_API_BASE_URL), {
+      signal: AbortSignal.timeout(5_000),
+    });
+    // Read the body inside each probe, including non-2xx responses. Node fetch
+    // must release the connection even when the other parallel probe fails.
+    const payload: unknown = await response.json();
+    return { status: response.status, ok: response.ok, payload };
+  };
+  const flag = (payload: unknown, key: string) => payload !== null && typeof payload === "object"
+    && !Array.isArray(payload) && (payload as Record<string, unknown>)[key] === true;
   try {
     const [health, readiness] = await Promise.all([
-      fetch(new URL("/health", environment.ARGUS_API_BASE_URL), { signal: AbortSignal.timeout(5_000) }),
-      fetch(new URL("/readiness", environment.ARGUS_API_BASE_URL), { signal: AbortSignal.timeout(5_000) }),
+      probe("/health"),
+      probe("/readiness"),
     ]);
+    const healthy = health.ok && flag(health.payload, "healthy");
+    const ready = readiness.ok && flag(readiness.payload, "ready");
     return {
-      healthy: health.ok && readiness.ok,
-      ready: readiness.ok,
+      healthy: healthy && ready,
+      ready,
       mode: "argus",
       latencyMs: Date.now() - startedAt,
       healthStatus: health.status,
@@ -370,7 +383,8 @@ export async function getArgusHealth(environment: Environment) {
       ready: false,
       mode: "argus",
       latencyMs: Date.now() - startedAt,
-      message: error instanceof Error ? error.message : "Argus health check failed",
+      message: error instanceof Error && error.name === "TimeoutError"
+        ? "Argus health check timed out" : "Argus health check failed",
     };
   }
 }

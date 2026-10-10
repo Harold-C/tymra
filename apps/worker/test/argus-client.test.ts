@@ -10,6 +10,7 @@ import {
   captureBrowserTaskWithArgus,
   captureTicketmasterListingWithArgus,
   downloadArgusEvidence,
+  getArgusHealth,
   getArgusJobResult,
   mapArgusJobResult,
 } from "../src/clients/argus-client";
@@ -23,6 +24,39 @@ afterEach(async () => {
 });
 
 describe("Argus async Job client", () => {
+  it.each(["healthy", "draining", "false-ready", "false-health", "access-html"])("checks the Argus response body for %s", async scenario => {
+    server = http.createServer((request, response) => {
+      const isReady = request.url === "/readiness";
+      response.writeHead(scenario === "draining" && isReady ? 503 : 200, { "content-type": "application/json" });
+      if (scenario === "access-html") return response.end("<html>Access login</html>");
+      response.end(JSON.stringify(isReady
+        ? { ready: scenario !== "draining" && scenario !== "false-ready", draining: scenario === "draining" }
+        : { healthy: scenario !== "false-health" }));
+    });
+    const result = await getArgusHealth(await listenEnvironment());
+    assert.equal(result.healthy, scenario === "healthy");
+    assert.equal(result.ready, scenario === "healthy" || scenario === "false-health");
+    if (scenario === "draining") assert.equal(result.readinessStatus, 503);
+  });
+
+  it("consumes both health response bodies, including an unavailable response", async () => {
+    const responses: Response[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async input => {
+      const ready = new URL(String(input)).pathname === "/readiness";
+      const response = new Response(JSON.stringify(ready ? { ready: false } : { healthy: true }), { status: ready ? 503 : 200 });
+      responses.push(response);
+      return response;
+    };
+    try {
+      assert.equal((await getArgusHealth({ ARGUS_API_BASE_URL: "https://argus.test" } as Environment)).healthy, false);
+      assert.equal(responses.length, 2);
+      assert.ok(responses.every(response => response.bodyUsed));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it.each(["tampered", "wrong-job", "wrong-version", "non-terminal"])("rejects a %s result before persistence", async (scenario) => {
     const payload = {
       contract_version: scenario === "wrong-version" ? "2.0" : "1.0",
