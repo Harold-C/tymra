@@ -101,7 +101,7 @@ export async function refreshCatalog(this: WorkerContext, marketScope: string, p
         const identityStay = ["trip-public", "expedia-public", "agoda-public"].includes(connectorId)
           ? { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const : undefined;
         const parserVersion = candidate.provider === "agoda" ? `${OTA_IDENTITY_PARSER_VERSION}-agoda-dated-rooms-3`
-          : candidate.provider === "booking" ? `${OTA_IDENTITY_PARSER_VERSION}-booking-room-state-1`
+          : candidate.provider === "booking" ? `${OTA_IDENTITY_PARSER_VERSION}-booking-room-state-2`
           : candidate.provider === "trip" ? `${OTA_IDENTITY_PARSER_VERSION}-trip-city-1`
             : candidate.provider === "expedia" ? `${OTA_IDENTITY_PARSER_VERSION}-expedia-headline-1` : OTA_IDENTITY_PARSER_VERSION;
         const inputHash = stableHash(JSON.stringify({ parserVersion, identity: identityInput,
