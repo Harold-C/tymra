@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Require complete CI for this exact commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,6 +47,7 @@ jobs:
           image = json.loads(subprocess.check_output(['docker', 'image', 'inspect', tag]))[0]
           assert image['Architecture'] == 'amd64' and image['Os'] == 'linux'
           assert image['Config']['Labels']['org.opencontainers.image.revision'] == sha
+          subprocess.run(['docker', 'run', '--rm', '--network', 'none', '--entrypoint', 'node', tag, '-e', "const fs=require('node:fs');for(const path of ['/app/.git','/app/.env'])if(fs.existsSync(path))throw Error('Release image contains protected build state');"], check=True)
           root = pathlib.Path('private-release')
           root.mkdir()
           archive = root / 'image.tar.gz'
