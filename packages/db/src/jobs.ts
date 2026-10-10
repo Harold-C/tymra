@@ -23,9 +23,12 @@ export type EnqueueJobInput = {
 };
 
 export async function enqueueJob(input: EnqueueJobInput, client?: Prisma.TransactionClient): Promise<Job> {
-  return (client ?? prisma).job.upsert({
-    where: { idempotencyKey: input.idempotencyKey },
-    create: {
+  const repository = (client ?? prisma).job;
+  // An empty-update Prisma upsert can race between its read and insert. Use
+  // PostgreSQL's conflict handling without changing an existing job or lease.
+  await repository.createMany({
+    skipDuplicates: true,
+    data: {
       type: input.type,
       payload: input.payload,
       idempotencyKey: input.idempotencyKey,
@@ -44,8 +47,8 @@ export async function enqueueJob(input: EnqueueJobInput, client?: Prisma.Transac
       maxAttempts: input.maxAttempts ?? 3,
       runAt: input.runAt ?? new Date(),
     },
-    update: {},
   });
+  return repository.findUniqueOrThrow({ where: { idempotencyKey: input.idempotencyKey } });
 }
 
 export async function recoverExpiredJobs(now: Date = new Date()): Promise<number> {

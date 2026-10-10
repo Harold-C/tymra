@@ -42,6 +42,20 @@ describe("persistent job queue", () => {
     expect(completed.status).toBe("SUCCEEDED");
   });
 
+  it("returns one unchanged job for concurrent duplicate submissions", async () => {
+    const idempotencyKey = `${prefix}:concurrent`;
+    const input = { type: "SOURCE_HEALTH_CHECK" as const, payload: { source: "synthetic" }, idempotencyKey,
+      queueName: `${prefix}:concurrent-queue`, runAt: new Date("2099-01-01T00:00:00.000Z") };
+    const results = await Promise.all(Array.from({ length: 16 }, () => enqueueJob(input)));
+    expect(new Set(results.map(job => job.id)).size).toBe(1);
+    expect(await prisma.job.count({ where: { idempotencyKey } })).toBe(1);
+    const first = results[0]!;
+    await prisma.job.update({ where: { id: first.id }, data: { status: "RUNNING", lockedBy: "original-worker", attemptCount: 1 } });
+    const held = await prisma.job.findUniqueOrThrow({ where: { id: first.id } });
+    const replay = await enqueueJob({ ...input, payload: { source: "changed" }, priority: 1, maxAttempts: 99 });
+    expect(replay).toEqual(held);
+  });
+
   it("recovers a job abandoned by a crashed worker and applies the documented retry schedule", async () => {
     const key = `${prefix}:retry`;
     const queueName = `${prefix}:retry-queue`;
