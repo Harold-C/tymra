@@ -1,0 +1,70 @@
+name: Export fixed Tymra release image
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Release identity for this fixed commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require complete CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+          assert re.fullmatch(r'[a-z0-9][a-z0-9-]{0,63}', os.environ['RELEASE_VERSION'])
+          sha = os.environ['GITHUB_SHA']
+          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/actions/runs?head_sha=' + sha + '&per_page=100'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=30) as response:
+              runs = json.load(response)['workflow_runs']
+          assert any(run['head_sha'] == sha and run['path'] == '.github/workflows/ci.yml' and run['conclusion'] == 'success' for run in runs), 'Complete CI for the fixed candidate must pass before export'
+          PY
+      - name: Build and seal the fixed production image
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          python3 - <<'PY'
+          import gzip, hashlib, json, os, pathlib, subprocess
+          sha = os.environ['GITHUB_SHA']
+          version = os.environ['RELEASE_VERSION']
+          tag = 'tymra-private-release:' + sha
+          subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--target', 'production', '--build-arg', 'TYMRA_RELEASE_VERSION=' + version, '--build-arg', 'TYMRA_SOURCE_REVISION=' + sha, '--label', 'org.opencontainers.image.revision=' + sha, '--label', 'org.opencontainers.image.version=' + version, '--tag', tag, '.'], check=True)
+          image = json.loads(subprocess.check_output(['docker', 'image', 'inspect', tag]))[0]
+          assert image['Architecture'] == 'amd64' and image['Os'] == 'linux'
+          assert image['Config']['Labels']['org.opencontainers.image.revision'] == sha
+          root = pathlib.Path('private-release')
+          root.mkdir()
+          archive = root / 'image.tar.gz'
+          process = subprocess.Popen(['docker', 'save', tag], stdout=subprocess.PIPE)
+          with gzip.open(archive, 'wb', compresslevel=3) as output:
+              for chunk in iter(lambda: process.stdout.read(1048576), b''):
+                  output.write(chunk)
+          process.stdout.close()
+          assert process.wait() == 0
+          digest = hashlib.sha256()
+          with archive.open('rb') as source:
+              for chunk in iter(lambda: source.read(1048576), b''):
+                  digest.update(chunk)
+          source = subprocess.check_output(['git', 'archive', '--format=tar', sha])
+          manifest = {'revision': sha, 'release': version, 'sourceArchiveSha256': hashlib.sha256(source).hexdigest(), 'savedImageId': image['Id'], 'archiveSha256': digest.hexdigest(), 'rootfsLayers': image['RootFS']['Layers'], 'config': image['Config']}
+          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tymra-private-release-${{ github.sha }}
+          path: private-release/
+          compression-level: 0
+          retention-days: 7

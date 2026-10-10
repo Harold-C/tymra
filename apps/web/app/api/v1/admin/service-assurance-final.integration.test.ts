@@ -67,7 +67,7 @@ describe("final service assurance persisted invariants", () => {
     await Promise.all([1, 2].map(() => confirmQuery(request.id, conditions)));
     expect(await prisma.membershipUsage.count({ where: { customerUserId: customerId } })).toBe(before);
     expect(await prisma.job.count({ where: { priceCheckId: request.id, type: "RATE_COLLECTION" } })).toBe(1);
-    expect(await prisma.job.count({ where: { priceCheckId: request.id, type: "EMAIL_DELIVERY" } })).toBe(1);
+    expect(await prisma.job.count({ where: { idempotencyKey: `${request.id}:job:check-processing`, type: "EMAIL_DELIVERY" } })).toBe(1);
     expect(await prisma.emailDelivery.count({ where: { priceCheckId: request.id, type: "CHECK_PROCESSING" } })).toBe(1);
     expect((await prisma.stayQuery.findUniqueOrThrow({ where: { id: query.id } })).checkIn).toEqual(query.checkIn);
     expect((await prisma.exceptionCase.findUniqueOrThrow({ where: { id: incident.id } })).status).toBe("IN_PROGRESS");
