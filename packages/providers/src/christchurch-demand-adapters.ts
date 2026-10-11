@@ -103,6 +103,7 @@ export function parseChristchurchSports(html: string, finalUrl: string): HtmlRes
     const year = Number(clean(document.querySelector(".c-opta-data-block__heading")?.textContent ?? "").match(/\b(20\d{2})\b/)?.[1]);
     let validFixtures = 0;
     let invalidFixtures = 0;
+    let awayFixtures = 0;
     const events = [...document.querySelectorAll("table.c-fixture-table tbody tr")].flatMap((row) => {
       const cells = [...row.querySelectorAll("td")].map((cell) => clean(cell.textContent));
       if (/\bbye\b/i.test(cells[2] ?? "")) return [];
@@ -113,10 +114,13 @@ export function parseChristchurchSports(html: string, finalUrl: string): HtmlRes
       }
       validFixtures += 1;
       const venue = cells[3];
-      if (!/christchurch/i.test(venue) && !/^one (?:new zealand|nz) stadium$/i.test(venue)) return [];
+      if (!/christchurch/i.test(venue) && !/^one (?:new zealand|nz) stadium$/i.test(venue)) {
+        if (/\bv(?:s\.?)?\s+crusaders$/i.test(cells[2])) awayFixtures += 1;
+        return [];
+      }
       return [eventRecord("christchurch_sports", `crusaders:${cells[0]}:${startsAt.toISOString()}`, cells[2], finalUrl, startsAt, venue, "Sport", { competition: "Super Rugby Pacific", round: cells[0], score: cells[4] || null })];
     });
-    return { events, recognizedEmpty: events.length === 0 && validFixtures > 0 && invalidFixtures === 0 };
+    return { events, recognizedEmpty: events.length === 0 && awayFixtures > 0 && awayFixtures === validFixtures && invalidFixtures === 0 };
   }
   const year = Number(clean(document.querySelector("h1")?.textContent ?? html).match(/\b(20\d{2})\b/)?.[1]) || Number(nzDateKey(new Date()).slice(0, 4));
   const events = [...document.querySelectorAll(".match.home-game")].flatMap((match) => {

@@ -75,6 +75,7 @@ describe("Christchurch Sports production regressions", () => {
   it.each([
     "<h1>Verify you are human</h1>",
     draw(""),
+    draw(row("1", "Fri 12 Feb | 07:35 PM", "Crusaders V Reds", "Unknown renamed home stadium")),
     draw(row("1", "Fri 12 Feb | 07:35 PM", "Crusaders V Reds", "One New Zealand Stadium"), ""),
     draw(row("1", "Date format changed", "Crusaders V Reds", "One New Zealand Stadium")
       + row("3", "Sun 28 Feb | 04:00 PM", "Blues V Crusaders", "Eden Park")),

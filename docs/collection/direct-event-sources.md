@@ -38,6 +38,7 @@ without Argus. All development schedules are seeded disabled.
   A recognized draw with only valid dated away fixtures, or fixtures outside the requested
   window, yields no local records and collection continues to the other official pages.
   Missing fixture structure, season year or malformed dates cannot establish a valid empty draw.
+  Unknown home-venue names cannot establish that every fixture is away from Christchurch.
   HTTP errors and unrecognized challenge pages retain their existing failure handling.
   Production recovery uses two exact, single-attempt trials before enabling the existing weekly
   plan through `schedule:public:recovery-enable`; historical failures remain intact.
