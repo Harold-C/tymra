@@ -15,7 +15,7 @@ const RICCARTON_URL = "https://racing.riccartonpark.nz/";
 const CRUISE_URL = "https://newzealandcruiseassociation.com/schedules/";
 const AIRPORT_MONTHLY_URL = "https://www.christchurchairport.co.nz/about-us/who-we-are/facts-and-figures/monthly-passenger-arrivals-and-departures/";
 
-type HtmlResult = { events?: PublicEvent[]; signals?: PublicSignal[]; metadata?: Record<string, unknown> };
+type HtmlResult = { events?: PublicEvent[]; signals?: PublicSignal[]; metadata?: Record<string, unknown>; recognizedEmpty?: boolean };
 type HtmlParser = (html: string, finalUrl: string) => HtmlResult;
 type NzCruiseRow = { Ship: string; Port: string; Arrival: string; "Arrival time": string; Departure: string; "Departure time": string; Guests: string; Crew: string };
 
@@ -32,7 +32,7 @@ class ChristchurchDemandAdapter implements PublicDataAdapter {
     });
     if (!response.ok) throw sourceError(this.metadata.sourceName, response.status);
     const parsed = this.parser(await boundedText(response, context.collectionLimits?.maxBytes ?? 5_000_000), response.url);
-    if (!(parsed.events?.length || parsed.signals?.length || parsed.metadata)) throw new AdapterError("PARSING_ERROR", `${this.metadata.sourceName} returned no supported records`, false);
+    if (!(parsed.events?.length || parsed.signals?.length || parsed.metadata || parsed.recognizedEmpty)) throw new AdapterError("PARSING_ERROR", `${this.metadata.sourceName} returned no supported records`, false);
     const values = [
       ...(parsed.events ?? []).filter((event) => overlaps(event.startsAt, event.endsAt, context)).map((event) => ({ kind: "event", value: event })),
       ...(parsed.signals ?? []).filter((signal) => overlaps(signal.startsAt, signal.endsAt, context)).map((signal) => ({ kind: "signal", value: signal })),
@@ -101,13 +101,26 @@ export function parseChristchurchSports(html: string, finalUrl: string): HtmlRes
   const { document } = parseHTML(html);
   if (host.includes("crusaders")) {
     const year = Number(clean(document.querySelector(".c-opta-data-block__heading")?.textContent ?? "").match(/\b(20\d{2})\b/)?.[1]);
+    let validFixtures = 0;
+    let invalidFixtures = 0;
+    let awayFixtures = 0;
     const events = [...document.querySelectorAll("table.c-fixture-table tbody tr")].flatMap((row) => {
       const cells = [...row.querySelectorAll("td")].map((cell) => clean(cell.textContent));
-      if (cells.length < 4 || !/christchurch/i.test(cells[3] ?? "")) return [];
-      const startsAt = parseDayMonthTime(cells[1]!, year);
-      return startsAt ? [eventRecord("christchurch_sports", `crusaders:${cells[0]}:${startsAt.toISOString()}`, cells[2]!, finalUrl, startsAt, cells[3]!, "Sport", { competition: "Super Rugby Pacific", round: cells[0], score: cells[4] || null })] : [];
+      if (/\bbye\b/i.test(cells[2] ?? "")) return [];
+      const startsAt = parseDayMonthTime(cells[1] ?? "", year);
+      if (!startsAt || !cells[0] || !cells[2] || !cells[3]) {
+        invalidFixtures += 1;
+        return [];
+      }
+      validFixtures += 1;
+      const venue = cells[3];
+      if (!/christchurch/i.test(venue) && !/^one (?:new zealand|nz) stadium$/i.test(venue)) {
+        if (/\bv(?:s\.?)?\s+crusaders$/i.test(cells[2])) awayFixtures += 1;
+        return [];
+      }
+      return [eventRecord("christchurch_sports", `crusaders:${cells[0]}:${startsAt.toISOString()}`, cells[2], finalUrl, startsAt, venue, "Sport", { competition: "Super Rugby Pacific", round: cells[0], score: cells[4] || null })];
     });
-    return { events };
+    return { events, recognizedEmpty: events.length === 0 && awayFixtures > 0 && awayFixtures === validFixtures && invalidFixtures === 0 };
   }
   const year = Number(clean(document.querySelector("h1")?.textContent ?? html).match(/\b(20\d{2})\b/)?.[1]) || Number(nzDateKey(new Date()).slice(0, 4));
   const events = [...document.querySelectorAll(".match.home-game")].flatMap((match) => {
