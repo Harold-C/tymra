@@ -1,5 +1,5 @@
 import { getEnvironment } from "@tymra/config";
-import { claimNextJob, deferClaimedJob, markJobFailed, markJobSucceeded, prisma, recoverExpiredJobs, renewJobLease } from "@tymra/db";
+import { claimNextJob, deferClaimedJob, markJobFailed, markJobSucceeded, prisma, reconcileMembershipUsage, recoverExpiredJobs, renewJobLease } from "@tymra/db";
 import { DeferredJobError } from "./jobs/deferred-job";
 import { classifyJobFailure } from "./jobs/job-failure";
 import { handleJob } from "./jobs/job-handlers";
@@ -77,7 +77,8 @@ while (!stopping) {
     }
     const failure = classifyJobFailure(error);
     try {
-      await markJobFailed(job, environment.WORKER_ID, failure.code, failure.message, failure.retryable);
+      const settled = await markJobFailed(job, environment.WORKER_ID, failure.code, failure.message, failure.retryable);
+      if (job.priceCheckId && ["FAILED", "DEAD_LETTER"].includes(settled.status)) await reconcileMembershipUsage(prisma, job.priceCheckId, true);
       logJob("job_failed", job, { errorCode: failure.code, message: failure.message, retryable: failure.retryable });
     } catch (settlementError) {
       logJob("job_settlement_skipped", job, { errorCode: failure.code, message: settlementError instanceof Error ? settlementError.message : "Unable to settle job" });

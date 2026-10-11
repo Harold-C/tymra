@@ -76,6 +76,72 @@ async function postJsonFromPage<T>(page: import("playwright/test").Page, url: st
 }
 
 test.describe("public Release 1", () => {
+  test("member registration keeps credentials out of the URL without JavaScript", async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
+    const page = await context.newPage();
+    try {
+      await goto(page, `${publicOrigin}/en/sign-up`);
+      await page.getByLabel("Membership email").fill("no-js-registration@tymra.test");
+      await page.getByLabel("Password", { exact: true }).fill("synthetic no javascript password");
+      await page.getByLabel("Confirm password").fill("synthetic no javascript password");
+      await page.getByRole("checkbox").check();
+      const submitted = page.waitForRequest((request) => request.url().includes("/en/sign-up") && request.method() === "POST");
+      await page.getByRole("button", { name: "Create account", exact: true }).click();
+      const request = await submitted;
+      expect(new URL(request.url()).search).toBe("");
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const locale of ["en", "zh"] as const) {
+    test(`password registration, email verification and returning sign-in work in ${locale}`, async ({ page }) => {
+      const email = `registration-${Date.now()}-${crypto.randomUUID()}@tymra.test`;
+      const password = "synthetic registration browser password";
+      const pageErrors: string[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      await goto(page, `${publicOrigin}/${locale}/sign-up`);
+      await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
+      await page.locator("#register-email").fill(email);
+      await page.locator("#register-password").fill(password);
+      await page.locator("#register-password-confirm").fill("a different synthetic password");
+      await page.getByRole("checkbox").check();
+      await page.getByRole("button", { name: locale === "en" ? "Create account" : "创建账户", exact: true }).click();
+      await expect(page.locator("form").getByRole("alert")).toHaveText(locale === "en" ? "The passwords do not match." : "两次输入的密码不一致。");
+      await page.locator("#register-password-confirm").fill(password);
+      await page.getByRole("button", { name: locale === "en" ? "Create account" : "创建账户", exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/${locale}/account\\?verify=email$`));
+      await expect(page.getByText(locale === "en" ? "Verify your account email" : "验证账户邮箱", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: locale === "en" ? "Send verification email" : "发送验证邮件", exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const checks = await (await page.request.get(`${publicOrigin}/api/v1/customer/checks`)).json();
+      expect(checks.data).toEqual([]);
+      const membership = await (await page.request.get(`${publicOrigin}/api/v1/customer/membership`)).json();
+      expect(membership.data.plan).toBe("FREE");
+      const search = await pollMailpit(page, email, 1);
+      expect(search.messages_count).toBe(1);
+      expect(search.messages[0].Subject).toBe(locale === "en" ? "Verify your Tymra account email" : "验证你的 Tymra 账户邮箱");
+      const message = await (await page.request.get(`${mailpitOrigin}/api/v1/message/${search.messages[0].ID}`)).json();
+      const secureHref = String(message.HTML).match(/href="(https?:\/\/[^\"]+\/auth\/verify\?[^\"]+)"/)?.[1]?.replaceAll("&amp;", "&");
+      expect(Boolean(secureHref)).toBe(true);
+      await goto(page, secureHref!);
+      await expect(page).toHaveURL(new RegExp(`/${locale}/account\\?verified=email$`));
+      await expect(page.getByText(locale === "en" ? "Your email is verified." : "你的邮箱已验证。", { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const signedOut = await page.request.delete(`${publicOrigin}/api/v1/customer/session`, { headers: { origin: publicOrigin }, data: {} });
+      expect(signedOut.status()).toBe(200);
+      await goto(page, `${publicOrigin}/${locale}/account/settings`);
+      await expect(page).toHaveURL(new RegExp(`/${locale}/sign-in\\?returnTo=`));
+      await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
+      await page.locator("#member-email").fill(email);
+      await page.locator("#member-password").fill(password);
+      await page.getByRole("button", { name: locale === "en" ? "Sign in" : "登录", exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/${locale}/account/settings$`));
+      await expect(page.getByRole("heading", { name: locale === "en" ? "Account settings" : "账户设置", exact: true })).toBeVisible();
+      expect(pageErrors).toEqual([]);
+    });
+  }
+
   test("member sign-in fails closed without JavaScript and never places credentials in the URL", async ({ browser }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
     const page = await context.newPage();
@@ -189,15 +255,15 @@ test.describe("public Release 1", () => {
     await page.getByRole("link", { name: pricingLabel, exact: true }).first().click();
     await expect(page).toHaveURL(new RegExp(`/${locale}/pricing$`));
     await expect(page.getByRole("heading", { level: 1 })).toContainText(locale === "en" ? "whole portfolio" : "整个住宿组合");
-    await expect(page.getByText("NZ$29", { exact: true })).toBeVisible();
-    await expect(page.getByText(locale === "en" ? "Exact daily price-check window: next 90 days" : "精确逐日价格检查范围：未来 90 天", { exact: true })).toBeVisible();
+    await expect(page.getByText("NZ$19", { exact: true })).toBeVisible();
+    await expect(page.getByText(locale === "en" ? "Query dates: next 90 days" : "可查询未来 90 天内的入住日期", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: locale === "en" ? "Create Free account" : "创建 Free 账户" }).first()).toBeVisible();
     if (locale === "en") {
       const planRules = [
-        ["Free", "NZ$0", "1 property slot", "next 14 days", "up to 30 days", "No scheduled analysis", "1 spot check", "30 days of recommendation history", "best-effort queue"],
-        ["Host", "NZ$29", "1 property slot", "next 30 days", "up to 90 days", "Weekly incremental analysis per property", "10 spot checks", "6 months of recommendation history", "standard queue"],
-        ["Pro", "NZ$89", "5 property slots", "next 90 days", "up to 180 days", "3 incremental analyses per property each week", "60 spot checks", "12 months of recommendation history", "priority queue"],
-        ["Portfolio", "NZ$249", "20 property slots", "next 180 days", "up to 365 days", "Daily incremental analysis per property", "300 spot checks", "24 months of recommendation history", "highest shared queue priority"],
+        ["Free", "NZ$0", "1 monitored-object slot", "next 14 days", "up to 30 days", "No scheduled analysis", "one check per rolling 30 days", "30 days of recommendation history", "best-effort queue"],
+        ["Host", "NZ$19", "1 monitored-object slot", "next 30 days", "up to 90 days", "Weekly incremental analysis per property", "10 manual checks", "6 months of recommendation history", "standard queue"],
+        ["Pro", "NZ$99", "20 monitored-object slots", "next 90 days", "up to 180 days", "3 incremental analyses per property each week", "240 manual checks", "12 months of recommendation history", "priority queue"],
+        ["Portfolio", "NZ$249", "50 monitored-object slots", "next 180 days", "up to 365 days", "Daily incremental analysis per property", "750 manual checks", "24 months of recommendation history", "highest shared queue priority"],
       ];
       for (const [plan, ...rules] of planRules) {
         const card = page.locator(".public-plan-card").filter({ has: page.getByText(plan, { exact: true }) });

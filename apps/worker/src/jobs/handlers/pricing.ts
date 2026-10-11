@@ -1,12 +1,13 @@
 import { getEnvironment, type Environment } from "@tymra/config";
 import { enqueueJob, hashOpaqueToken, prisma, type Prisma } from "@tymra/db";
-import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence } from "@tymra/domain";
+import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence, selectMemberComparables } from "@tymra/domain";
 import { DemoProvider } from "@tymra/providers/demo";
 import { WorkerService } from "../../services/worker-service";
 import { acknowledgePersistedArgusResults } from "../../services/argus-orchestrator";
 import { queueTerminalEmail } from "./notifications";
 import { syncIncidentSafely, setCheckStatus, enqueueNext, inheritedJobPriority, ensureWorkerException } from "./state";
 import { JsonObject, requiredString } from "./payload";
+import { memberStrategyForCheck } from "../../membership/strategy";
 
 export async function collectRates(priceCheckId: string, jobId: string, environment: Environment) {
   const check = await prisma.priceCheck.findUniqueOrThrow({
@@ -354,7 +355,8 @@ export async function generateResult(priceCheckId: string, payload: JsonObject, 
   const benchmarkBasis = isLocationBenchmark
     ? [...basisCounts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0]
     : target!.priceBasis;
-  const comparableObservations = recommendationPool.filter((item) => item.priceBasis === benchmarkBasis).sort((left, right) => left.effectiveNightlyTotalMinor - right.effectiveNightlyTotalMinor);
+  const strategy = await memberStrategyForCheck(priceCheckId, prisma);
+  const comparableObservations = selectMemberComparables(recommendationPool.filter(item => item.priceBasis === benchmarkBasis), strategy).sort((left, right) => left.effectiveNightlyTotalMinor - right.effectiveNightlyTotalMinor);
   const recommendationAvailable = comparableObservations.length >= 3 && (isLocationBenchmark || target!.feeCompleteness === "COMPLETE");
   const median = recommendationAvailable ? comparableObservations[Math.floor(comparableObservations.length / 2)].effectiveNightlyTotalMinor : null;
   const observedSources = [...new Set(publishableObservations.map((item) => item.dataSource.key))];

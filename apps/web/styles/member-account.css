@@ -1,4 +1,18 @@
 /* Member account workspace */
+.member-strategy-units { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; margin: 1.25rem 0; }
+.member-strategy-units article { min-width: 0; border: 1px solid var(--border); background: var(--surface); border-radius: .8rem; padding: 1rem; overflow-wrap: anywhere; }
+.member-strategy-units label, .member-alert-preference { display: flex; align-items: center; gap: .65rem; min-height: 48px; }
+.member-strategy-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+.member-strategy-form, .member-strategy-form fieldset { min-width: 0; }
+.membership-quote .member-strategy-form label { display: grid; grid-template-columns: minmax(0, 1fr); gap: .4rem; font-weight: 600; }
+.membership-quote .member-strategy-form label:has(input[type=checkbox]) { display: flex; align-items: center; gap: .65rem; }
+.membership-quote [role=region] > button { margin: .5rem .5rem 0 0; }
+.member-strategy-form input:not([type=checkbox]), .member-strategy-form select, .member-page > .rough-shell > label select { width: 100%; min-width: 0; min-height: 48px; padding: .6rem; border: 1px solid var(--border-strong); border-radius: .45rem; background: var(--surface); color: var(--text-primary); }
+.member-strategy-form input[type=checkbox], .member-alert-preference input, .member-strategy-units input { width: 22px; height: 22px; flex-shrink: 0; }
+.member-strategy-units .button { margin: .6rem 0 .6rem .8rem; }
+.member-export-list { padding: 0; list-style: none; }
+.member-export-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: 1rem 0; border-bottom: 1px solid var(--border); }
+.member-export-list li span { flex: 1 1 12rem; }
 .customer-account-nav { border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent); position: sticky; top: 83px; z-index: 20; box-shadow: 0 8px 28px rgb(15 23 42 / 4%); backdrop-filter: blur(16px); }
 .customer-account-nav-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: color-mix(in srgb, var(--text-secondary) 35%, transparent) transparent; scrollbar-width: thin; }
 .customer-account-nav .rough-shell { display: flex; gap: .25rem; min-width: max-content; padding-block: .55rem; }

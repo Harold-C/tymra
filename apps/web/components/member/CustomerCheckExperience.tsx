@@ -89,6 +89,7 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
   }
 
   if (check.status !== "PUBLISHED" || !check.result) {
+    if (check.availability?.length) return <section className="rough-shell customer-check-page"><h1>{locale === "zh" ? "来源显示所选日期已售罄" : "Sources show no availability for these dates"}</h1><p>{locale === "zh" ? "这是来源返回的有效可售状态，已计入本次查询额度；当前没有可展示的房价或调价建议。其他渠道仍可能有房，以下状态以检查时间为准。" : "This confirmed availability result counts as a query. There is no observed price or rate recommendation. Other channels may still have availability; each observation is accurate as of the time shown."}</p><div className="observed-price-list">{check.availability.map(item => <article key={item.id}><strong>{item.dataSource.name}</strong><p>{item.checkIn.slice(0, 10)}–{item.checkOut.slice(0, 10)}</p><p>{copy.checkedAt}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(item.collectedAt))}</p><a href={item.sourceUrl} target="_blank" rel="noreferrer">{copy.viewSource}</a></article>)}</div><Link className="button button-secondary" href={`/${locale}/account`}>{copy.allChecks}</Link></section>;
     return <AccountState locale={locale} title={statusCopy} body={copy.terminalBody} />;
   }
 
@@ -130,6 +131,7 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
             </article>
           ))}</div> : <p>{copy.noInsights}</p>}
           <div className="formal-disclaimer"><AlertTriangle aria-hidden="true" /><p>{copy.disclaimer}</p></div>
+          {check.result.memberReview?.length ? <section className="membership-quote"><h3>{locale === "zh" ? "按你的策略生成的参考范围" : "Review range under your strategy"}</h3>{check.result.memberReview.map(item => <p key={item.insightId}>{item.range ? `${money.format(item.range.lowMinor / 100)}–${money.format(item.range.highMinor / 100)}` : locale === "zh" ? "没有同时满足证据和策略限制的建议。" : "No recommendation satisfies both the evidence and your strategy limits."}</p>)}</section> : null}
           <div className="flow-actions"><Link className="button button-secondary" href={`/${locale}/account`}>{copy.allChecks}</Link><Link className="button button-primary" href={`/${locale}/address-check`}>{copy.another}<ArrowRight aria-hidden="true" /></Link></div>
         </div>
       </section>

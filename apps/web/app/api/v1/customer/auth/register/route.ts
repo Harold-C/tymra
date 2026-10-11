@@ -7,7 +7,7 @@ import { z } from "zod";
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
 import { createCustomerSession, isCustomerSameOrigin, setCustomerSessionCookie } from "@/lib/server/membership/customer-auth";
 import { ensureFreeMembership } from "@/lib/server/membership/membership";
-import { issueCustomerEmailVerification } from "@/lib/server/membership/magic-links";
+import { issueCustomerEmailVerification, VerificationEmailDeliveryError } from "@/lib/server/membership/magic-links";
 import { ensureBenefitGroup, memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/membership/member-risk";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
 
@@ -42,9 +42,15 @@ export async function POST(request: NextRequest) {
       ], skipDuplicates: true });
       return created;
     });
-    await issueCustomerEmailVerification(customer.id, input.locale);
     const session = await createCustomerSession(customer.id, false, identity);
-    const response = apiSuccess({ customer: { id: customer.id }, returnTo: `/${input.locale}/account?verify=email`, verificationRequired: true }, { status: 201 });
+    let verificationEmailSent = true;
+    try {
+      await issueCustomerEmailVerification(customer.id, input.locale);
+    } catch (error) {
+      if (!(error instanceof VerificationEmailDeliveryError)) throw error;
+      verificationEmailSent = false;
+    }
+    const response = apiSuccess({ customer: { id: customer.id }, returnTo: `/${input.locale}/account?verify=${verificationEmailSent ? "email" : "email-unavailable"}`, verificationRequired: true, verificationEmailSent }, { status: 201 });
     setCustomerSessionCookie(response, session.token);
     setMemberDeviceCookie(response, identity);
     return response;

@@ -5,7 +5,8 @@ import Link from "next/link";
 
 import { membershipEntitlements, membershipPlans, type MembershipPlanId } from "@tymra/domain";
 import { PublicShell } from "@/components/public/PublicShell";
-import { planLaunchAvailability } from "@/lib/server/membership/stripe-billing";
+import { CapacityPlans } from "@/components/member/CapacityPlans";
+import { membershipCapacityLaunchLimit, planLaunchAvailability } from "@/lib/server/membership/stripe-billing";
 
 type Locale = "en" | "zh";
 
@@ -53,6 +54,7 @@ export default async function PricingPage({ params }: { params: { locale: Locale
             ))}
           </div>
 
+          <CapacityPlans locale={params.locale} availability={availability} capacityLaunchLimit={membershipCapacityLaunchLimit()} />
           <section className="pricing-explainer" aria-labelledby="coverage-title">
             <div className="pricing-section-heading">
               <span>{t("coverageEyebrow")}</span>
@@ -112,7 +114,7 @@ function PlanCard({ plan, available, t, locale }: {
         <li><Check aria-hidden="true" />{t("dailyWindow", { count: entitlement.dailyPriceCheckHorizonDays })}</li>
         <li><Check aria-hidden="true" />{t("monitoringWindow", { count: entitlement.monitoringHorizonDays })}</li>
         <li><Check aria-hidden="true" />{schedule}</li>
-        <li><Check aria-hidden="true" />{t("spotChecks", { count: entitlement.rollingSpotCheckLimit })}</li>
+        <li><Check aria-hidden="true" />{isFree ? t("freeSpotChecks") : t("spotChecks", { count: entitlement.rollingSpotCheckLimit })}</li>
         <li><Check aria-hidden="true" />{history}</li>
         <li><Check aria-hidden="true" />{t(`plans.${plan}.capability`)}</li>
         <li><Check aria-hidden="true" />{t(`plans.${plan}.service`)}</li>

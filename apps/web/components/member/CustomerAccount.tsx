@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import { Locale, CheckListItem, MembershipSummary, ApiPayload } from "./contracts";
 import { MembershipPanel } from "./MembershipPanel";
 import { accountCopy } from "./AccountState";
+import { CustomerEmailVerification } from "./CustomerEmailVerification";
 
-export function CustomerAccount({ locale, blockedReason = null }: { locale: Locale; blockedReason?: string | null }) {
+export function CustomerAccount({ locale, blockedReason = null, emailVerified, verificationDelivery, showVerificationSuccess = false }: { locale: Locale; blockedReason?: string | null; emailVerified: boolean; verificationDelivery?: "sent" | "unavailable"; showVerificationSuccess?: boolean }) {
   const copy = accountCopy[locale];
   const [checks, setChecks] = useState<CheckListItem[] | null>(null);
   const [membership, setMembership] = useState<MembershipSummary | null>(null);
@@ -34,6 +35,7 @@ export function CustomerAccount({ locale, blockedReason = null }: { locale: Loca
     <section className="account-page">
       <div className="rough-shell">
         <span className="rough-eyebrow">{copy.accountEyebrow}</span><h1>{copy.accountTitle}</h1><p>{copy.accountBody}</p>
+        {!emailVerified || showVerificationSuccess ? <CustomerEmailVerification locale={locale} verified={emailVerified} delivery={verificationDelivery} /> : null}
         {blockedReason ? <div className="flow-notice notice-warning"><Clock3 aria-hidden="true" /><div><strong>{copy.blocked[blockedReason as keyof typeof copy.blocked]?.title ?? copy.quotaTitle}</strong><p>{copy.blocked[blockedReason as keyof typeof copy.blocked]?.body ?? copy.quotaBody}</p></div></div> : null}
         {error ? <div className="flow-notice notice-danger"><AlertTriangle aria-hidden="true" /><div><strong>{copy.accessTitle}</strong><p>{error}</p></div></div> : null}
         {!checks && !error ? <div className="loading-state"><LoaderCircle className="spin" /><span>{copy.loadingTitle}</span></div> : null}

@@ -1,4 +1,4 @@
-import { prisma, recordFunnelEvent } from "@tymra/db";
+import { prisma, recordFunnelEvent, type Prisma } from "@tymra/db";
 import { membershipHistoryCutoff } from "./membership";
 import { nextAction } from "../price-checks";
 
@@ -33,6 +33,11 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
     },
   });
   if (!check) return null;
+  const availability = check.stayQuery && terminalStatuses.has(check.status) ? await prisma.rateObservation.findMany({
+    where: { collectionRun: { priceCheckId: check.id }, quarantine: null, availabilityStatus: "SOLD_OUT", collectedAt: { gte: check.createdAt }, checkIn: check.stayQuery.checkIn, checkOut: check.stayQuery.checkOut, adults: check.stayQuery.adults, units: check.stayQuery.units, childrenAges: { equals: check.stayQuery.childrenAges as Prisma.InputJsonValue }, ...(check.analysisType === "LISTING_PRICING" ? { sellableUnitId: check.unitId ?? "" } : {}) },
+    orderBy: { collectedAt: "desc" }, take: 10,
+    select: { id: true, availabilityStatus: true, checkIn: true, checkOut: true, collectedAt: true, sourceUrl: true, dataSource: { select: { name: true } } },
+  }) : [];
   const result = check.resultVersions[0] ?? null;
   if (result) {
     await recordFunnelEvent({
@@ -52,6 +57,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
     property: check.property,
     unit: check.unit,
     stayQuery: check.stayQuery,
+    availability,
     result: result
       ? {
           version: result.version,
@@ -67,6 +73,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
           observedPrices: observedPricesFromPayload(result.payload),
           isDemo: result.isDemo,
           addressCoverage: addressCoverageFromPayload(result.payload),
+          memberReview: Array.isArray(recordValue(result.payload).memberReview) ? recordValue(result.payload).memberReview : null,
           insights: result.insights.map((insight) => ({
             id: insight.id,
             stayDate: insight.stayDate,

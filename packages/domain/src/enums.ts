@@ -288,6 +288,7 @@ export const emailTypes = [
   "INSUFFICIENT_DATA",
   "CHECK_FAILED",
   "RESULT_REMINDER",
+  "PRICE_ALERT",
 ] as const;
 export const emailTypeSchema = z.enum(emailTypes);
 export type EmailType = z.infer<typeof emailTypeSchema>;

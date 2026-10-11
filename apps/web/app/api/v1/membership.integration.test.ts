@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { ensureFreeMembership, MembershipAccessError, MembershipOperationError, reserveMembershipOperation, reserveSpotCheck, runMembershipTransaction, setPricingUnitActive } from "@/lib/server/membership/membership";
 import { bindMemberRiskContext, ensureBenefitGroup, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "@/lib/server/membership/member-risk";
+import { launchPriceTiers } from "@/lib/server/membership/billing-contract";
 import { claimPromotion } from "@/lib/server/membership/stripe-billing";
 import { consumeMagicLink, InvalidMagicLinkError } from "@/lib/server/membership/magic-links";
 import { POST as passwordSignIn, PUT as changePassword } from "./customer/auth/password/route";
@@ -89,7 +90,7 @@ describe("membership persistence and enforcement", () => {
     expect(second.benefitGroupId).not.toBe(first.benefitGroupId);
   });
 
-  it("uses an independent, idempotent New Zealand monthly export allowance", async () => {
+  it("uses an independent, idempotent billing-period export allowance", async () => {
     const customer = await createCustomer("exports");
     await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "PRO", status: "ACTIVE" } });
     const first = await reserveMembershipOperation({ customerUserId: customer.id, action: "MEMBER_EXPORT", idempotencyKey: `${prefix}:export:0`, now: new Date("2026-08-11T13:00:00.000Z") });
@@ -158,7 +159,7 @@ describe("membership persistence and enforcement", () => {
         locale: "en",
         propertyId: unit.propertyId,
         unitId: unit.id,
-        stayQuery: { checkIn: "2026-08-17", checkOut: "2026-08-18", adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" },
+        stayQuery: { checkIn: new Date(Date.now() + 5 * 86400000).toISOString(), checkOut: new Date(Date.now() + 6 * 86400000).toISOString(), adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" },
         serviceConsent: true,
         marketingConsent: false,
         idempotencyKey,
@@ -171,7 +172,7 @@ describe("membership persistence and enforcement", () => {
     const confirmed = await confirmQuery(new NextRequest(`https://tymra.test/api/v1/price-checks/${checkId}/confirm-query`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: `${checkCookie}; tymra_customer_session=${session.token}` },
-      body: JSON.stringify({ checkIn: "2026-08-17", checkOut: "2026-08-18", adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" }),
+      body: JSON.stringify({ checkIn: new Date(Date.now() + 5 * 86400000).toISOString(), checkOut: new Date(Date.now() + 6 * 86400000).toISOString(), adults: 2, children: 0, units: 1, currency: "NZD", cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" }),
     }), { params: { checkId } });
     expect(confirmed.status).toBe(200);
     expect(await prisma.priceCheck.findUniqueOrThrow({ where: { id: checkId } })).toMatchObject({ customerUserId: customer.id, status: "QUEUED" });
@@ -211,9 +212,9 @@ describe("membership persistence and enforcement", () => {
     await expect(consumeMagicLink(issued.token)).rejects.toBeInstanceOf(InvalidMagicLinkError);
   });
 
-  it("enforces the Pro five-unit ceiling server-side", async () => {
+  it("preserves the legacy Pro five-unit ceiling server-side", async () => {
     const customer = await createCustomer("pro");
-    await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "PRO", status: "ACTIVE" } });
+    await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "PRO", status: "ACTIVE", billingVersion: "legacy-2026" } });
     const units = await Promise.all(Array.from({ length: 6 }, (_, index) => createUnit(`pro:${index}`)));
     for (const [index, unit] of units.slice(0, 5).entries()) {
       await prisma.$transaction((transaction) => reserveSpotCheck(transaction, { customerUserId: customer.id, sellableUnitId: unit.id, idempotencyKey: `${prefix}:pro:${index}` }), { isolationLevel: "Serializable" });
@@ -222,9 +223,9 @@ describe("membership persistence and enforcement", () => {
       .rejects.toMatchObject({ code: "PRICING_UNIT_LIMIT_REACHED" } satisfies Partial<MembershipAccessError>);
   });
 
-  it("counts URL and address analyses for one physical property once and retains a deactivated slot for 30 days", async () => {
+  it("preserves legacy property identity and its replacement lock", async () => {
     const customer = await createCustomer("property-slot");
-    await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "HOST", status: "ACTIVE" } });
+    await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "HOST", status: "ACTIVE", billingVersion: "legacy-2026" } });
     const addressUnit = await createUnit("property-slot");
     const otaUnitId = `${prefix}:unit:property-slot:ota`;
     const otaUnit = await prisma.sellableUnit.create({
@@ -250,7 +251,8 @@ describe("membership persistence and enforcement", () => {
     const unit = await createUnit("unit-lifecycle");
     await prisma.membershipSubscription.create({ data: { customerUserId: customer.id, plan: "HOST", status: "ACTIVE" } });
     const pricingUnit = await prisma.customerPricingUnit.create({ data: { customerUserId: customer.id, sellableUnitId: unit.id, quotaIdentityKey: `property:${unit.propertyId}` } });
-    const job = await prisma.job.create({ data: { type: "MEMBERSHIP_SCHEDULE", status: "PENDING", payload: { scheduled: true }, idempotencyKey: `${prefix}:unit-lifecycle-job`, sellableUnitId: unit.id } });
+    const check = await prisma.priceCheck.create({ data: { customerUserId: customer.id, locale: "en", rawInput: "fixture", emailHash: customer.emailHash, encryptedEmail: customer.encryptedEmail, serviceConsent: true, marketKey: "christchurch", accessKeyHash: `${prefix}:unit-lifecycle-access`, idempotencyKey: `${prefix}:unit-lifecycle-check` } });
+    const job = await prisma.job.create({ data: { type: "MEMBERSHIP_SCHEDULE", status: "PENDING", payload: { scheduled: true }, priceCheckId: check.id, idempotencyKey: `${prefix}:unit-lifecycle-job`, sellableUnitId: unit.id } });
     expect(await setPricingUnitActive(customer.id, pricingUnit.id, false)).toMatchObject({ active: false });
     expect(await prisma.job.findUnique({ where: { id: job.id } })).toMatchObject({ status: "CANCELLED" });
     expect(await setPricingUnitActive(customer.id, pricingUnit.id, true)).toMatchObject({ active: true });
@@ -265,7 +267,7 @@ describe("membership persistence and enforcement", () => {
   });
 
   it("completes the Stripe test lifecycle for checkout, portal, plan changes, cancellation and resume", async () => {
-    const { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, createMembershipPortal, resumeMembershipRenewal, setStripeTestRuntime } = await import("@/lib/server/membership/stripe-billing");
+    const { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, createMembershipPortal, previewMembershipChange, resumeMembershipRenewal, setStripeTestRuntime } = await import("@/lib/server/membership/stripe-billing");
     const customer = await createCustomer("stripe-lifecycle");
     const calls: string[] = [];
     let checkoutInput: { customer_update?: { address?: string; name?: string } } | undefined;
@@ -279,9 +281,10 @@ describe("membership persistence and enforcement", () => {
       items: { data: [{ id: `si_${prefix}`, current_period_start: 1_786_252_800, current_period_end: 1_788_931_200, quantity: 1, price: { id: "price_host" } }] },
     };
     const fakeStripe = {
-      prices: { retrieve: async (id: string) => ({ id, active: true, currency: "nzd", type: "recurring", recurring: { interval: "month" }, unit_amount: id === "price_host" ? 2_900 : id === "price_pro" ? 8_900 : 24_900, tax_behavior: "inclusive" }) },
+      invoices: { createPreview: async () => ({ amount_due: 1000 }) },
+      prices: { retrieve: async (id: string) => ({ id, active: true, currency: "nzd", type: "recurring", recurring: { interval: "month", interval_count: 1, usage_type: "licensed" }, billing_scheme: "tiered", tiers_mode: "graduated", tiers: launchPriceTiers[id === "price_host" ? "HOST" : id === "price_pro" ? "PRO" : "PORTFOLIO"], tax_behavior: "inclusive" }) },
       customers: { create: async () => { calls.push("customer"); return { id: `cus_${prefix}_lifecycle` }; } },
-      checkout: { sessions: { create: async (input: { customer_update?: { address?: string; name?: string } }) => { calls.push("checkout"); checkoutInput = input; return { url: "https://checkout.stripe.test/session" }; } } },
+      checkout: { sessions: { create: async (input: { customer_update?: { address?: string; name?: string } }) => { calls.push("checkout"); checkoutInput = input; return { id: "cs_lifecycle", url: "https://checkout.stripe.test/session" }; } } },
       billingPortal: { sessions: { create: async () => { calls.push("portal"); return { url: "https://billing.stripe.test/session" }; } } },
       subscriptions: {
         retrieve: async () => subscription,
@@ -313,15 +316,17 @@ describe("membership persistence and enforcement", () => {
       expect(checkoutInput?.customer_update).toEqual({ address: "auto", name: "auto" });
       const membership = await prisma.membershipSubscription.findUniqueOrThrow({ where: { customerUserId: customer.id } });
       expect(membership.stripeCustomerId).toBe(`cus_${prefix}_lifecycle`);
-      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "HOST", stripeSubscriptionId: subscription.id, stripePriceId: "price_host" } });
+      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "HOST", purchasedCapacity: 1, paidActivatedAt: new Date(), pendingPlan: null, pendingCapacity: null, pendingChangeKind: null, stripeSubscriptionId: subscription.id, stripePriceId: "price_host" } });
       await expect(createMembershipPortal(customer.id)).resolves.toEqual({ url: "https://billing.stripe.test/session" });
-      await expect(changeMembershipPlan(customer.id, "PRO")).resolves.toMatchObject({ mode: "UPGRADE_PENDING_PAYMENT", pendingPlan: "PRO" });
-      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "PRO", pendingPlan: null, stripePriceId: "price_pro" } });
-      subscription.items.data[0].price.id = "price_pro";
-      await expect(changeMembershipPlan(customer.id, "HOST")).resolves.toMatchObject({ mode: "DOWNGRADE_SCHEDULED", pendingPlan: "HOST" });
+      const upgradeQuote = await previewMembershipChange(customer.id, "PRO", 20);
+      await expect(changeMembershipPlan(customer.id, "PRO", 20, upgradeQuote.quoteToken)).resolves.toMatchObject({ mode: "UPGRADE_PENDING_PAYMENT", pendingPlan: "PRO" });
+      await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { plan: "PRO", purchasedCapacity: 20, pendingPlan: null, pendingCapacity: null, pendingChangeKind: null, stripePriceId: "price_pro" } });
+      subscription.items.data[0].price.id = "price_pro"; subscription.items.data[0].quantity = 20;
+      const downgradeQuote = await previewMembershipChange(customer.id, "HOST", 1);
+      await expect(changeMembershipPlan(customer.id, "HOST", 1, downgradeQuote.quoteToken)).resolves.toMatchObject({ mode: "DOWNGRADE_SCHEDULED", pendingPlan: "HOST" });
       await expect(cancelMembershipAtPeriodEnd(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: true });
       await expect(resumeMembershipRenewal(customer.id)).resolves.toEqual({ cancelAtPeriodEnd: false });
-      expect(calls).toEqual(["customer", "checkout", "portal", "upgrade", "downgrade", "release", "cancel", "resume", "downgrade"]);
+      expect(calls).toEqual(["customer", "checkout", "portal", "upgrade", "downgrade", "release", "cancel", "resume"]);
     } finally {
       setStripeTestRuntime();
     }
@@ -368,7 +373,7 @@ describe("membership persistence and enforcement", () => {
     expect(await prisma.membershipRiskCase.findUniqueOrThrow({ where: { id: riskCase.id } })).toMatchObject({ evidence: { queryVariants: 51 }, appealReason: "This is a legitimate property management portfolio review." });
   });
 
-  it("does not let an older Stripe event overwrite newer membership state", async () => {
+  it("ignores invoices without a linked subscription instead of granting customer-wide access", async () => {
     const { processStripeEvent } = await import("@/lib/server/membership/stripe-billing");
     const customer = await createCustomer("stripe-ordering");
     const stripeCustomerId = `cus_${prefix}`;
@@ -377,7 +382,7 @@ describe("membership persistence and enforcement", () => {
     const stalePaid = { id: `${prefix}:stripe:older`, created: 1_786_252_800, type: "invoice.paid", data: { object: { customer: stripeCustomerId } } };
     await processStripeEvent(failed as never, JSON.stringify(failed));
     await processStripeEvent(stalePaid as never, JSON.stringify(stalePaid));
-    expect(await prisma.membershipSubscription.findUnique({ where: { customerUserId: customer.id } })).toMatchObject({ status: "PAST_DUE", lastStripeEventAt: new Date(failed.created * 1_000) });
+    expect(await prisma.membershipSubscription.findUnique({ where: { customerUserId: customer.id } })).toMatchObject({ status: "ACTIVE", lastStripeEventAt: null });
   });
 
   it("queues paid incremental analysis at the plan priority without consuming spot-check quota", async () => {
@@ -400,14 +405,23 @@ describe("membership persistence and enforcement", () => {
         accessKeyHash: `${prefix}:scheduled:access`,
         idempotencyKey: `${prefix}:scheduled:check`,
         customerUserId: customer.id,
+        stayQueryId: (await prisma.stayQuery.create({ data: { checkIn: new Date("2026-08-11"), checkOut: new Date("2026-08-14"), nights: 3, adults: 3, children: 1, childrenAges: [8], units: 1, cancellationCategory: "STANDARD", timezone: "Pacific/Auckland" } })).id,
       },
     });
     priceCheckIds.push(check.id);
 
-    await expect(enqueueDueMembershipAnalyses(now)).resolves.toEqual(expect.objectContaining({ queued: 1 }));
-    expect(await prisma.job.findFirst({ where: { priceCheckId: check.id }, select: { priority: true, payload: true } })).toMatchObject({ priority: 200, payload: { scheduled: true } });
+    await enqueueDueMembershipAnalyses(now);
+    const refresh = await prisma.priceCheck.findFirstOrThrow({ where: { customerUserId: customer.id, requestOrigin: "MEMBERSHIP_SCHEDULE" }, include: { stayQuery: true } });
+    priceCheckIds.push(refresh.id);
+    expect(refresh.id).not.toBe(check.id);
+    expect(refresh.stayQuery).toMatchObject({ nights: 3, adults: 3, children: 1, childrenAges: [8] });
+    expect(await prisma.priceCheck.findUnique({ where: { id: check.id } })).toMatchObject({ status: "PUBLISHED" });
+    expect(await prisma.job.findFirst({ where: { priceCheckId: refresh.id }, select: { priority: true, payload: true } })).toMatchObject({ priority: 200, payload: { scheduled: true } });
     expect(await prisma.membershipUsage.count({ where: { pricingUnitId: pricingUnit.id, type: "SPOT_CHECK" } })).toBe(0);
-    await expect(enqueueDueMembershipAnalyses(now)).resolves.toEqual(expect.objectContaining({ queued: 0 }));
+    await enqueueDueMembershipAnalyses(now);
+    // Other persisted fixtures can also be due; this object's cadence remains exactly once.
+    expect(await prisma.membershipUsage.count({ where: { pricingUnitId: pricingUnit.id, type: "SCHEDULED_ANALYSIS" } })).toBe(1);
+    expect(await prisma.priceCheck.count({ where: { customerUserId: customer.id, requestOrigin: "MEMBERSHIP_SCHEDULE" } })).toBe(1);
   });
 });
 

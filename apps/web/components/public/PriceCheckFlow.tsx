@@ -28,6 +28,7 @@ type PropertyCandidate = {
 
 type PublicCheck = {
   id: string;
+  benchmarkSlots?: Array<{ id: string }>;
   analysisType: "LISTING_PRICING" | "LOCATION_BENCHMARK";
   rawInput: string;
   status: string;
@@ -362,6 +363,7 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
           units: 1,
           currency: "NZD",
           cancellationCategory: "STANDARD",
+          ...(form.get("convertBenchmarkSlotId") ? { convertBenchmarkSlotId: String(form.get("convertBenchmarkSlotId")) } : {}),
           timezone: "Pacific/Auckland",
           ...(challenge?.token ? { challengeToken: challenge.token } : {}),
         }),
@@ -384,6 +386,7 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
           {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
           <div className="field-grid"><Field label={t("checkIn")} htmlFor="check-in"><input id="check-in" name="checkIn" type="date" defaultValue={initialCheckIn} required /></Field><Field label={t("checkOut")} htmlFor="check-out"><input id="check-out" name="checkOut" type="date" defaultValue={initialCheckOut} required /></Field></div>
           <div className="field-grid"><Field label={t("adults")} htmlFor="adults"><input id="adults" name="adults" type="number" min="1" max="16" defaultValue={check?.stayQuery?.adults ?? 2} required /></Field><Field label={t("children")} htmlFor="children"><input id="children" name="children" type="number" min="0" max="16" defaultValue={check?.stayQuery?.children ?? 0} required /></Field></div>
+          {check?.benchmarkSlots?.length === 1 ? <label className="check-control"><input type="checkbox" name="convertBenchmarkSlotId" value={check.benchmarkSlots[0].id} /><span>{locale === "zh" ? "将此地址现有的基准监测额度转换为这个房型，保留历史，不额外占用额度。" : "Convert this address benchmark slot to the selected unit, preserving history without an additional slot."}</span></label> : null}
           <FlowNotice tone="info" title={t("queryNoticeTitle")} body={check?.analysisType === "LOCATION_BENCHMARK" ? t("queryNoticeLocationBody") : t("queryNoticeBody")} />
           {challenge ? <FlowNotice tone="warning" title={locale === "zh" ? "需要额外验证" : "Additional verification required"} body={challenge.mode === "deterministic" ? (locale === "zh" ? "再次提交即可完成开发环境验证。" : "Submit again to complete the development verification.") : (locale === "zh" ? "请完成已配置的托管验证后重试。" : "Complete the configured managed challenge before retrying.")} /> : null}
           {error ? <FlowNotice tone="danger" title={t("errorTitle")} body={error} /> : null}

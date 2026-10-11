@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 
 import { apiError, apiException, apiSuccess } from "@/lib/server/api";
 import { CustomerAuthenticationError, isCustomerSameOrigin, requireCustomerSession } from "@/lib/server/membership/customer-auth";
-import { issueCustomerEmailVerification } from "@/lib/server/membership/magic-links";
+import { issueCustomerEmailVerification, VerificationEmailDeliveryError } from "@/lib/server/membership/magic-links";
 import { consumeRateLimit } from "@/lib/server/rate-limit";
 
 export async function POST(request: NextRequest) {
@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
     return apiSuccess({ accepted: true, ...result }, { status: 202 });
   } catch (error) {
     if (error instanceof CustomerAuthenticationError) return apiError(401, "CUSTOMER_AUTH_REQUIRED", error.message);
+    if (error instanceof VerificationEmailDeliveryError) return apiError(503, "EMAIL_DELIVERY_UNAVAILABLE", error.message);
     return apiException(error);
   }
 }

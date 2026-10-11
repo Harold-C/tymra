@@ -14,6 +14,7 @@ export type CustomerCheck = {
   property: null | { canonicalName: string; city: string };
   unit: null | { officialName: string };
   stayQuery: null | { checkIn: string; checkOut: string; adults: number; children: number; units: number };
+  availability?: Array<{ id: string; availabilityStatus: string; checkIn: string; checkOut: string; collectedAt: string; sourceUrl: string; dataSource: { name: string } }>;
   result: null | {
     version: number;
     generatedAt: string;
@@ -24,6 +25,7 @@ export type CustomerCheck = {
     observedSourceCount: number;
     priceEvidenceStatus: string | null;
     recommendationReasonCode: string | null;
+    memberReview?: Array<{ insightId: string; range: { lowMinor: number; highMinor: number } | null }> | null;
     observedPrices: Array<{ source: string; amountMinor: number; currency: string; basis: string; feeCompleteness: string; sourceUrl: string | null; asOf: string | null }>;
     addressCoverage: null | { level: "FULL" | "REGIONAL" | "NATIONAL_ONLY"; marketName: string };
     insights: Array<{
@@ -56,7 +58,16 @@ export type MembershipSummary = {
   entitlementStartedAt: string;
   graceEndsAt: string | null;
   pendingPlan: MembershipPlan | null;
+  purchasedCapacity?: number;
+  capacityLaunchLimit?: number;
+  billingVersion?: string;
+  pendingCapacity?: number | null;
+  pendingChangeKind?: string | null;
+  hasBillingAccount?: boolean;
+  hasLinkedSubscription?: boolean;
+  historyGraceUntil?: string | null;
   entitlements: {
+    monthlyPriceMinor?: number;
     activePricingUnitLimit: number;
     monitoringHorizonDays: number;
     dailyPriceCheckHorizonDays: number;

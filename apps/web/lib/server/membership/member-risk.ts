@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
 import { hashPersonalIdentifier, issueOpaqueToken, type MembershipPlan, type Prisma } from "@tymra/db";
-import { membershipEntitlements } from "@tymra/domain";
+import { entitlementsForMembership, membershipEntitlements } from "@tymra/domain";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createChallengeProvider, type ChallengeDescriptor } from "../security-controls";
@@ -176,18 +176,23 @@ export async function enforceMemberRisk(transaction: Transaction, input: {
 
   const reasons: string[] = [];
   let outcome: "ALLOW" | "CHALLENGE" | "COOLDOWN" = "ALLOW";
-  const propertySoftLimit = Math.max(3, membershipEntitlements[input.plan].activePricingUnitLimit * 2);
-  if (devicePropertiesDay >= 6 || devicePropertiesMonth >= 15 || groupPropertiesMonth >= propertySoftLimit * 3 || queryVariantsDay >= 50) {
+  const membership = await transaction.membershipSubscription.findUnique({ where: { customerUserId: input.customerUserId } });
+  const capacity = membership ? entitlementsForMembership(membership).activePricingUnitLimit : membershipEntitlements[input.plan].activePricingUnitLimit;
+  const propertySoftLimit = Math.max(3, capacity * 2);
+  const propertyDayLimit = Math.max(6, capacity * 2);
+  const propertyMonthLimit = Math.max(15, capacity * 3);
+  const queryDayLimit = Math.max(50, capacity * 15);
+  if (devicePropertiesDay >= propertyDayLimit || devicePropertiesMonth >= propertyMonthLimit || groupPropertiesMonth >= propertySoftLimit * 3 || queryVariantsDay >= queryDayLimit) {
     outcome = "COOLDOWN";
-    if (devicePropertiesDay >= 6) reasons.push("DEVICE_PROPERTY_ENUMERATION_24H");
-    if (devicePropertiesMonth >= 15) reasons.push("DEVICE_PROPERTY_ENUMERATION_30D");
+    if (devicePropertiesDay >= propertyDayLimit) reasons.push("DEVICE_PROPERTY_ENUMERATION_24H");
+    if (devicePropertiesMonth >= propertyMonthLimit) reasons.push("DEVICE_PROPERTY_ENUMERATION_30D");
     if (groupPropertiesMonth >= propertySoftLimit * 3) reasons.push("GROUP_PROPERTY_ENUMERATION_30D");
-    if (queryVariantsDay >= 50) reasons.push("QUERY_ENUMERATION_24H");
-  } else if (deviceAccounts >= 3 || devicePropertiesMonth >= 8 || queryVariantsDay >= 20) {
+    if (queryVariantsDay >= queryDayLimit) reasons.push("QUERY_ENUMERATION_24H");
+  } else if (deviceAccounts >= 3 || devicePropertiesMonth >= Math.max(8, capacity * 2) || queryVariantsDay >= Math.max(20, capacity * 10)) {
     outcome = "CHALLENGE";
     if (deviceAccounts >= 3) reasons.push("MULTIPLE_ACCOUNTS_ON_DEVICE");
-    if (devicePropertiesMonth >= 8) reasons.push("DEVICE_PROPERTY_VARIETY_HIGH");
-    if (queryVariantsDay >= 20) reasons.push("QUERY_VARIETY_HIGH");
+    if (devicePropertiesMonth >= Math.max(8, capacity * 2)) reasons.push("DEVICE_PROPERTY_VARIETY_HIGH");
+    if (queryVariantsDay >= Math.max(20, capacity * 10)) reasons.push("QUERY_VARIETY_HIGH");
   }
 
   const provider = createChallengeProvider({

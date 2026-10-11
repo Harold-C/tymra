@@ -62,8 +62,9 @@ direction and keeps server infrastructure out of client components.
 - Customer authentication, entitlement, quota, risk and Stripe reconciliation live in
   `apps/web/lib/server/membership`; routes validate transport and delegate.
 - Admin membership operations use Admin sessions. Customer sessions grant no Admin authority.
-- A member pricing slot represents one real Property; matched addresses, OTA listings and
-  provider room identifiers do not consume extra slots.
+- New member pricing slots represent independently monitored Sellable Units or address benchmarks;
+  the same unit across OTA channels shares a slot. Existing paid `legacy-2026` contracts retain
+  Property identity until an explicitly quoted migration. See `product/membership-plans.md`.
 - Global tokens, public responsive rules and reduced-motion defaults live in
   `apps/web/app/globals.css`. Locale layouts load `customer-funnel.css`, account layouts load
   `member-account.css`, and Admin layouts load `admin.css`. Public pages must not rely on Admin

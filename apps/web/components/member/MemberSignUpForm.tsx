@@ -4,15 +4,18 @@ import { LoaderCircle, UserPlus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
-type ApiPayload = { data?: { returnTo: string }; error?: { message?: string } };
+type ApiPayload = { data?: { returnTo: string }; error?: { code?: string } };
 
 export function MemberSignUpForm({ locale }: { locale: "en" | "zh" }) {
   const copy = useTranslations("MembershipRegistration");
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setHydrated(true), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,12 +30,15 @@ export function MemberSignUpForm({ locale }: { locale: "en" | "zh" }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: String(form.get("email") ?? "").trim(), password, locale, serviceConsent: form.get("serviceConsent") === "on" }),
       });
-      const payload = await response.json() as ApiPayload;
-      if (!response.ok || !payload.data?.returnTo) throw new Error(payload.error?.message ?? copy("error"));
+      const payload = await response.json().catch(() => null) as ApiPayload | null;
+      if (!response.ok || !payload?.data?.returnTo) {
+        const code = payload?.error?.code;
+        throw new Error(copy(code === "RATE_LIMITED" ? "rateLimited" : code === "ACCOUNT_EXISTS" || code === "CONFLICT" ? "accountUnavailable" : "error"));
+      }
       router.push(payload.data.returnTo);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy("error"));
+      setError(caught instanceof TypeError ? copy("error") : caught instanceof Error ? caught.message : copy("error"));
     } finally {
       setBusy(false);
     }
@@ -42,7 +48,7 @@ export function MemberSignUpForm({ locale }: { locale: "en" | "zh" }) {
     <span className="rough-eyebrow"><UserPlus aria-hidden="true" />{copy("eyebrow")}</span>
     <h1 id="member-signup-heading">{copy("title")}</h1>
     <p>{copy("intro")}</p>
-    <form onSubmit={submit}>
+    <form method="post" onSubmit={submit} data-hydrated={hydrated ? "true" : "false"}>
       <label htmlFor="register-email">{copy("emailLabel")}</label>
       <input id="register-email" name="email" type="email" autoComplete="username" required />
       <label htmlFor="register-password">{copy("passwordLabel")}</label>
@@ -54,6 +60,7 @@ export function MemberSignUpForm({ locale }: { locale: "en" | "zh" }) {
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       <button className="button button-primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" aria-hidden="true" /> : <UserPlus aria-hidden="true" />}{copy(busy ? "creating" : "submit")}</button>
     </form>
+    <p className="member-signin-links"><Link href={`/${locale}/terms`}>{copy("terms")}</Link><Link href={`/${locale}/privacy`}>{copy("privacy")}</Link></p>
     <p className="member-signin-secondary">{copy("hasAccount")} <Link href={`/${locale}/sign-in`}>{copy("signIn")}</Link></p>
   </section>;
 }

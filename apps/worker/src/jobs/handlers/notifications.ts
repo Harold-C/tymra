@@ -100,7 +100,8 @@ export async function queueWorkerEmail(priceCheckId: string, type: EmailType, su
 
 export async function queueTerminalEmail(priceCheckId: string, type: EmailType, suffix: string, environment: Environment, transaction?: Prisma.TransactionClient, resultVersionId?: string) {
   const db = transaction ?? prisma;
-  const check = await db.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { customerUserId: true } });
+  const check = await db.priceCheck.findUniqueOrThrow({ where: { id: priceCheckId }, select: { customerUserId: true, requestOrigin: true } });
+  if (check.requestOrigin === "MEMBERSHIP_SCHEDULE") return;
   if (!check.customerUserId) {
     await queueWorkerEmail(priceCheckId, type, suffix, transaction, resultVersionId);
     return;

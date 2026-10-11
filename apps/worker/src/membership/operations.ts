@@ -14,7 +14,7 @@ export async function cleanupMembershipRetention(now = new Date()) {
     let membershipHistoryArchived = 0;
     for (const [plan, days] of [["FREE", 30], ["HOST", 183], ["PRO", 365], ["PORTFOLIO", 730]] as const) {
       const archived = await transaction.priceCheck.updateMany({
-        where: { customerUser: { membership: { is: { plan, status: { not: "CANCELLED" } } } }, createdAt: { lte: new Date(now.getTime() - days * DAY_MS) }, status: { not: "ARCHIVED" } },
+        where: { customerUser: { membership: { is: { plan, status: { not: "CANCELLED" }, OR: [{ historyGraceUntil: null }, { historyGraceUntil: { lte: now } }] } } }, createdAt: { lte: new Date(now.getTime() - days * DAY_MS) }, status: { not: "ARCHIVED" } },
         data: { status: "ARCHIVED" },
       });
       membershipHistoryArchived += archived.count;
@@ -32,7 +32,15 @@ export async function cleanupMembershipRetention(now = new Date()) {
     const verificationEmails = await transaction.emailDelivery.deleteMany({ where: { type: "VERIFY_AND_SIGN_IN", createdAt: { lte: tokenMetadataCutoff } } });
     const anonymousChecks = await transaction.anonymousCheck.deleteMany({ where: { expiresAt: { lte: now }, magicLinks: { none: {} }, priceChecks: { none: {} } } });
     const sessions = await transaction.customerSession.deleteMany({ where: { createdAt: { lte: tokenMetadataCutoff }, OR: [{ expiresAt: { lte: tokenMetadataCutoff } }, { revokedAt: { lte: tokenMetadataCutoff } }] } });
-    const usageLedger = await transaction.usageLedger.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
+    const retainedMemberActions = ["MEMBER_ALERT", "MEMBER_STRATEGY_CHANGE", "MEMBER_ALERT_PREFERENCE"];
+    const usageLedger = await transaction.usageLedger.deleteMany({ where: { createdAt: { lte: securityHashCutoff }, action: { notIn: retainedMemberActions } } });
+    await transaction.usageLedger.deleteMany({ where: { createdAt: { lte: paymentRiskCutoff }, action: { in: retainedMemberActions } } });
+    const expiredReports = await transaction.usageLedger.findMany({ where: { action: { in: ["MEMBER_EXPORT", "MEMBER_EXIT_EXPORT"] }, metadata: { path: ["exportExpiresAt"], lte: now.toISOString() } }, take: 500, select: { id: true, metadata: true } });
+    for (const report of expiredReports) {
+      const metadata = report.metadata as Prisma.JsonObject;
+      const retained = { ...metadata }; delete retained.exportSnapshot; delete retained.exportExpiresAt;
+      await transaction.usageLedger.update({ where: { id: report.id }, data: { metadata: { ...retained, exportErasedAt: now.toISOString() } } });
+    }
     const abuseDecisions = await transaction.abuseDecision.deleteMany({ where: { createdAt: { lte: securityHashCutoff } } });
     const riskIdentities = await transaction.riskIdentity.deleteMany({ where: { subjectType: { in: ["DEVICE", "IP_PREFIX", "QUERY_SIGNATURE", "GEO_TILE", "OTA_LISTING"] }, lastSeenAt: { lte: riskIdentityCutoff } } });
     const paymentInstruments = await transaction.paymentInstrumentIdentity.deleteMany({ where: { lastSeenAt: { lte: paymentRiskCutoff } } });

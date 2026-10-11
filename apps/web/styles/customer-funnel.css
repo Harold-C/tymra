@@ -619,6 +619,21 @@
   margin-top: 28px;
 }
 
+.capacity-plans, .membership-quote { margin-block: 28px; padding: 24px; background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0); border-radius: 20px; min-width: 0; }
+.capacity-plans > label { display: block; font-weight: 600; margin: 16px 0 8px; }
+.capacity-plans > input { min-height: 48px; width: min(100%, 180px); padding: 10px 14px; font: inherit; border: 1px solid var(--border-strong, #cbd5e1); border-radius: 10px; }
+.capacity-plans > p, .membership-quote p { color: var(--text-secondary, #475569); line-height: 1.65; }
+.capacity-plans .capacity-plan-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.membership-quote fieldset { border: 1px solid var(--border, #e2e8f0); border-radius: 12px; margin: 20px 0; padding: 12px; }
+.membership-quote fieldset label { display: flex; align-items: center; gap: 12px; min-height: 48px; overflow-wrap: anywhere; }
+.membership-quote input[type="checkbox"] { width: 22px; height: 22px; flex-shrink: 0; }
+.membership-quote > .button { margin: 8px 12px 0 0; }
+@media (max-width: 760px) {
+  .capacity-plans, .membership-quote { padding: 18px; }
+  .capacity-plans .capacity-plan-grid { grid-template-columns: 1fr; }
+  .membership-quote .membership-billing-actions { display: grid; grid-template-columns: 1fr; }
+}
+
 .membership-panel {
   margin-top: 38px;
 }

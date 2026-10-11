@@ -737,6 +737,22 @@ filters, retry/lease behavior and evidence-before-ACK guarantees.
 - Status: approved target; implementation and verification are tracked separately. This decision
   does not deploy code, change production schedules or open customer ingress.
 
+## D-054 Monthly Capacity Membership Launch
+
+- Date: 2026-10-12. Approved commercial contract: `product/membership-plans.md`.
+- Separate feature tier from purchased capacity: Free / Host / Pro / Portfolio, monthly NZD
+  GST-inclusive pricing, quoted capacity through 200 and an independent measured launch limit.
+- New contracts count independent Sellable Units; old paid Property-based subscriptions keep
+  their price, identity and allowance until an explicit quoted migration. No silent split or charge.
+- Stripe uses licensed graduated quantities, signed short-lived change quotes and confirmed paid
+  invoices. Capacity reductions wait for the next period and retain the customer's selected units.
+- Paid manual-query and report allowances follow billing periods. Exact-fresh reuse and failed
+  queries with no valid result release reservations; valid observed prices or sold-out evidence count.
+- Launch includes CSV/XLSX, owner-scoped strategies, portfolio grouping/bulk previews and deduplicated
+  alerts. Team access, annual billing, packs, customer API/webhooks and OTA write-back remain deferred.
+- Local implementation and test evidence do not open billing, SMTP, public discovery or production
+  capacity gates. Deployment remains a separate authorized operation.
+
 ## 文档与运行阶段变迁
 
 本节只记录影响后续判断的变迁。删除仓库文件的完整旧内容可在 Git 提交

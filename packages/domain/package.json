@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./membership": "./src/membership.ts",
+    "./member-strategy": "./src/member-strategy.ts",
     "./nz-time": "./src/nz-time.ts"
   },
   "scripts": {

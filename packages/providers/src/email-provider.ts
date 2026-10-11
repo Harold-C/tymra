@@ -67,6 +67,7 @@ const emailCopy: Record<Locale, Record<EmailType, { subject: string; heading: st
     INSUFFICIENT_DATA: { subject: "Tymra completed your check", heading: "There was not enough reliable data to advise" },
     CHECK_FAILED: { subject: "Tymra could not complete your check", heading: "Your Price Check could not be completed" },
     RESULT_REMINDER: { subject: "Your Tymra result is ready", heading: "Open your result in your secure account" },
+    PRICE_ALERT: { subject: "A Tymra monitoring alert needs your review", heading: "Review an important price or evidence change" },
   },
   zh: {
     VERIFY_AND_SIGN_IN: { subject: "验证邮箱并解锁 Tymra 正式报告", heading: "验证邮箱并打开你的安全报告" },
@@ -78,11 +79,13 @@ const emailCopy: Record<Locale, Record<EmailType, { subject: string; heading: st
     INSUFFICIENT_DATA: { subject: "Tymra 已完成检查", heading: "目前没有足够可靠的数据提供建议" },
     CHECK_FAILED: { subject: "Tymra 无法完成本次检查", heading: "本次价格检查未能完成" },
     RESULT_REMINDER: { subject: "你的 Tymra 结果已生成", heading: "请在安全账户中打开结果" },
+    PRICE_ALERT: { subject: "Tymra 有一项监测提醒需要查看", heading: "查看重要价格变化或证据限制" },
   },
 };
 
 export function buildServiceEmail(input: {
   type: EmailType;
+  verificationPurpose?: "UNLOCK_FORMAL_CHECK" | "VERIFY_CUSTOMER_EMAIL";
   locale: Locale;
   recipient: string;
   recipientHash: string;
@@ -90,7 +93,11 @@ export function buildServiceEmail(input: {
   safeActionUrl?: string;
   referenceId: string;
 }): EmailMessage {
-  const copy = emailCopy[input.locale][input.type];
+  const copy = input.type === "VERIFY_AND_SIGN_IN" && input.verificationPurpose === "VERIFY_CUSTOMER_EMAIL"
+    ? input.locale === "zh"
+      ? { subject: "验证你的 Tymra 账户邮箱", heading: "验证邮箱以完成 Tymra 账户设置" }
+      : { subject: "Verify your Tymra account email", heading: "Verify your email to complete your Tymra account setup" }
+    : emailCopy[input.locale][input.type];
   const action = input.safeActionUrl
     ? input.locale === "zh"
       ? `\n查看安全页面：${input.safeActionUrl}`

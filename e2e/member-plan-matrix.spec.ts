@@ -4,14 +4,14 @@ const features = {
   alerts: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_HOST_LAUNCH_ENABLED"),
   portfolio: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED"),
   exports: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED") && enabled("MEMBERSHIP_EXPORT_LAUNCH_ENABLED"),
-  integrations: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED") && enabled("MEMBERSHIP_API_LAUNCH_ENABLED"),
+  integrations: false,
 };
 
 const plans = [
   { email: "demo1@tymra.test", plan: "FREE", displayName: "Free", slots: 1, dailyDays: 14, monitoringDays: 30, checks: 2, rank: 0 },
   { email: "demo2@tymra.test", plan: "HOST", displayName: "Host", slots: 1, dailyDays: 30, monitoringDays: 90, checks: 10, rank: 1 },
-  { email: "demo3@tymra.test", plan: "PRO", displayName: "Pro", slots: 5, dailyDays: 90, monitoringDays: 180, checks: 60, rank: 2 },
-  { email: "demo4@tymra.test", plan: "PORTFOLIO", displayName: "Portfolio", slots: 20, dailyDays: 180, monitoringDays: 365, checks: 300, rank: 3 },
+  { email: "demo3@tymra.test", plan: "PRO", displayName: "Pro", slots: 20, dailyDays: 90, monitoringDays: 180, checks: 240, rank: 2 },
+  { email: "demo4@tymra.test", plan: "PORTFOLIO", displayName: "Portfolio", slots: 50, dailyDays: 180, monitoringDays: 365, checks: 750, rank: 3 },
 ] as const;
 
 test.describe("fixed development member plan matrix", () => {
@@ -44,7 +44,7 @@ test.describe("fixed development member plan matrix", () => {
         || enabled("BILLING_ENABLED") && enabled(`MEMBERSHIP_${expected.plan}_LAUNCH_ENABLED`));
 
       await page.goto("/en/account/billing", { waitUntil: "domcontentloaded" });
-      const membership = page.getByRole("region", { name: expected.displayName });
+      const membership = page.getByRole("region", { name: expected.displayName, exact: true });
       await expect(membership.getByRole("heading", { name: expected.displayName, exact: true, level: 2 })).toBeVisible();
       const occupied = payload.data.pricingUnits.filter((unit) => unit.occupiesSlot).length;
       await expect(membership).toContainText(`${occupied}/${expected.slots}`);
@@ -65,9 +65,10 @@ test.describe("fixed development member plan matrix", () => {
       }
 
       await verifyGatedRoute(page, "/en/account/alerts", expected.rank >= 1, features.alerts, /feature available/i);
-      await verifyGatedRoute(page, "/en/account/exports", expected.rank >= 2, features.exports, /exports per New Zealand calendar month/i);
+      await verifyGatedRoute(page, "/en/account/exports", expected.rank >= 2, features.exports, /reports per billing period/i);
       await verifyGatedRoute(page, "/en/account/portfolio", expected.rank >= 2, features.portfolio, /feature available/i);
-      await verifyGatedRoute(page, "/en/account/integrations", expected.rank >= 3, features.integrations, /feature available/i);
+      await page.goto("/en/account/integrations");
+      await expect(page.locator("main")).toContainText(/deferred beyond first launch/i);
     });
   }
 });
@@ -105,8 +106,8 @@ async function openSignIn(page: Page) {
 async function verifyGatedRoute(page: Page, route: string, entitled: boolean, launched: boolean, launchedText: RegExp) {
   await page.goto(route, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("navigation", { name: "Member account navigation" })).toBeVisible();
-  if (!entitled) await expect(page.locator("main")).toContainText(/required/i);
-  else if (!launched) await expect(page.locator("main")).toContainText(/coming soon|not passed the launch gate/i);
+  if (!entitled) await expect(page.locator("main")).toContainText(/require/i);
+  else if (!launched) await expect(page.locator("main")).toContainText(/coming soon|not passed the launch gate|require an available/i);
   else await expect(page.locator("main")).toContainText(launchedText);
 }
 

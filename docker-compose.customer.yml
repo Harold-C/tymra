@@ -1,0 +1,33 @@
+# Optional overlay for the initial Free-account entry. Apply to a reviewed fixed
+# production candidate; never recreate an existing deployment from template defaults.
+# Email stays on its existing configuration. Unverified accounts cannot collect data.
+services:
+  web:
+    environment:
+      ADMIN_ONLY_ACCESS: "false"
+      CLIENT_DISCOVERY_MODE: DEPLOYED_HIDDEN
+      CUSTOMER_FUNNEL_ENABLED: "false"
+      ACCEPT_NEW_CHECKS: "false"
+      INTERNAL_ON_DEMAND_ENABLED: "false"
+      BILLING_ENABLED: "false"
+      MEMBERSHIP_HOST_LAUNCH_ENABLED: "false"
+      MEMBERSHIP_PRO_LAUNCH_ENABLED: "false"
+      MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "false"
+      MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "false"
+      MEMBERSHIP_API_LAUNCH_ENABLED: "false"
+    labels:
+      - "traefik.http.routers.tymra-public.rule=Host(`${HOST_PUBLIC:?Set HOST_PUBLIC}`)"
+      - "traefik.http.routers.tymra-public.entrypoints=websecure"
+      - "traefik.http.routers.tymra-public.tls=true"
+      - "traefik.http.routers.tymra-public.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.tymra-public.middlewares=tymra-private-noindex"
+      - "traefik.http.routers.tymra-public.service=tymra-web"
+      - "traefik.http.routers.tymra-www.rule=Host(`${HOST_WWW:?Set HOST_WWW}`)"
+      - "traefik.http.routers.tymra-www.entrypoints=websecure"
+      - "traefik.http.routers.tymra-www.tls=true"
+      - "traefik.http.routers.tymra-www.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.tymra-www.middlewares=tymra-customer-canonical,tymra-private-noindex"
+      - "traefik.http.routers.tymra-www.service=tymra-web"
+      - "traefik.http.middlewares.tymra-customer-canonical.redirectregex.regex=^https?://[^/]+/(.*)"
+      - "traefik.http.middlewares.tymra-customer-canonical.redirectregex.replacement=https://${HOST_PUBLIC:?Set HOST_PUBLIC}/$${1}"
+      - "traefik.http.middlewares.tymra-customer-canonical.redirectregex.permanent=true"

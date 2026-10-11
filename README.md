@@ -108,6 +108,23 @@ surfaces closed. PostgreSQL, Redis, Worker and Scheduler are internal; productio
 Backend-only email uses log delivery. Customer access, Stripe, real mail and paid capabilities
 require their own acceptance and authorized ingress/configuration changes.
 `DEPLOYED_HIDDEN` only hides navigation and is a distinct product discovery mode.
+On 2026-10-11, the user narrowed the task to the customer login domain: `tymra.nz` and the
+existing sign-in page were connected using the unchanged production image. Only Web access
+mode and its public router changed. See traceability for the saved runtime and rollback configuration.
+The customer website was subsequently restricted to Harold's exact current public IPv4/IPv6
+addresses at Cloudflare and the origin; both allowlists must be updated if those addresses change.
+The registration changes described below remain local and have not been deployed.
+
+The optional `docker-compose.customer.yml` overlay prepares direct Free-account registration,
+password sign-in and account access at `https://tymra.nz/{en,zh}/sign-up` and `/sign-in`.
+It retains hidden discovery and keeps new Price Checks, the anonymous funnel, paid plans,
+export and member API disabled. Existing Admin routing remains separate. It does not configure
+DNS, send mail or deploy by itself: merge it into a reviewed fixed production configuration
+after the applicable release checks, preserving the actual runtime secrets, networks and mounts.
+The 2026-10-11 request defers real email setup. Registration can create an unverified Free account
+and session while mail is unavailable; the UI reports that state and supports later resend.
+Production log delivery never counts as a sent account-verification email. Verification still
+gates collection, and this limited account entry does not establish full customer-product acceptance.
 
 Deploy a fixed candidate, verify recovery material and read back the actual image, configuration,
 health and affected business result. Do not infer production acceptance from a build or local

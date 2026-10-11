@@ -3,21 +3,21 @@
 ## Status
 
 - Product decision: approved current membership structure and commercial contract
-- Effective definition date: 2026-08-10, Pacific/Auckland
+- Effective definition date: 2026-10-12, Pacific/Auckland
 - Scope: current unified production deployment; initial public discovery state is `DEPLOYED_HIDDEN`
 - Approved deployment behavior: client routes, APIs, Worker flows, Stripe and data lifecycle deploy with the national data core; homepage, public navigation and marketing CTA entry points remain hidden until discovery is enabled
 - Recorded operational stage: see [product scope](README.md#approved-target-and-operational-stage) and [traceability](../traceability.md); Admin-only production is not customer acceptance
-- Editorial alignment: 2026-10-06; commercial terms unchanged
+- Launch revision approved 2026-10-12: monthly capacity pricing, billing-period allowances, independent monitored objects. Implementation and production acceptance are tracked separately in traceability.
 
 ## Product decisions
 
 1. Tymra uses four plans: `FREE`, `HOST`, `PRO`, and `PORTFOLIO`.
-2. The primary charging unit is a stable physical-property slot. An address analysis and any supported OTA listing matched to the same `Property` share one slot.
+2. The primary charging unit is an independently monitored pricing object (a Sellable Unit or an address benchmark). The same unit across OTA channels shares one slot; independent products at one address do not.
 3. Team membership, invitations, customer roles, and multi-user approval workflows are outside the current membership system.
 4. All plans use the same evidence, currency, New Zealand calendar, quality gates, and fail-closed rules. A higher plan buys more scale, automation, history, and earlier monitoring; it does not buy more truthful data.
 5. The future-price entitlement has two separate horizons, and both increase by plan:
    - `monitoringHorizonDays`: how far ahead Tymra monitors public market signals and selected OTA dates.
-   - `dailyPriceCheckHorizonDays`: how far ahead Tymra attempts one evidence-backed target-price decision for each New Zealand stay date.
+   - `dailyPriceCheckHorizonDays`: how far ahead a member may request a confirmed stay query; scheduled work incrementally samples that window.
 6. `dailyPriceCheckHorizonDays` is 14 / 30 / 90 / 180 for Free / Host / Pro / Portfolio. A longer monitoring horizon must not be represented as daily observed-price coverage.
 7. Tymra remains decision support. No plan includes automatic OTA price write-back in this version.
 8. One valid public price is sufficient to return a successful price result: the target price for listing analysis, or a nearby observed price for address analysis. Source count, comparable count, or missing market signals must not suppress an observed price or turn that price result into `PARTIAL` or `INSUFFICIENT_DATA`.
@@ -65,7 +65,7 @@ All customer pages use the selected `en` or `zh` locale and preserve a safe rela
 | `/{locale}/account/alerts` | Alert history and eligible alert preferences | Host+ after the applicable gate |
 | `/{locale}/account/portfolio` | Multi-unit prioritisation and portfolio controls | Pro/Portfolio after the applicable gate |
 | `/{locale}/account/exports` | Export generation and download history | Pro/Portfolio after the applicable gate |
-| `/{locale}/account/integrations` | Portfolio read-only API credentials and result webhooks | Portfolio after the applicable gate |
+| `/{locale}/account/integrations` | Explains deferred customer integrations | Not offered at first launch |
 | `/{locale}/account/billing` | Current plan, invoices, renewal, cancellation and Stripe Portal actions | Authenticated |
 | `/{locale}/account/settings` | Locale, service-notification preferences, sign-out and data/account actions | Authenticated |
 
@@ -89,8 +89,8 @@ The exact internal service decomposition may vary, but the public same-origin AP
 | Calendar and monitoring | `GET /api/v1/customer/calendar` with unit/range filters and exact-versus-monitoring semantics |
 | Alert history/preferences | Customer alert collection plus plan-gated preference update |
 | Pricing/comparable controls | Owner-scoped versioned resources, available only for Pro/Portfolio after gate |
-| Exports | Idempotent CSV export with an independent New Zealand calendar-month allowance and plan/history enforcement |
-| Portfolio API/Webhooks | Independently metered read-only API; credentials and signed webhooks remain behind their separate launch gate |
+| Exports | Idempotent CSV/XLSX export with an independent billing-period allowance and plan/history enforcement |
+| Portfolio API/Webhooks | Deferred beyond first launch; no first-launch entitlement or marketing promise |
 | Billing | Checkout, Portal, plan change, cancel and resume actions plus read-only persisted billing status |
 | Settings/account lifecycle | Preferences, all-session revoke, data export request and deletion request |
 
@@ -101,7 +101,7 @@ Every retryable mutation that could consume quota, enqueue work, change billing,
 `POST /api/v1/customer/membership/pricing-units` accepts an owned `priceCheckId` only after that
 Price Check has confirmed a Sellable Unit and transactionally reserved membership usage. It does not
 accept an arbitrary internal Property or Sellable Unit identifier, does not consume quota a second
-time, and is idempotent through the Property-level pricing-unit identity.
+time, and is idempotent through the independently monitored unit identity.
 
 ### Cross-account benefit and abuse controls
 
@@ -138,8 +138,8 @@ The account overview is the default authenticated landing page. It must show, fr
 
 - current plan, subscription status and any pending plan change;
 - next renewal or paid-period end, cancellation-at-period-end and payment-grace state where applicable;
-- occupied physical-property slots versus allowed;
-- spot checks used, remaining and the exact rolling reset or availability time;
+- occupied monitored-object slots versus purchased capacity;
+- spot checks used, remaining and the paid billing-period reset or Free rolling availability time;
 - exact daily price-check horizon and monitoring-only horizon, expressed in New Zealand calendar dates;
 - scheduled analysis cadence and last/next eligible run for each active unit where the plan includes scheduling;
 - recent checks, alerts and the highest-priority eligible customer action;
@@ -148,17 +148,17 @@ The account overview is the default authenticated landing page. It must show, fr
 
 The overview cannot show only plan cards. It must function as the member's operational home and clearly explain why an action is unavailable: quota exhausted, unit limit reached, inactive unit, payment grace expired, plan limitation, launch gate, insufficient evidence, source unavailable, or work already in progress.
 
-### Property-slot management
+### Monitored-object slot management
 
 Members can view all account-owned property slots and explicitly activate or deactivate monitoring.
 
 - A property slot shows its canonical property identity, representative unit, linked supported OTA listings, active state, monitoring state, last successful observation and next eligible scheduled review.
-- Adding a slot begins from a supported OTA URL or approved address-resolution flow. Both inputs resolve to the same stable `Property` quota identity when they refer to the same physical accommodation.
+- Adding a slot begins from a supported OTA URL or approved address-resolution flow. An address benchmark may explicitly convert to one confirmed Sellable Unit while keeping the same slot and history.
 - Adding or activating a property cannot exceed the plan limit. The API returns a machine-readable limit reason and the UI offers the relevant plan action without silently changing membership.
-- Deactivation stops future scheduled collection and cancels only safely cancellable pending membership jobs. The slot remains occupied for 30 days from deactivation; reactivating the same Property is allowed during that window, but another address cannot replace it. Historical reports remain governed by retention rules.
+- Deactivation stops future scheduled collection and cancels only the customer's safely cancellable pending membership jobs. A paid slot remains bound until the current billing period ends; Free retains a 30-day replacement lock. Reactivating the same object grants no extra quota. Deactivation does not reduce purchased capacity or the invoice.
 - Reactivation does not fabricate fresh coverage; the UI shows the last observation time and schedules or requests work according to entitlement.
-- Downgrades that reduce the limit require the customer to choose the units that remain active before the downgrade can be scheduled.
-- URL spelling, address formatting, OTA channel, and representative Sellable Unit do not create a new slot for the same stable Property. A distinct physical Property uses a distinct slot.
+- Downgrades that reduce capacity require a retained-object selection when submitted; the other objects stay active until the billing boundary.
+- URL spelling, address formatting and OTA channel do not create another slot for the same independently priced unit. Independently rentable apartments, whole-property offers and separate room types use separate slots.
 
 ### Price Checks and results
 
@@ -197,8 +197,7 @@ Plan-gated modules become navigable only when both the member entitlement and th
 - Portfolio view ranks actionable opportunities across units without treating missing data as zero opportunity.
 - Bulk changes require a preview of affected units, validation and explicit confirmation; this version never writes prices to an OTA or PMS.
 - Exported rows preserve source, `asOf`, price basis, evidence/recommendation status, currency and timezone. Export availability follows the history entitlement.
-- Portfolio API credentials are revocable, least-privilege, read-only and never expose raw browser evidence or another customer's data.
-- Result webhooks are signed, replay-safe, retry-bounded and contain identifiers plus result state, not secrets or unrestricted evidence payloads.
+- Customer API credentials and result webhooks are deferred beyond first launch; no first-launch purchase unlocks them.
 
 ### Billing and subscription management
 
@@ -309,7 +308,7 @@ The membership system cannot be described as complete until all applicable rows 
 | `MEM-CHECK-001` | History and detail are owner-only, filterable, retention-aware and separate target-price success from recommendation availability. |
 | `MEM-CAL-001` | Calendar correctly distinguishes exact daily dates from monitoring-only dates using New Zealand time and never fabricates unsampled prices. |
 | `MEM-ALERT-001` | Eligible alerts and controls enforce plan/gate boundaries, deduplication, auditability and evidence integrity. |
-| `MEM-PORT-001` | Portfolio, bulk controls, exports, API and webhooks pass their plan, security, capacity and production gates before exposure. |
+| `MEM-PORT-001` | Portfolio, bulk controls and exports pass their plan, security, capacity and production gates before exposure. API and webhooks remain disabled. |
 | `MEM-BILL-001` | Checkout, Portal, upgrade, downgrade, cancel, resume, grace and webhook reconciliation pass signed/idempotent Stripe integration tests. |
 | `MEM-RET-001` | History, raw evidence, auth, billing and deletion retention are enforced independently for all lifecycle transitions. |
 | `MEM-OPS-001` | Admin can support customer, subscription, session, reconciliation and deletion workflows without impersonation or secret exposure; every mutation is audited. |
@@ -321,43 +320,42 @@ Passing backend entitlement tests alone is insufficient. The gate requires route
 
 ## Billing unit
 
-One billing unit is one stable physical `Property`, exposed to members as a property slot.
+One billing unit is one independent pricing object, exposed as a monitored-object slot. Ten independent apartments count as ten; twenty interchangeable hotel rooms sold in three room types count as three. A whole-property offer and separately sold rooms count separately when monitored independently. Automatic comparables do not consume slots; explicit independent monitoring does.
 
 - An address-only neighbourhood benchmark occupies one property slot.
 - A supported OTA listing occupies one property slot.
-- An address and OTA listing matched to the same Property occupy one shared slot.
-- Multiple OTA channels or room/unit identities attached to that Property do not multiply the membership slot count.
-- Deactivation stops scheduled monitoring immediately but retains the occupied slot for 30 days. This prevents repeated address replacement from bypassing the plan limit.
+- An address benchmark converts to one selected unit without an extra slot; additional independent units occupy additional slots.
+- Multiple OTA channels for one unit do not multiply slots. Drafts, favourites and unmonitored archives do not occupy slots.
+- Paid slots remain bound until the billing boundary; Free slots retain a 30-day replacement lock. Corrections for a mistaken match, sale or transfer require an audited support action.
 - Address identity uses the stable provider identity produced by the approved New Zealand address-resolution flow, not raw user-entered spelling.
 
-The internal model uses `CustomerPricingUnit` and `activePricingUnitLimit`; entitlement enforcement and customer-facing copy mean physical-property slots. No legacy customer model or compatibility mapping is required.
+The internal model uses `CustomerPricingUnit` and `activePricingUnitLimit`. Existing paid subscriptions retain the legacy price, Property identity and allowances until an explicit quoted migration. New subscriptions use `launch-2026`; migration never silently splits existing slots or bills extra capacity.
 
 ## Prices and entitlements
 
-Prices are provisional launch prices in New Zealand dollars. Consumer-facing prices are GST-inclusive. Phase 1 launches with monthly billing only. Annual billing, priced as ten months of service, becomes available only after 60–90 days of accepted production unit economics, cancellation handling, and service stability.
+Prices are NZD, GST-inclusive, normal recurring launch prices with no hidden introductory expiry. Launch is monthly only. Annual billing and its price remain uncommitted until production cost and lifecycle acceptance. Purchased capacity determines the invoice even when slots are unused; no automatic overage charges.
 
 | Entitlement | Free | Host | Pro | Portfolio |
 |---|---:|---:|---:|---:|
 | Plan ID | `FREE` | `HOST` | `PRO` | `PORTFOLIO` |
-| Monthly launch price | NZ$0 | NZ$29 | NZ$89 | NZ$249 |
-| Phase-2 annual price | Not applicable | NZ$290 | NZ$890 | NZ$2,490 |
-| Included property slots | 1 | 1 | 5 | 20 |
+| Monthly launch price | NZ$0 | NZ$19 / 1; NZ$29 / 5 | NZ$99 | NZ$249 |
+| Included monitored objects | 1 | 1 or 5 | 20 | 50 |
 | Monitoring horizon | 30 days | 90 days | 180 days | 365 days |
 | Daily price-check horizon | 14 days | 30 days | 90 days | 180 days |
 | Scheduled incremental analysis | None | Weekly per property | Three times weekly per property | Daily per property |
-| User-triggered spot checks | 1 per rolling 30 days after the included first report | 10 per rolling 30 days | 60 per rolling 30 days per account | 300 per rolling 30 days per account |
+| User-triggered spot checks | 1 per rolling 30 days after the lifetime initial report | 10 × purchased capacity per billing period | 12 × purchased capacity per billing period | 15 × purchased capacity per billing period |
 | Recommendation history | 30 days | 6 months | 12 months | 24 months |
 | Alerts | None | Core email alerts | Configurable advanced alerts | Advanced and portfolio alerts |
 | Custom price boundaries | No | No | Yes | Yes |
 | Custom comparable controls | No | No | Yes | Yes |
 | Portfolio view | No | No | Yes | Yes |
-| Export | No | No | CSV and Excel | CSV, Excel, and read-only API |
-| CSV export allowance | 0 | 0 | 10 per NZ calendar month | 100 per NZ calendar month |
-| Read-only API allowance | 0 | 0 | 0 | 1,000 per NZ calendar day |
+| Export | No | No | CSV and Excel | CSV and Excel |
+| CSV/XLSX generation allowance | 0 | 0 | 10 per billing period | 100 per billing period |
+| Read-only API / webhooks | Deferred | Deferred | Deferred | Deferred |
 | Queue service class | Best effort | Standard | Priority | Highest shared priority |
 | Support | Self-service | Email | Priority email | Priority support |
 
-Portfolio properties above the included 20 are provisionally NZ$12 per property slot per month. Accounts above 50 property slots require a separately approved quote and capacity review; this is not a separate Enterprise feature tier.
+Host capacity 2–5 uses the 5-slot bundle; beyond 5 add NZ$4 per slot. Pro beyond 20 adds NZ$4.90 per slot. Portfolio adds NZ$4 for slots 51–100 and NZ$3 for slots 101–200 (marginal tiers, not repricing earlier slots). All paid plans can expand to 200 through the approved capacity gate. Above 200 requires a quote and capacity review. A cheaper higher plan is suggested, never selected automatically. Amounts are calculated in integer cents; existing paid periods do not change when future tariffs are revised.
 
 ## Future-price coverage policy
 
@@ -444,7 +442,7 @@ Dates beyond a plan's daily price-check window use adaptive, signal-sensitive mo
 
 ### Daily-window collection policy
 
-A daily price-check entitlement means Tymra attempts one date-level target-price decision for every New Zealand stay date in the entitled window. It does not guarantee that every date is available or that an OTA publishes a price. It also does not require every OTA to be recollected for every date during every scheduled run. Tymra may safely reuse exact-fresh evidence, stagger providers, and prioritise changed or high-risk dates, but every price must display its `asOf` collection time and pass the applicable identity, query-context, and freshness checks.
+The price-check horizon defines selectable future stay dates, not automatic complete daily collection. Free performs one confirmed stay query. Each paid scheduled cadence performs a bounded incremental refresh per active object, preserving confirmed occupancy and stay length, alternating near-term and rotating future dates; Portfolio can prioritise confirmed major-event dates. Exact-fresh results are reused. Each refresh gets its own report, and unobserved dates stay explicitly unobserved. Every displayed price preserves its real `asOf` time and compatible query context.
 
 The scheduled cadence describes how often Tymra starts an incremental review. It does not mean that a previously collected price remains continuously live between reviews. Customer-facing language uses “recently checked” with an `asOf` timestamp unless a separately accepted freshness SLA supports a stronger term.
 
@@ -454,9 +452,9 @@ The scheduled cadence describes how often Tymra starts an incremental review. It
 
 Free is a genuine product evaluation, not a demo-data tier.
 
-- One property slot.
+- One monitored-object slot.
 - One included initial report and one additional user-triggered spot check per rolling 30 days.
-- D+1 to D+14 daily price checks and D+15 to D+30 monitoring where evidence passes the applicable gates.
+- Queries may select dates in D+1 to D+14; this does not scan all 14 dates automatically. D+15 to D+30 is monitoring context only.
 - All six supported OTA sources and all applicable public market signals remain eligible.
 - Automatic comparable discovery, target-versus-market position, reference range, basic adjustment direction, confidence, and limitations.
 - Thirty-day result history.
@@ -464,12 +462,12 @@ Free is a genuine product evaluation, not a demo-data tier.
 
 ### Host
 
-Host is the primary plan for an individual host operating one property.
+Host is the entry plan for an individual operator, with capacity independent of feature tier.
 
-- One property slot.
+- One slot at NZ$19 or five slots at NZ$29; larger capacity follows the graduated tariff.
 - D+1 to D+90 monitoring; D+1 to D+30 daily price-check window.
 - One scheduled incremental OTA analysis per week.
-- Ten user-triggered spot checks per rolling 30 days.
+- Ten user-triggered spot checks per purchased slot per billing period (10 for Host 1; 50 for Host 5).
 - Automatic maintenance of the comparable set.
 - Suggested review range and percentage adjustment when evidence supports it.
 - Core alerts for material below-market position, high-impact dates, and important data limitations.
@@ -478,16 +476,16 @@ Host is the primary plan for an individual host operating one property.
 
 ### Pro
 
-Pro is for a single operator managing up to five properties.
+Pro adds comparison, prioritisation and custom controls for a single operator.
 
-- Up to five property slots under one customer account.
+- Twenty included monitored-object slots, expandable to 200 through the capacity gate.
 - D+1 to D+180 monitoring; D+1 to D+90 daily price-check window.
 - Three scheduled incremental OTA analyses per active property per week.
-- Sixty user-triggered spot checks per account per rolling 30 days.
+- Twelve user-triggered spot checks per purchased slot per billing period (240 at 20 slots).
 - Multi-property portfolio view and prioritised review dates.
-- Custom minimum price, maximum price, maximum adjustment, alert threshold, and minimum confidence controls.
-- Ability to pin, exclude, or review comparable properties without weakening evidence requirements.
-- Advanced market movement, event, anomaly, and collection-quality alerts.
+- Custom minimum/maximum nightly review price, maximum adjustment, alert threshold, and minimum confidence controls. Conflicting or insufficient evidence produces no strategy recommendation and never hides observed prices. Strategies are versioned; batch changes require a signed preview and atomic owner-scoped confirmation.
+- Ability to prefer, exclude, or review already observed comparable units. A preferred set is used only when at least three distinct eligible units remain; otherwise eligible automatic comparables remain in use. Preferences cannot bypass quality checks or include an otherwise ineligible unit.
+- Configurable market-gap and confidence thresholds, high-impact-date alerts, collection-quality alerts, and per-object email preferences. Broader anomaly and trend alert types are deferred beyond first launch.
 - CSV and Excel export.
 - Twelve-month recommendation history and priority queue service.
 - One customer login; no team or delegated roles.
@@ -496,13 +494,13 @@ Pro is for a single operator managing up to five properties.
 
 Portfolio is for a single operator managing a larger property portfolio.
 
-- Up to twenty included property slots, with approved per-property overage to fifty.
+- Fifty included monitored-object slots, expandable to 200 through the capacity gate.
 - D+1 to D+365 monitoring; D+1 to D+180 daily price-check window.
 - One scheduled incremental OTA analysis per active property per day, subject to source safety, freshness reuse, and capacity controls.
-- Three hundred user-triggered spot checks per account per rolling 30 days.
+- Fifteen user-triggered spot checks per purchased slot per billing period (750 at 50 slots).
 - Property grouping, bulk strategy controls, portfolio opportunity ranking, and collection-health visibility.
 - High-impact dates receive priority OTA recollection.
-- CSV, Excel, read-only API, and result webhooks.
+- CSV and Excel; customer API and result webhooks are deferred beyond first launch.
 - Twenty-four-month recommendation history and highest shared queue service.
 - One customer login; no team, customer roles, or multi-user approval workflow.
 
@@ -515,17 +513,20 @@ Portfolio is for a single operator managing a larger property portfolio.
 - A request to refresh an entire entitled calendar is not a spot check and is not exposed as an unlimited customer action.
 - Scheduled analyses are incremental and do not consume the user-triggered spot-check quota.
 - Failed or challenged OTA sources remain visible in the result coverage; one valid target-property OTA price still produces a successful price result, and Tymra must not silently substitute fixture data.
-- Quotas reset on a rolling 30-day basis to avoid calendar-month boundary abuse.
+- Paid query and export allowances follow the persisted subscription billing period; Free remains rolling 30 days. Unused allowance does not roll over. Upgrades add only the prorated positive allowance difference; usage is never erased. A first paid period grants its full allowance.
+- Reserve before enqueue; release if no valid result is delivered because of system/source failure. A confirmed sold-out result or valid observed price is chargeable even without a recommendation. Exact-fresh cache hits release the reservation. Re-downloading a completed export, privacy export and exit export do not consume generation allowance.
 
 ## Subscription lifecycle
 
 - Phase 1 offers monthly billing only.
 - An upgrade takes effect immediately. The customer pays the prorated difference for the remaining billing period and receives the higher entitlements immediately after confirmed payment.
-- A downgrade takes effect at the next billing-period boundary.
+- A downgrade or capacity reduction takes effect at the next billing-period boundary. Selected retained units do not deactivate other units before that boundary.
 - Before a downgrade that reduces the active-pricing-unit limit, the customer must choose which units remain active. Tymra does not choose automatically.
-- Cancelling stops renewal. Scheduled collection continues until the paid period ends, then all pricing units become inactive.
+- Cancelling is always available, regardless of occupied capacity. It stops renewal, preserves the paid period, then stops paid schedules, deactivates objects and reverts to Free. The customer explicitly activates their one Free object.
 - A cancelled customer retains read-only recommendation history for 30 days after the paid period ends, subject to account deletion and legal retention rules.
-- Payment failure has a seven-day grace period. Spot checks and new scheduled collection may pause during the grace period, but existing reports remain readable.
+- Renewal payment failure preserves original service for seven days from the first failure; retries never extend the deadline. No paid expansion is allowed. After grace, new collection pauses while retained history stays readable. Initial payment failure grants neither paid access nor a grace period.
+- A shorter-history downgrade preserves the affected old history for 30 days for reading and exit export.
+- Team accounts, annual subscriptions, query packs, report packs, customer API/webhooks and automatic OTA write-back are outside first launch.
 - Reactivation restores retained structured history when it remains within the applicable retention period; it does not restore deleted raw evidence.
 - Annual billing is enabled only after refund, cancellation, proration, tax, and payment-webhook behaviour passes acceptance.
 
@@ -541,7 +542,7 @@ The plan's recommendation-history entitlement applies to structured prices, snap
 ## Alert policy
 
 - Alerts are deduplicated by pricing unit, stay date or range, reason code, and material evidence version.
-- The same unchanged alert is sent at most once in 24 hours.
+- At most one alert of each kind is emitted per object in 24 hours; unchanged stay-range/evidence signatures are not repeated. Price gap bands use the configured threshold. Core Host alerts use a 15% threshold; Pro/Portfolio can configure 1–100%.
 - A price alert is not repeated unless the configured material-change threshold is crossed.
 - An event alert is not repeated when the event identity, occurrence, impact evidence, and affected dates are unchanged.
 - Source failures or incomplete coverage remain visible in the product; notification policy must avoid repeated provider-failure spam.
@@ -608,7 +609,7 @@ All plans deploy in the current production version. A paid plan may be publicly 
 
 ### Portfolio gate
 
-- Daily scheduled pricing-unit analysis, bulk controls, API/webhooks, long-range adaptive monitoring, capacity limits, and operational support are accepted.
+- Daily scheduled pricing-unit analysis, bulk controls, long-range adaptive monitoring, capacity limits, and operational support are accepted; customer API/webhooks are deferred.
 - D+91 to D+180 daily price checks, D+181 to D+365 signal-first monitoring, and automatic horizon promotion are verified in production-like soak testing.
 - Measured per-unit browser, CAPTCHA, storage, retry, and support costs pass the Portfolio gross-margin and overage-price gate.
 
@@ -617,3 +618,15 @@ All plans deploy in the current production version. A paid plan may be publicly 
 - Monthly production service has operated for at least 60–90 days with accepted availability, cancellation, refund, tax, and support evidence.
 - Annual proration, upgrade, cancellation, refund, renewal reminder, and payment-failure behaviour are contractually defined and tested.
 - No plan is marketed as annual before this gate passes.
+
+### First-launch configuration
+
+`MEMBERSHIP_CAPACITY_LAUNCH_LIMIT` defaults to 50; production Compose uses
+`PROD_MEMBERSHIP_CAPACITY_LAUNCH_LIMIT`. Set a higher limit only after measured capacity acceptance.
+The tariff supports 1–200 independently of this purchase gate. Stripe Prices must use the exact
+monthly NZD inclusive graduated tiers verified by `scripts/verify-stripe-test-readiness.ts`.
+A disabled commercial gate or a mismatched Price fails closed. No external Price is created by migration.
+
+Strategy changes, alert preferences and alert history retain minimized audit metadata for up to two
+years, subject to account deletion. Generated export snapshots expire after 30 days (or the shorter
+exit deadline); downloading CSV/XLSX again does not consume another generation.

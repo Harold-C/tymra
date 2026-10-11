@@ -362,6 +362,7 @@ enum EmailType {
   INSUFFICIENT_DATA
   CHECK_FAILED
   RESULT_REMINDER
+  PRICE_ALERT
 }
 
 enum AnonymousCheckStatus {
@@ -607,11 +608,22 @@ model MembershipSubscription {
   stripeCustomerId     String?                      @unique
   stripeSubscriptionId String?                      @unique
   stripePriceId        String?
+  stripeCheckoutSessionId String?
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean                      @default(false)
   graceEndsAt          DateTime?
   pendingPlan          MembershipPlan?
+  billingVersion       String                       @default("launch-2026")
+  purchasedCapacity    Int?
+  pendingCapacity      Int?
+  pendingChangeKind    String?
+  pendingRetainedUnitIds String[]                    @default([])
+  periodSpotCheckLimit Int?
+  paidActivatedAt      DateTime?
+  renewalFailedAt      DateTime?
+  historyGraceUntil    DateTime?
+  historyGraceCutoff   DateTime?
   entitlementStartedAt DateTime                     @default(now())
   version              Int                          @default(1)
   lastStripeEventAt    DateTime?
@@ -634,6 +646,9 @@ model CustomerPricingUnit {
   activatedAt       DateTime     @default(now())
   deactivatedAt     DateTime?
   slotRetainedUntil DateTime?
+  groupName         String?
+  strategy          Json         @default("{}")
+  strategyVersion   Int          @default(1)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   customerUser      CustomerUser @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
@@ -656,6 +671,8 @@ model MembershipUsage {
   priceCheckId   String?
   metadata       Json                @default("{}")
   countedAt      DateTime            @default(now())
+  releasedAt     DateTime?
+  releaseReason  String?
   createdAt      DateTime            @default(now())
   customerUser   CustomerUser        @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
   benefitGroup   BenefitGroup?       @relation(fields: [benefitGroupId], references: [id], onDelete: SetNull)

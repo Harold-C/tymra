@@ -2,12 +2,14 @@ import { createHash, createHmac } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
 import { decryptPersonalData, prisma, type Prisma } from "@tymra/db";
-import { isMembershipPlan, membershipEntitlements, membershipPlanRank, type MembershipPlanId } from "@tymra/domain";
+import { isMembershipPlan, membershipEntitlements, membershipPlanRank, membershipMonthlyPrice, entitlementsForMembership, proratedQueryAllowance, MEMBERSHIP_BILLING_VERSION, type MembershipPlanId } from "@tymra/domain";
 import Stripe from "stripe";
 
 import { ensureFreeMembership, stripeSubscriptionStatus } from "./membership";
 import { openRiskCase } from "./member-risk";
 import { ServiceRecoveryError, writeServiceAudit } from "../service-recovery";
+import { BillingError, validatedCapacity, validateLaunchPrice, signBillingQuote, verifyBillingQuote } from "./billing-contract";
+export { BillingError } from "./billing-contract";
 
 let stripeClient: Stripe | undefined;
 let stripeTestEnvironment: Environment | undefined;
@@ -22,14 +24,12 @@ function billingEnvironment() {
   return stripeTestEnvironment ?? getEnvironment();
 }
 
-export class BillingError extends Error {
-  constructor(
-    readonly code: "BILLING_DISABLED" | "PLAN_NOT_AVAILABLE" | "SUBSCRIPTION_NOT_FOUND" | "INVALID_PRICE_CONFIGURATION" | "PRICING_UNIT_SELECTION_REQUIRED",
-    message: string,
-  ) {
-    super(message);
-    this.name = "BillingError";
-  }
+export function membershipCapacityLaunchLimit() { return billingEnvironment().MEMBERSHIP_CAPACITY_LAUNCH_LIMIT; }
+
+function approvedCapacity(plan: MembershipPlanId, requested?: number) {
+  const capacity = validatedCapacity(plan, requested);
+  if (capacity > membershipCapacityLaunchLimit()) throw new BillingError("PLAN_NOT_AVAILABLE", "This capacity requires an operational capacity review before payment can be accepted.");
+  return capacity;
 }
 
 function stripe(): Stripe {
@@ -56,7 +56,7 @@ export function membershipFeatureLaunchAvailability() {
     alerts: plans.HOST,
     portfolio: plans.PRO,
     exports: plans.PRO && environment.MEMBERSHIP_EXPORT_LAUNCH_ENABLED,
-    integrations: plans.PORTFOLIO && environment.MEMBERSHIP_API_LAUNCH_ENABLED,
+    integrations: false,
   };
 }
 
@@ -76,23 +76,34 @@ function planForPriceId(priceId: string | null | undefined): MembershipPlanId | 
 }
 
 async function validateStripePrice(client: Stripe, plan: Exclude<MembershipPlanId, "FREE">, priceId: string) {
-  const price = await client.prices.retrieve(priceId);
-  const expected = membershipEntitlements[plan].monthlyPriceMinor;
-  if (!price.active || price.currency !== "nzd" || price.type !== "recurring" || price.recurring?.interval !== "month" || price.unit_amount !== expected || price.tax_behavior !== "inclusive") {
-    throw new BillingError("INVALID_PRICE_CONFIGURATION", `${plan} must use an active monthly NZD GST-inclusive Stripe Price for ${expected} minor units.`);
-  }
+  validateLaunchPrice(await client.prices.retrieve(priceId, { expand: ["tiers"] }), plan);
 }
 
-export async function createMembershipCheckout(customerUserId: string, planValue: unknown) {
+export async function createMembershipCheckout(customerUserId: string, planValue: unknown, requestedCapacity?: number) {
   if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Select an available paid membership.");
   const plan = planValue;
+  const capacity = approvedCapacity(plan, requestedCapacity);
   const client = stripe();
   const priceId = priceIdForPlan(plan);
   await validateStripePrice(client, plan, priceId);
   const environment = billingEnvironment();
   const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
   const membership = await prisma.$transaction((transaction) => ensureFreeMembership(transaction, customerUserId));
-  if (membership.stripeSubscriptionId && membership.status !== "CANCELLED") return changeMembershipPlan(customerUserId, plan);
+  if (!customer.emailVerifiedAt) throw new BillingError("PLAN_NOT_AVAILABLE", "Verify your email before starting a paid subscription.");
+  if (membership.stripeSubscriptionId && membership.status !== "CANCELLED") throw new BillingError("BILLING_CHANGE_PENDING", "Review a subscription-change quote for the linked subscription.");
+  if (membership.stripeCheckoutSessionId) {
+    const previous = await client.checkout.sessions.retrieve(membership.stripeCheckoutSessionId);
+    if (previous.status === "open" && previous.url) return { url: previous.url };
+    if (previous.status === "complete") throw new BillingError("BILLING_CHANGE_PENDING", "Payment is being reconciled. Refresh your membership shortly.");
+    await prisma.membershipSubscription.updateMany({ where: { id: membership.id, version: membership.version }, data: { stripeCheckoutSessionId: null, pendingPlan: null, pendingCapacity: null, pendingChangeKind: null, version: { increment: 1 } } });
+    return createMembershipCheckout(customerUserId, plan, capacity);
+  }
+  const retryPending = membership.pendingChangeKind === "CHECKOUT" && membership.pendingPlan === plan && membership.pendingCapacity === capacity;
+  if (membership.pendingPlan && !retryPending) throw new BillingError("BILLING_CHANGE_PENDING", "Resume the earlier checkout before selecting another subscription.");
+  if (!retryPending) {
+    const claim = await prisma.membershipSubscription.updateMany({ where: { id: membership.id, version: membership.version, pendingPlan: null }, data: { pendingPlan: plan, pendingCapacity: capacity, pendingChangeKind: "CHECKOUT", version: { increment: 1 } } });
+    if (claim.count !== 1) throw new BillingError("BILLING_CHANGE_PENDING", "A checkout is already being prepared.");
+  }
 
   let stripeCustomerId = membership.stripeCustomerId;
   if (!stripeCustomerId) {
@@ -109,15 +120,17 @@ export async function createMembershipCheckout(customerUserId: string, planValue
     customer: stripeCustomerId,
     customer_update: { address: "auto", name: "auto" },
     client_reference_id: customerUserId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: capacity }],
+    payment_method_types: ["card"],
     allow_promotion_codes: false,
     automatic_tax: { enabled: true },
     tax_id_collection: { enabled: true },
-    subscription_data: { metadata: { customerUserId, membershipPlan: plan } },
+    subscription_data: { metadata: { customerUserId, membershipPlan: plan, billingVersion: MEMBERSHIP_BILLING_VERSION } },
     success_url: `${environment.PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account?billing=success`,
     cancel_url: `${environment.PUBLIC_ORIGIN}/${customer.locale === "zh" ? "zh" : "en"}/account?billing=cancelled`,
-  }, { idempotencyKey: `membership-checkout:v2:${customerUserId}:${plan}:${membership.version}` });
+  }, { idempotencyKey: `membership-checkout:v3:${customerUserId}:${plan}:${capacity}:${retryPending ? membership.version - 1 : membership.version}` });
   if (!session.url) throw new Error("Stripe Checkout did not return a redirect URL.");
+  await prisma.membershipSubscription.updateMany({ where: { id: membership.id, pendingChangeKind: "CHECKOUT", pendingPlan: plan, pendingCapacity: capacity }, data: { stripeCheckoutSessionId: session.id } });
   return { url: session.url };
 }
 
@@ -133,40 +146,74 @@ export async function createMembershipPortal(customerUserId: string) {
   return { url: session.url };
 }
 
-export async function changeMembershipPlan(customerUserId: string, planValue: unknown) {
+export async function previewMembershipChange(customerUserId: string, planValue: unknown, requestedCapacity?: number) {
+  if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Select a paid plan.");
+  const capacity = approvedCapacity(planValue, requestedCapacity);
+  const client = stripe();
+  const priceId = priceIdForPlan(planValue);
+  await validateStripePrice(client, planValue, priceId);
+  const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
+  if (!membership?.stripeSubscriptionId) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No paid subscription is linked to this account.");
+  if (membership.status !== "ACTIVE" || membership.cancelAtPeriodEnd) throw new BillingError("PAYMENT_REQUIRED", "Restore active renewal and settle the current invoice before changing capacity.");
+  if (membership.pendingPlan) throw new BillingError("BILLING_CHANGE_PENDING", "A subscription change is already pending.");
+  const subscription = await client.subscriptions.retrieve(membership.stripeSubscriptionId);
+  const item = subscription.items.data[0];
+  if (!item || subscription.items.data.length !== 1 || subscription.pending_update) throw new BillingError("BILLING_CHANGE_PENDING", "Reconcile the pending Stripe subscription before requesting a change.");
+  const mode = membershipPlanRank(planValue) < membershipPlanRank(membership.plan) || capacity < entitlementsForMembership(membership).activePricingUnitLimit ? "NEXT_PERIOD" as const : "IMMEDIATE" as const;
+  const prorationDate = Math.floor(Date.now() / 1000);
+  const recurringMinor = membershipMonthlyPrice(planValue, capacity);
+  const preview = mode === "IMMEDIATE" ? await client.invoices.createPreview({
+    subscription: subscription.id,
+    subscription_details: { proration_date: prorationDate, proration_behavior: "always_invoice", items: [{ id: item.id, price: priceId, quantity: capacity }] },
+  }) : null;
+  const quote = { customerUserId, version: membership.version, plan: planValue, capacity, priceId, prorationDate, mode, amountDueMinor: preview?.amount_due ?? 0, recurringMinor };
+  return { ...quote, quoteToken: signBillingQuote(quote, billingEnvironment().ACCESS_KEY_SECRET), effectiveAt: mode === "NEXT_PERIOD" ? new Date(item.current_period_end * 1000) : new Date(prorationDate * 1000), expiresAt: new Date((prorationDate + 600) * 1000), entitlements: entitlementsForMembership({ plan: planValue, purchasedCapacity: capacity }) };
+}
+
+export async function changeMembershipPlan(customerUserId: string, planValue: unknown, requestedCapacity?: number, quoteToken?: string, retainedUnitIds?: string[]) {
   if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Free is reached by cancelling the paid subscription at period end.");
   const targetPlan = planValue;
+  const targetCapacity = approvedCapacity(targetPlan, requestedCapacity);
   const client = stripe();
   const targetPriceId = priceIdForPlan(targetPlan);
   await validateStripePrice(client, targetPlan, targetPriceId);
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeSubscriptionId) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No paid subscription is linked to this account.");
+  const quote = verifyBillingQuote(quoteToken, { customerUserId, version: membership.version, plan: targetPlan, capacity: targetCapacity, priceId: targetPriceId }, billingEnvironment().ACCESS_KEY_SECRET);
+  if (membership.status !== "ACTIVE" || membership.cancelAtPeriodEnd || membership.pendingPlan) throw new BillingError("BILLING_CHANGE_PENDING", "Resolve the current subscription change before continuing.");
   const subscription = await client.subscriptions.retrieve(membership.stripeSubscriptionId);
   const item = subscription.items.data[0];
   if (!item) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "The Stripe subscription has no billable item.");
 
-  if (membershipPlanRank(targetPlan) > membershipPlanRank(membership.plan)) {
-    await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { pendingPlan: targetPlan, version: { increment: 1 } } });
+  if (targetPlan === membership.plan && targetCapacity === membership.purchasedCapacity && membership.billingVersion === MEMBERSHIP_BILLING_VERSION) return { mode: "UNCHANGED" as const, pendingPlan: null };
+  if (quote.mode === "IMMEDIATE") {
+    const currentPreview = await client.invoices.createPreview({ subscription: subscription.id, subscription_details: { proration_date: quote.prorationDate, proration_behavior: "always_invoice", items: [{ id: item.id, price: targetPriceId, quantity: targetCapacity }] } });
+    if (currentPreview.amount_due !== quote.amountDueMinor) throw new BillingError("INVALID_QUOTE", "The payable amount changed. Review a new quote before confirming.");
+  }
+  const activeUnits = await prisma.customerPricingUnit.findMany({ where: { customerUserId, active: true }, select: { id: true } });
+  const retained = retainedUnitIds ?? activeUnits.map(unit => unit.id);
+  if (new Set(retained).size !== retained.length || retained.length > targetCapacity || retained.some(id => !activeUnits.some(unit => unit.id === id))) throw new BillingError("PRICING_UNIT_SELECTION_REQUIRED", `Select up to ${targetCapacity} currently active monitored objects to retain next period.`);
+  const claim = await prisma.membershipSubscription.updateMany({ where: { id: membership.id, version: membership.version, pendingPlan: null }, data: { pendingPlan: targetPlan, pendingCapacity: targetCapacity, pendingChangeKind: quote.mode, pendingRetainedUnitIds: retained, version: { increment: 1 } } });
+  if (claim.count !== 1) throw new BillingError("INVALID_QUOTE", "The subscription changed. Review a new quote.");
+  if (quote.mode === "IMMEDIATE") {
     try {
-      await client.subscriptions.update(subscription.id, {
-        items: [{ id: item.id, price: targetPriceId }],
+      const updated = await client.subscriptions.update(subscription.id, {
+        items: [{ id: item.id, price: targetPriceId, quantity: targetCapacity }],
+        payment_behavior: "pending_if_incomplete",
         proration_behavior: "always_invoice",
-        metadata: { ...subscription.metadata, customerUserId, membershipPlan: targetPlan },
-      }, { idempotencyKey: `membership-upgrade:${membership.id}:${membership.version}:${targetPlan}` });
+        proration_date: quote.prorationDate,
+        expand: ["latest_invoice"],
+      }, { idempotencyKey: `membership-upgrade:${membership.id}:${membership.version}:${targetPlan}:${targetCapacity}` });
+      await syncStripeSubscription(updated, new Date());
+      const invoice = typeof updated.latest_invoice === "object" ? updated.latest_invoice : null;
+      return { mode: "UPGRADE_PENDING_PAYMENT" as const, pendingPlan: targetPlan, url: updated.pending_update ? invoice?.hosted_invoice_url ?? undefined : undefined };
     } catch (error) {
-      await prisma.membershipSubscription.updateMany({ where: { id: membership.id, pendingPlan: targetPlan }, data: { pendingPlan: null, version: { increment: 1 } } });
+      // Unknown provider outcomes remain pending for authoritative reconciliation.
       throw error;
     }
-    return { mode: "UPGRADE_PENDING_PAYMENT" as const, pendingPlan: targetPlan };
   }
 
-  if (targetPlan === membership.plan) return { mode: "UNCHANGED" as const, pendingPlan: null };
-  const activePricingUnits = await prisma.customerPricingUnit.count({ where: { customerUserId, active: true } });
-  if (activePricingUnits > membershipEntitlements[targetPlan].activePricingUnitLimit) {
-    throw new BillingError("PRICING_UNIT_SELECTION_REQUIRED", `Deactivate pricing units until ${membershipEntitlements[targetPlan].activePricingUnitLimit} remain before scheduling this downgrade.`);
-  }
-  await scheduleMembershipDowngrade(client, subscription, membership, targetPlan, targetPriceId);
-  await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { pendingPlan: targetPlan, version: { increment: 1 } } });
+  await scheduleMembershipDowngrade(client, subscription, membership, targetPlan, targetPriceId, targetCapacity);
   return { mode: "DOWNGRADE_SCHEDULED" as const, pendingPlan: targetPlan };
 }
 
@@ -184,6 +231,10 @@ export async function cancelMembershipAtPeriodEnd(customerUserId: string) {
     where: { id: membership.id },
     data: {
       cancelAtPeriodEnd: true,
+      pendingPlan: null,
+      pendingCapacity: null,
+      pendingChangeKind: null,
+      pendingRetainedUnitIds: [],
       currentPeriodEnd: subscription.items.data[0] ? new Date(subscription.items.data[0].current_period_end * 1_000) : membership.currentPeriodEnd,
       version: { increment: 1 },
     },
@@ -197,7 +248,7 @@ export async function resumeMembershipRenewal(customerUserId: string) {
   const client = stripe();
   const subscription = await client.subscriptions.update(membership.stripeSubscriptionId, { cancel_at_period_end: false });
   if (membership.pendingPlan && membership.pendingPlan !== "FREE" && membershipPlanRank(membership.pendingPlan) < membershipPlanRank(membership.plan)) {
-    await scheduleMembershipDowngrade(client, subscription, membership, membership.pendingPlan, priceIdForPlan(membership.pendingPlan));
+    await scheduleMembershipDowngrade(client, subscription, membership, membership.pendingPlan, priceIdForPlan(membership.pendingPlan), membership.pendingCapacity ?? validatedCapacity(membership.pendingPlan));
   }
   await prisma.membershipSubscription.update({ where: { id: membership.id }, data: { cancelAtPeriodEnd: false, version: { increment: 1 } } });
   return { cancelAtPeriodEnd: false };
@@ -209,6 +260,7 @@ async function scheduleMembershipDowngrade(
   membership: { id: string; customerUserId: string; version: number },
   targetPlan: Exclude<MembershipPlanId, "FREE">,
   targetPriceId: string,
+  targetCapacity: number,
 ) {
   const item = subscription.items.data[0];
   if (!item) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "The Stripe subscription has no billable item.");
@@ -223,7 +275,7 @@ async function scheduleMembershipDowngrade(
     end_behavior: "release",
     phases: [
       { start_date: schedule.phases[0]?.start_date ?? item.current_period_start, end_date: currentEnd, items: [{ price: item.price.id, quantity: item.quantity ?? 1 }] },
-      { start_date: currentEnd, items: [{ price: targetPriceId, quantity: 1 }], metadata: { customerUserId: membership.customerUserId, membershipPlan: targetPlan } },
+      { start_date: currentEnd, proration_behavior: "none", items: [{ price: targetPriceId, quantity: targetCapacity }], metadata: { customerUserId: membership.customerUserId, membershipPlan: targetPlan, billingVersion: MEMBERSHIP_BILLING_VERSION } },
     ],
   }, { idempotencyKey: `membership-downgrade:${membership.id}:${membership.version}:${targetPlan}` });
 }
@@ -255,16 +307,23 @@ async function applyRecordedStripeEvent(event: Stripe.Event, recorded: { id: str
   if (claim.count !== 1) throw new Error("Stripe event is already being processed.");
 
   try {
-    if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-      await syncStripeSubscription(event.data.object as Stripe.Subscription, eventCreatedAt);
-    } else if (event.type === "invoice.payment_failed") {
-      await updateMembershipByStripeCustomer((event.data.object as Stripe.Invoice).customer, { status: "PAST_DUE", graceEndsAt: new Date(eventCreatedAt.getTime() + 7 * 86_400_000) }, eventCreatedAt);
-    } else if (event.type === "invoice.paid") {
-      await updateMembershipByStripeCustomer((event.data.object as Stripe.Invoice).customer, { status: "ACTIVE", graceEndsAt: null }, eventCreatedAt);
-      await activatePaidPendingPlan((event.data.object as Stripe.Invoice).customer, eventCreatedAt);
+    if (event.type.startsWith("customer.subscription.")) {
+      const object = event.data.object as Stripe.Subscription;
+      const subscription = event.type === "customer.subscription.deleted" ? object : await stripe().subscriptions.retrieve(object.id, { expand: ["latest_invoice"] });
+      await syncStripeSubscription(subscription, eventCreatedAt);
+    } else if (event.type === "invoice.payment_failed" || event.type === "invoice.paid") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const reference = invoice.parent?.subscription_details?.subscription;
+      const subscriptionId = typeof reference === "string" ? reference : reference?.id;
+      if (subscriptionId) {
+        const subscription = await stripe().subscriptions.retrieve(subscriptionId, { expand: ["latest_invoice"] });
+        const latestId = typeof subscription.latest_invoice === "string" ? subscription.latest_invoice : subscription.latest_invoice?.id;
+        // A customer's unrelated invoice or superseded subscription cannot grant access.
+        if (latestId === invoice.id) await syncStripeSubscription(subscription, eventCreatedAt);
+      }
     } else if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
-      if (typeof session.subscription === "string") await syncStripeSubscription(await stripe().subscriptions.retrieve(session.subscription), eventCreatedAt);
+      if (typeof session.subscription === "string") await syncStripeSubscription(await stripe().subscriptions.retrieve(session.subscription, { expand: ["latest_invoice"] }), eventCreatedAt);
     } else if (event.type === "charge.succeeded" || event.type === "charge.updated") {
       await recordPaymentInstrument(event.data.object as Stripe.Charge, "ACTIVE", eventCreatedAt);
     } else if (event.type === "charge.refunded") {
@@ -291,7 +350,6 @@ async function applyRecordedStripeEvent(event: Stripe.Event, recorded: { id: str
     throw error;
   }
 }
-
 /** Fetches facts from the configured Stripe account; accepts no caller-supplied plan or state. */
 export async function reconcileCustomerBilling(customerUserId: string, adminId: string, reason: string) {
   const before = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
@@ -309,10 +367,6 @@ export async function reconcileCustomerBilling(customerUserId: string, adminId: 
     if (current.version !== before.version || current.stripeSubscriptionId !== subscription.id || current.stripeCustomerId !== stripeCustomerId) throw new ServiceRecoveryError("BILLING_FACTS_CHANGED");
     await syncStripeSubscription(subscription, observedAt, tx);
     const invoice = typeof subscription.latest_invoice === "object" ? subscription.latest_invoice : null;
-    const billedPlan = planForPriceId(subscription.items.data[0]?.price.id);
-    if (subscription.status === "active" && invoice?.status === "paid" && current.pendingPlan && billedPlan === current.pendingPlan && membershipPlanRank(billedPlan) > membershipPlanRank(current.plan)) {
-      await tx.membershipSubscription.update({ where: { id: current.id }, data: { plan: billedPlan, pendingPlan: null, status: "ACTIVE", graceEndsAt: null, version: { increment: 1 } } });
-    }
     const after = await tx.membershipSubscription.findUniqueOrThrow({ where: { customerUserId } });
     await writeServiceAudit(tx, adminId, "customer_billing_reconciled", "CustomerUser", customerUserId, { reason, stripeSubscriptionId: subscription.id, stripePriceId: subscription.items.data[0]?.price.id ?? null, latestInvoiceId: invoice?.id ?? null, latestInvoiceStatus: invoice?.status ?? "UNEXPANDED", observedAt: observedAt.toISOString(), before: { plan: before.plan, status: before.status, version: before.version }, after: { plan: after.plan, status: after.status, version: after.version } });
     return { reconciled: true, plan: after.plan, status: after.status, version: after.version };
@@ -394,75 +448,92 @@ async function syncStripeSubscription(subscription: Stripe.Subscription, eventCr
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const item = subscription.items.data[0];
   const priceId = item?.price.id ?? null;
-  const plan = planForPriceId(priceId);
-  if (!plan || plan === "FREE") throw new BillingError("INVALID_PRICE_CONFIGURATION", "The Stripe subscription Price is not mapped to a Tymra plan.");
   let existing = await database.membershipSubscription.findFirst({
     where: { OR: [{ stripeSubscriptionId: subscription.id }, { stripeCustomerId: customerId }] },
   });
   if (existing) { await database.$queryRaw`SELECT id FROM "MembershipSubscription" WHERE id = ${existing.id} FOR UPDATE`; existing = await database.membershipSubscription.findUniqueOrThrow({ where: { id: existing.id } }); }
   if (existing?.lastStripeEventAt && existing.lastStripeEventAt > eventCreatedAt) return;
+  if (existing?.stripeSubscriptionId && existing.stripeSubscriptionId !== subscription.id && existing.plan !== "FREE") throw new BillingError("BILLING_CHANGE_PENDING", "A different paid subscription is already linked; reconcile the duplicate billing before granting access.");
+  const legacy = existing?.billingVersion === "legacy-2026" && existing.stripePriceId === priceId;
+  const plan = legacy ? existing!.plan : planForPriceId(priceId);
+  if (!item || subscription.items.data.length !== 1 || !plan || plan === "FREE") throw new BillingError("INVALID_PRICE_CONFIGURATION", "The Stripe subscription Price is not mapped to a Tymra plan.");
+  const capacity = legacy ? entitlementsForMembership(existing!).activePricingUnitLimit : validatedCapacity(plan, item.quantity ?? 1);
+  if (!legacy && capacity !== item.quantity) throw new BillingError("INVALID_PRICE_CONFIGURATION", "The billed quantity is not a valid purchased capacity.");
   const customerUserId = existing?.customerUserId ?? subscription.metadata.customerUserId;
   if (!customerUserId) throw new Error("Stripe subscription is missing customerUserId metadata.");
   if (!(await database.customerUser.findFirst({ where: { id: customerUserId, status: { not: "DELETED" } } }))) throw new ServiceRecoveryError("CUSTOMER_DELETED");
-  const status = stripeSubscriptionStatus(subscription.status);
-  const pendingUpgrade = existing !== null && existing.pendingPlan === plan && membershipPlanRank(plan) > membershipPlanRank(existing.plan);
-  const effectivePlan = pendingUpgrade && existing ? existing.plan : plan;
+  const invoice = typeof subscription.latest_invoice === "object" ? subscription.latest_invoice : null;
+  const paid = subscription.status === "active" && invoice?.status === "paid" && !subscription.pending_update;
+  const cancelled = subscription.status === "canceled" || subscription.status === "incomplete_expired";
+  const periodStart = new Date(item.current_period_start * 1000);
+  const periodEnd = new Date(item.current_period_end * 1000);
+  const oldEntitlements = existing ? entitlementsForMembership(existing) : membershipEntitlements.FREE;
+  const newEntitlements = entitlementsForMembership({ plan, purchasedCapacity: capacity, billingVersion: legacy ? "legacy-2026" : MEMBERSHIP_BILLING_VERSION });
+  const newPeriod = !existing?.paidActivatedAt || !existing.currentPeriodStart || periodStart > existing.currentPeriodStart;
+  const allowance = !existing || newPeriod ? newEntitlements.rollingSpotCheckLimit : proratedQueryAllowance({ currentLimit: oldEntitlements.rollingSpotCheckLimit, oldFullLimit: entitlementsForMembership({ ...existing, periodSpotCheckLimit: null }).rollingSpotCheckLimit, newFullLimit: newEntitlements.rollingSpotCheckLimit, periodStart, periodEnd, changedAt: eventCreatedAt });
+  const initialFailure = !existing?.paidActivatedAt;
+  const renewalFailure = !initialFailure && existing?.plan !== "FREE" && (subscription.status === "past_due" || subscription.status === "unpaid") && invoice?.billing_reason === "subscription_cycle";
+  const failedAt = renewalFailure ? existing?.renewalFailedAt ?? eventCreatedAt : existing?.renewalFailedAt ?? null;
+  const status = cancelled ? "ACTIVE" : paid ? "ACTIVE" : renewalFailure ? "PAST_DUE" : initialFailure ? "INCOMPLETE" : subscription.pending_update ? existing!.status : stripeSubscriptionStatus(subscription.status);
+  const effectivePlan = cancelled ? "FREE" : paid ? plan : existing?.plan ?? "FREE";
+  const shorterHistory = cancelled || paid && newEntitlements.historyRetentionDays < oldEntitlements.historyRetentionDays;
+  const priorCutoff = new Date(eventCreatedAt.getTime() - oldEntitlements.historyRetentionDays * 86_400_000);
+  const historyCutoff = existing?.historyGraceCutoff && existing.historyGraceUntil && existing.historyGraceUntil > eventCreatedAt && existing.historyGraceCutoff < priorCutoff ? existing.historyGraceCutoff : priorCutoff;
+  const changed = paid && (existing?.plan !== plan || existing?.purchasedCapacity !== capacity || existing?.billingVersion !== (legacy ? "legacy-2026" : MEMBERSHIP_BILLING_VERSION));
+  const fulfilledPending = paid && existing?.pendingPlan === plan && existing.pendingCapacity === capacity;
+  const expiredPending = existing?.pendingChangeKind === "IMMEDIATE" && !subscription.pending_update && invoice?.status === "void";
+  const entitlementData = {
+    plan: effectivePlan,
+    status,
+    purchasedCapacity: cancelled ? 1 : paid ? capacity : existing?.purchasedCapacity,
+    billingVersion: cancelled ? MEMBERSHIP_BILLING_VERSION : paid ? legacy ? "legacy-2026" : MEMBERSHIP_BILLING_VERSION : existing?.billingVersion,
+    periodSpotCheckLimit: cancelled ? null : paid ? allowance : existing?.periodSpotCheckLimit,
+    paidActivatedAt: cancelled ? null : paid ? existing?.paidActivatedAt ?? eventCreatedAt : existing?.paidActivatedAt,
+    renewalFailedAt: paid || cancelled ? null : failedAt,
+    graceEndsAt: paid || cancelled ? null : renewalFailure && failedAt ? new Date(failedAt.getTime() + 7 * 86_400_000) : existing?.graceEndsAt,
+    currentPeriodStart: paid ? periodStart : existing?.currentPeriodStart,
+    currentPeriodEnd: paid ? periodEnd : existing?.currentPeriodEnd,
+    pendingPlan: fulfilledPending || expiredPending || cancelled ? null : existing?.pendingPlan,
+    pendingCapacity: fulfilledPending || expiredPending || cancelled ? null : existing?.pendingCapacity,
+    pendingChangeKind: fulfilledPending || expiredPending || cancelled ? null : existing?.pendingChangeKind,
+    pendingRetainedUnitIds: fulfilledPending || expiredPending || cancelled ? [] : existing?.pendingRetainedUnitIds,
+    stripeCheckoutSessionId: paid || cancelled ? null : existing?.stripeCheckoutSessionId,
+    historyGraceUntil: shorterHistory && existing?.plan !== "FREE" ? new Date(eventCreatedAt.getTime() + 30 * 86_400_000) : existing?.historyGraceUntil,
+    historyGraceCutoff: shorterHistory && existing?.plan !== "FREE" ? historyCutoff : existing?.historyGraceCutoff,
+  } satisfies Prisma.MembershipSubscriptionUpdateInput;
   await database.membershipSubscription.upsert({
     where: { customerUserId },
     create: {
       customerUserId,
-      plan: effectivePlan,
-      status,
+      ...entitlementData,
       stripeCustomerId: customerId,
-      stripeSubscriptionId: subscription.id,
+      stripeSubscriptionId: cancelled ? null : subscription.id,
       stripePriceId: priceId,
-      currentPeriodStart: item ? new Date(item.current_period_start * 1_000) : null,
-      currentPeriodEnd: item ? new Date(item.current_period_end * 1_000) : null,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd: cancelled ? false : subscription.cancel_at_period_end,
       lastStripeEventAt: eventCreatedAt,
     },
     update: {
-      plan: effectivePlan,
-      status,
+      ...entitlementData,
       stripeCustomerId: customerId,
-      stripeSubscriptionId: subscription.id,
+      stripeSubscriptionId: cancelled ? null : subscription.id,
       stripePriceId: priceId,
-      currentPeriodStart: item ? new Date(item.current_period_start * 1_000) : null,
-      currentPeriodEnd: item ? new Date(item.current_period_end * 1_000) : null,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      pendingPlan: pendingUpgrade ? plan : existing?.pendingPlan === plan ? null : undefined,
-      graceEndsAt: status === "ACTIVE" ? null : undefined,
+      cancelAtPeriodEnd: cancelled ? false : subscription.cancel_at_period_end,
       version: { increment: 1 },
       lastStripeEventAt: eventCreatedAt,
     },
   });
-  if (status === "CANCELLED") {
-    const now = new Date();
-    const activeUnits = await database.customerPricingUnit.findMany({ where: { customerUserId, active: true }, select: { sellableUnitId: true } });
-    await database.customerPricingUnit.updateMany({ where: { customerUserId, active: true }, data: { active: false, deactivatedAt: now } });
+  if (changed && !legacy) {
+    const units = await database.customerPricingUnit.findMany({ where: { customerUserId }, select: { id: true, sellableUnitId: true } });
+    for (const unit of units) await database.customerPricingUnit.update({ where: { id: unit.id }, data: { quotaIdentityKey: `unit:${unit.sellableUnitId}` } });
+  }
+  if (cancelled || fulfilledPending && existing?.pendingChangeKind === "NEXT_PERIOD") {
+    const now = eventCreatedAt;
+    const removal = { customerUserId, ...(cancelled ? {} : { id: { notIn: existing!.pendingRetainedUnitIds } }) };
+    const activeUnits = await database.customerPricingUnit.findMany({ where: { ...removal, active: true }, select: { sellableUnitId: true } });
+    await database.customerPricingUnit.updateMany({ where: removal, data: { active: false, deactivatedAt: now, slotRetainedUntil: null } });
     await database.job.updateMany({
-        where: { sellableUnitId: { in: activeUnits.map((unit) => unit.sellableUnitId) }, status: "PENDING", payload: { path: ["scheduled"], equals: true } },
+        where: { sellableUnitId: { in: activeUnits.map((unit) => unit.sellableUnitId) }, priceCheck: { customerUserId }, status: "PENDING", payload: { path: ["scheduled"], equals: true } },
         data: { status: "CANCELLED", completedAt: now },
       });
   }
-}
-
-async function activatePaidPendingPlan(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null, eventCreatedAt: Date) {
-  const stripeCustomerId = typeof customer === "string" ? customer : customer?.id;
-  if (!stripeCustomerId) return;
-  const membership = await prisma.membershipSubscription.findFirst({ where: { stripeCustomerId } });
-  if (!membership?.pendingPlan || !membership.stripeSubscriptionId || membershipPlanRank(membership.pendingPlan) <= membershipPlanRank(membership.plan)) return;
-  const subscription = await stripe().subscriptions.retrieve(membership.stripeSubscriptionId);
-  const billedPlan = planForPriceId(subscription.items.data[0]?.price.id);
-  if (billedPlan !== membership.pendingPlan || subscription.status !== "active") return;
-  await prisma.membershipSubscription.update({
-    where: { id: membership.id },
-    data: { plan: membership.pendingPlan, pendingPlan: null, status: "ACTIVE", graceEndsAt: null, lastStripeEventAt: eventCreatedAt, version: { increment: 1 } },
-  });
-}
-
-async function updateMembershipByStripeCustomer(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null, data: { status: "ACTIVE" | "PAST_DUE"; graceEndsAt: Date | null }, eventCreatedAt: Date) {
-  const stripeCustomerId = typeof customer === "string" ? customer : customer?.id;
-  if (!stripeCustomerId) return;
-  await prisma.membershipSubscription.updateMany({ where: { stripeCustomerId, OR: [{ lastStripeEventAt: null }, { lastStripeEventAt: { lte: eventCreatedAt } }] }, data: { ...data, lastStripeEventAt: eventCreatedAt, version: { increment: 1 } } });
 }

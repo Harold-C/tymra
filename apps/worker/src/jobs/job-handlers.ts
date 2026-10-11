@@ -1,9 +1,11 @@
 import { type Environment } from "@tymra/config";
-import { prisma, processHistoricalBackfill, type EmailType, type Job } from "@tymra/db";
+import { prisma, processHistoricalBackfill, reconcileMembershipUsage, type EmailType, type Job } from "@tymra/db";
 import { WorkerService } from "../services/worker-service";
 import { enqueueDueMembershipAnalyses } from "../membership/scheduler";
 import { acknowledgePersistedArgusResults, pollArgusExecution } from "../services/argus-orchestrator";
 import { DeferredJobError } from "./deferred-job";
+import { membershipIsServiceable } from "@tymra/domain";
+import { applyMemberResultStrategy, recordMemberAlerts } from "../membership/strategy";
 import { isProductionOtaPayload, pauseProductionOta } from "../operations/production-ota";
 import { handlePublicCollection } from "./handlers/public-collection";
 import { collectRates, normalizeRates, buildCompetitors, analyse, autoValidate, generateResult, publishResult, validatePropertyIdentification, validateUnitIdentification } from "./handlers/pricing";
@@ -13,9 +15,24 @@ import { syncIncidentSafely, checkSourceHealth, enqueueNext } from "./handlers/s
 import { asObject, requiredString, optionalString, optionalNumber, optionalBoolean, optionalDate, eventCollectionPhase } from "./handlers/payload";
 
 export async function handleJob(job: Job, environment: Environment): Promise<void> {
+  try { await executeJob(job, environment); }
+  finally { if (job.priceCheckId) await reconcileMembershipUsage(prisma, job.priceCheckId); }
+  if (job.priceCheckId) await recordMemberAlerts(job.priceCheckId, environment);
+}
+
+async function executeJob(job: Job, environment: Environment): Promise<void> {
   if (job.priceCheckId) {
-    const check = await prisma.priceCheck.findUnique({ where: { id: job.priceCheckId }, select: { status: true, customerUser: { select: { status: true } } } });
+    const check = await prisma.priceCheck.findUnique({ where: { id: job.priceCheckId }, select: { status: true, requestOrigin: true, unitId: true, customerUserId: true, customerUser: { select: { status: true, emailVerifiedAt: true, membership: true } } } });
     if (!check || ["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") return;
+    if (["RATE_COLLECTION", "CATALOG_DISCOVERY"].includes(job.type) && check.customerUser) {
+      const membership = check.customerUser.membership;
+      const canCollect = check.customerUser.status === "ACTIVE" && check.customerUser.emailVerifiedAt && membership && membershipIsServiceable(membership.status, membership.graceEndsAt, new Date(), membership.plan === "FREE" ? null : membership.currentPeriodEnd);
+      const activeSlot = check.requestOrigin !== "MEMBERSHIP_SCHEDULE" || await prisma.customerPricingUnit.findFirst({ where: { customerUserId: check.customerUserId!, sellableUnitId: check.unitId!, active: true } });
+      if (!canCollect || !activeSlot) {
+        await prisma.priceCheck.update({ where: { id: job.priceCheckId }, data: { status: "CANCELLED" } });
+        return;
+      }
+    }
   }
   const payload = asObject(job.payload);
   const analysisRequestId = optionalString(payload, "analysisRequestId");
@@ -57,6 +74,7 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
       await generateResult(requiredString(payload, "priceCheckId"), payload, job.id);
       return;
     case "RESULT_PUBLICATION":
+      for (const result of await prisma.resultVersion.findMany({ where: { priceCheckId: requiredString(payload, "priceCheckId"), status: "DRAFT" }, select: { id: true } })) await applyMemberResultStrategy(result.id);
       await publishResult(requiredString(payload, "priceCheckId"));
       return;
     case "EMAIL_DELIVERY":
