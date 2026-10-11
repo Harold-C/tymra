@@ -7,6 +7,7 @@ import {
   prisma,
 } from "@tymra/db";
 import { afterAll, describe, expect, it } from "vitest";
+import { addNzCalendarDays, nzDateKey } from "@tymra/domain";
 
 import { InvalidMagicLinkError, consumeMagicLink } from "@/lib/server/membership/magic-links";
 
@@ -77,6 +78,22 @@ describe("Release 1.5 verification and session boundaries", () => {
     expect(await prisma.customerSession.count({ where: { customerUserId: customer.id, revokedAt: null } })).toBe(1);
     expect(await prisma.customerSession.findUnique({ where: { id: oldSession.id } })).toMatchObject({ revokedAt: expect.any(Date) });
     expect(await prisma.customerUser.findUnique({ where: { id: customer.id } })).toMatchObject({ marketingConsent: true });
+    await expect(consumeMagicLink(token.token)).rejects.toBeInstanceOf(InvalidMagicLinkError);
+  });
+
+  it("rejects past stay dates after verification without consuming quota or creating collection work", async () => {
+    const email = `past-stay-${prefix}@tymra.test`;
+    const emailHash = hashPersonalIdentifier(email, process.env.ACCESS_KEY_SECRET!);
+    const encryptedEmail = encryptPersonalData(email, process.env.DATA_ENCRYPTION_KEY!);
+    const customer = await prisma.customerUser.create({ data: { emailHash, encryptedEmail, locale: "en" } });
+    created.customerIds.push(customer.id);
+    const check = await createAnonymousCheck("past-stay", addNzCalendarDays(nzDateKey(new Date()), -1));
+    const token = issueOpaqueToken(process.env.SESSION_SECRET!);
+    await prisma.magicLink.create({ data: { tokenHash: token.tokenHash, idempotencyKey: `${prefix}:past-stay-link`, emailHash, encryptedEmail, locale: "en", anonymousCheckId: check.id, customerUserId: customer.id, expiresAt: new Date(Date.now() + 15 * 60_000) } });
+    expect(await consumeMagicLink(token.token)).toMatchObject({ customerUserId: customer.id, priceCheckId: null, quotaReached: false, blockReason: "QUERY_HORIZON_EXCEEDED" });
+    expect(await prisma.priceCheck.count({ where: { customerUserId: customer.id } })).toBe(0);
+    expect(await prisma.membershipUsage.count({ where: { customerUserId: customer.id } })).toBe(0);
+    expect(await prisma.job.count({ where: { priceCheck: { customerUserId: customer.id } } })).toBe(0);
     await expect(consumeMagicLink(token.token)).rejects.toBeInstanceOf(InvalidMagicLinkError);
   });
 
@@ -168,7 +185,7 @@ describe("Release 1.5 verification and session boundaries", () => {
   });
 });
 
-async function createAnonymousCheck(suffix: string) {
+async function createAnonymousCheck(suffix: string, checkIn = addNzCalendarDays(nzDateKey(new Date()), 7)) {
   const check = await prisma.anonymousCheck.create({
     data: {
       locale: "en",
@@ -179,8 +196,8 @@ async function createAnonymousCheck(suffix: string) {
       status: "ROUGH_READY",
       pricingContext: {
         source: "OTA_DEFAULT",
-        checkIn: "2026-09-10",
-        checkOut: "2026-09-11",
+        checkIn,
+        checkOut: addNzCalendarDays(checkIn, 1),
         adults: 2,
         children: 0,
         units: 1,

@@ -248,13 +248,14 @@ describe("final service assurance persisted invariants", () => {
   });
 
   it("derives a reconciled entitlement from the configured Stripe Price and a paid invoice, preserving ownership", async () => {
-    const state = { plan: "HOST" as const, status: "PAST_DUE" as const, pendingPlan: "PRO" as const, stripeCustomerId: `cus_${suffix}`, stripeSubscriptionId: `sub_${suffix}` };
+    const state = { plan: "HOST" as const, status: "PAST_DUE" as const, pendingPlan: "PRO" as const, pendingCapacity: 20, pendingChangeKind: "IMMEDIATE", stripeCustomerId: `cus_${suffix}`, stripeSubscriptionId: `sub_${suffix}` };
     const member = await prisma.membershipSubscription.upsert({ where: { customerUserId: customerId }, create: { customerUserId: customerId, ...state }, update: state });
-    const subscription = { id: member.stripeSubscriptionId, customer: member.stripeCustomerId, status: "active", cancel_at_period_end: false, latest_invoice: { id: "in_synthetic_paid", status: "paid" }, metadata: { plan: "PORTFOLIO", customerUserId: customerId }, items: { data: [{ price: { id: "price_service_pro" }, current_period_start: Math.floor(Date.now() / 1000), current_period_end: Math.floor(Date.now() / 1000) + 86400 }] } };
+    const subscription = { id: member.stripeSubscriptionId, customer: member.stripeCustomerId, status: "active", cancel_at_period_end: false, latest_invoice: { id: "in_synthetic_paid", status: "paid" }, metadata: { plan: "PORTFOLIO", customerUserId: customerId }, items: { data: [{ price: { id: "price_service_pro" }, quantity: 20, current_period_start: Math.floor(Date.now() / 1000), current_period_end: Math.floor(Date.now() / 1000) + 86400 }] } };
     const retrieve = vi.fn().mockResolvedValue(subscription);
     setStripeTestRuntime({ subscriptions: { retrieve } } as unknown as Stripe, { ...environment, BILLING_ENABLED: true, STRIPE_SECRET_KEY: "sk_test_synthetic", STRIPE_PRO_PRICE_ID: "price_service_pro", STRIPE_HOST_PRICE_ID: "price_service_host", STRIPE_PORTFOLIO_PRICE_ID: "price_service_portfolio" });
     expect(await reconcileCustomerBilling(customerId, adminId, reason)).toMatchObject({ reconciled: true, plan: "PRO", status: "ACTIVE" });
     expect((await prisma.membershipSubscription.findUniqueOrThrow({ where: { id: member.id } })).pendingPlan).toBeNull();
+    expect(await prisma.membershipSubscription.findUnique({ where: { id: member.id } })).toMatchObject({ purchasedCapacity: 20, billingVersion: "launch-2026" });
     retrieve.mockResolvedValue({ ...subscription, customer: "cus_other_owner" });
     await expect(reconcileCustomerBilling(customerId, adminId, reason)).rejects.toThrow("ownership mismatch");
     expect((await prisma.membershipSubscription.findUniqueOrThrow({ where: { id: member.id } })).plan).toBe("PRO");
