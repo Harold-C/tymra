@@ -1,17 +1,183 @@
 # Tymra 实现与验收追踪
 
-更新：2026-10-09。整体后台最终改造与回归修复已推送并发布，当前生产为
-Tymra `c8e9e12`／`service-assurance-20261009`，Argus 为 `eaed587a`／`argus-release-20261009-5`；
-发布、配对恢复和生产页面验证见[同日发布记录](#2026-10-09-服务保障后台生产发布与验证)。
-用户回家后 SSH 已恢复。原弹窗及追加搜索／人数／可见详情修复均已部署，最终零人数
-报价修复 `eaed587a` 已完成完整门禁、最新配对恢复与生产切换。固定Hawke's Bay、Otago
-连续两轮完整公开报价分别NZD280／297，证据及交付核验通过，正式门槛PASSED，Booking
-HEALTHY。临时额度撤回，原日计划恢复NZ10-10 01:33:25，当日实际33次未重置；82/84
-计划开启，Agoda／Eventfinda既有停用保持，凌晨额外试采跟进保持暂停。旧失败、价格和
-验收窗口保留；Booking下一个自然周期仍待核验。
+更新：2026-10-11。实际生产 Tymra 为 `a0d5ae36`／`booking-details-readiness-20261011`，
+Argus 为 `b5778788`／`argus-release-20261011-3`。Booking 下一自然周期在 NZ 10-10
+失败后，详情、日期弹窗及就绪响应修复已发布；补充 API／Worker DNS 修复后，
+新鲜 15 分钟观察 60/60 通过。两轮完整实站公开报价、原始证据／交付和正式质量门槛
+已通过，Booking 来源与健康为 HEALTHY，原每日计划已恢复，81/84 计划开启。
+下一次为 NZ 2026-10-12 01:33:33；该自然周期及长期稳定性尚未验证。
+Agoda／Eventfinda 既有停用保持，Christchurch Sports 最新自然解析失败后原生自动暂停。
+全部前序失败、原证据与计数保留；受控容量清理仅一个已批准旧镜像，配对恢复通过。
 本文件维护当前实现、最近已记录的环境和验收缺口；下一步见[实施计划](implementation-plan.md)，
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
+
+## 2026-10-11 Booking 详情与间歇性 503 修复、生产发布及质量验收
+
+用户明确授权修复、发布生产、完成质量验收后恢复 Booking 计划。
+NZ 10-10 的自然父 Job `cmv0y5874000dny076x50jyn0` 在 Otago 的 Lake Resort by Marsden
+详情解析失败。原快照九个单位中前六个共享类型未知，后面的 Family Room／`17967311`
+具有明确 PRIVATE／最多六人；旧提取器先按 `maxRecords=1` 截断，再过滤未知单位，
+因此遗漏有效单位。Argus `93709f5a` 先过滤有证据的单位再截断，未知类型仍不猜测。
+Tymra 将 Booking 详情缓存键升级为 `booking-room-state-2`，新输入哈希触发重新取得详情，
+旧版房型缓存不用于替代本轮修复后的详情验收。
+原 HTML 的禁止网络回放复现旧版失败并验证新版读取有效单位；
+原文件 SHA-256 为 `ab909623a4efa4ca0b7f472d73016ff9f0b8b9164ef5e36419675b621cd76688`。
+
+生产日志中此前 48 小时 161 次就绪 503，最近 24 小时 14 次，其中 11 次约五秒
+Argus 超时，其余与 QUIC 隧道断连相邻；当时无应用 500、重启或 OOM。Tymra 新版
+并行读取并验证 Argus `/health`、`/readiness` 的完整 JSON，HTTP 成功且明确
+`healthy/ready=true` 才通过；HTML、无效 JSON、错误状态或 false 继续失败，未添加假健康、
+缓存或扩大超时。实际专属 Argus tunnel 改用 HTTP/2，四条连接注册、实际 HTTPS 通过，
+DNS、Access 和 token 保持。依据见 [Undici](https://github.com/nodejs/undici) 和
+[Cloudflare 故障说明](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/troubleshoot-tunnels/common-errors/)。
+
+Tymra 固定候选 `a0d5ae36b7cde2e9d0ca09257d7435ed8a920de1`／`tymra-release-20261011-2`
+的[完整检查](https://github.com/Harold-C/tymra/actions/runs/38095293001)通过：lint、类型、
+构建，provider 268、应用 515、数据库/API/Worker 164、另六来源空库交付六项、桌面/
+手机 29 和会员矩阵八项通过。五个 live direct-HTTP 条件跳过位于本次 Booking 范围外，
+六个空库条件另行执行，一个响应式重复场景由桌面覆盖。完整 CI 发现的队列幂等
+空更新 upsert 竞争也已修复为原生去重插入并读取原记录；重复输入不覆盖原 payload、
+租约或尝试次数。镜像排除 `.git`／`.env`、checkout 不保留认证凭证；
+[固定导出](https://github.com/Harold-C/tymra/actions/runs/38095849690)全部内容/配置/哈希通过。
+实际四个应用容器均为
+`sha256:14510b34130ca55cdcb5636b412857cf08d12898c427a5daf33095f5684d06e2`，
+原环境、挂载、网络和入口保持，41 项迁移、无新增迁移。最新切换备份实际恢复
+88 个业务模型与 970 份原始证据文件，候选/旧版读取兼容，原文件字节、权限、属主和链接
+保持。生产原不可变记录逐项核对通过，正常公共周期及维护回补变化有精确 provenance。
+恢复审计 `cmv33tos40001pg5ai7cbcz4z` 已入库；备份和兼容回退材料保留。
+
+Argus `93709f5a` 的[完整发布检查](https://github.com/Harold-C/argus/actions/runs/38093620443)
+与[固定导出](https://github.com/Harold-C/argus/actions/runs/38095407939)通过。
+实际镜像 `sha256:abb31c4700b6cc7b198226c4fd73f7fba3ecdce5a2dc36fed83f1fd684ea61fc`，
+最新闭合配对备份恢复 1,131 Job、两账号、65,823 私有条目；完整数据/文件和权限隔离、
+两个无网络 Profile 打开通过，不视为实站私有认证。浏览器切换暂停 499.218 秒，
+共享服务和配置保持，实际 HTTPS、44 工作流/OpenAPI、所有权与跨客户端拒绝通过。
+AES-256 新鲜备份已卸载封存，0600，SHA-256
+`1d24f514b77310fae5a1cb46dbb37ca9be8d0e6370769d63ae7a543a33fc7703`。
+
+第一次私有卷 tar 复制的 stdout 被临时容器默认无限日志驱动重复记录，填满共享 Docker
+磁盘并挂起清理。Harold 明确批准本次受控重启后，原容器、数据卷、数据库和配置核验保持；
+Jarvis 三服务实际在 09-28 已停止，本次保持其原停止状态。仅本次临时日志/容器随恢复清除，
+没有全局 prune 或删除卷。第一次归档不完整，未用于恢复/发布，失败副本独立加密封存；
+新鲜配对备份重新生成。所有二进制 tar 流改用 `--log-driver none`，已核验实际生效。
+
+Tymra 提前恢复调度时 Argus 仍在维护，AUT、Waikato、Tākina、FX 四个自然作业返回
+502/无效 JSON，自动暂停来源。原失败保留；仅按原 payload 各新增一次有界回补，全部成功，
+四个原 Incident 经原生证据验证 RESOLVED，来源原配置与每周原未来相位恢复。
+Palmerston North 机场、雪场随后自然成功；Council、School Sport 后续自然周期也成功。
+其他 83 个来源/计划已从原保护快照比对；除下述独立自然失败暂停外，静态配置保持，
+变化为这些既有周期观察时间。
+
+UTC 01:49:16 的 Christchurch Sports 自然父 Job `cmv360dpf0009rw070npabvx4`／
+Run `cmv360ehw0072o907nd3ztywr` 以 `PARSING_ERROR` 失败，一次尝试、零成功／一失败，
+原 payload 和调度幂等键保持，零 ArgusExecution。官方公开 HTML 解析器返回
+“Christchurch official sports fixtures returned no supported records”；原生失败策略自动
+将来源置为 SUSPENDED／disabled、原周计划 disabled／nextRun=null，Incident
+`cmv360fpa0074o9070gcxw6tf` 为 OPEN。旧 HEALTHY 标记来自旧观察，不代表本次成功。
+此次只读审计保留失败和暂停，不借 Booking 发布恢复或修复此独立来源。
+
+UTC 02:01:48 的 MetService 自然父 Job `cmv36ghok000arw07le8f4yhm` 已完成且无失败，
+但仅保留一个原始响应、零持久化业务记录；不将 SUCCEEDED 等同天气数据质量通过。
+UTC 04:01 的 Ticketmaster 自然父 Job `cmv3aqhuy000brw074eztzynh` 成功，52 条记录、
+零失败。两者原 payload、调度幂等键及静态配置均从原快照核对保持，计入本次其他来源
+只读基线更新，不视为 Booking 人工验收，也未借本次发布修复或重跑。
+UTC 06:28:56 的 Expedia 自然父 Job `cmv3g00ug0000rw08xcsszz4w` 一次尝试成功；
+Hawke's Bay 发现及未来报价两个 Run 各一成功、零失败，三个 ArgusExecution。
+原 payload、调度幂等键及静态配置保持；原生日计划推进有精确 provenance，
+已计入只读基线，不计作 Booking 人工验收。
+
+UTC 00:25:17–00:40:08 的固定版本就绪观察 60/60 通过，零失败、隧道失败事件、重启和
+OOM；长时稳定性仍未验证。第一轮父 Job `cmv33uwbu0000o9151ngelfk9` 在
+`check-in:failed` 终止，未产生报价。保留截图的优惠弹窗明确可关闭；动作处理器不会在
+可见性轮询时触发，关闭弹窗还可能关闭日期选择器。补充 `f841c35d` 在步骤边界明确关闭
+精确优惠弹窗、保留点击竞态处理，并经原日期控件重新打开日历；总共最多两次关闭，
+密码/验证码/非官方路由仍拒绝。隔离原失败重现、修复后正例与拒绝例、15 项导航回归通过；
+本机另七项因缺少容器 `/data` 目录失败，不计通过。
+`f841c35d` 的[完整镜像检查](https://github.com/Harold-C/argus/actions/runs/38100240635)
+为 1,143 通过／一失败／13 条件跳过：原反复弹窗次数边界断言失败，未发布此候选。
+每步重新注册处理器重置其两次预算，第三次回调抛错未经过正常步骤失败包装。
+`b5778788` 只按剩余次数注册，耗尽后保留正常失败路径，不修改原断言；旧版本机
+复现失败，新版原次数边界用例通过。新[完整检查](https://github.com/Harold-C/argus/actions/runs/38102157939)
+已通过：源码 929／固定镜像 Chrome 1,144 通过，零失败；198／13 条条件用例在对应环境
+全部执行，合成配对恢复与运行／故障恢复通过。
+[固定导出](https://github.com/Harold-C/argus/actions/runs/38104063388)通过，下载 656,739,520 字节，
+12 层和执行配置匹配，本地实际镜像
+`sha256:2068cc30d0dddb1b7902000d4804689747e9f6231fe8656b033032cfb6bf8981`。
+ML-Mini 容器磁盘可用 2,394,243,072 字节，未共享层／工作空间／保留余量要求
+3,245,557,196 字节；安全门槛在加载前拦截。Harold 明确批准后，仅清理旧镜像
+`d2dfc536`／`argus-release-20261009-4`，ID `e6f56bcc`，
+零容器引用，独立恢复归档实际 SHA-256 与原层／配置验证收据一致；当前 `93709f5a`、
+最新回退 `eaed587a`、全部数据和其他服务保留。新鲜前后核验所有其他镜像、容器状态／
+环境／挂载和数据库完整行／结构相同；可用空间升至 5,616,427,008 字节，新镜像全部
+12 层和执行配置在目标通过。没有 prune、删除卷、新的共享重启或扩大清理范围，旧版
+独立恢复归档保留；原容量拦截记录也保留。
+最终镜像已实际切换；最新配对恢复核对 1,147 Job、两账号、66,262 私有条目，全部
+文件字节／权限／属主／链接一致，四项所有权拒绝、两个无网络 Profile 打开通过。
+无仍可交付 wire／远端证据，本次两类恢复计数为零；不引用旧恢复数字代替。
+切换暂停 586.655 秒，Tymra 执行与调度协调暂停后原容器、镜像和计划恢复，避免维护中
+启动采集；数据库、共享服务、环境和挂载保持。实际 HTTPS、44 工作流／OpenAPI 和
+跨客户端拒绝通过，原 HTTP/2 隧道保持同一容器／配置，无新的隧道重启。
+最新 AES-256 备份已卸载封存，0600，4,846,661,120 字节，SHA-256
+`d10f82bc3105f8ca680e01a025163376090bb2b8e419965308d87493d77364e5`；
+仅本机本次隔离恢复容器、卷和网络已清理，生产及封存备份保留。
+UTC 06:10:14–06:25:16 的新版 60 次观察实际有 28 次就绪失败，零隧道断连事件，
+完整失败记录保留，不据此前成功宣称新观察通过。第一轮任务成功后，证据核验读取
+Argus 时两次出现 `EAI_AGAIN`；宿主机同域名解析耗时 16 秒。现有 Google 两个 DNS
+上游直接六次实测四次超时；Cloudflare 两个解析地址六次全部成功，4–153 ms。
+按 [Compose 服务 DNS](https://docs.docker.com/reference/compose-file/services/#dns) 和
+[Cloudflare 地址定义](https://developers.cloudflare.com/1.1.1.1/ip-addresses/)，仅为 API／
+Worker 固定 `1.1.1.1`、`1.0.0.1`，原应用镜像不变；宿主机及共享 Docker 全局 DNS 保持。
+合成配置完整比对仅两服务 DNS 改变；现行配置中的密码哈希按既有 Compose literal
+规则核对，预检发现 JSON 转义表示差异时尚未停服务或修改配置，原诊断保留。
+DNS 变更使用另一个新鲜配对备份，实际隔离恢复 88 个业务模型和 1,008 份证据文件；
+完整行／结构／字节／权限／属主／链接一致，无 Worker 启动，原应用镜像、环境、命令、
+网络、挂载和其他服务保持。只重建 API／Worker；服务心跳正常刷新，其他业务行保持，
+当前两个服务内部名称及 Argus 外部域名解析、就绪状态通过。仅本次隔离恢复资源清理，
+保护备份 `/srv/apps/tymra/backups/booking-details-readiness-20261011-dns` 保留。
+新完整观察使用独立 `readiness-soak-calendar-dns.json`，UTC 06:29:52–06:44:43，
+60/60 通过，零就绪失败、隧道失败事件、重启及 OOM；绑定固定应用镜像、HTTP/2
+及实际 DNS Compose 指纹 `cf5e2db3ba357b91921c964dc669164349ef643e523e76e9c5ae10b37a467fa1`。
+前一 28/60 失败观察完整保留；此 15 分钟结果不证明未来长期稳定。
+以已验证旧镜像只读挂载新版编译源码，在断网／临时 `/data` 的隔离容器中执行两份
+Booking 浏览器测试文件，27 项全部通过，零失败／跳过，包含此前目录缺失用例；
+此补充验证不替代最终固定发布镜像检查。
+初次失败目标已恢复原 priority/nextFetchAt，失败、计数和窗口保持。
+Harold 已明确批准仅本次手工验收额外一次、NZ 10-11 今日最多七次；仅在第一轮成功后
+为第二轮安装 30 分钟例外，正式启用前已主动撤销。今日原失败一次加两轮各三次，共七次；
+正常每日六次／并发一、Argus 十二次保持，未清零失败或计数。
+
+最终固定版本的两轮实站结果如下，均为 2026-10-18–19、一晚、两成人／零儿童／一房，
+未登录公开上下文、NZD、AVAILABLE／COMPLETE、非 demo、含税及强制住宿费。
+
+| 轮次／父 Job | 实际房源与房型 | 公开住宿总价 | 证据与交付 |
+| --- | --- | --- | --- |
+| Otago／`cmv3febw20000o90xr23czdd5` | Lake Resort by Marsden／Double Studio - Upper Level | NZD 258 | 一次尝试；发现、详情、报价三个执行；六份 HTML／截图逐份字节与 SHA-256 通过，三份原 wire、ACK 后 PURGED／410 通过 |
+| Hawke's Bay／`cmv3g81m50000oc2h72k87hil` | The Crown Hotel／Premier Studio | NZD 280 | 一次尝试；发现、详情、报价三个执行；六份 HTML／截图逐份字节与 SHA-256 通过，三份原 wire、ACK 后 PURGED／410 通过 |
+
+两份实际截图均人工查看，房源／物理房型、精确日期、人数及价格与入库记录一致。
+页面价未使用 Genius／会员参考价；未单列的组成金额仍在观察上下文为 null，
+不以整数存储列的零值声称未披露费用为零。细则和费用条件另保留在正式审阅中：
+Lake Resort 有 NZD 100 可退还信用卡押金（退房后 14 日内、经检查），不接受现金；
+Crown 接受现金，信用卡付款加收 2%，另有 NZD 200 可退还信用卡押金
+（退房后七日内、经检查）。押金不纳入住宿支出总价，NZD 280 不是所有付款方式的
+最终扣款额；原 paymentTerms=UNKNOWN 保持，未人为补写未知付款条件。
+
+冻结验收窗口从第一新父 Job 的 UTC 06:12:03.888 起，绑定 Tymra `a0d5ae36`／
+Argus `b5778788`，前序版本窗口和所有失败保留。UTC 06:49 正式
+`ota:production:enable` 接受以上两个精确 Job；D-039、正价、持久证据及交付门槛通过。
+质量审阅 PASSED、来源 enabled／PILOT、operational／health HEALTHY；两个临时目标
+恢复原 priority／nextFetchAt，其他 83 来源／计划按审计基线保持，独立 Sports 暂停保留。
+原每日相位恢复为 UTC 2026-10-11 12:33:33.192／NZ 2026-10-12 01:33:33.192，
+最新读回 81/84 计划、今日七次、零在途作业、正常预算与并发不变、临时例外不存在。
+全部旧父 Job／Run／价格逐项摘要保持；恢复后下一自然周期尚未完成，不将人工验收等同自然调度。
+
+应用固定镜像源码仍为 `a0d5ae36`／`b5778788`；后续配置及验收文档提交不是新的镜像源码。
+DNS 配置仅 `docker-compose.prod.yml` 的 API／Worker 两服务四行，合成完整配置比对、
+实际解析／运行读回及上述新鲜恢复与观察通过；无需应用重建或新增迁移。
+
+收据保存在本机工程既有 `runtime/release-candidates/booking-details-readiness-20261011`
+及 Argus 对应不可变标签的 `runtime/production-releases`，原始 HTML/截图和秘密不进入 Git。
 
 ## 2026-10-09 Booking 两项追加失败：修复已发布，两轮公开报价及正式质量通过
 

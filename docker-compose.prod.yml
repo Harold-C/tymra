@@ -182,6 +182,9 @@ services:
   worker:
     profiles: ["collection"]
     <<: *app-image
+    dns: &collection-dns
+      - 1.1.1.1
+      - 1.0.0.1
     environment: *app-environment
     working_dir: /app/apps/worker
     command: ["node", "dist/index.js"]
@@ -203,6 +206,7 @@ services:
   api:
     profiles: ["collection"]
     <<: *app-image
+    dns: *collection-dns
     environment: *app-environment
     working_dir: /app/apps/worker
     command: ["node", "dist/api.js"]
