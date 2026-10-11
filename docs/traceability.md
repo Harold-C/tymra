@@ -1,16 +1,58 @@
 # Tymra 实现与验收追踪
 
 更新：2026-10-12。实际生产 Tymra 为 `1f87746a`／`christchurch-sports-20261012`。
-Christchurch Sports 场馆解析修复、固定候选发布与两轮真实采集验收通过，原周计划已恢复，
-来源为 enabled／PRODUCTION／HEALTHY；下一次为 NZ 2026-10-19 00:55:54。
-当前 81/84 计划开启，Agoda、Airbnb、Eventfinda 保持本次操作前的停用状态。
+Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复及原失败窗口两轮关联回补验收均已完成，
+原故障单已正式 RESOLVED，来源为 enabled／PRODUCTION／HEALTHY；
+下一次为 NZ 2026-10-19 00:55:54。
+本次上午回补前后均为 80/84 计划开启，其他来源和计划保持本轮进入时的状态。
 本次未发布 Argus；最近已核验版本为 `b5778788`／`argus-release-20261011-3`。
 此前 Booking 详情、弹窗、就绪响应及 API／Worker DNS 修复和两轮公开报价验收保持，
-原日计划下一次为 NZ 2026-10-12 01:33:33。两来源恢复后的下一自然周期及长期稳定性待验。
-原 Sports 失败 Job／Run、OPEN 故障单、其他失败与证据／计数保留；本轮不等同原故障单的关联回补验收。
+原日计划恢复和当时 nextRun 的历史记录见下节；本轮只验收 Sports 原故障窗口。
+原 Sports 失败 Job／Run、其他失败与证据／计数保留；Sports 首个恢复后自然周周期及长期稳定性待验。
 本文件维护当前实现、最近已记录的环境和验收缺口；下一步见[实施计划](implementation-plan.md)，
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
+
+## 2026-10-12 Christchurch Sports 原失败窗口回补与故障单关闭
+
+用户明确授权继续完成原失败窗口的关联回补验收，通过后关闭原故障单。
+在已部署的固定版本 `1f87746a` 上，入队前将原窗口冻结为
+UTC `2026-10-10T11:00:00.000Z` 至 `2027-01-08T11:00:00.000Z`
+（NZ 2026-10-11 00:00 至 2027-01-09 00:00）。两轮 requested／effective 范围与
+原失败 Run 完全一致，沿用原 productionCanary、limit=2、maxRequests=3、90 日窗口和
+并发 1；没有使用当天重新生成的滚动窗口，也没有修改原计划或原失败 Job／Run。
+
+两轮通过既有原生 Job 队列、生产 Worker 和来源锁执行，maxAttempts=1，间隔超过
+既有五分钟人工冷却。每轮入队均在事务中关联原故障单，并保存前一恢复关联的审计。
+
+| 轮次 | 精确 Job／CollectionRun | 原窗口真实结果 |
+| --- | --- | --- |
+| 1 | `cmv4a1jpk0000moc15vp6m58j`／`cmv4a1k9r0036mo07a4ei3yca` | 三个官方页面、两条成功、零失败、unchangedSkipped=2 |
+| 2 | `cmv4a8bnn0000moe45ywu1nbx`／`cmv4a8c0r0038mo07u38fl82h` | 三个官方页面、两条成功、零失败、unchangedSkipped=2 |
+
+两轮记录仍为 11 月 12 日和 12 月 15 日的两场 Canterbury Cricket 赛事。
+源 occurrence 的 lastCollectionRunId 指向最新恢复 Run，源与 canonical 标题、日期、
+场馆一致，业务身份和关联 ID 保持；source event／occurrence／各自 canonical link
+数量均为 2，重复执行零增长。四份 PostgreSQL 原始结构化 payload 的 SHA-256 实际核对
+通过，parserFailure=false、非敏感、72 小时保留。今日 Sports 请求总数由 6 增至 12，
+没有超过每日 24 次上限；预算和并发配置保持。
+
+两轮验收通过后，经现有管理 API 的 RESOLVE 门槛关闭故障单
+`cmv360fpa0074o9070gcxw6tf`，HTTP 200，实际持久化状态为 RESOLVED／RESOLVE，
+resolvedAt 为 UTC `2026-10-11T20:38:32.357Z`（NZ 2026-10-12 09:38:32.357）。
+retryJobId 为第二轮 `cmv4a8bnn0000moe45ywu1nbx`；两轮入队关联审计均保留，
+正式关闭审计 `cmv4acmgx0005s207mxg5zg9d` 写入 `RECOVERY_VERIFIED` 及精确恢复 Job／Run。
+操作使用的临时管理会话已撤销并读回。
+
+旧失败 `cmv360dpf0009rw070npabvx4`／`cmv360ehw0072o907nd3ztywr` 保持 FAILED，
+全行摘要未变。其他来源、全部计划、其他故障单、价格、客户与请求数据的摘要与
+本轮写入前快照一致；本轮进入时已有 80/84 计划开启，未沿用凌晨 81/84 的旧快照。
+四应用镜像、容器身份、配置和客户入口 IP 配置未变，重启零，health／readiness 200，
+Worker／Scheduler／DB／Redis／Argus 均正常，零在途作业。原 Sports 周计划保持开启，
+nextRun 仍为 NZ 2026-10-19 00:55:54.838，首个自然周周期和长期稳定性独立待验。
+
+收据保存在本机既有 `runtime/release-candidates/christchurch-sports-20261012/incident-window-*.json`
+及生产既有 `/srv/apps/tymra/releases/christchurch-sports-20261012`；本轮未改变应用源码、镜像或迁移。
 
 ## 2026-10-12 Christchurch Sports 修复发布与恢复
 
@@ -59,9 +101,9 @@ Canterbury vs Wellington（12 月 15 日）。源赛事及 canonical 链接的�
 及并发 1 保持。来源为 PRODUCTION／HEALTHY，nextRun 为 UTC 2026-10-18 11:55:54.838
 （NZ 2026-10-19 00:55:54.838）；81/84 计划开启、56 条价格、零客户、零在途作业。
 Agoda／Airbnb／Eventfinda 未改动。旧失败 `cmv360dpf0009rw070npabvx4`／
-`cmv360ehw0072o907nd3ztywr` 保留；故障单 `cmv360fpa0074o9070gcxw6tf` 仍为 OPEN，
-没有关联 retryJob，不强制绕过故障单恢复门槛。原失败窗口的关联回补、恢复后的首个自然
-周周期及长期稳定性未验收；历史失败计数告警也未清空。
+`cmv360ehw0072o907nd3ztywr` 保留。上述凌晨滚动窗口试采结束时，故障单
+`cmv360fpa0074o9070gcxw6tf` 为 OPEN 且没有关联 retryJob。后续上午完成的原失败窗口
+关联回补及正式关闭见上节；恢复后的首个自然周周期和长期稳定性仍待验，历史失败记录保留。
 
 收据在本机既有 `runtime/release-candidates/christchurch-sports-20261012`，生产配置及恢复
 证明在 `/srv/apps/tymra/releases/christchurch-sports-20261012`。后续文档提交不改变上述固定镜像源码。
