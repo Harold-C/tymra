@@ -93,6 +93,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - run: pnpm test:e2e:member-matrix
+      - name: Verify launch membership and capacity pricing
+        run: pnpm exec playwright test --config=playwright.membership-launch.config.ts
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -101,4 +103,5 @@ jobs:
             output/playwright-report
             output/playwright-results
             output/playwright-member-matrix-results
+            /tmp/tymra-membership-browser-results
           retention-days: 7
