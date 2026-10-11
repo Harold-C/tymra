@@ -3,7 +3,7 @@ import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isProductionPublicPilotSchedule, publicPilotRequestLimit } from "./production-public-pilot";
 import { isProductionProgressSchedule, isSuccessfulProgressTrial } from "./production-progress-schedules";
 
-export const PUBLIC_RECOVERY_SOURCES = ["eventfinda", "ticketmaster", "school_sport_nz", "queenstownnz_events", "southlandnz_events", "wellington_airport_monthly", "queenstown_airport_monthly"] as const;
+export const PUBLIC_RECOVERY_SOURCES = ["eventfinda", "ticketmaster", "school_sport_nz", "queenstownnz_events", "southlandnz_events", "wellington_airport_monthly", "queenstown_airport_monthly", "christchurch_sports"] as const;
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};

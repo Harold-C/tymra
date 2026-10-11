@@ -36,7 +36,7 @@ export async function handlePublicCollection(
     if (environment.NODE_ENV === "production" && sourceId && pauseKeys.length) {
       await prisma.$transaction([
         prisma.scheduleDefinition.updateMany({ where: { key: { in: pauseKeys } }, data: { enabled: false, nextRunAt: null } }),
-        prisma.dataSource.updateMany({ where: { key: sourceId }, data: { lifecycle: "SUSPENDED", enabled: false, lastReviewedAt: new Date() } }),
+        prisma.dataSource.updateMany({ where: { key: sourceId }, data: { lifecycle: "SUSPENDED", enabled: false, healthStatus: "DEGRADED", operationalStatus: "DEGRADED", lastReviewedAt: new Date() } }),
       ]);
     }
     throw error;

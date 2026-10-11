@@ -33,6 +33,14 @@ without Argus. All development schedules are seeded disabled.
 
 - `christchurch_sports` reads official Crusaders, Mainland Tactix and Canterbury Cricket fixture
   pages. It keeps Christchurch home fixtures and does not open one detail page per match.
+  The Crusaders venue aliases `One New Zealand Stadium` and `One NZ Stadium` identify the
+  confirmed Christchurch stadium; the published venue text and stable occurrence ID are retained.
+  A recognized draw with only valid dated away fixtures, or fixtures outside the requested
+  window, yields no local records and collection continues to the other official pages.
+  Missing fixture structure, season year or malformed dates cannot establish a valid empty draw.
+  HTTP errors and unrecognized challenge pages retain their existing failure handling.
+  Production recovery uses two exact, single-attempt trials before enabling the existing weekly
+  plan through `schedule:public:recovery-enable`; historical failures remain intact.
 - `christchurch_university_dates` reads demand-relevant University of Canterbury dates through
   direct HTTP and Lincoln University annual key dates through Argus because Lincoln returns HTTP 403
   to ordinary collection. Both enter the same standard signal and lineage pipeline; Lincoln's
