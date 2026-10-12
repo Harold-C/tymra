@@ -4,6 +4,54 @@ import { memberStrategySchema } from "@tymra/domain/member-strategy";
 import { e2eAdminEmail, e2eAdminPassword } from "./test-identities";
 
 for (const locale of ["en", "zh"] as const) {
+  test(`${locale} account overview explains allowance and confirms deactivation across widths`, async ({ page }, testInfo) => {
+    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+    await page.goto("/en/sign-in");
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
+    await page.locator("#member-email").fill("demo4@tymra.test");
+    await page.locator("#member-password").fill(process.env.MEMBER_DEV_PASSWORD!);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/en\/account/);
+    // Read-only UI fixture; no property or membership mutation is submitted.
+    await page.route("**/api/v1/customer/membership", async route => {
+      const response = await route.fetch(); const payload = await response.json();
+      payload.data.asOf = "2026-10-13T00:00:00Z";
+      payload.data.currentPeriodStart = "2026-10-01T00:00:00Z";
+      payload.data.currentPeriodEnd = "2026-11-01T00:00:00Z";
+      payload.data.pricingUnits = [{ id: "ui-overview-unit", propertyName: "Overview fixture", unitName: "Apartment", city: "Christchurch", active: true, occupiesSlot: true, verificationStatus: "VERIFIED", activatedAt: "2026-10-01T00:00:00Z", slotRetainedUntil: null }];
+      await route.fulfill({ response, json: payload });
+    });
+    await page.goto(`/${locale}/account`);
+    await expect(page.getByRole("heading", { name: locale === "zh" ? "账户总览" : "Account overview", exact: true })).toBeVisible();
+    const summary = page.locator(".membership-summary");
+    await expect(summary).toContainText(locale === "zh" ? "当前账期检查额度" : "Billing-period allowance");
+    const next = page.locator(".overview-next"); await expect(next).toBeVisible();
+    const sections = await page.locator(".membership-overview > section").evaluateAll(nodes => nodes.map(node => node.className));
+    expect(sections[0]).toContain("overview-units"); expect(sections[1]).toContain("overview-next");
+    const unit = page.locator(".overview-unit").first(); await expect(unit).toBeVisible();
+    const button = unit.getByRole("button", { name: locale === "zh" ? "停用" : "Deactivate", exact: true });
+    await button.click();
+    const dialog = page.getByRole("dialog", { name: locale === "zh" ? "停用这个房源？" : "Deactivate this property?" });
+    await expect(dialog).toContainText(locale === "zh" ? "额度保留至" : "remains occupied until");
+    await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(button).toBeFocused();
+    for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${locale} at ${width}px`).toBe(true);
+      if (width < 768) {
+        const menu = page.getByRole("button", { name: locale === "zh" ? "账户导航" : "Account navigation" });
+        await menu.click(); await expect(menu).toHaveAttribute("aria-expanded", "true");
+        await expect(page.locator(".customer-account-mobile-links").getByRole("link", { name: locale === "zh" ? "设置" : "Settings", exact: true })).toBeVisible();
+        await page.keyboard.press("Escape"); await expect(menu).toHaveAttribute("aria-expanded", "false");
+      }
+    }
+    await page.setViewportSize(testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+    const violations = (await new AxeBuilder({ page }).analyze()).violations.filter(item => ["critical", "serious"].includes(item.impact ?? "")); expect(violations).toEqual([]);
+    await page.screenshot({ path: `/tmp/tymra-overview-${locale}-${testInfo.project.name}.png`, fullPage: true });
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const locale of ["en", "zh"] as const) {
   test(`${locale} launch pricing calculator covers small and large portfolios`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -49,6 +97,7 @@ test("billing review presents the amount and keeps cancellation separate", async
     const response = await route.fetch(); const payload = await response.json();
     payload.data.launchAvailability = { FREE: true, HOST: true, PRO: true, PORTFOLIO: true };
     payload.data.capacityLaunchLimit = 200;
+    payload.data.currentPeriodEnd = "2026-11-01T00:00:00Z";
     await route.fulfill({ response, json: payload });
   });
   await page.route("**/api/v1/customer/membership/preview", route => route.fulfill({ json: { data: { plan: "PORTFOLIO", capacity: 80, amountDueMinor: 13500, recurringMinor: 36900, mode: "IMMEDIATE", quoteToken: "ui-fixture", effectiveAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString() } } }));
@@ -62,9 +111,10 @@ test("billing review presents the amount and keeps cancellation separate", async
   await quote.screenshot({ path: `/tmp/tymra-membership-quote-${testInfo.project.name}.png` });
   await quote.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("button", { name: "Cancel at period end", exact: true }).click();
-  const cancel = page.getByRole("region", { name: "Confirm cancellation" });
-  await expect(cancel).toContainText("30 days");
-  await cancel.getByRole("button", { name: "Keep renewal" }).click();
+  const cancel = page.getByRole("dialog", { name: "Cancel renewal?" });
+  await expect(cancel).toContainText("Service ends:");
+  await expect(cancel).toContainText("paid period");
+  await cancel.getByRole("button", { name: "Keep unchanged" }).click();
   await expect(cancel).toHaveCount(0);
   expect(errors).toEqual([]);
 });

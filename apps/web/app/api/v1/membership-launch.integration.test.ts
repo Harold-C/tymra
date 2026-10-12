@@ -5,7 +5,7 @@ import { entitlementsForMembership } from "@tymra/domain";
 import type Stripe from "stripe";
 import { afterEach, describe, expect, it } from "vitest";
 import { launchPriceTiers } from "@/lib/server/membership/billing-contract";
-import { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, previewMembershipChange, processStripeEvent, setStripeTestRuntime } from "@/lib/server/membership/stripe-billing";
+import { cancelMembershipAtPeriodEnd, changeMembershipPlan, createMembershipCheckout, previewMembershipChange, processStripeEvent, setStripeTestRuntime, planLaunchAvailability, membershipFeatureLaunchAvailability } from "@/lib/server/membership/stripe-billing";
 import { getMembershipSummary, reserveSpotCheck, runMembershipTransaction, setPricingUnitActive } from "@/lib/server/membership/membership";
 import { createMemberExport, downloadMemberExport } from "@/lib/server/membership/member-exports";
 import { confirmQuery } from "@/lib/server/price-checks";
@@ -73,6 +73,14 @@ async function unit(customerUserId: string, propertyId?: string) {
 
 describe("first-launch membership lifecycle", () => {
   afterEach(() => setStripeTestRuntime());
+
+  it("keeps launched member features available while unconfigured purchases stay closed", () => {
+    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_HOST_LAUNCH_ENABLED: "true", MEMBERSHIP_PRO_LAUNCH_ENABLED: "true", MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" }));
+    expect(planLaunchAvailability()).toEqual({ FREE: true, HOST: false, PRO: false, PORTFOLIO: false });
+    expect(membershipFeatureLaunchAvailability()).toEqual({ alerts: true, portfolio: true, exports: true, integrations: false });
+    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_HOST_LAUNCH_ENABLED: "false", MEMBERSHIP_PRO_LAUNCH_ENABLED: "false", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" }));
+    expect(membershipFeatureLaunchAvailability()).toEqual({ alerts: false, portfolio: false, exports: false, integrations: false });
+  });
 
   it("previews owner-scoped bulk strategies, rolls back conflicts, and applies a retry only once", async () => {
     const { customer } = await account("PORTFOLIO", 50); provider(customer.id, "PORTFOLIO", 50);

@@ -13,6 +13,82 @@
 .member-export-list { padding: 0; list-style: none; }
 .member-export-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: 1rem 0; border-bottom: 1px solid var(--border); }
 .member-export-list li span { flex: 1 1 12rem; }
+.account-overview-page { padding: 1.5rem 0 3.5rem; }
+.account-overview-page h1 { margin: .45rem 0 .55rem; font-size: clamp(1.9rem, 3vw, 2.6rem); font-weight: 800; }
+.account-overview-page > .rough-shell > p { margin: 0; font-size: 1rem; }
+.membership-overview { margin-top: 1rem; }
+.membership-overview .membership-summary { padding: 1.1rem 1.5rem; }
+.membership-overview .membership-summary dl { margin: 1rem 0; }
+.membership-overview .membership-timing { gap: 0; }
+.membership-overview .membership-summary .membership-timing p { line-height: 1.4; margin: .1rem 0; }
+.membership-current { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.membership-current > div > span { color: var(--primary); font-size: .7rem; font-weight: 800; letter-spacing: .05em; }
+.membership-current h2 { font-size: 1.5rem; }
+.member-status { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.member-status code { font-size: .7rem; border-radius: .35rem; padding: .2rem .4rem; background: var(--surface-muted); }
+.membership-summary .member-period { margin-top: .5rem; font-size: .85rem; }
+.membership-summary dl small { display: block; font-size: .76rem; line-height: 1.45; color: var(--text-secondary); margin-top: .35rem; overflow-wrap: anywhere; }
+.membership-summary dd small { display: inline; font-weight: 600; }
+.membership-summary .membership-timing p { font-size: .78rem; line-height: 1.5; margin: .2rem 0; }
+.membership-timing { display: grid; gap: .25rem; }
+.overview-section { margin-top: 1.5rem; }
+.overview-section-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-bottom: .75rem; }
+.overview-section h2, .overview-next h2 { font-size: 1.15rem; font-weight: 800; margin: 0; color: var(--navy); }
+.overview-section-title a, .overview-unit-actions a { font-size: .83rem; font-weight: 700; color: var(--primary); min-height: 44px; display: inline-flex; align-items: center; }
+.overview-section .membership-unit-list { margin: 0; border: 0; display: grid; gap: .8rem; }
+.overview-unit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: center; gap: 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: .8rem; background: var(--surface); }
+.overview-unit h3 { margin: 0 0 .25rem; font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
+.overview-unit h3 a { color: var(--navy); }
+.overview-unit p { margin: .25rem 0; color: var(--text-secondary); font-size: .8rem; overflow-wrap: anywhere; }
+.member-unit-status { color: var(--text-secondary); font-size: .75rem; font-weight: 700; }
+.overview-unit-evidence { display: grid; gap: .35rem; font-size: .8rem; color: var(--text-secondary); }
+.overview-unit-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .75rem; }
+.overview-unit-actions button { min-height: 44px; padding: .4rem .65rem; border: 1px solid var(--border); border-radius: .5rem; background: var(--surface); color: var(--text-secondary); font-size: .8rem; cursor: pointer; }
+.overview-next { display: flex; justify-content: space-between; align-items: center; gap: 1.25rem; margin-top: 1.25rem; padding: 1rem 1.25rem; border-radius: .8rem; border: 1px solid var(--border); background: var(--primary-soft); }
+.overview-next p { font-size: .9rem; color: var(--text-secondary); margin: .5rem 0 0; max-width: 65ch; }
+.overview-next .button { flex-shrink: 0; }
+.overview-empty { padding: 1rem 1.25rem; border: 1px dashed var(--border-strong); border-radius: .8rem; }
+.overview-empty h3 { font-size: .95rem; margin: 0 0 .35rem; }
+.overview-empty p { color: var(--text-secondary); font-size: .9rem; margin: 0; }
+.customer-account-mobile { display: none; }
+@media (min-width: 1100px) {
+  .membership-overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1.25rem; }
+  .membership-overview .membership-timing { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .membership-overview .membership-timing p:last-child { grid-column: 1 / -1; }
+  .membership-overview > .membership-summary, .membership-overview > .overview-section:not(.overview-units), .membership-overview > .flow-notice { grid-column: 1 / -1; }
+  .membership-overview > .overview-units { margin-top: 0; }
+  .membership-overview > .overview-next { margin-top: 0; align-self: end; flex-direction: column; align-items: stretch; padding: 1.25rem; }
+  .membership-overview .overview-unit { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); padding: .8rem 1rem; }
+  .membership-overview .overview-unit-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .membership-overview > .overview-section:not(.overview-units) { margin-top: .25rem; }
+}
+@media (max-width: 1000px) {
+  .overview-unit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .overview-unit-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (max-width: 680px) {
+  .account-overview-page { padding-top: 1.5rem; }
+  .membership-overview .membership-summary { padding: 1rem; }
+  .membership-overview .membership-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 1rem 0; }
+  .membership-overview .membership-summary dl > div { padding: .8rem; }
+  .membership-overview .membership-summary dd { font-size: 1.1rem; }
+  .overview-unit { grid-template-columns: 1fr; padding: 1rem; gap: .75rem; }
+  .overview-next { flex-direction: column; align-items: stretch; padding: 1rem; }
+  .overview-next .button { width: 100%; justify-content: center; }
+  .customer-account-nav .customer-account-nav-scroll, .customer-account-nav .customer-account-nav-edge { display: none; }
+  .customer-account-mobile { display: block; padding: .4rem 1rem; }
+  .customer-account-mobile summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 44px; cursor: pointer; color: var(--navy); font-size: .85rem; font-weight: 800; list-style: none; }
+  .customer-account-mobile summary::-webkit-details-marker { display: none; }
+  .customer-account-mobile summary > span:last-child { display: flex; align-items: center; gap: .35rem; color: var(--primary); }
+  .customer-account-mobile[open] summary svg { transform: rotate(180deg); }
+  .customer-account-mobile-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem; padding: .5rem 0; max-height: calc(100dvh - 170px); overflow-y: auto; }
+  .customer-account-mobile-links > a, .customer-account-mobile-links > button { min-height: 44px; display: flex; align-items: center; gap: .4rem; padding: .6rem; border-radius: .5rem; font-size: .82rem; font-weight: 700; }
+  .customer-account-mobile-links > a[aria-current="page"] { color: var(--primary); background: var(--primary-soft); }
+}
+@media (max-width: 340px) {
+  .membership-overview .membership-summary dl { grid-template-columns: 1fr; }
+  .customer-account-mobile-links { grid-template-columns: 1fr; }
+}
 .customer-account-nav { border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 94%, transparent); position: sticky; top: 83px; z-index: 20; box-shadow: 0 8px 28px rgb(15 23 42 / 4%); backdrop-filter: blur(16px); }
 .customer-account-nav-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-color: color-mix(in srgb, var(--text-secondary) 35%, transparent) transparent; scrollbar-width: thin; }
 .customer-account-nav .rough-shell { display: flex; gap: .25rem; min-width: max-content; padding-block: .55rem; }

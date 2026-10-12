@@ -57,11 +57,10 @@ export function planLaunchAvailability(): Record<MembershipPlanId, boolean> {
 
 export function membershipFeatureLaunchAvailability() {
   const environment = billingEnvironment();
-  const plans = planLaunchAvailability();
   return {
-    alerts: plans.HOST,
-    portfolio: plans.PRO,
-    exports: plans.PRO && environment.MEMBERSHIP_EXPORT_LAUNCH_ENABLED,
+    alerts: environment.MEMBERSHIP_HOST_LAUNCH_ENABLED,
+    portfolio: environment.MEMBERSHIP_PRO_LAUNCH_ENABLED,
+    exports: environment.MEMBERSHIP_PRO_LAUNCH_ENABLED && environment.MEMBERSHIP_EXPORT_LAUNCH_ENABLED,
     integrations: false,
   };
 }

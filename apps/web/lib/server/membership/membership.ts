@@ -10,6 +10,7 @@ import {
   nzDateKey,
   nzStartOfDay,
   nzCalendarDayDifference,
+  buildDailyPriceDates,
   membershipHistoryCutoff,
 } from "@tymra/domain";
 import { ensureBenefitGroup } from "./member-risk";
@@ -215,22 +216,32 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
   const customer = await prisma.$transaction((transaction) => ensureBenefitGroup(transaction, customerUserId, now));
   const benefitGroup = await prisma.benefitGroup.findUniqueOrThrow({ where: { id: customer.benefitGroupId } });
   const rollingStart = membershipUsageStart(membership, now);
-  const [initialReports, rollingSpotChecks, oldestRollingSpotCheck, pricingUnits] = await Promise.all([
+  const [initialReports, rollingSpotChecks, oldestRollingSpotCheck, pricingUnits, scheduledUsage] = await Promise.all([
     prisma.membershipUsage.count({ where: { correction: null, releasedAt: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "INITIAL_REPORT" } }),
     prisma.membershipUsage.count({ where: { correction: null, releasedAt: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: rollingStart } } }),
     prisma.membershipUsage.findFirst({ where: { correction: null, releasedAt: null, ...(membership.plan === "FREE" ? { benefitGroupId: customer.benefitGroupId } : { customerUserId }), type: "SPOT_CHECK", countedAt: { gte: rollingStart } }, orderBy: { countedAt: "asc" }, select: { countedAt: true } }),
     prisma.customerPricingUnit.findMany({
       where: { customerUserId },
       orderBy: [{ active: "desc" }, { activatedAt: "asc" }],
-      include: { sellableUnit: { select: { id: true, officialName: true, property: { select: { canonicalName: true, city: true } } } } },
+      include: { sellableUnit: { select: {
+        id: true, officialName: true, status: true,
+        property: { select: { canonicalName: true, city: true } },
+        listings: { where: { listingStatus: "ACTIVE" }, take: 3, orderBy: { sourceListingId: "asc" }, select: { platform: true, canonicalUrl: true } },
+        observations: { where: { quarantine: null }, take: 1, orderBy: { collectedAt: "desc" }, select: { collectedAt: true } },
+        priceChecks: { where: { customerUserId, createdAt: { gte: membershipHistoryCutoff(membership, now) }, status: { not: "ARCHIVED" }, currentResultVersionNumber: { not: null } }, take: 1, orderBy: { updatedAt: "desc" }, select: { resultVersions: { where: { status: "PUBLISHED" }, take: 1, orderBy: { version: "desc" }, select: { generatedAt: true } } } },
+      } } },
     }),
+    prisma.membershipUsage.findMany({ where: { customerUserId, type: "SCHEDULED_ANALYSIS", correction: null }, distinct: ["pricingUnitId"], orderBy: { countedAt: "desc" }, select: { pricingUnitId: true, countedAt: true } }),
   ]);
   const plan = membership.plan as MembershipPlanId;
   const entitlements = entitlementsForMembership(membership);
+  const dates = buildDailyPriceDates(now, entitlements.monitoringHorizonDays);
   const remainingSpotChecks = plan === "FREE" && initialReports === 0
     ? Math.max(0, entitlements.rollingSpotCheckLimit - rollingSpotChecks) + 1
     : Math.max(0, entitlements.rollingSpotCheckLimit - rollingSpotChecks);
   return {
+    asOf: now,
+    coverage: { dailyStart: dates[0].checkIn, dailyEnd: dates[entitlements.dailyPriceCheckHorizonDays - 1].checkIn, monitoringStart: dates[entitlements.dailyPriceCheckHorizonDays]?.checkIn ?? null, monitoringEnd: dates[dates.length - 1].checkIn },
     plan,
     version: membership.version,
     entitlementSource: membership.entitlementSource,
@@ -255,6 +266,8 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
     historyGraceUntil: membership.historyGraceUntil,
     entitlements,
     usage: {
+      windowStart: rollingStart,
+      windowEnd: membership.plan !== "FREE" && membership.billingVersion !== "legacy-2026" ? membership.currentPeriodEnd ?? now : now,
       initialReportConsumed: initialReports > 0,
       rollingSpotChecks,
       remainingSpotChecks,
@@ -262,7 +275,9 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
       periodStart: rollingStart,
       periodEnd: plan === "FREE" ? null : membership.currentPeriodEnd,
     },
-    pricingUnits: pricingUnits.map((item) => ({
+    pricingUnits: pricingUnits.map((item) => {
+      const lastScheduled = scheduledUsage.find((usage) => usage.pricingUnitId === item.id)?.countedAt ?? null;
+      return ({
       id: item.id,
       active: item.active,
       sellableUnitId: item.sellableUnitId,
@@ -273,7 +288,12 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
       deactivatedAt: item.deactivatedAt,
       slotRetainedUntil: item.slotRetainedUntil,
       occupiesSlot: item.active || Boolean(item.slotRetainedUntil && item.slotRetainedUntil > now),
-    })),
+      verificationStatus: item.sellableUnit.status,
+      listings: item.sellableUnit.listings,
+      lastObservedAt: item.sellableUnit.observations[0]?.collectedAt ?? null,
+      lastCompletedAt: item.sellableUnit.priceChecks[0]?.resultVersions[0]?.generatedAt ?? null,
+      schedule: { enabled: getEnvironment().SCHEDULER_ENABLED, lastQueuedAt: lastScheduled, nextEligibleAt: entitlements.scheduledAnalysesPerWeek > 0 && item.active ? (lastScheduled ? new Date(Math.max(now.getTime(), lastScheduled.getTime() + Math.ceil(7 * 86_400_000 / entitlements.scheduledAnalysesPerWeek))) : now) : null },
+    }); }),
   };
 }
 

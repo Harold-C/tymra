@@ -4,7 +4,7 @@ export type AccountMetadataPage = "overview" | "pricingUnits" | "pricingUnitDeta
 
 const accountTitles: Record<"en" | "zh", Record<AccountMetadataPage, string>> = {
   en: {
-    overview: "Your Price Checks",
+    overview: "Account overview",
     pricingUnits: "Pricing units",
     pricingUnitDetail: "Pricing unit details",
     checks: "Price Check history",
@@ -18,7 +18,7 @@ const accountTitles: Record<"en" | "zh", Record<AccountMetadataPage, string>> = 
     portfolio: "Portfolio",
   },
   zh: {
-    overview: "你的价格检查",
+    overview: "账户总览",
     pricingUnits: "定价单位",
     pricingUnitDetail: "定价单位详情",
     checks: "价格检查历史",
