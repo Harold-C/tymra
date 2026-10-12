@@ -20,7 +20,7 @@ async function resolveCustomerSession(token: string | undefined) {
   const tokenHash = hashOpaqueToken(token, environment.SESSION_SECRET);
   const session = await prisma.customerSession.findUnique({
     where: { tokenHash },
-    include: { customerUser: { include: { membership: true } } },
+    include: { customerUser: { include: { membership: { include: { adminGrant: true } } } } },
   });
   if (!session || session.revokedAt || session.expiresAt <= new Date() || session.customerUser.status !== "ACTIVE") return null;
   await prisma.customerSession.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } });

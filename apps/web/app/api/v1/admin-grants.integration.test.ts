@@ -5,6 +5,8 @@ import { adminGrantExpiry, memberStrategySchema, nzDateKey } from "@tymra/domain
 import { NextRequest } from "next/server";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createAdminSession } from "@/lib/server/admin-auth";
+import { createCustomerSession, getCustomerSession } from "@/lib/server/membership/customer-auth";
+import { effectiveMembership } from "@tymra/domain";
 import { administerMembershipGrant } from "@/lib/server/membership/admin-grants";
 import { getMembershipSummary, reserveSpotCheck, runMembershipTransaction, setPricingUnitActive } from "@/lib/server/membership/membership";
 import { createMembershipCheckout, createMembershipPortal, cancelMembershipAtPeriodEnd, resumeMembershipRenewal } from "@/lib/server/membership/stripe-billing";
@@ -97,6 +99,14 @@ describe("administrator grants with the real isolated database", () => {
     for (const patch of [{ capacity: 49 }, { capacity: 101 }, { plan: "PRO", capacity: 19 }, { plan: "HOST", capacity: 3 }]) await expect(grant(customer.id, patch)).rejects.toMatchObject({ code: "INVALID_GRANT_CAPACITY" });
     for (const expiresOn of ["2026-02-30", "2020-01-01"]) await expect(grant(customer.id, { expiresOn })).rejects.toMatchObject({ code: "INVALID_EXPIRY" });
     expect(await prisma.adminMembershipGrant.count({ where: { customerUserId: customer.id } })).toBe(0);
+  });
+  it("loads administrator rights with the authenticated session used by account navigation", async () => {
+    const customer = await account(); await grant(customer.id);
+    const session = await createCustomerSession(customer.id);
+    const resolved = await getCustomerSession(new NextRequest("https://tymra.test/zh/account", { headers: { cookie: `tymra_customer_session=${session.token}` } }));
+    expect(resolved?.customerUser.membership?.adminGrant).toMatchObject({ plan: "PORTFOLIO", capacity: 100, expiresAt: null });
+    expect(effectiveMembership(resolved!.customerUser.membership!, now)).toMatchObject({ plan: "PORTFOLIO", entitlementSource: "ADMIN" });
+    expect(resolved?.customerUser.membership?.plan).toBe("FREE");
   });
   it("rejects linked/pending billing and suspended/deleted accounts", async () => {
     const customer = await account();
