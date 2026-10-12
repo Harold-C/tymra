@@ -64,6 +64,8 @@ export const environmentSchema = z
     MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_EXPORT_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_API_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_ALERTS_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
+    MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_CAPACITY_LAUNCH_LIMIT: z.coerce.number().int().min(1).max(200).default(50),
     MEMBERSHIP_ADMIN_GRANT_CAPACITY_LIMIT: z.coerce.number().int().min(1).max(200).default(50),
     EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
@@ -228,8 +230,8 @@ export const environmentSchema = z
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["STRIPE_PORTFOLIO_PRICE_ID"], message: "The Portfolio launch gate requires a Stripe Price ID" });
     }
 
-    if (value.MEMBERSHIP_EXPORT_LAUNCH_ENABLED && !value.MEMBERSHIP_PRO_LAUNCH_ENABLED) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["MEMBERSHIP_EXPORT_LAUNCH_ENABLED"], message: "Export launch requires the Pro plan launch gate" });
+    if (value.MEMBERSHIP_EXPORT_LAUNCH_ENABLED && !value.MEMBERSHIP_PRO_LAUNCH_ENABLED && !value.MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["MEMBERSHIP_EXPORT_LAUNCH_ENABLED"], message: "Export launch requires the Pro plan or portfolio-view launch gate" });
     }
 
     if (value.MEMBERSHIP_API_LAUNCH_ENABLED && !value.MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED) {

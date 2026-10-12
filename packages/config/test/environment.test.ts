@@ -125,6 +125,15 @@ describe("Argus configuration", () => {
 });
 
 describe("membership billing launch gates", () => {
+  it("opens entitled modules without Stripe while purchases and collection fail closed", () => {
+    const modules = environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", BILLING_ENABLED: "false", MEMBERSHIP_ALERTS_LAUNCH_ENABLED: "true", MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED: "true", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" });
+    expect(modules.BILLING_ENABLED).toBe(false);
+    expect(modules.MEMBERSHIP_HOST_LAUNCH_ENABLED).toBe(false);
+    expect(modules.MEMBERSHIP_ALERTS_LAUNCH_ENABLED).toBe(true);
+    expect(modules.MEMBERSHIP_EXPORT_LAUNCH_ENABLED).toBe(true);
+    expect(modules.ACCEPT_NEW_CHECKS).toBe(false);
+    expect(() => environmentSchema.parse({ ...required, NODE_ENV: "production", PROVIDER_MODE: "live", MEMBERSHIP_ALERTS_LAUNCH_ENABLED: "true", ACCEPT_NEW_CHECKS: "true" })).toThrow("managed abuse challenge");
+  });
   const billing = {
     ...required,
     BILLING_ENABLED: "true",

@@ -639,6 +639,13 @@ The tariff supports 1–200 independently of this purchase gate. Stripe Prices m
 monthly NZD inclusive graduated tiers verified by `scripts/verify-stripe-test-readiness.ts`.
 A disabled commercial gate or a mismatched Price fails closed. No external Price is created by migration.
 
+`MEMBERSHIP_ALERTS_LAUNCH_ENABLED` and `MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED` independently
+open implemented member modules for entitled customers, including administrator grants, without
+enabling Stripe purchases. Both default to false. Exports additionally require
+`MEMBERSHIP_EXPORT_LAUNCH_ENABLED` and either the portfolio-view gate or the commercial Pro gate.
+Effective member ownership, plan entitlement, email verification and collection restrictions remain
+independent checks. Customer integrations remain outside first launch.
+
 Strategy changes, alert preferences and alert history retain minimized audit metadata for up to two
 years, subject to account deletion. Generated export snapshots expire after 30 days (or the shorter
 exit deadline); downloading CSV/XLSX again does not consume another generation.

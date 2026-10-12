@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "playwright/test";
 
 const features = {
-  alerts: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_HOST_LAUNCH_ENABLED"),
-  portfolio: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED"),
-  exports: enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED") && enabled("MEMBERSHIP_EXPORT_LAUNCH_ENABLED"),
+  alerts: enabled("MEMBERSHIP_ALERTS_LAUNCH_ENABLED") || enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_HOST_LAUNCH_ENABLED"),
+  portfolio: enabled("MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED") || enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED"),
+  exports: (enabled("MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED") || enabled("BILLING_ENABLED") && enabled("MEMBERSHIP_PRO_LAUNCH_ENABLED")) && enabled("MEMBERSHIP_EXPORT_LAUNCH_ENABLED"),
   integrations: false,
 };
 
@@ -49,7 +49,8 @@ test.describe("fixed development member plan matrix", () => {
       const occupied = payload.data.pricingUnits.filter((unit) => unit.occupiesSlot).length;
       await expect(membership).toContainText(`${occupied}/${expected.slots}`);
       await expect(membership).toContainText(`${expected.dailyDays} days`);
-      await expect(membership).toContainText(`${expected.monitoringDays} days`);
+      await expect(membership).toContainText(`${expected.monitoringDays - expected.dailyDays} days`);
+      await expect(membership).toContainText("Monitoring-only extension");
 
       const nav = page.getByRole("navigation", { name: "Member account navigation" });
       const expectedNavigation = {

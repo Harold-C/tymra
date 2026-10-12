@@ -75,10 +75,10 @@ describe("first-launch membership lifecycle", () => {
   afterEach(() => setStripeTestRuntime());
 
   it("keeps launched member features available while unconfigured purchases stay closed", () => {
-    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_HOST_LAUNCH_ENABLED: "true", MEMBERSHIP_PRO_LAUNCH_ENABLED: "true", MEMBERSHIP_PORTFOLIO_LAUNCH_ENABLED: "true", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" }));
+    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_ALERTS_LAUNCH_ENABLED: "true", MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED: "true", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" }));
     expect(planLaunchAvailability()).toEqual({ FREE: true, HOST: false, PRO: false, PORTFOLIO: false });
     expect(membershipFeatureLaunchAvailability()).toEqual({ alerts: true, portfolio: true, exports: true, integrations: false });
-    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_HOST_LAUNCH_ENABLED: "false", MEMBERSHIP_PRO_LAUNCH_ENABLED: "false", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "true" }));
+    setStripeTestRuntime(undefined, environmentSchema.parse({ ...process.env, BILLING_ENABLED: "false", MEMBERSHIP_ALERTS_LAUNCH_ENABLED: "false", MEMBERSHIP_PORTFOLIO_VIEW_LAUNCH_ENABLED: "false", MEMBERSHIP_EXPORT_LAUNCH_ENABLED: "false" }));
     expect(membershipFeatureLaunchAvailability()).toEqual({ alerts: false, portfolio: false, exports: false, integrations: false });
   });
 
