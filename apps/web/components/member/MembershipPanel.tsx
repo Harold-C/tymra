@@ -78,8 +78,8 @@ export function MembershipPanel({ locale, membership, overview = false, checks =
   return (
     <section className={`membership-panel ${overview ? "membership-overview" : ""}`} aria-labelledby="membership-heading" lang={locale === "zh" ? "zh-CN" : "en-NZ"}>
       <div className="membership-summary">
-        <div className="membership-current"><div><span>{copy.membershipEyebrow}</span><h2 id="membership-heading">{copy.planNames[membership.plan]}</h2></div><p className="member-status">{membershipStatus(membership.status, locale)} <code>{membership.status}</code></p></div>
-        {membership.currentPeriodStart && membership.currentPeriodEnd ? <p className="member-period">{t.currentPeriod}: {date(membership.currentPeriodStart)} – {date(membership.currentPeriodEnd)}</p> : null}
+        <div className="membership-current"><div><span>{copy.membershipEyebrow}</span><h2 id="membership-heading">{copy.planNames[membership.plan]}</h2></div><p className="member-status">{membershipStatus(membership.status, locale)}</p></div>
+        {membership.currentPeriodStart && membership.currentPeriodEnd ? <p className="member-period">{adminGranted ? allowanceLabel : t.currentPeriod}: {date(membership.currentPeriodStart)} – {date(membership.currentPeriodEnd)}</p> : null}
         {membership.currentPeriodEnd ? <p className="member-period">{adminGranted ? (locale === "zh" ? "当前额度周期截止" : "Allowance period ends") : membership.cancelAtPeriodEnd ? t.serviceEnd : t.renewal}: {date(membership.currentPeriodEnd, true)}</p> : null}
         <dl>
           <div><dt>{copy.spotChecks}</dt><dd>{membership.usage.remainingSpotChecks} <small>{t.remaining}</small></dd><small>{membership.usage.rollingSpotChecks}/{membership.entitlements.rollingSpotCheckLimit} {t.used} · {allowanceLabel}</small>{membership.plan === "FREE" && !membership.usage.initialReportConsumed ? <small>{t.initial}</small> : null}</div>
