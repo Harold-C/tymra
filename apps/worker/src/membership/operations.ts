@@ -1,5 +1,5 @@
-import { Prisma, prisma } from "@tymra/db";
-import { membershipPlans } from "@tymra/domain";
+import { Prisma, prisma, expireAdminMembershipGrant, effectiveMembershipFilter } from "@tymra/db";
+import { effectiveMembership, membershipHistoryCutoff, membershipPlans } from "@tymra/domain";
 import { cleanupExpiredEvidence } from "../operations/evidence-retention";
 
 const DAY_MS = 86_400_000;
@@ -12,14 +12,21 @@ export async function cleanupMembershipRetention(now = new Date()) {
   const paymentRiskCutoff = new Date(now.getTime() - 730 * DAY_MS);
   return prisma.$transaction(async (transaction) => {
     let membershipHistoryArchived = 0;
+    const grantedMemberships = await transaction.membershipSubscription.findMany({ where: { adminGrant: { isNot: null } }, include: { adminGrant: true } });
+    for (const base of grantedMemberships) {
+      await expireAdminMembershipGrant(transaction, base.customerUserId, now);
+      const membership = effectiveMembership(base, now);
+      const archived = await transaction.priceCheck.updateMany({ where: { customerUserId: base.customerUserId, createdAt: { lt: membershipHistoryCutoff(membership, now) }, status: { not: "ARCHIVED" } }, data: { status: "ARCHIVED" } });
+      membershipHistoryArchived += archived.count;
+    }
     for (const [plan, days] of [["FREE", 30], ["HOST", 183], ["PRO", 365], ["PORTFOLIO", 730]] as const) {
       const archived = await transaction.priceCheck.updateMany({
-        where: { customerUser: { membership: { is: { plan, status: { not: "CANCELLED" }, OR: [{ historyGraceUntil: null }, { historyGraceUntil: { lte: now } }] } } }, createdAt: { lte: new Date(now.getTime() - days * DAY_MS) }, status: { not: "ARCHIVED" } },
+        where: { customerUser: { membership: { is: { adminGrant: { is: null }, plan, status: { not: "CANCELLED" }, OR: [{ historyGraceUntil: null }, { historyGraceUntil: { lte: now } }] } } }, createdAt: { lte: new Date(now.getTime() - days * DAY_MS) }, status: { not: "ARCHIVED" } },
         data: { status: "ARCHIVED" },
       });
       membershipHistoryArchived += archived.count;
     }
-    const cancelledMemberships = await transaction.membershipSubscription.findMany({ where: { status: "CANCELLED" }, select: { customerUserId: true, currentPeriodEnd: true, updatedAt: true } });
+    const cancelledMemberships = await transaction.membershipSubscription.findMany({ where: { adminGrant: { is: null }, status: "CANCELLED" }, select: { customerUserId: true, currentPeriodEnd: true, updatedAt: true } });
     for (const membership of cancelledMemberships) {
       const archiveAfter = new Date((membership.currentPeriodEnd ?? membership.updatedAt).getTime() + 30 * DAY_MS);
       if (archiveAfter > now) continue;
@@ -67,8 +74,8 @@ export async function membershipOperationalMetrics(now = new Date()) {
   const planEconomics = await Promise.all(membershipPlans.map(async (plan) => {
     const [activeSubscriptions, units, analyses] = await Promise.all([
       prisma.membershipSubscription.count({ where: { plan, status: "ACTIVE" } }),
-      prisma.customerPricingUnit.count({ where: { active: true, customerUser: { membership: { is: { plan } } } } }),
-      prisma.membershipUsage.count({ where: { correction: null, countedAt: { gte: last30Days }, customerUser: { membership: { is: { plan } } } } }),
+      prisma.customerPricingUnit.count({ where: { active: true, customerUser: { membership: { is: effectiveMembershipFilter(plan, undefined, now) } } } }),
+      prisma.membershipUsage.count({ where: { correction: null, countedAt: { gte: last30Days }, customerUser: { membership: { is: effectiveMembershipFilter(plan, undefined, now) } } } }),
     ]);
     return { plan, activeSubscriptions, activePricingUnits: units, analysesLast30Days: analyses };
   }));
@@ -83,5 +90,6 @@ export async function membershipOperationalMetrics(now = new Date()) {
     scheduler: { jobsLast30Days: scheduledJobs, pending: scheduledJobs.find((item) => item.status === "PENDING")?._count._all ?? 0, oldestPendingAgeSeconds: oldestPending ? Math.max(0, Math.floor((now.getTime() - oldestPending.createdAt.getTime()) / 1_000)) : null },
     captcha: { manualRequiredLast24Hours: manualRequired },
     planEconomics,
+    administratorGrants: await prisma.adminMembershipGrant.groupBy({ by: ["plan"], where: { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, _count: { _all: true }, _sum: { capacity: true } }),
   };
 }

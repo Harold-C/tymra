@@ -10,6 +10,7 @@ type ChangeQuote = { plan: MembershipPlan; capacity: number; quoteToken: string;
 
 export function MembershipPanel({ locale, membership }: { locale: Locale; membership: MembershipSummary }) {
   const copy = accountCopy[locale];
+  const adminGranted = membership.entitlementSource === "ADMIN";
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [quote, setQuote] = useState<ChangeQuote | null>(null);
@@ -80,12 +81,12 @@ export function MembershipPanel({ locale, membership }: { locale: Locale; member
         {membership.status === "PAST_DUE" ? <div className="membership-warning"><AlertTriangle aria-hidden="true" />{copy.paymentPastDue}</div> : null}
         {membership.cancelAtPeriodEnd ? <div className="membership-warning"><Clock3 aria-hidden="true" />{copy.cancelsAtPeriodEnd}</div> : null}
         {membership.pendingPlan ? <div className="membership-notice"><Clock3 aria-hidden="true" />{copy.pendingPlan.replace("{plan}", copy.planNames[membership.pendingPlan])}</div> : null}
-        <p>{locale === "zh" ? "当前月费（含GST）" : "Current monthly price (GST included)"}: {money(membership.entitlements.monthlyPriceMinor ?? 0)}{membership.currentPeriodEnd ? ` · ${locale === "zh" ? "账期结束" : "Period ends"} ${date(membership.currentPeriodEnd)}` : ""}</p>
+        {adminGranted ? <div className="membership-notice"><p><strong>{locale === "zh" ? "管理员授予权益" : "Administrator-granted membership"}</strong> · {membership.adminGrant?.expiresAt ? `${locale === "zh" ? "有效至" : "Valid through"} ${date(new Date(new Date(membership.adminGrant.expiresAt).getTime() - 1).toISOString())}` : locale === "zh" ? "长期有效" : "No expiry"}</p><p>{locale === "zh" ? "无月费。额外检查额度按新西兰自然月计算；已使用次数保留。" : "No monthly charge. Extra-check allowance follows the New Zealand calendar month; existing usage is retained."}</p></div> : <p>{locale === "zh" ? "当前月费（含GST）" : "Current monthly price (GST included)"}: {money(membership.entitlements.monthlyPriceMinor ?? 0)}{membership.currentPeriodEnd ? ` · ${locale === "zh" ? "账期结束" : "Period ends"} ${date(membership.currentPeriodEnd)}` : ""}</p>}
         {membership.pendingCapacity ? <p>{locale === "zh" ? `待生效容量：${membership.pendingCapacity}` : `Pending capacity: ${membership.pendingCapacity}`}</p> : null}
         {membership.historyGraceUntil ? <p>{locale === "zh" ? "旧方案历史数据可查看及导出至" : "Previous-plan history available to read and export until"} {date(membership.historyGraceUntil)} · <a href={`/${locale}/account/exports`}>{locale === "zh" ? "导出保留的历史" : "Export retained history"}</a></p> : null}
         {membership.pricingUnits.length ? <div className="membership-unit-list">{membership.pricingUnits.map((unit) => <div key={unit.id}><span><strong>{unit.propertyName}</strong><small>{unit.unitName}</small></span><button type="button" disabled={pendingAction !== null} onClick={() => void togglePricingUnit(unit)}>{locale === "zh" ? unit.active ? "停用" : "启用" : unit.active ? "Deactivate" : "Activate"}</button></div>)}</div> : null}
         {membership.pendingChangeKind === "CHECKOUT" && membership.pendingPlan && !membership.hasLinkedSubscription ? <button type="button" className="button button-secondary" disabled={pendingAction !== null} onClick={() => void startAction("checkout", membership.pendingPlan!, membership.pendingCapacity ?? undefined)}>{locale === "zh" ? "继续未完成的付款" : "Resume checkout"}</button> : null}
-        {membership.hasBillingAccount || membership.plan !== "FREE" ? <div className="membership-billing-actions">
+        {!adminGranted && (membership.hasBillingAccount || membership.plan !== "FREE") ? <div className="membership-billing-actions">
           <button className="button button-secondary" type="button" disabled={pendingAction !== null} onClick={() => void startAction("portal")}><CreditCard aria-hidden="true" />{copy.manageBilling}</button>
           {membership.plan !== "FREE" && (membership.cancelAtPeriodEnd
             ? <button className="button button-secondary" type="button" disabled={pendingAction !== null} onClick={() => void startAction("resume")}>{copy.resumeMembership}</button>
@@ -97,7 +98,7 @@ export function MembershipPanel({ locale, membership }: { locale: Locale; member
           <button type="button" className="button button-primary" disabled={pendingAction !== null} onClick={() => void startAction("cancel")}>{locale === "zh" ? "确认到期取消" : "Confirm cancellation"}</button>
         </div> : null}
       </div>
-      {quote ? <div ref={reviewRef} tabIndex={-1} className="membership-quote" role="region" aria-label={locale === "zh" ? "确认方案变更" : "Review subscription change"}>
+      {adminGranted ? null : quote ? <div ref={reviewRef} tabIndex={-1} className="membership-quote" role="region" aria-label={locale === "zh" ? "确认方案变更" : "Review subscription change"}>
         <h3>{copy.planNames[quote.plan]} · {quote.capacity} {locale === "zh" ? "个监测额度" : "monitored slots"}</h3>
         <p>{locale === "zh" ? "本次应付" : "Due today"}: <strong>{money(quote.amountDueMinor)}</strong></p>
         <p>{locale === "zh" ? "下期月费（含GST）" : "Next monthly price (GST included)"}: <strong>{money(quote.recurringMinor)}</strong></p>

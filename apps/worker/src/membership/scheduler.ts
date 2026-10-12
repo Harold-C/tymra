@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getEnvironment } from "@tymra/config";
-import { prisma, type Prisma } from "@tymra/db";
-import { addNzCalendarDays, entitlementsForMembership, membershipIsServiceable, nzDateKey, nzDateStorageValue } from "@tymra/domain";
+import { prisma, expireAdminMembershipGrant, type Prisma } from "@tymra/db";
+import { addNzCalendarDays, effectiveMembership, entitlementsForMembership, membershipIsServiceable, nzDateKey, nzDateStorageValue } from "@tymra/domain";
 
 // One bounded, explicitly dated refresh per object per cadence. Alternate near-term
 // and rotating horizon dates; never turn an unsampled date into observed coverage.
@@ -12,19 +12,23 @@ export function scheduledStayDate(now: Date, horizon: number, sequence: number) 
 
 export async function enqueueDueMembershipAnalyses(now = new Date()) {
   const memberships = await prisma.membershipSubscription.findMany({
-    where: { plan: { in: ["HOST", "PRO", "PORTFOLIO"] }, status: { in: ["ACTIVE", "PAST_DUE"] } },
-    include: { customerUser: { include: { pricingUnits: { where: { active: true }, orderBy: { activatedAt: "asc" }, select: { id: true, sellableUnitId: true } } } } },
+    where: { OR: [{ plan: { in: ["HOST", "PRO", "PORTFOLIO"] }, status: { in: ["ACTIVE", "PAST_DUE"] } }, { adminGrant: { is: { revokedAt: null } } }] },
+    include: { adminGrant: true, customerUser: { include: { pricingUnits: { where: { active: true }, orderBy: { activatedAt: "asc" }, select: { id: true, sellableUnitId: true } } } } },
   });
   let queued = 0;
   let skipped = 0;
-  for (const membership of memberships) {
-    if (membership.customerUser.status !== "ACTIVE" || !membership.customerUser.emailVerifiedAt || !membershipIsServiceable(membership.status, membership.graceEndsAt, now, membership.plan === "FREE" ? null : membership.currentPeriodEnd)) { skipped += membership.customerUser.pricingUnits.length; continue; }
+  for (const base of memberships) {
+    if (await prisma.$transaction(tx => expireAdminMembershipGrant(tx, base.customerUserId, now))) { skipped += base.customerUser.pricingUnits.length; continue; }
+    const membership = effectiveMembership(base, now);
+    if (membership.plan === "FREE") continue;
+    if (membership.customerUser.status !== "ACTIVE" || !membership.customerUser.emailVerifiedAt || !membershipIsServiceable(membership.status, membership.graceEndsAt, now, membership.currentPeriodEnd)) { skipped += membership.customerUser.pricingUnits.length; continue; }
     const entitlements = entitlementsForMembership(membership);
     const cadenceMs = Math.ceil(7 * 86_400_000 / entitlements.scheduledAnalysesPerWeek);
     for (const unit of membership.customerUser.pricingUnits.slice(0, entitlements.activePricingUnitLimit)) {
       const result = await prisma.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${membership.customerUserId} FOR UPDATE`;
-        const current = await tx.membershipSubscription.findUniqueOrThrow({ where: { customerUserId: membership.customerUserId }, include: { customerUser: true } });
+        await expireAdminMembershipGrant(tx, membership.customerUserId, now);
+        const current = effectiveMembership(await tx.membershipSubscription.findUniqueOrThrow({ where: { customerUserId: membership.customerUserId }, include: { customerUser: true, adminGrant: true } }), now);
         if (current.version !== membership.version || current.customerUser.status !== "ACTIVE" || !current.customerUser.emailVerifiedAt || !membershipIsServiceable(current.status, current.graceEndsAt, now, current.plan === "FREE" ? null : current.currentPeriodEnd) || !await tx.customerPricingUnit.findFirst({ where: { id: unit.id, customerUserId: membership.customerUserId, active: true } })) return false;
         const latest = await tx.membershipUsage.findFirst({ where: { customerUserId: membership.customerUserId, pricingUnitId: unit.id, type: "SCHEDULED_ANALYSIS", correction: null }, orderBy: { countedAt: "desc" } });
         if (latest && now.getTime() - latest.countedAt.getTime() < cadenceMs) return false;

@@ -2,6 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 
 import { getEnvironment, type Environment } from "@tymra/config";
 import { decryptPersonalData, prisma, type Prisma } from "@tymra/db";
+import { adminGrantIsActive } from "@tymra/domain";
 import { isMembershipPlan, membershipEntitlements, membershipPlanRank, membershipMonthlyPrice, entitlementsForMembership, proratedQueryAllowance, MEMBERSHIP_BILLING_VERSION, type MembershipPlanId } from "@tymra/domain";
 import Stripe from "stripe";
 
@@ -22,6 +23,11 @@ export function setStripeTestRuntime(client?: Stripe, environment?: Environment)
 
 function billingEnvironment() {
   return stripeTestEnvironment ?? getEnvironment();
+}
+
+async function assertNoAdminGrant(customerUserId: string, database: Prisma.TransactionClient = prisma) {
+  const grant = await database.adminMembershipGrant.findUnique({ where: { customerUserId } });
+  if (adminGrantIsActive(grant)) throw new BillingError("ADMIN_GRANT_ACTIVE", "Administrator-granted entitlements are managed by an administrator. Revoke the grant before starting billing.");
 }
 
 export function membershipCapacityLaunchLimit() { return billingEnvironment().MEMBERSHIP_CAPACITY_LAUNCH_LIMIT; }
@@ -80,6 +86,7 @@ async function validateStripePrice(client: Stripe, plan: Exclude<MembershipPlanI
 }
 
 export async function createMembershipCheckout(customerUserId: string, planValue: unknown, requestedCapacity?: number) {
+  await assertNoAdminGrant(customerUserId);
   if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Select an available paid membership.");
   const plan = planValue;
   const capacity = approvedCapacity(plan, requestedCapacity);
@@ -101,7 +108,11 @@ export async function createMembershipCheckout(customerUserId: string, planValue
   const retryPending = membership.pendingChangeKind === "CHECKOUT" && membership.pendingPlan === plan && membership.pendingCapacity === capacity;
   if (membership.pendingPlan && !retryPending) throw new BillingError("BILLING_CHANGE_PENDING", "Resume the earlier checkout before selecting another subscription.");
   if (!retryPending) {
-    const claim = await prisma.membershipSubscription.updateMany({ where: { id: membership.id, version: membership.version, pendingPlan: null }, data: { pendingPlan: plan, pendingCapacity: capacity, pendingChangeKind: "CHECKOUT", version: { increment: 1 } } });
+    const claim = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${customerUserId} FOR UPDATE`;
+      await assertNoAdminGrant(customerUserId, tx);
+      return tx.membershipSubscription.updateMany({ where: { id: membership.id, version: membership.version, pendingPlan: null }, data: { pendingPlan: plan, pendingCapacity: capacity, pendingChangeKind: "CHECKOUT", version: { increment: 1 } } });
+    });
     if (claim.count !== 1) throw new BillingError("BILLING_CHANGE_PENDING", "A checkout is already being prepared.");
   }
 
@@ -135,6 +146,7 @@ export async function createMembershipCheckout(customerUserId: string, planValue
 }
 
 export async function createMembershipPortal(customerUserId: string) {
+  await assertNoAdminGrant(customerUserId);
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeCustomerId) throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No paid subscription is linked to this account.");
   const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId }, select: { locale: true } });
@@ -147,6 +159,7 @@ export async function createMembershipPortal(customerUserId: string) {
 }
 
 export async function previewMembershipChange(customerUserId: string, planValue: unknown, requestedCapacity?: number) {
+  await assertNoAdminGrant(customerUserId);
   if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Select a paid plan.");
   const capacity = approvedCapacity(planValue, requestedCapacity);
   const client = stripe();
@@ -171,6 +184,7 @@ export async function previewMembershipChange(customerUserId: string, planValue:
 }
 
 export async function changeMembershipPlan(customerUserId: string, planValue: unknown, requestedCapacity?: number, quoteToken?: string, retainedUnitIds?: string[]) {
+  await assertNoAdminGrant(customerUserId);
   if (!isMembershipPlan(planValue) || planValue === "FREE") throw new BillingError("PLAN_NOT_AVAILABLE", "Free is reached by cancelling the paid subscription at period end.");
   const targetPlan = planValue;
   const targetCapacity = approvedCapacity(targetPlan, requestedCapacity);
@@ -218,6 +232,7 @@ export async function changeMembershipPlan(customerUserId: string, planValue: un
 }
 
 export async function cancelMembershipAtPeriodEnd(customerUserId: string) {
+  await assertNoAdminGrant(customerUserId);
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeSubscriptionId || membership.status === "CANCELLED") throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No active paid subscription is linked to this account.");
   const client = stripe();
@@ -243,6 +258,7 @@ export async function cancelMembershipAtPeriodEnd(customerUserId: string) {
 }
 
 export async function resumeMembershipRenewal(customerUserId: string) {
+  await assertNoAdminGrant(customerUserId);
   const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
   if (!membership?.stripeSubscriptionId || membership.status === "CANCELLED") throw new BillingError("SUBSCRIPTION_NOT_FOUND", "No renewable paid subscription is linked to this account.");
   const client = stripe();

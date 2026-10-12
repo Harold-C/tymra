@@ -37,6 +37,7 @@ x-app: &app
     SCHEDULER_ENABLED: "false"
     HIGH_FREQUENCY_SCHEDULER_ENABLED: "false"
     BILLING_ENABLED: "false"
+    MEMBERSHIP_ADMIN_GRANT_CAPACITY_LIMIT: "100"
     ABUSE_CHALLENGE_MODE: disabled
     EMAIL_PROVIDER: smtp
     SMTP_URL: smtp://mailpit-test:1025

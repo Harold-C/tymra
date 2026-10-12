@@ -2592,3 +2592,13 @@ ul.readiness-blockers {
     grid-template-columns: 1fr;
   }
 }
+.admin-grant-fields { display: grid; gap: 1rem; width: 100%; min-width: 0; max-width: 52rem; padding: 1rem; border: 1px solid var(--border, #dce3df); border-radius: .75rem; }
+.admin-grant-fields fieldset { min-width: 0; }
+.admin-grant-fields label:not(.admin-grant-choice) { display: grid; gap: .4rem; }
+.admin-grant-fields input:not([type="checkbox"]), .admin-grant-fields select, .admin-grant-fields textarea { width: 100%; min-height: 2.75rem; padding: .65rem; border: 1px solid #bac7bf; border-radius: .5rem; background: white; color: #1c2923; }
+.admin-grant-fields textarea { min-height: 5rem; }
+.admin-grant-choice { display: flex; align-items: center; gap: .65rem; min-height: 2.75rem; }
+.admin-grant-choice input { width: 1.2rem; height: 1.2rem; }
+.admin-grant-review { max-width: 52rem; margin-top: 1rem; padding: 1rem; border: 2px solid #456951; border-radius: .75rem; background: #f4f8f5; }
+.admin-grant-section p, .admin-grant-review p { overflow-wrap: anywhere; }
+.admin-customer-detail .admin-page-header h1 { overflow-wrap: anywhere; }

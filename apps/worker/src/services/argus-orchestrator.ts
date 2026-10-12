@@ -3,7 +3,7 @@ import { mkdir, open, rename } from "node:fs/promises";
 import path from "node:path";
 
 import type { Environment } from "@tymra/config";
-import { enqueueJob, prisma, Prisma } from "@tymra/db";
+import { enqueueJob, prisma, Prisma, findEffectiveMembership } from "@tymra/db";
 import {
   acknowledgeArgusJobResult,
   cancelArgusJob,
@@ -148,7 +148,7 @@ async function memberNoVncCapacity(parentJobId: string) {
   const parent = await prisma.job.findUnique({ where: { id: parentJobId }, select: { priceCheck: { select: { customerUserId: true, customerUser: { select: { membership: { select: { plan: true } } } } } } } });
   const customerUserId = parent?.priceCheck?.customerUserId;
   if (!customerUserId) return { allowed: true };
-  const plan = parent.priceCheck?.customerUser?.membership?.plan ?? "FREE";
+  const plan = (await findEffectiveMembership(prisma, customerUserId))?.plan ?? "FREE";
   const limit = plan === "FREE" || plan === "HOST" ? 1 : plan === "PRO" ? 2 : 4;
   const jobs = await prisma.job.findMany({ where: { priceCheck: { customerUserId } }, select: { id: true } });
   const executions = await prisma.argusExecution.findMany({ where: { parentJobId: { in: jobs.map((job) => job.id) }, status: "WAITING_FOR_MANUAL", result: { not: Prisma.DbNull } }, select: { result: true } });

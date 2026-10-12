@@ -5,6 +5,7 @@ export * from "./event-impact";
 export * from "./funnel-analytics";
 export * from "./nz-time";
 export * from "./membership";
+export * from "./admin-membership";
 export * from "./member-strategy";
 export * from "./pricing";
 export * from "./query";

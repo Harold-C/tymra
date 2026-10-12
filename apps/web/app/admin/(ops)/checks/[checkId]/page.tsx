@@ -1,4 +1,5 @@
 import { prisma } from "@tymra/db";
+import { effectiveMembership } from "@tymra/domain";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -22,11 +23,12 @@ export default async function CheckDetailPage({ params }: { params: { checkId: s
       exceptions: { orderBy: { createdAt: "desc" } },
       actions: { orderBy: { createdAt: "desc" } },
       emails: { orderBy: { createdAt: "desc" } },
-      customerUser: { include: { membership: true } },
+      customerUser: { include: { membership: { include: { adminGrant: true } } } },
       queryPlans: { orderBy: { version: "desc" }, take: 1 },
     },
   });
   if (!check) notFound();
+  const membership = check.customerUser?.membership ? effectiveMembership(check.customerUser.membership) : null;
   const audit = await prisma.auditEvent.findMany({
     where: { entityType: "PriceCheck", entityId: check.id },
     orderBy: { createdAt: "asc" },
@@ -44,7 +46,7 @@ export default async function CheckDetailPage({ params }: { params: { checkId: s
           <dl className="detail-list">
             <div><dt>{adminLabel(locale, "Input")}</dt><dd>{check.rawInput}</dd></div>
             <div><dt>{locale === "zh" ? "请求归属" : "Request owner"}</dt><dd>{check.customerUserId ? <Link href={`/admin/customers/${check.customerUserId}`}>{check.customerUserId}</Link> : check.requestOrigin}</dd></div>
-            <div><dt>{locale === "zh" ? "会员权益" : "Membership"}</dt><dd>{check.customerUser?.membership ? `${check.customerUser.membership.plan} · ${check.customerUser.membership.status}` : "—"}</dd></div>
+            <div><dt>{locale === "zh" ? "会员权益" : "Membership"}</dt><dd>{membership ? `${membership.plan} · ${membership.status}` : "—"}</dd></div>
             <div><dt>{adminLabel(locale, "Locale")}</dt><dd>{check.locale}</dd></div>
             <div><dt>{adminLabel(locale, "Market")}</dt><dd>{check.marketKey}</dd></div>
             <div><dt>{adminLabel(locale, "Property")}</dt><dd>{check.property?.canonicalName ?? adminText(locale, "unconfirmed")}</dd></div>

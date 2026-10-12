@@ -1,5 +1,6 @@
 import { getEnvironment } from "@tymra/config";
 import { prisma, type CustomerStatus, type Prisma } from "@tymra/db";
+import { effectiveMembership } from "@tymra/domain";
 
 import { AdminListTools } from "@/components/admin/AdminListControls";
 import { AdminPageHeader } from "@/components/admin/AdminResourcePage";
@@ -20,10 +21,10 @@ export default async function CustomersPage({ searchParams }: { searchParams: Re
   const where: Prisma.CustomerUserWhereInput = { ...(status ? { status } : {}), ...(q ? { id: { contains: q, mode: "insensitive" } } : {}) };
   const [total, customers] = await Promise.all([
     prisma.customerUser.count({ where }),
-    prisma.customerUser.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { membership: true, _count: { select: { priceChecks: true, sessions: true, pricingUnits: true } } } }),
+    prisma.customerUser.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize, include: { membership: { include: { adminGrant: true } }, _count: { select: { priceChecks: true, sessions: true, pricingUnits: true } } } }),
   ]);
   const key = getEnvironment().DATA_ENCRYPTION_KEY;
-  const decoded = customers.map((customer) => ({ customer, email: safelyDecryptPersonalData(customer.encryptedEmail, key) }));
+  const decoded = customers.map((record) => ({ customer: { ...record, membership: record.membership ? effectiveMembership(record.membership) : null }, email: safelyDecryptPersonalData(record.encryptedEmail, key) }));
   const unreadable = decoded.filter((item) => !item.email.readable).length;
   const pageHref = (nextPage: number, nextSize = pageSize) => adminListHref("/admin/customers", searchParams, { page: Math.max(1, nextPage), pageSize: nextSize });
   return <section className="admin-page">

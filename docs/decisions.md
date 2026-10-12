@@ -753,6 +753,20 @@ filters, retry/lease behavior and evidence-before-ACK guarantees.
 - Local implementation and test evidence do not open billing, SMTP, public discovery or production
   capacity gates. Deployment remains a separate authorized operation.
 
+## D-055 Audited Nonbillable Administrator Grants
+
+- Date: 2026-10-12. User-approved scope: administrator grants and adjusts a customer's feature tier,
+  capacity and duration, including Portfolio 100 with no expiry for the specified ordinary account.
+- Keep `AdminMembershipGrant` separate from financial subscriptions. Do not simulate Stripe payment,
+  reset usage, verify email, grant Admin identity or open collection/provider launch gates.
+- Require reason, preview/confirmation, ownership of retained objects, displayed version, a customer
+  lock, idempotency and immutable audit. Resolve effective rights consistently in Web and Worker.
+- Nonbillable quotas follow NZ calendar months. Expiry/revocation restores base Free rights and stops
+  monitoring with a 30-day previous-history read grace. Self-service billing rejects active grants.
+- The dedicated administrator capacity limit permits the explicitly authorised 100-object grant;
+  ordinary purchases remain limited to 50 pending capacity/cost acceptance. Stored capacity is not
+  proof of real 100-object collection, notification or load acceptance.
+
 ## 文档与运行阶段变迁
 
 本节只记录影响后续判断的变迁。删除仓库文件的完整旧内容可在 Git 提交

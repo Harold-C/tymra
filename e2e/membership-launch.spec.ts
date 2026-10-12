@@ -1,6 +1,7 @@
 import { test, expect } from "playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { memberStrategySchema } from "@tymra/domain/member-strategy";
+import { e2eAdminEmail, e2eAdminPassword } from "./test-identities";
 
 for (const locale of ["en", "zh"] as const) {
   test(`${locale} launch pricing calculator covers small and large portfolios`, async ({ page }, testInfo) => {
@@ -104,6 +105,56 @@ for (const locale of ["en", "zh"] as const) {
     await page.goto(`/${locale}/account/alerts`);
     await expect(page.getByRole("heading", { name: locale === "zh" ? "值得复核的市场价差" : "Market gap to review" })).toBeVisible();
     for (const width of [320, 390, 1440]) { await page.setViewportSize({ width, height: 900 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); }
+    expect(errors).toEqual([]);
+  });
+}
+for (const locale of ["en", "zh"] as const) {
+  test(`${locale} administrator grants and revokes permanent Portfolio 100 through the real API`, async ({ page, context }, testInfo) => {
+    const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+    const publicOrigin = process.env.PUBLIC_ORIGIN!;
+    const adminOrigin = process.env.ADMIN_ORIGIN!;
+    const email = `grant-ui-${crypto.randomUUID()}@example.test`;
+    const registration = await page.request.post(`${publicOrigin}/api/v1/customer/auth/register`, { headers: { origin: publicOrigin }, data: { email, password: "isolated-grant-ui-password", locale, serviceConsent: true } });
+    expect(registration.status()).toBe(201);
+    const customerId = (await registration.json()).data.customer.id;
+    await context.addCookies([{ name: "TYMRA_ADMIN_LOCALE", value: locale, url: adminOrigin }]);
+    await page.goto(`${adminOrigin}/admin/sign-in`);
+    await expect(page.locator('form[data-hydrated="true"]')).toBeVisible();
+    await page.locator("#admin-email").fill(e2eAdminEmail); await page.locator("#admin-password").fill(e2eAdminPassword);
+    await page.locator(".admin-signin-form button").click();
+    await expect(page).toHaveURL(/\/admin\/exceptions/);
+    await page.goto(`${adminOrigin}/admin/customers/${customerId}`);
+    const form = page.locator(".admin-grant-section");
+    await form.getByRole("combobox", { name: locale === "zh" ? "会员等级" : "Membership plan", exact: true }).selectOption("PORTFOLIO");
+    await form.getByLabel(locale === "zh" ? "房源容量" : "Monitored-object capacity", { exact: true }).fill("100");
+    const preview = form.getByRole("button", { name: locale === "zh" ? "预览授权" : "Preview grant", exact: true });
+    await expect(preview).toBeDisabled();
+    await form.getByLabel(locale === "zh" ? "授权或撤销原因" : "Grant or revocation reason", { exact: true }).fill("Synthetic browser grant acceptance");
+    await preview.click();
+    const review = form.getByRole("region", { name: locale === "zh" ? "确认权益变更" : "Confirm entitlement change" });
+    await expect(review).toContainText("100"); await expect(review).toContainText(locale === "zh" ? "长期有效" : "No expiry");
+    expect((await page.request.get(`${publicOrigin}/api/v1/customer/membership`).then(response => response.json())).data.plan).toBe("FREE");
+    await review.getByRole("button", { name: locale === "zh" ? "确认保存" : "Confirm and save" }).click();
+    await expect(form.getByRole("status")).toContainText(locale === "zh" ? "审计记录" : "Audit record");
+    await expect(form).toContainText(locale === "zh" ? "有效授权: PORTFOLIO · 100" : "Active grant: PORTFOLIO · 100");
+    for (const width of [320, 390, 1440]) { await page.setViewportSize({ width, height: 900 }); await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), { message: `grant UI at ${width}px` }).toBe(true); }
+    const serious = (await new AxeBuilder({ page }).analyze()).violations.filter(item => ["critical", "serious"].includes(item.impact ?? "")); expect(serious).toEqual([]);
+    await page.setViewportSize(testInfo.project.name === "mobile" ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+    await page.evaluate(() => { (document.activeElement as HTMLElement)?.blur(); window.scrollTo({ top: 0, behavior: "instant" }); });
+    await page.screenshot({ path: `/tmp/tymra-admin-grant-${locale}-${testInfo.project.name}.png`, fullPage: true, animations: "disabled" });
+    await page.goto(`${publicOrigin}/${locale}/account/billing`);
+    const panel = page.locator(".membership-panel");
+    await expect(panel).toContainText(locale === "zh" ? "管理员授予权益" : "Administrator-granted membership");
+    await expect(panel).toContainText(locale === "zh" ? "长期有效" : "No expiry");
+    await expect(panel).toContainText("0/100");
+    await expect(panel.locator(".capacity-plans")).toHaveCount(0); await expect(panel.locator(".membership-billing-actions")).toHaveCount(0);
+    await panel.screenshot({ path: `/tmp/tymra-customer-grant-${locale}-${testInfo.project.name}.png`, animations: "disabled" });
+    await page.goto(`${adminOrigin}/admin/customers/${customerId}`);
+    await form.getByLabel(locale === "zh" ? "授权或撤销原因" : "Grant or revocation reason", { exact: true }).fill("Synthetic browser revocation acceptance");
+    await form.getByRole("button", { name: locale === "zh" ? "预览撤销" : "Preview revocation" }).click();
+    await review.getByRole("button", { name: locale === "zh" ? "确认保存" : "Confirm and save" }).click();
+    await expect(form.getByRole("status")).toContainText(locale === "zh" ? "审计记录" : "Audit record");
+    expect((await page.request.get(`${publicOrigin}/api/v1/customer/membership`).then(response => response.json())).data.plan).toBe("FREE");
     expect(errors).toEqual([]);
   });
 }

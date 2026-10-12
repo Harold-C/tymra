@@ -65,6 +65,7 @@ export const environmentSchema = z
     MEMBERSHIP_EXPORT_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_API_LAUNCH_ENABLED: booleanFromEnvironment.default("false"),
     MEMBERSHIP_CAPACITY_LAUNCH_LIMIT: z.coerce.number().int().min(1).max(200).default(50),
+    MEMBERSHIP_ADMIN_GRANT_CAPACITY_LIMIT: z.coerce.number().int().min(1).max(200).default(50),
     EMAIL_PROVIDER: z.enum(["log", "smtp"]).default("log"),
     EMAIL_FROM: z.string().min(3),
     SMTP_URL: optionalUrl,

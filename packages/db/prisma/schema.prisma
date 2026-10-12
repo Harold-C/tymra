@@ -514,6 +514,7 @@ model AdminUser {
   riskCasesResolved MembershipRiskCase[] @relation("RiskCaseResolver")
   serviceBackfills  ServiceBackfill[]
   serviceRepairs    ServiceDataRepair[]
+  membershipGrants  AdminMembershipGrant[]
 }
 
 model AdminSession {
@@ -630,11 +631,33 @@ model MembershipSubscription {
   createdAt            DateTime                     @default(now())
   updatedAt            DateTime                     @updatedAt
   customerUser         CustomerUser                 @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  adminGrant           AdminMembershipGrant?
 
   @@index([plan, status])
   @@index([status, graceEndsAt])
   @@index([currentPeriodEnd])
   @@index([lastStripeEventAt])
+}
+
+model AdminMembershipGrant {
+  id                  String                 @id @default(cuid())
+  customerUserId      String                 @unique
+  plan                MembershipPlan
+  capacity            Int
+  expiresAt           DateTime?
+  revokedAt           DateTime?
+  reason              String
+  revocationReason    String?
+  actorAdminId        String
+  version             Int                    @default(1)
+  historyGraceUntil   DateTime?
+  historyGraceCutoff  DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  membership          MembershipSubscription @relation(fields: [customerUserId], references: [customerUserId], onDelete: Cascade)
+  actorAdmin          AdminUser              @relation(fields: [actorAdminId], references: [id], onDelete: Restrict)
+
+  @@index([revokedAt, expiresAt])
 }
 
 model CustomerPricingUnit {

@@ -1,4 +1,4 @@
-import { prisma, recordFunnelEvent, type Prisma } from "@tymra/db";
+import { prisma, recordFunnelEvent, findEffectiveMembership, type Prisma } from "@tymra/db";
 import { membershipHistoryCutoff } from "./membership";
 import { nextAction } from "../price-checks";
 
@@ -15,7 +15,7 @@ const terminalStatuses = new Set([
 ]);
 
 export async function getCustomerCheck(customerUserId: string, checkId: string) {
-  const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
+  const membership = await findEffectiveMembership(prisma, customerUserId);
   const historyCutoff = membership ? membershipHistoryCutoff(membership) : new Date(Date.now() - 30 * 86_400_000);
   const check = await prisma.priceCheck.findFirst({
     where: { id: checkId, customerUserId, createdAt: { gte: historyCutoff }, status: { not: "ARCHIVED" } },
@@ -118,7 +118,7 @@ function recordValue(value: unknown): Record<string, unknown> {
 }
 
 export async function listCustomerChecks(customerUserId: string) {
-  const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
+  const membership = await findEffectiveMembership(prisma, customerUserId);
   const historyCutoff = membership ? membershipHistoryCutoff(membership) : new Date(Date.now() - 30 * 86_400_000);
   return prisma.priceCheck.findMany({
     where: { customerUserId, createdAt: { gte: historyCutoff }, status: { not: "ARCHIVED" } },

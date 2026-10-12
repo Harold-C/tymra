@@ -3,7 +3,7 @@ import { membershipCapacity, type MembershipPlanId } from "@tymra/domain";
 import type Stripe from "stripe";
 
 export class BillingError extends Error {
-  constructor(readonly code: "BILLING_DISABLED" | "PLAN_NOT_AVAILABLE" | "SUBSCRIPTION_NOT_FOUND" | "INVALID_PRICE_CONFIGURATION" | "PRICING_UNIT_SELECTION_REQUIRED" | "INVALID_QUOTE" | "BILLING_CHANGE_PENDING" | "PAYMENT_REQUIRED", message: string) {
+  constructor(readonly code: "BILLING_DISABLED" | "PLAN_NOT_AVAILABLE" | "SUBSCRIPTION_NOT_FOUND" | "INVALID_PRICE_CONFIGURATION" | "PRICING_UNIT_SELECTION_REQUIRED" | "INVALID_QUOTE" | "BILLING_CHANGE_PENDING" | "PAYMENT_REQUIRED" | "ADMIN_GRANT_ACTIVE", message: string) {
     super(message);
     this.name = "BillingError";
   }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { getEnvironment } from "@tymra/config";
-import { hashPersonalIdentifier, issueOpaqueToken, type MembershipPlan, type Prisma } from "@tymra/db";
+import { hashPersonalIdentifier, issueOpaqueToken, findEffectiveMembership, type MembershipPlan, type Prisma } from "@tymra/db";
 import { entitlementsForMembership, membershipEntitlements } from "@tymra/domain";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -176,7 +176,7 @@ export async function enforceMemberRisk(transaction: Transaction, input: {
 
   const reasons: string[] = [];
   let outcome: "ALLOW" | "CHALLENGE" | "COOLDOWN" = "ALLOW";
-  const membership = await transaction.membershipSubscription.findUnique({ where: { customerUserId: input.customerUserId } });
+  const membership = await findEffectiveMembership(transaction, input.customerUserId, now);
   const capacity = membership ? entitlementsForMembership(membership).activePricingUnitLimit : membershipEntitlements[input.plan].activePricingUnitLimit;
   const propertySoftLimit = Math.max(3, capacity * 2);
   const propertyDayLimit = Math.max(6, capacity * 2);

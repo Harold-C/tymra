@@ -1,6 +1,6 @@
 import type { MembershipPlan, MembershipSubscriptionStatus, Prisma } from "@tymra/db";
 import { getEnvironment } from "@tymra/config";
-import { prisma } from "@tymra/db";
+import { prisma, expireAdminMembershipGrant, findEffectiveMembership } from "@tymra/db";
 import {
   membershipEntitlements,
   entitlementsForMembership,
@@ -10,6 +10,7 @@ import {
   nzDateKey,
   nzStartOfDay,
   nzCalendarDayDifference,
+  membershipHistoryCutoff,
 } from "@tymra/domain";
 import { ensureBenefitGroup } from "./member-risk";
 
@@ -87,7 +88,7 @@ export async function reserveMembershipOperation(input: { customerUserId: string
     const operationKey = `${input.action}:${input.customerUserId}:${input.idempotencyKey}`;
     const existing = await transaction.usageLedger.findUnique({ where: { operationKey } });
     if (existing) return { idempotent: true, usage: existing };
-    const membership = await ensureFreeMembership(transaction, input.customerUserId, now);
+    const membership = await ensureEffectiveMembership(transaction, input.customerUserId, now);
     const customer = await ensureBenefitGroup(transaction, input.customerUserId, now);
     if (!customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
     if (!membershipIsServiceable(membership.status, membership.graceEndsAt, now, membership.plan === "FREE" ? null : membership.currentPeriodEnd)) throw new MembershipAccessError("MEMBERSHIP_INACTIVE");
@@ -114,13 +115,20 @@ export async function ensureFreeMembership(transaction: Transaction, customerUse
     ?? transaction.membershipSubscription.create({ data: { customerUserId, plan: "FREE", status: "ACTIVE", entitlementStartedAt } });
 }
 
+export async function ensureEffectiveMembership(transaction: Transaction, customerUserId: string, now = new Date()) {
+  await transaction.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${customerUserId} FOR UPDATE`;
+  await ensureFreeMembership(transaction, customerUserId, now);
+  await expireAdminMembershipGrant(transaction, customerUserId, now);
+  return (await findEffectiveMembership(transaction, customerUserId, now))!;
+}
+
 export async function reserveSpotCheck(
   transaction: Transaction,
   input: { customerUserId: string; sellableUnitId: string | null; idempotencyKey: string; now?: Date; exactFreshCache?: boolean; stayDates?: { checkIn: Date; checkOut: Date } },
 ) {
   const now = input.now ?? new Date();
   const existingUsage = await transaction.membershipUsage.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
-  const membership = await ensureFreeMembership(transaction, input.customerUserId, now);
+  const membership = await ensureEffectiveMembership(transaction, input.customerUserId, now);
   if (existingUsage) return { membership, usage: existingUsage, remainingAfter: null, idempotent: true };
   const customer = await ensureBenefitGroup(transaction, input.customerUserId, now);
   if (!customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
@@ -203,7 +211,7 @@ export async function reserveSpotCheck(
 }
 
 export async function getMembershipSummary(customerUserId: string, now = new Date()) {
-  const membership = await prisma.$transaction((transaction) => ensureFreeMembership(transaction, customerUserId));
+  const membership = await prisma.$transaction((transaction) => ensureEffectiveMembership(transaction, customerUserId, now));
   const customer = await prisma.$transaction((transaction) => ensureBenefitGroup(transaction, customerUserId, now));
   const benefitGroup = await prisma.benefitGroup.findUniqueOrThrow({ where: { id: customer.benefitGroupId } });
   const rollingStart = membershipUsageStart(membership, now);
@@ -224,6 +232,9 @@ export async function getMembershipSummary(customerUserId: string, now = new Dat
     : Math.max(0, entitlements.rollingSpotCheckLimit - rollingSpotChecks);
   return {
     plan,
+    version: membership.version,
+    entitlementSource: membership.entitlementSource,
+    adminGrant: membership.entitlementSource === "ADMIN" ? { expiresAt: membership.adminGrant!.expiresAt, permanent: membership.adminGrant!.expiresAt === null } : null,
     emailVerified: Boolean(customer.emailVerifiedAt),
     benefitGroupId: customer.benefitGroupId,
     status: membership.status,
@@ -309,7 +320,7 @@ export async function getPricingUnitDetail(customerUserId: string, pricingUnitId
   });
   if (!pricingUnit) return null;
 
-  const membership = await prisma.membershipSubscription.findUnique({ where: { customerUserId } });
+  const membership = await findEffectiveMembership(prisma, customerUserId);
   const historyCutoff = membership ? membershipHistoryCutoff(membership) : new Date(Date.now() - 30 * 86_400_000);
 
   const [recentObservations, latestCheck] = await Promise.all([
@@ -347,7 +358,7 @@ export async function getPricingUnitDetail(customerUserId: string, pricingUnitId
 
 export async function addPricingUnitFromCheck(customerUserId: string, priceCheckId: string, now = new Date()) {
   const pricingUnitId = await runMembershipTransaction(async (transaction) => {
-    const membership = await ensureFreeMembership(transaction, customerUserId, now);
+    const membership = await ensureEffectiveMembership(transaction, customerUserId, now);
     const customer = await ensureBenefitGroup(transaction, customerUserId, now);
     if (!customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
     if (!membershipIsServiceable(membership.status, membership.graceEndsAt, now, membership.plan === "FREE" ? null : membership.currentPeriodEnd)) throw new MembershipAccessError("MEMBERSHIP_INACTIVE");
@@ -393,7 +404,7 @@ export async function setPricingUnitActive(customerUserId: string, pricingUnitId
   return runMembershipTransaction(async (transaction) => {
     const customer = await transaction.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
     if (active && !customer.emailVerifiedAt) throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
-    const membership = await ensureFreeMembership(transaction, customerUserId);
+    const membership = await ensureEffectiveMembership(transaction, customerUserId, now);
     const pricingUnit = await transaction.customerPricingUnit.findFirst({ where: { id: pricingUnitId, customerUserId } });
     if (!pricingUnit) return null;
     if (!active) {
@@ -426,21 +437,7 @@ export function membershipQueuePriority(plan: MembershipPlan): number {
   return membershipEntitlements[plan].queuePriority;
 }
 
-export function membershipHistoryCutoff(input: {
-  plan: MembershipPlanId;
-  status: MembershipSubscriptionStatus;
-  currentPeriodEnd: Date | null;
-  updatedAt?: Date;
-  historyGraceUntil?: Date | null;
-  historyGraceCutoff?: Date | null;
-}, now = new Date()): Date {
-  const planCutoff = new Date(now.getTime() - membershipEntitlements[input.plan].historyRetentionDays * 86_400_000);
-  if (input.historyGraceUntil && input.historyGraceUntil > now && input.historyGraceCutoff && input.historyGraceCutoff < planCutoff) return input.historyGraceCutoff;
-  if (input.status !== "CANCELLED") return planCutoff;
-  const paidPeriodEnd = input.currentPeriodEnd ?? input.updatedAt ?? now;
-  const readOnlyAccessEndsAt = new Date(paidPeriodEnd.getTime() + 30 * 86_400_000);
-  return now <= readOnlyAccessEndsAt ? planCutoff : new Date(now.getTime() + 1);
-}
+export { membershipHistoryCutoff } from "@tymra/domain";
 
 export function stripeSubscriptionStatus(status: string): MembershipSubscriptionStatus {
   switch (status) {

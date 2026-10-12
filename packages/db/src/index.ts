@@ -17,6 +17,7 @@ export * from "./address-identities";
 export * from "./funnel-analytics";
 export * from "./jobs";
 export * from "./membership-usage";
+export * from "./admin-membership";
 export * from "./security";
 export * from "./service-backfill";
 export * from "./service-mapping";

@@ -1,5 +1,6 @@
 import { getEnvironment } from "@tymra/config";
 import type { Prisma, PriceCheck, StayQuery } from "@tymra/db";
+import { findEffectiveMembership } from "@tymra/db";
 import { memberStrategySchema, type MemberStrategy } from "@tymra/domain/member-strategy";
 
 function pricingRules(strategy: MemberStrategy) {
@@ -17,7 +18,7 @@ export async function findFreshMemberResult(tx: Prisma.TransactionClient, check:
     orderBy: { dataLastCheckedAt: "desc" }, include: { insights: true },
   });
   if (!result) return null;
-  const membership = await tx.membershipSubscription.findUnique({ where: { customerUserId: check.customerUserId } });
+  const membership = await findEffectiveMembership(tx, check.customerUserId, now);
   const unit = await tx.customerPricingUnit.findUnique({ where: { customerUserId_sellableUnitId: { customerUserId: check.customerUserId, sellableUnitId: check.unitId } } });
   const currentStrategy = memberStrategySchema.parse(["PRO", "PORTFOLIO"].includes(membership?.plan ?? "FREE") ? unit?.strategy ?? {} : {});
   const payload = result.payload && typeof result.payload === "object" && !Array.isArray(result.payload) ? result.payload : {};

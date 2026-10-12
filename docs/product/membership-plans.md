@@ -243,10 +243,21 @@ Every Admin mutation requires an explicit reason, confirmation for high-impact a
 
 - reveal or regenerate a customer's Magic Link, session token, API secret, webhook secret or payment credential;
 - impersonate a customer or bypass ownership checks through the customer UI;
-- arbitrarily grant a paid plan, change Stripe financial truth, reset usage or extend history; reconciliation uses the linked subscription and configured Price, and a duplicate usage correction requires evidence of the same original request while retaining both ledger rows;
+- change Stripe financial truth, reset usage or arbitrarily extend history; financial reconciliation uses the linked subscription and configured Price, and a duplicate usage correction requires evidence of the same original request while retaining both ledger rows;
 - delete legally required financial/audit records or raw evidence outside the applicable retention workflow.
 
 Required operations routes are `/admin/customers`, `/admin/customers/{customerId}`, `/admin/memberships`, and `/admin/billing-events`. Existing Admin session and origin isolation apply.
+
+#### Administrator-granted entitlements (approved 2026-10-12)
+
+- Customer detail offers a dedicated grant, adjustment and revocation form. It requires a preview, explicit confirmation and a 3–1000-character reason. The grant selects Host, Pro or Portfolio, an allowed integer capacity, and either no expiry or an inclusive New Zealand expiry date.
+- A separate `AdminMembershipGrant` stores service rights. The financial subscription, Stripe IDs, customer password/session, email verification, risk restrictions, Free benefit claims and usage ledgers remain unchanged. The first version accepts new grants only for active Free accounts without a linked subscription or pending checkout/change; suspended accounts may have an existing grant revoked. Deleted accounts cannot receive grants.
+- Capacity follows the normal tier minimums (Host 1 or 5+, Pro 20+, Portfolio 50+) and the dedicated `MEMBERSHIP_ADMIN_GRANT_CAPACITY_LIMIT`, capped at 200. This administrator limit is separate from the ordinary purchase gate of 50. The explicitly authorised production account may receive Portfolio 100 with no expiry; granting capacity is not a 100-object collection/load acceptance or an instruction to start collecting.
+- Web and Worker resolve the same effective plan, capacity, strategy, history, priority and quotas. Nonbillable extra-check allowances use New Zealand calendar months. Editing or regranting does not reset existing usage. Feature launch gates, email verification and collection restrictions continue to apply.
+- Customer billing shows administrator-granted rights, capacity, expiry/no expiry and no monthly charge. Checkout, Portal and renewal/change actions reject an active grant; revoke it before starting a paid subscription. No grant creates a Stripe invoice/payment, sends email or changes any launch flag.
+- Reducing capacity requires an owned retained-object selection if occupied slots exceed the new limit. Other objects are deactivated and their safely cancellable pending collection is cancelled without deleting units or results. Expiry/revocation stops monitoring, restores the underlying Free rights and preserves previous-tier history for a 30-day read grace; the customer must explicitly choose a Free object afterwards.
+- Mutations take a customer lock, check the displayed entitlement version and an idempotency key, and append an immutable actor/customer/before/after/reason/time/correlation audit event. Expiry is checked before service mutations and by Worker scheduling/retention. Approved account deletion also revokes the grant.
+
 Privacy support uses `/admin/data-requests`: exports are encrypted and become completed only after an authenticated owner download; deletion cancels pending delivery, anonymizes account and linked recipient identity, revokes sessions and units, and requires billing reconciliation plus a quiescent request pipeline. Suspended, deleted or cancelled owners cannot be restarted through service recovery. Admin cannot mark email as verified or impersonate the customer.
 
 ### Membership observability and notification policy
@@ -312,6 +323,7 @@ The membership system cannot be described as complete until all applicable rows 
 | `MEM-BILL-001` | Checkout, Portal, upgrade, downgrade, cancel, resume, grace and webhook reconciliation pass signed/idempotent Stripe integration tests. |
 | `MEM-RET-001` | History, raw evidence, auth, billing and deletion retention are enforced independently for all lifecycle transitions. |
 | `MEM-OPS-001` | Admin can support customer, subscription, session, reconciliation and deletion workflows without impersonation or secret exposure; every mutation is audited. |
+| `MEM-OPS-002` | Admin grants, adjusts and revokes nonbillable plan/capacity rights with explicit duration, reason, preview, ownership, concurrency/idempotency and immutable audit; effective rights and expiry are consistent in Web and Worker. |
 | `MEM-OBS-001` | Privacy-safe membership, billing, queue, cost and lifecycle telemetry supports production alerts and plan economics without becoming an authority for entitlements. |
 | `MEM-A11Y-001` | EN/ZH desktop and 320/390px mobile flows pass keyboard, focus, semantic, reduced-motion and serious/critical accessibility checks. |
 | `MEM-E2E-001` | A new Free customer and a returning customer complete end-to-end flows; Host/Pro/Portfolio entitlements and every blocked/gated state have automated acceptance. |

@@ -24,7 +24,7 @@ import { withRedisLockWait } from "@tymra/queue";
 
 import { checkAccessHash, deriveCheckAccessKey } from "./check-access";
 import { queuePriceCheckEmail } from "./email-deliveries";
-import { ensureFreeMembership, membershipQueuePriority, reserveSpotCheck, runMembershipTransaction } from "./membership/membership";
+import { ensureEffectiveMembership, membershipQueuePriority, reserveSpotCheck, runMembershipTransaction } from "./membership/membership";
 import { copyFreshMemberResult, findFreshMemberResult } from "./membership/cached-checks";
 import { benchmarkSlotCandidates, convertBenchmarkSlot } from "./membership/benchmark-conversion";
 import { bindMemberRiskContext, enforceMemberRisk, memberQuerySignature, recordMemberAction, type MemberRequestIdentity } from "./membership/member-risk";
@@ -448,7 +448,7 @@ export async function confirmQuery(checkId: string, inputValue: unknown, risk?: 
     if (check.analysisType === "LISTING_PRICING" && ["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
     const query = await transaction.stayQuery.create({ data: { ...input, nights } });
     const querySignature = memberQuerySignature({ checkIn: input.checkIn.toISOString(), checkOut: input.checkOut.toISOString(), adults: input.adults, children: input.children, units: input.units, currency: input.currency, propertyId: check.propertyId });
-    const membership = check.customerUserId ? await ensureFreeMembership(transaction, check.customerUserId) : null;
+    const membership = check.customerUserId ? await ensureEffectiveMembership(transaction, check.customerUserId) : null;
     const conversionId = typeof inputValue === "object" && inputValue !== null && "convertBenchmarkSlotId" in inputValue ? inputValue.convertBenchmarkSlotId : undefined;
     if (typeof conversionId === "string" && conversionId) {
       if (!check.customerUserId || check.analysisType !== "LISTING_PRICING" || membership?.billingVersion === "legacy-2026") throw new Error("BENCHMARK_CONVERSION_NOT_AVAILABLE");

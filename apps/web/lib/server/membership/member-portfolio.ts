@@ -4,7 +4,7 @@ import { prisma, type Prisma } from "@tymra/db";
 import { entitlementsForMembership, memberReviewRange, memberStrategySchema, membershipIsServiceable } from "@tymra/domain";
 import { z } from "zod";
 import { membershipFeatureLaunchAvailability } from "./stripe-billing";
-import { membershipHistoryCutoff, runMembershipTransaction } from "./membership";
+import { ensureEffectiveMembership, membershipHistoryCutoff, runMembershipTransaction } from "./membership";
 
 export class MemberFeatureError extends Error {
   constructor(readonly code: "PLAN_REQUIRED" | "FEATURE_NOT_LAUNCHED" | "NOT_FOUND" | "CONFLICT" | "MEMBERSHIP_INACTIVE", message: string) { super(message); }
@@ -12,10 +12,11 @@ export class MemberFeatureError extends Error {
 const object = (value: unknown) => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 export async function requireMemberFeature(customerUserId: string, feature: "portfolio" | "alerts", tx: Prisma.TransactionClient = prisma) {
-  const membership = await tx.membershipSubscription.findUnique({ where: { customerUserId }, include: { customerUser: true } });
+  const membership = tx === prisma ? await prisma.$transaction(transaction => ensureEffectiveMembership(transaction, customerUserId)) : await ensureEffectiveMembership(tx, customerUserId);
+  const customer = await tx.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
   if (!membership || (feature === "portfolio" ? !entitlementsForMembership(membership).portfolioView : membership.plan === "FREE")) throw new MemberFeatureError("PLAN_REQUIRED", feature === "portfolio" ? "Pro or Portfolio required." : "Host or higher required.");
   if (!membershipFeatureLaunchAvailability()[feature]) throw new MemberFeatureError("FEATURE_NOT_LAUNCHED", "This feature has not passed the launch gate.");
-  if (membership.customerUser.status !== "ACTIVE" || !membership.customerUser.emailVerifiedAt || !membershipIsServiceable(membership.status, membership.graceEndsAt, new Date(), membership.plan === "FREE" ? null : membership.currentPeriodEnd)) throw new MemberFeatureError("MEMBERSHIP_INACTIVE", "An active, verified membership is required.");
+  if (customer.status !== "ACTIVE" || !customer.emailVerifiedAt || !membershipIsServiceable(membership.status, membership.graceEndsAt, new Date(), membership.plan === "FREE" ? null : membership.currentPeriodEnd)) throw new MemberFeatureError("MEMBERSHIP_INACTIVE", "An active, verified membership is required.");
   return membership;
 }
 

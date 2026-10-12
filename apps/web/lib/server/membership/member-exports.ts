@@ -1,7 +1,7 @@
 import { getEnvironment } from "@tymra/config";
 import { decryptPersonalData, encryptPersonalData, prisma, type Prisma } from "@tymra/db";
 import ExcelJS from "exceljs";
-import { ensureFreeMembership, membershipHistoryCutoff, MembershipAccessError, reserveMembershipOperation, runMembershipTransaction } from "./membership";
+import { ensureEffectiveMembership, membershipHistoryCutoff, MembershipAccessError, reserveMembershipOperation, runMembershipTransaction } from "./membership";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const columns = ["check_id", "status", "property", "unit", "check_in", "check_out", "source", "amount_minor", "currency", "price_basis", "fee_completeness", "source_url", "as_of", "price_result_status", "recommendation_status", "timezone", "created_at"];
@@ -15,7 +15,7 @@ export async function createMemberExport(customerUserId: string, idempotencyKey:
     if (existing && record(existing.metadata).exportSnapshot) return { id: existing.id, createdAt: existing.createdAt };
     const customer = await tx.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
     if (!customer.emailVerifiedAt || customer.status !== "ACTIVE") throw new MembershipAccessError("EMAIL_VERIFICATION_REQUIRED");
-    const membership = await ensureFreeMembership(tx, customerUserId, now);
+    const membership = await ensureEffectiveMembership(tx, customerUserId, now);
     if (exitExport && (!membership.historyGraceUntil || membership.historyGraceUntil <= now)) throw new Error("Exit export is available during the history grace period.");
     const usage = exitExport ? await tx.usageLedger.create({ data: { customerUserId, operationKey, action: "MEMBER_EXIT_EXPORT", subjectType: "ACCOUNT", subjectHash: customerUserId, metadata: {} } }) : (await reserveMembershipOperation({ customerUserId, idempotencyKey, action: "MEMBER_EXPORT", now, transaction: tx })).usage;
     const checks = await tx.priceCheck.findMany({ where: { customerUserId, status: { not: "ARCHIVED" }, createdAt: { gte: membershipHistoryCutoff(membership, now) } }, orderBy: { createdAt: "desc" }, take: 5000,

@@ -129,7 +129,7 @@ export function entitlementsForMembership(membership: MembershipCapacityState): 
   }
   const capacity = membershipCapacity(membership.plan, membership.purchasedCapacity ?? undefined);
   const perSlot = { FREE: 1, HOST: 10, PRO: 12, PORTFOLIO: 15 }[membership.plan];
-  return { ...base, activePricingUnitLimit: capacity, monthlyPriceMinor: membershipMonthlyPrice(membership.plan, capacity), rollingSpotCheckLimit: membership.periodSpotCheckLimit ?? capacity * perSlot };
+  return { ...base, activePricingUnitLimit: capacity, monthlyPriceMinor: membership.billingVersion === "admin-grant-2026" ? 0 : membershipMonthlyPrice(membership.plan, capacity), rollingSpotCheckLimit: membership.periodSpotCheckLimit ?? capacity * perSlot };
 }
 
 export function proratedQueryAllowance(input: { currentLimit: number; oldFullLimit: number; newFullLimit: number; periodStart: Date; periodEnd: Date; changedAt: Date }): number {

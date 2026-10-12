@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { addressIdentityPersistentCache, encryptPersonalData, enqueueJob, hashOpaqueToken, hashPersonalIdentifier, prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordQualityAssessments, sourceHasCapability, type WorkerAnalysisRequest, type WorkerAnalysisStatus } from "@tymra/db";
+import { addressIdentityPersistentCache, encryptPersonalData, enqueueJob, findEffectiveMembership, hashOpaqueToken, hashPersonalIdentifier, prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, recordQualityAssessments, sourceHasCapability, type WorkerAnalysisRequest, type WorkerAnalysisStatus } from "@tymra/db";
 import { buildDailyPriceDates, buildNationalDateBasket, createQuerySignature, membershipEntitlements, NEW_ZEALAND_TIME_ZONE, addNzCalendarDays, nzDateStorageValue, nzDateKey } from "@tymra/domain";
 import { AdapterError, type AdapterContext, type OtaAdapter, type ResolvedOtaListing } from "@tymra/providers/types";
 import { getOtaAdapterForInput, otaAdapters } from "@tymra/providers/ota-adapters";
@@ -255,9 +255,9 @@ export async function ensureQueryPlan(this: WorkerContext, request: WorkerAnalys
   if (!request.targetListingId || !request.sellableUnitId) throw new WorkerRequestError("UNIT_UNCONFIRMED", "A specific Sellable Unit and Listing are required", 409);
   const customerPlan = request.priceCheckId ? await prisma.priceCheck.findUnique({
     where: { id: request.priceCheckId },
-    select: { stayQuery: true, customerUser: { select: { membership: { select: { plan: true } } } } },
+    select: { stayQuery: true, customerUserId: true, customerUser: { select: { id: true } } },
   }) : null;
-  const planId = customerPlan?.customerUser?.membership?.plan ?? "HOST";
+  const planId = customerPlan?.customerUserId ? (await findEffectiveMembership(prisma, customerPlan.customerUserId))?.plan ?? "FREE" : "HOST";
   const dailyHorizonDays = membershipEntitlements[planId].dailyPriceCheckHorizonDays;
   const confirmedQuery = customerPlan?.customerUser ? customerPlan.stayQuery : null;
   const dateBasket = request.isPreview ? buildNationalDateBasket(new Date()).slice(0, 2) : confirmedQuery ? [{ checkIn: nzDateKey(confirmedQuery.checkIn), checkOut: nzDateKey(confirmedQuery.checkOut) }] : buildDailyPriceDates(new Date(), dailyHorizonDays);

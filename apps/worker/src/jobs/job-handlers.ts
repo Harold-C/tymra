@@ -1,5 +1,5 @@
 import { type Environment } from "@tymra/config";
-import { prisma, processHistoricalBackfill, reconcileMembershipUsage, type EmailType, type Job } from "@tymra/db";
+import { prisma, processHistoricalBackfill, reconcileMembershipUsage, expireAdminMembershipGrant, findEffectiveMembership, type EmailType, type Job } from "@tymra/db";
 import { WorkerService } from "../services/worker-service";
 import { enqueueDueMembershipAnalyses } from "../membership/scheduler";
 import { acknowledgePersistedArgusResults, pollArgusExecution } from "../services/argus-orchestrator";
@@ -22,11 +22,14 @@ export async function handleJob(job: Job, environment: Environment): Promise<voi
 
 async function executeJob(job: Job, environment: Environment): Promise<void> {
   if (job.priceCheckId) {
-    const check = await prisma.priceCheck.findUnique({ where: { id: job.priceCheckId }, select: { status: true, requestOrigin: true, unitId: true, customerUserId: true, customerUser: { select: { status: true, emailVerifiedAt: true, membership: true } } } });
+    const check = await prisma.priceCheck.findUnique({ where: { id: job.priceCheckId }, select: { status: true, requestOrigin: true, unitId: true, createdAt: true, customerUserId: true, customerUser: { select: { status: true, emailVerifiedAt: true } } } });
     if (!check || ["CANCELLED", "EXPIRED", "ARCHIVED"].includes(check.status) || check.customerUser?.status === "DELETED") return;
     if (["RATE_COLLECTION", "CATALOG_DISCOVERY"].includes(job.type) && check.customerUser) {
-      const membership = check.customerUser.membership;
-      const canCollect = check.customerUser.status === "ACTIVE" && check.customerUser.emailVerifiedAt && membership && membershipIsServiceable(membership.status, membership.graceEndsAt, new Date(), membership.plan === "FREE" ? null : membership.currentPeriodEnd);
+      await prisma.$transaction(tx => expireAdminMembershipGrant(tx, check.customerUserId!));
+      const membership = await findEffectiveMembership(prisma, check.customerUserId!);
+      const grantEnd = membership?.adminGrant?.revokedAt ?? membership?.adminGrant?.expiresAt;
+      const endedGrantRequest = membership?.entitlementSource !== "ADMIN" && grantEnd && check.createdAt >= membership!.adminGrant!.createdAt && check.createdAt <= grantEnd;
+      const canCollect = !endedGrantRequest && check.customerUser.status === "ACTIVE" && check.customerUser.emailVerifiedAt && membership && membershipIsServiceable(membership.status, membership.graceEndsAt, new Date(), membership.plan === "FREE" ? null : membership.currentPeriodEnd);
       const activeSlot = check.requestOrigin !== "MEMBERSHIP_SCHEDULE" || await prisma.customerPricingUnit.findFirst({ where: { customerUserId: check.customerUserId!, sellableUnitId: check.unitId!, active: true } });
       if (!canCollect || !activeSlot) {
         await prisma.priceCheck.update({ where: { id: job.priceCheckId }, data: { status: "CANCELLED" } });

@@ -50,6 +50,9 @@ export type MembershipPlan = "FREE" | "HOST" | "PRO" | "PORTFOLIO";
 
 export type MembershipSummary = {
   plan: MembershipPlan;
+  version?: number;
+  entitlementSource?: "ADMIN" | "SUBSCRIPTION";
+  adminGrant?: { expiresAt: string | null; permanent: boolean } | null;
   status: string;
   serviceable: boolean;
   cancelAtPeriodEnd: boolean;

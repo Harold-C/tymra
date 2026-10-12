@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   executionUpdate: vi.fn(),
   executionUpdateMany: vi.fn(),
   parentFind: vi.fn(),
+  effectiveMembership: vi.fn(),
   parentFindMany: vi.fn(),
   parentUpdateMany: vi.fn(),
   collectionRunFindMany: vi.fn(),
@@ -59,6 +60,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 vi.mock("@tymra/db", () => ({
   Prisma: { DbNull: "DbNull" },
   enqueueJob: mocks.enqueueJob,
+  findEffectiveMembership: mocks.effectiveMembership,
   prisma: {
     argusExecution: {
       findUnique: mocks.executionFind,
@@ -253,20 +255,22 @@ describe("durable Argus orchestration", () => {
     });
   });
 
-  it("does not submit another member capture when the plan noVNC capacity is occupied", async () => {
+  it.each([{ plan: "FREE", capacity: 1 }, { plan: "HOST", capacity: 1 }, { plan: "PRO", capacity: 2 }, { plan: "PORTFOLIO", capacity: 4 }])("does not submit another member capture when effective $plan noVNC capacity is occupied", async ({ plan, capacity }) => {
     mocks.executionFind.mockResolvedValue(null);
     mocks.parentFind.mockResolvedValue({
       status: "PENDING",
       priceCheck: { customerUserId: "customer-1", customerUser: { membership: { plan: "FREE" } } },
     });
     mocks.parentFindMany.mockResolvedValue([{ id: "parent-1" }]);
-    mocks.executionFindMany.mockResolvedValue([{
+    // Paid rights may come from an administrator while the financial row stays Free.
+    mocks.effectiveMembership.mockResolvedValue({ plan, entitlementSource: plan === "FREE" ? "SUBSCRIPTION" : "ADMIN" });
+    mocks.executionFindMany.mockResolvedValue(Array.from({ length: capacity }, () => ({
       result: {
         operator_action: {
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
       },
-    }]);
+    })));
 
     const response = await captureBrowserTaskWithDurableArgus(environment, input, context);
 

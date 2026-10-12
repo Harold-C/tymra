@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getEnvironment } from "@tymra/config";
-import { decryptPersonalData, encryptPersonalData, prisma } from "@tymra/db";
+import { decryptPersonalData, encryptPersonalData, findEffectiveMembership, prisma } from "@tymra/db";
 import { redactServicePayload } from "./service-payload";
 import { ServiceRecoveryError, writeServiceAudit } from "./service-recovery";
 
@@ -16,14 +16,15 @@ export async function prepareCustomerExport(requestId: string, adminId: string, 
     await tx.$queryRaw`SELECT id FROM "CustomerUser" WHERE id = ${customerUserId} FOR UPDATE`;
     const customer = await tx.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
     if (customer.status === "DELETED") throw new ServiceRecoveryError("EXPORT_NOT_AVAILABLE");
-    const [membership, units, checks, usage, decisions, feedback] = await Promise.all([
-      tx.membershipSubscription.findUnique({ where: { customerUserId }, select: { plan: true, status: true, pendingPlan: true, currentPeriodStart: true, currentPeriodEnd: true, cancelAtPeriodEnd: true, version: true } }),
+    const [effective, units, checks, usage, decisions, feedback] = await Promise.all([
+      findEffectiveMembership(tx, customerUserId),
       tx.customerPricingUnit.findMany({ where: { customerUserId }, include: { sellableUnit: { select: { officialName: true, property: { select: { canonicalName: true } } } } } }),
       tx.priceCheck.findMany({ where: { customerUserId }, select: { id: true, rawInput: true, status: true, createdAt: true, updatedAt: true, analysisType: true, rulesVersion: true, stayQuery: true, resultVersions: { select: { version: true, status: true, generatedAt: true, analysisVersion: true, confidence: true, payload: true } } } }),
       tx.membershipUsage.findMany({ where: { customerUserId }, select: { id: true, type: true, priceCheckId: true, pricingUnitId: true, countedAt: true, metadata: true, correction: { select: { originalUsageId: true, reason: true, createdAt: true } } } }),
       tx.membershipRiskCase.findMany({ where: { customerUserId }, select: { id: true, status: true, action: true, outcome: true, reasonCodes: true, appealReason: true, createdAt: true, resolvedAt: true } }),
       tx.feedback.findMany({ where: { priceCheck: { customerUserId } }, select: { type: true, comment: true, createdAt: true, priceCheckId: true } }),
     ]);
+    const membership = effective ? { plan: effective.plan, status: effective.status, pendingPlan: effective.pendingPlan, currentPeriodStart: effective.currentPeriodStart, currentPeriodEnd: effective.currentPeriodEnd, cancelAtPeriodEnd: effective.cancelAtPeriodEnd, version: effective.version, purchasedCapacity: effective.purchasedCapacity, entitlementSource: effective.entitlementSource, grantExpiresAt: effective.entitlementSource === "ADMIN" ? effective.adminGrant!.expiresAt : null } : null;
     const environment = getEnvironment();
     const now = new Date();
     const data = JSON.stringify({ format: "tymra-personal-data-v1", requestId, generatedAt: now.toISOString(), account: { id: customerUserId, email: decryptPersonalData(customer.encryptedEmail, environment.DATA_ENCRYPTION_KEY), locale: customer.locale, status: customer.status, emailVerifiedAt: customer.emailVerifiedAt, marketingConsent: customer.marketingConsent, createdAt: customer.createdAt }, membership, pricingUnits: units, requests: redactServicePayload(checks, 0, false), usage: redactServicePayload(usage, 0, false), riskDecisions: decisions, feedback: redactServicePayload(feedback, 0, false) }, null, 2);

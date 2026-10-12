@@ -15,6 +15,18 @@
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
 
+## 2026-10-12 管理员授予权益本地实现
+
+用户指定普通账户的目标为 Portfolio、100 个房源、长期有效。新增独立授权记录、
+带原因的预览/保存/调整/撤销入口，以及 Web/Worker 共用的有效权益解析；财务订阅和用量保留。
+普通购买上限 50 与管理员容量上限分开。邮箱验证、采集、发信及高级能力开放门槛继续保持。
+
+独立 55442/56392 测试库的 15 项新增数据库/API/Worker 检查通过，包括管理员/Origin、
+范围与版本、幂等/并发、真实 100 对象边界、缩容归属、撤销、到期、历史和 Portfolio 调度。
+五项 NZ 自然月/截止日/永久授权领域测试通过。实际 EN/ZH 桌面与手机授权/撤销四流程通过，
+320/390/1440px 无横向溢出，axe serious/critical 为零；测试专用收据与截图保存在本机运行目录。
+此处只记录本地验证。固定候选完整 CI、实际生产恢复/发布以及指定账户授予另行核验后更新。
+
 ## 2026-10-12 首发会员与价格生产发布及验证
 
 用户明确授权复查后发布，同时继续只允许其 IP 访问、发信服务留空。
@@ -1102,6 +1114,7 @@ The statuses below separate existing implementation from production acceptance. 
 | `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | New tier-pricing Fake-Stripe/SQL lifecycle and browser fixtures pass; 2026-10-12 code deployed with paid switches closed. Historical Sandbox/37 webhook evidence and later hosted Checkout timeout do not accept the new real-provider lifecycle | `deployed_code_real_payment_not_accepted` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `development_verified` |
 | `MEM-OPS-001` | Factual billing reconciliation, proven duplicate usage correction, session/risk/account support and owner-delivered export/deletion | 2026-10-09 support-page acceptance and 2026-10-12 designated Free account are recorded separately; real Stripe/customer support writes remain separate | `deployed_real_provider_acceptance_pending` |
+| `MEM-OPS-002` | Audited nonbillable Admin plan/capacity/duration grant, adjustment, revocation and shared effective rights | 2026-10-12 isolated grant/expiry/ownership/concurrency/idempotency/100-object/Worker checks and EN/ZH desktop/mobile grant/revoke flows pass; designated production grant remains pending | `development_verified_production_pending` |
 | `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | 2026-10-09 production Admin pages, version-bound worker/scheduler heartbeats and dependency readiness passed; existing failed-job alerts remain visible. Alert delivery/injection and real-member operating acceptance remain | `production_runtime_verified_alert_delivery_pending` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; dated 2026-08-12 candidate result | `development_verified` |
 | `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | 2026-10-12 fixed-candidate 61 browser scenarios and existing private-production Free sign-in/account/sign-out pass; new-account email, real paid lifecycle and complete live member operations remain separate gates | `private_free_verified_complete_member_pending` |
