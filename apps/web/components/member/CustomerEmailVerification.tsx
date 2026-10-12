@@ -7,7 +7,7 @@ import { useState } from "react";
 const messages = {
   en: {
     title: "Verify your account email",
-    body: "Your Free account is ready. Verify your email before starting a price check. You can sign out and sign back in with your password.",
+    body: "Your account is ready. Verify your email before starting a price check. You can sign out and sign back in with your password.",
     sent: "Verification email sent. Check your inbox and spam folder, then open the link to verify your email.",
     failed: "Your account was created, but the verification email could not be sent. You can request another email here.",
     unavailable: "The verification email could not be sent. Please try again later.",
@@ -18,7 +18,7 @@ const messages = {
   },
   zh: {
     title: "验证账户邮箱",
-    body: "你的 Free 账户已建立。开始价格检查前，请先验证邮箱。你可以退出后随时使用密码重新登录。",
+    body: "你的账户已建立。开始价格检查前，请先验证邮箱。你可以退出后随时使用密码重新登录。",
     sent: "验证邮件已发送，请检查收件箱及垃圾邮件，并点击邮件中的链接完成验证。",
     failed: "账户已建立，但验证邮件未能发送。你可以在这里重新获取验证邮件。",
     unavailable: "验证邮件暂时无法发送，请稍后重试。",
