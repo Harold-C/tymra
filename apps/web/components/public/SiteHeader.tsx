@@ -29,6 +29,7 @@ export type SiteHeaderCopy = {
   pricing: string;
   methodology: string;
   faq: string;
+  contact: string;
   cta: string;
   language: string;
   languageAria: string;
@@ -78,6 +79,7 @@ export function SiteHeader({
       path: `/${locale}/faq`,
       section: isHome ? "faq" : undefined,
     },
+    { label: copy.contact, href: `/${locale}/contact`, path: `/${locale}/contact` },
   ];
 
   useEffect(() => {
@@ -140,16 +142,17 @@ export function SiteHeader({
   return (
     <header
       className={clsx(
-        "sticky top-0 z-[90] border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-200",
-        isScrolled || menuOpen || !isHome
+        "z-[90] border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-200",
+        isHome ? "relative border-b-0" : "sticky top-0",
+        menuOpen || !isHome
           ? "border-[#DCE7F5]/80 bg-white/[0.94] shadow-[0_8px_28px_rgba(15,23,42,0.055)] backdrop-blur-xl supports-[backdrop-filter]:bg-white/[0.84]"
           : "border-transparent bg-transparent",
       )}
     >
       <div
         className={clsx(
-          "mx-auto grid h-[82px] w-full max-w-[1440px] grid-cols-[1fr_auto] items-center px-6 transition-[height] duration-200 md:h-[86px] md:px-[30px] min-[1440px]:grid-cols-[minmax(152px,1fr)_auto_minmax(370px,1fr)] 2xl:max-w-[1560px]",
-          isScrolled && "min-[1440px]:h-[76px]",
+          "mx-auto grid h-[82px] w-full max-w-[1440px] grid-cols-[1fr_auto] items-center px-6 transition-[height] duration-200 md:h-[86px] md:px-[30px] min-[1440px]:grid-cols-[152px_minmax(0,1fr)_auto] min-[1440px]:gap-5 2xl:max-w-[1560px]",
+          isHome ? "md:h-[88px]" : isScrolled && "min-[1440px]:h-[76px]",
         )}
       >
         <Link
@@ -170,7 +173,7 @@ export function SiteHeader({
         <nav
           aria-label={copy.primaryNavigation}
           className={clsx(
-            "hidden items-center gap-1 justify-self-center text-[0.94rem] font-semibold text-[#071A3D] min-[1440px]:flex",
+            "hidden items-center gap-1 justify-self-end whitespace-nowrap text-[0.94rem] font-semibold text-[#071A3D] min-[1440px]:flex",
             locale === "zh" && "tracking-[0.012em]",
           )}
         >
@@ -200,7 +203,7 @@ export function SiteHeader({
           })}
         </nav>
 
-        <div className="hidden items-center justify-self-end min-[1440px]:flex">
+        <div className="hidden items-center justify-self-end whitespace-nowrap min-[1440px]:flex">
           <span aria-hidden="true" className="mr-3 h-7 w-px bg-[#D8E3F1]/80" />
           <div className="flex items-center gap-0.5">
             <LanguageSelector copy={copy} locale={locale} />
