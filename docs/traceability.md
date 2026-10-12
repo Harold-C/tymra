@@ -1,7 +1,7 @@
 # Tymra 实现与验收追踪
 
-更新：2026-10-12。实际生产 Tymra 为 `ec71a710`／`membership-launch-20261012`。
-首发会员、容量价格及前序注册处理已按授权发布；客户网站继续仅允许既有批准 IP，
+更新：2026-10-12。实际生产 Tymra 为 `5b174fb7`／`admin-grants-20261012-2`。
+管理员授予权益已发布，指定普通账户已获 Portfolio、100 个房源、无到期日授权；客户网站继续仅允许批准 IP，
 `SMTP_URL` 留空、`EMAIL_PROVIDER=log`，付费及新查询开关保持关闭。发布和实际登录证据见下节。
 此前 Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复及原失败窗口两轮关联回补验收均已完成，
 原故障单已正式 RESOLVED，来源为 enabled／PRODUCTION／HEALTHY；
@@ -15,17 +15,48 @@
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
 
+## 2026-10-12 管理员授予权益生产发布与指定账户授权
+
+最终固定源为 `5b174fb742f0361c93a8d0460467e4233008c0c6`，标签
+`tymra-admin-grants-20261012-2`；实际四应用镜像为
+`sha256:7f56a0874c47cf6ae26c6104325ea80fedfe8980e0a93be223b174032806d24d`。
+完整 [CI](https://github.com/Harold-C/tymra/actions/runs/38197889737) 与
+[私有镜像导出](https://github.com/Harold-C/tymra/actions/runs/38205531082) 均通过。
+820 单元、199 数据库/API/Worker 集成、6 项独立空库 OTA、65 浏览器场景通过；
+5 个外部条件单元、默认集成中的 6 OTA 及 1 浏览器条件跳过未计入通过。
+完整检查还包括 lint、557 文件模块边界、类型和生产形态 Web/Worker 构建。
+
+NZ 2026-10-12 的实际结果：
+
+| 项目 | 结果 |
+| --- | --- |
+| 最新备份与配对恢复 | `/srv/apps/tymra/backups/admin-grants-20261012-2-cutover` 的数据库与 1,048 份证据实际恢复；88 原模型与候选 89 模型读取兼容，原业务行、证据内容与权限/属主保持；迁移 43 → 44，仅新增授权表 |
+| 运行与数据 | Web/API/Worker/Scheduler 同一固定镜像；版本心跳、依赖和就绪状态通过。其他生产服务、56 条报价、80/84 计划及既有业务数据保留。当前两个历史失败任务告警保留，没有通过删除或改状态消除 |
+| 真实授权 | 生产 HTTPS 管理员 API 200，唯一指定普通账户获 Portfolio 100、`expiresAt=null`。授权 ID `cmv4t0qpn0001oc0735519tvf`；审计 ID `cmv4t0qq20003oc077ecapzuu`；原财务订阅、客户身份/密码/邮箱验证及其他业务表保持，操作临时管理员会话已撤销 |
+| 真实客户读回 | 密码登录 201、会话/会员 200；有效等级 Portfolio、容量 100、无月费、长期有效，普通购买上限仍 50。EN/ZH 十二个相关页面 200；自助账单操作拒绝 active grant；退出 200 后会话 401。现有内置浏览器实际显示组合版、0/100、管理员授予和长期有效 |
+| 当前 IP | 网络切换后 IPv4 `203.211.78.4` 已在原名单，当前 IPv6 `2401:7000:50e1:6d00:982e:61bc:67e9:2f06/128` 已加到 Cloudflare 与源站；旧批准地址保留。Cloudflare 规则仍为活动/阻止。只重建 Web，镜像/环境/挂载及其他应用保持；非允许边缘/直连/伪造转发地址 403，HTTP ACME 不存在路径 404 |
+| 延后门槛 | `SMTP_URL` 仍空，`EMAIL_PROVIDER=log`；邮箱仍未验证，付费、新查询和高级能力开关保持关闭。授权容量不构成真实 100 对象采集、负载、邮件或支付验收 |
+
+当前 Compose 为 `/srv/apps/tymra/releases/admin-grants-20261012-2/current-ip-compose.json`；
+授权前快照与读回在同发布目录 `grant-before`，追加当前 IP 的原配置保存在 `current-ip-before`。
+回滚镜像 `sha256:f47a0e1b98585f56117bd77fc2bfb4e7b7353ef41bddd5e3304161ddc97a3107`
+及不可变归档、精确回滚配置保留。旧镜像不识别新授权，会暂时按原 Free 权益显示；
+回退时须保留新增授权表/审计与当前 IP 限制，恢复新版本后再核对有效权益。
+恢复证据已持久为 `cmv4sx5rr0001oc2ic1usds87`，临时恢复容器、网络和副本卷已按标签移除。
+受保护收据与线上截图在本机 `runtime/release-candidates/admin-grants-20261012-2`。
+原主工作区 19 项修改/新增文件仍保留，日常开发服务与数据库未被切换。
+
 ## 2026-10-12 管理员授予权益本地实现
 
 用户指定普通账户的目标为 Portfolio、100 个房源、长期有效。新增独立授权记录、
 带原因的预览/保存/调整/撤销入口，以及 Web/Worker 共用的有效权益解析；财务订阅和用量保留。
 普通购买上限 50 与管理员容量上限分开。邮箱验证、采集、发信及高级能力开放门槛继续保持。
 
-独立 55442/56392 测试库的 15 项新增数据库/API/Worker 检查通过，包括管理员/Origin、
+独立 55442/56392 测试库的 16 项新增数据库/API/Worker 检查通过，包括管理员/Origin、
 范围与版本、幂等/并发、真实 100 对象边界、缩容归属、撤销、到期、历史和 Portfolio 调度。
 五项 NZ 自然月/截止日/永久授权领域测试通过。实际 EN/ZH 桌面与手机授权/撤销四流程通过，
 320/390/1440px 无横向溢出，axe serious/critical 为零；测试专用收据与截图保存在本机运行目录。
-此处只记录本地验证。固定候选完整 CI、实际生产恢复/发布以及指定账户授予另行核验后更新。
+此处记录本地验证。账户导航也使用有效权益，相关会话读取回归通过；最终候选与生产结果见上节。
 
 ## 2026-10-12 首发会员与价格生产发布及验证
 
@@ -1114,7 +1145,7 @@ The statuses below separate existing implementation from production acceptance. 
 | `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | New tier-pricing Fake-Stripe/SQL lifecycle and browser fixtures pass; 2026-10-12 code deployed with paid switches closed. Historical Sandbox/37 webhook evidence and later hosted Checkout timeout do not accept the new real-provider lifecycle | `deployed_code_real_payment_not_accepted` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `development_verified` |
 | `MEM-OPS-001` | Factual billing reconciliation, proven duplicate usage correction, session/risk/account support and owner-delivered export/deletion | 2026-10-09 support-page acceptance and 2026-10-12 designated Free account are recorded separately; real Stripe/customer support writes remain separate | `deployed_real_provider_acceptance_pending` |
-| `MEM-OPS-002` | Audited nonbillable Admin plan/capacity/duration grant, adjustment, revocation and shared effective rights | 2026-10-12 isolated grant/expiry/ownership/concurrency/idempotency/100-object/Worker checks and EN/ZH desktop/mobile grant/revoke flows pass; designated production grant remains pending | `development_verified_production_pending` |
+| `MEM-OPS-002` | Audited nonbillable Admin plan/capacity/duration grant, adjustment, revocation and shared effective rights | 2026-10-12 fixed CI, isolated lifecycle/ownership/concurrency/100-object/Worker and browser flows pass; designated Portfolio 100 no-expiry grant audited in production with actual customer readback. Other production grant/edit/revoke/expiry operating cases remain isolated-only | `designated_production_grant_verified_lifecycle_isolated_verified` |
 | `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | 2026-10-09 production Admin pages, version-bound worker/scheduler heartbeats and dependency readiness passed; existing failed-job alerts remain visible. Alert delivery/injection and real-member operating acceptance remain | `production_runtime_verified_alert_delivery_pending` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; dated 2026-08-12 candidate result | `development_verified` |
 | `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | 2026-10-12 fixed-candidate 61 browser scenarios and existing private-production Free sign-in/account/sign-out pass; new-account email, real paid lifecycle and complete live member operations remain separate gates | `private_free_verified_complete_member_pending` |

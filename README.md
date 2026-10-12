@@ -119,6 +119,14 @@ account pages, bilingual pricing, paired recovery and runtime/data readback pass
 paid plans, new Price Checks and advanced launch switches remain disabled; see traceability
 for the exact production image, accepted scope and remaining external gates.
 
+Administrator-granted entitlements were then deployed as `5b174fb7` / `admin-grants-20261012-2`.
+The designated ordinary account has an audited, nonbillable Portfolio grant for 100 objects with
+no expiry. Customer detail now supports grant, adjustment and revocation with reason and review;
+Web/Worker and account navigation resolve the same effective rights. Ordinary purchase capacity
+remains gated at 50. The current IPv6 was added to both existing private allowlists; SMTP, email
+verification and collection/paid feature gates remain deferred. See traceability for actual recovery,
+runtime, authorised mutation, account readback and remaining lifecycle/load acceptance.
+
 The optional `docker-compose.customer.yml` overlay prepares direct Free-account registration,
 password sign-in and account access at `https://tymra.nz/{en,zh}/sign-up` and `/sign-in`.
 It retains hidden discovery and keeps new Price Checks, the anonymous funnel, paid plans,
