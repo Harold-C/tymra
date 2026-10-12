@@ -38,7 +38,8 @@ for (const locale of ["en", "zh"] as const) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${locale} at ${width}px`).toBe(true);
       if (width < 768) {
-        const menu = page.getByRole("button", { name: locale === "zh" ? "账户导航" : "Account navigation" });
+        const menu = page.locator(".customer-account-mobile > summary");
+        await expect(menu).toHaveAttribute("aria-label", locale === "zh" ? "账户导航" : "Account navigation");
         await menu.click(); await expect(menu).toHaveAttribute("aria-expanded", "true");
         await expect(page.locator(".customer-account-mobile-links").getByRole("link", { name: locale === "zh" ? "设置" : "Settings", exact: true })).toBeVisible();
         await page.keyboard.press("Escape"); await expect(menu).toHaveAttribute("aria-expanded", "false");
