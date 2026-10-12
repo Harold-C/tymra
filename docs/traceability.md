@@ -1,7 +1,9 @@
 # Tymra 实现与验收追踪
 
-更新：2026-10-12。实际生产 Tymra 为 `1f87746a`／`christchurch-sports-20261012`。
-Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复及原失败窗口两轮关联回补验收均已完成，
+更新：2026-10-12。实际生产 Tymra 为 `ec71a710`／`membership-launch-20261012`。
+首发会员、容量价格及前序注册处理已按授权发布；客户网站继续仅允许既有批准 IP，
+`SMTP_URL` 留空、`EMAIL_PROVIDER=log`，付费及新查询开关保持关闭。发布和实际登录证据见下节。
+此前 Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复及原失败窗口两轮关联回补验收均已完成，
 原故障单已正式 RESOLVED，来源为 enabled／PRODUCTION／HEALTHY；
 下一次为 NZ 2026-10-19 00:55:54。
 本次上午回补前后均为 80/84 计划开启，其他来源和计划保持本轮进入时的状态。
@@ -13,6 +15,39 @@ Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
 
+## 2026-10-12 首发会员与价格生产发布及验证
+
+用户明确授权复查后发布，同时继续只允许其 IP 访问、发信服务留空。
+从独立会员工作树整合最新 Sports 修复与恢复记录，保留主工作区原有 19 个修改/新增文件，
+没有修改其源码挂载或日常开发数据库。核查中修正了过期测试日期、旧 Pro 容量预期及
+过期住宿日期的页面说明，并新增拒绝过期查询时不创建 Price Check、不扣额、不入队的回归。
+最终固定提交为 `ec71a71004a0d859bd4985dc523d10306c0ae550`，标签 `tymra-release-20261012-3`。
+
+| 范围 | 实际结果 |
+| --- | --- |
+| 最终候选门槛 | [完整 CI](https://github.com/Harold-C/tymra/actions/runs/38185307123) 的 verify/browser 均通过；812 单元、183 数据库/API/Worker 集成、6 项空库 OTA 合同、35 基础浏览器、8 会员矩阵及 18 首发会员浏览器场景通过；类型、lint、550 文件边界及 Web/Worker 构建通过。5 单元、6 集成及 1 基础浏览器条件跳过不计通过；同 SHA 的 [main CI](https://github.com/Harold-C/tymra/actions/runs/38186110542) 也通过 |
+| 固定镜像 | [私有镜像导出](https://github.com/Harold-C/tymra/actions/runs/38186103412) 绑定同一提交；源码包 SHA-256 为 `afb3463bf2677c075cc95428b00fb96dc0f6db21e595e428b04932bdcd9c9170`。包、全部镜像层与配置哈希核对后，四应用实际镜像均为 `sha256:f47a0e1b98585f56117bd77fc2bfb4e7b7353ef41bddd5e3304161ddc97a3107` |
+| 最新配对恢复 | 在四应用暂停且无运行/到期待执行/活动外部任务时备份数据库、证据及实际回退配置；在隔离内部网络实际恢复 88 张原业务表与 1,034 个证据文件，文件内容、所有者和权限匹配；最终镜像应用两项增量迁移，43 项完成、零新增表，原业务行保持；新旧镜像各读取 88 个 Prisma 模型通过 |
+| 正式切换 | 仅重建 Tymra Web/API/Worker/Scheduler，41 → 43 迁移完成；原有业务列的行摘要保持，索引/约束/trigger 与恢复迁移参考匹配。原网络、DNS、挂载、Traefik 标签和秘密逐项保持，仅追加/更新发布版本、源码提交与首发容量上限 50；其他生产容器身份、镜像、环境和状态保持 |
+| 运行与证据 | Web/API healthy，四应用重启计数零；数据库、Redis、Argus 就绪，Worker/Scheduler 心跳指向实际发布提交；1,036 个保留证据引用的文件和内容哈希通过。既有四条失败任务对应的 `FAILED_JOBS_PRESENT` 告警保留，没有用发布隐藏历史失败 |
+| IP 与邮件 | Cloudflare 规则 `cd44303c81424ec8a100054305fb8edd` 重新读回为活动/Block，既有三个允许地址与源站白名单一致，含本次当前 IPv4 `202.92.218.197/32`。允许网络登录页 200；另一网络首页/登录、源站直连及伪造允许 IP 的转发头均 403；后台登录 200，noindex 保持。不存在的 HTTP ACME 令牌 404，HTTPS 客户路由的同路径仍 403；未触发证书续期。所有四应用的 SMTP 留空、日志邮件及关闭付费设置保持 |
+| 实际普通账户 | 指定既有 Free 账户密码登录 201，会话及会员信息 200；新计费版本 `launch-2026`、容量 1、首发上限 50、邮箱验证门槛及付费关闭读回正确。EN/ZH 登录/注册/价格、账户/账单/设置共 12 个页面 200；退出 200，随后会话 401；本次验收会话已撤销 |
+| 页面与业务读回 | 实际浏览器显示 NZ$0/19/99/249 四档及关闭购买状态；100 个对象的 Portfolio 参考月费 NZ$449，并注明容量审核。客户仍 1、报价 56、计划 80/84；没有新增监测对象、Price Check、配额用量、验证令牌或邮件交付，采集与来源业务表全行摘要保持。登录验收仅新增会话和审计，迁移及版本心跳变化独立核对 |
+
+现行四应用 Compose：`/srv/apps/tymra/releases/membership-launch-20261012/compose.json`。
+最新备份：`/srv/apps/tymra/backups/membership-launch-20261012-cutover`；包含数据库/证据校验清单、
+实际旧环境与回退 Compose，并校验保留的旧镜像归档。旧镜像为
+`sha256:72686ab3d1981fc7f986bfd95dcd5d6a70382131af97092a983142f0aa0d0a06`，
+其读取迁移后数据的兼容性已实际验证，回退应用不要求还原业务数据库。
+恢复审计 `cmv4ii5cm0001mv16oc7jpcpo` 已持久化为 `production_backup_restore_verified`。
+受保护验收回执与实际价格截图在本机
+`runtime/release-candidates/membership-launch-20261012`；本次临时恢复容器/网络/卷及可丢弃测试容器已移除，正式备份和镜像归档保留。
+
+本次完成私有生产安装、普通账户登录和价格页面验收。真实 Stripe Sandbox 新阶梯生命周期、
+live Prices/Portal/Webhook/税配置、SMTP 到达、真实会员自然调度和容量/成本仍未验收；
+付费、新查询、导出等现行开关保持，超过 50 的价格仅作参考，客户 API/Webhook 延后。
+不得把本次代码发布、旧 Sandbox 或模拟付款视为付费/邮件开放或完整客户产品验收。
+
 ## 2026-10-12 首发会员与容量价格本地实现
 
 本次按批准的[会员合同](product/membership-plans.md)完成首发实现，位于独立工作树
@@ -21,8 +56,9 @@ Christchurch Sports 场馆解析修复、固定候选发布、原周计划恢复
 83 个变更源码/测试/配置文件的内容 SHA-256 为
 `5c28fda4981eff1a8d9943696652162b6c31acd4654aed678b1f32feec61b81d`：
 按相对路径排序，以 `路径 + NUL + 文件内容 + NUL` 汇总，排除 `docs/` 和根 README。
-主工作区原有 19 个修改/新增文件保持，未合并、提交、推送或部署，未修改生产数据、
-公网访问白名单、真实 Stripe 配置或发信配置。下述通过项只证明本地候选。
+本地实现阶段主工作区原有 19 个修改/新增文件保持，当时未合并、提交、推送或部署，
+未修改生产数据、公网访问白名单、真实 Stripe 配置或发信配置。下述通过项只证明该阶段本地候选；
+后续固定提交及生产验收见上节。
 
 - 四档月付价格及 EN/ZH 价格表、容量计算器：Free 1；Host 1/$19、5/$29；
   Pro 20/$99；Portfolio 50/$249。边际扩容至 200，超过 200 单独报价。
@@ -52,7 +88,7 @@ EN/ZH、320/390/1440px 横向溢出、相关页面 axe serious/critical 为零�
 
 未验收：当前候选真实 Stripe Sandbox 生命周期、生产 Prices/Portal/Webhook/税配置、
 SMTP 到达、真实会员自然调度、50 及以上对象的负载/成本和生产业务验收。
-不得据此开启付费开关、扩大容量或称为已上线；下一步见[客户验收计划](implementation-plan.md#4-验收同版本客户产品并开放入口)。
+该阶段证据不授予付费开放或扩容；后续私有代码发布见上节，剩余商业门槛见[客户验收计划](implementation-plan.md#4-验收同版本客户产品并开放入口)。
 
 ## 2026-10-12 指定普通客户账户创建
 
@@ -75,7 +111,7 @@ SMTP 到达、真实会员自然调度、50 及以上对象的负载/成本和�
 按用户要求，在原 Cloudflare 规则及源站白名单中追加本次核对的精确公网 IPv4 `/32`，
 原 IPv4／IPv6 均保留；`tymra.nz` 范围、证书验证路径例外及 `ops.tymra.nz` 保持。
 操作前确认线上已使用 `christchurch-sports-20261012`，以该实际配置追加，
-没有恢复旧版本。现行 Web 配置为
+没有恢复旧版本。当时 Web 配置为
 `/srv/apps/tymra/releases/christchurch-sports-20261012/customer-ip-add-20261012-compose.json`；
 原配置、精确地址、容器快照、Cloudflare 前后规则及验证记录保存在
 `/srv/apps/tymra/backups/customer-ip-add-20261012`，可用原 Compose 回退 Web。
@@ -1047,28 +1083,28 @@ The statuses below separate existing implementation from production acceptance. 
 
 | Requirement | Planned implementation boundary | Required evidence | Current status |
 | --- | --- | --- | --- |
-| `MEM-AUTH-001`, `R15-AUTH-001` | Independent registration and email/password sign-in with zero pricing side effects | Real browser registration/login plus isolated PostgreSQL proof of Free membership creation with zero `AnonymousCheck`, `PriceCheck`, Job, unit and usage creation | `development_verified` |
+| `MEM-AUTH-001`, `R15-AUTH-001` | Independent registration and email/password sign-in with zero pricing side effects | Current fixed-candidate browser/SQL registration passes; 2026-10-12 existing ordinary Free production account signs in with zero new checks/jobs/units/usage. Real new-account email verification remains deferred | `private_signin_verified_registration_delivery_pending` |
 | `MEM-AUTH-002`, `R15-AUTH-002` | Bcrypt password storage, neutral invalid credentials, throttling, duplicate protection and return-target validation | Credential/API integration, password-hash inspection, middleware return-target tests, old-password rejection and real password-change browser acceptance | `development_verified` |
-| `MEM-AUTH-003`, `R15-AUTH-003` | Customer current-session and all-session sign-out, isolated from membership and Admin | Session API integration plus real browser current-session and settings all-session paths | `development_verified` |
+| `MEM-AUTH-003`, `R15-AUTH-003` | Customer current-session and all-session sign-out, isolated from membership and Admin | Current fixed-candidate browser/SQL paths pass; production acceptance session signs out with subsequent 401 and its revoked row verified. Existing sessions retained; production all-session revocation not exercised | `partially_production_verified` |
 | `MEM-AUTH-004`, `R15-AUTH-004` | Protected-route redirect through password sign-in with allowlisted same-origin `returnTo` | Middleware exact-route/query, open-redirect and EN/ZH locale-continuity tests/browser evidence | `development_verified` |
 | `MEM-RISK-001` | Email verification before collection plus Benefit Group identity across account/device/property/payment subjects | Isolated PostgreSQL verifies unverified denial, same-device/same-Property shared Free usage, and shared-IP/different-device separation | `development_verified` |
 | `MEM-RISK-002` | Unique Free/promotion claims, serializable retries, concurrent collection/noVNC limits and independent export/API quotas | Three-way concurrent Free claim, idempotent NZ-month export and payment-promotion uniqueness integration | `development_verified` |
 | `MEM-RISK-003` | HMAC-only Stripe fingerprint, refund/dispute/Radar cases and member appeal | Synthetic signed-event persistence, payment reuse/refund, customer appeal and Admin review tests pass; production Radar delivery remains external | `implemented_not_verified` |
 | `MEM-RISK-004` | Reason-code dashboard, audited allow/deny/release and independent risk retention | Admin API plus privacy-safe aggregate metrics and controlled retention lifecycle pass; production operating exercise remains external | `implemented_not_verified` |
-| `MEM-NAV-001` | Session-aware customer navigation plus `DEPLOYED_HIDDEN` public-header/footer/CTA suppression | 历史隔离候选 EN/ZH 桌面/手机主页及移动导航隐藏客户链接；直接路由和未认证边界通过。已登录状态与生产入口仍需验收 | `local_hidden_gate_verified_production_not_accepted` |
-| `MEM-PUBLIC-001` | Bilingual membership/pricing and OTA-link/address entry routes deploy but are omitted from public discovery while hidden | 历史隔离候选 EN/ZH 桌面/手机隐藏发现入口、直接页面 HTTP 200；完整可访问性与客户业务流程仍需验收 | `local_hidden_gate_verified_production_not_accepted` |
-| `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | State matrix for Free/Host/Pro/Portfolio and all subscription lifecycle states | `implemented_not_verified` |
+| `MEM-NAV-001` | Session-aware customer navigation plus `DEPLOYED_HIDDEN` public-header/footer/CTA suppression | 固定候选 EN/ZH 桌面/手机回归通过；2026-10-12 私有生产直接登录/账户页及实际隐藏导航、Cloudflare/源站双层 IP 限制通过。完整付费客户链路仍待验 | `private_entry_verified_complete_member_pending` |
+| `MEM-PUBLIC-001` | Bilingual membership/pricing and OTA-link/address entry routes deploy but are omitted from public discovery while hidden | 2026-10-12 EN/ZH 生产价格/注册/登录页 200，实际新价格、100 个对象参考报价与关闭购买状态通过；真实两种查询及付费链路仍待验 | `private_pricing_verified_paid_closed` |
+| `MEM-ACC-001` | Operational account overview with plan, lifecycle, usage, units, horizons, cadence and next action | Current isolated four-plan/lifecycle matrix passes; production Free membership, capacity 1, launch limit 50, account/billing/settings pages and verification gate read back. Real paid states remain pending | `private_free_verified_paid_pending` |
 | `MEM-UNIT-001` | Independent monitored-object identity, legacy Property compatibility, activation, binding and next-period retained selection | 2026-10-12 isolated API tests verify independent units, address conversion, owned cancellation and retained-object boundaries | `development_verified_production_not_accepted` |
 | `MEM-CHECK-001` | Owner-only filterable history and result detail with mode-aware target or neighbourhood observations and observed-price/recommendation separation | Cross-account, pagination/filter, retention, one-valid-price acceptance and `LISTING_PRICING`/`LOCATION_BENCHMARK` separation pass in integration; the dated desktop/mobile browser flow filters the owner history and reopens the authenticated formal detail | `development_verified` |
 | `MEM-CAL-001` | Plan-aware exact daily calendar and separately labelled monitoring extension in `Pacific/Auckland` | NZ-time/domain boundaries, owner-only API, no-fabrication data states and responsive browser QA | `development_verified` |
 | `MEM-ALERT-001` | Core alerts, configurable thresholds/preferences, deduplication and owner evidence | 2026-10-12 worker generation/deduplication, preferences and EN/ZH desktop/mobile pass; real delivery remains unverified | `development_verified_delivery_pending` |
 | `MEM-PORT-001` | Pro strategy/portfolio and CSV/XLSX; Portfolio grouping and bulk confirmation; customer API/webhooks deferred | 2026-10-12 owner isolation, version conflicts, atomic edits, export quota/download readback and browser controls pass | `development_verified_production_not_accepted` |
-| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | Fake-Stripe and isolated PostgreSQL lifecycle pass; dated Sandbox evidence covered the full lifecycle and 37 webhooks. A later hosted Checkout attempt timed out before return, so production deployment acceptance remains open | `implemented_not_verified` |
+| `MEM-BILL-001` | Stripe Checkout/Portal and persisted upgrade/downgrade/cancel/resume/grace reconciliation | New tier-pricing Fake-Stripe/SQL lifecycle and browser fixtures pass; 2026-10-12 code deployed with paid switches closed. Historical Sandbox/37 webhook evidence and later hosted Checkout timeout do not accept the new real-provider lifecycle | `deployed_code_real_payment_not_accepted` |
 | `MEM-RET-001` | Plan history, raw evidence, auth, billing, cancellation and deletion retention | Controlled isolated PostgreSQL matrix covers Free 30, Host 183, Pro 365, Portfolio 730 and cancelled 30-day expiry boundaries | `development_verified` |
 | `MEM-OPS-001` | Factual billing reconciliation, proven duplicate usage correction, session/risk/account support and owner-delivered export/deletion | 2026-10-09 support-page acceptance and 2026-10-12 designated Free account are recorded separately; real Stripe/customer support writes remain separate | `deployed_real_provider_acceptance_pending` |
 | `MEM-OBS-001` | Privacy-safe membership, billing, scheduler, queue, lifecycle and plan-economics telemetry | 2026-10-09 production Admin pages, version-bound worker/scheduler heartbeats and dependency readiness passed; existing failed-job alerts remain visible. Alert delivery/injection and real-member operating acceptance remain | `production_runtime_verified_alert_delivery_pending` |
 | `MEM-A11Y-001` | Complete member module in EN/ZH at desktop, 390px and 320px | Automated member-route axe serious/critical, overflow, keyboard and reduced-motion matrix; dated 2026-08-12 candidate result | `development_verified` |
-| `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | Dated Free fixture and real-provider runs exist; the final client candidate still needs complete live member acceptance, independently of six-OTA backend trials | `implemented_not_verified` |
+| `MEM-E2E-001` | New Free, returning customer, paid lifecycle and every blocked/gated state | 2026-10-12 fixed-candidate 61 browser scenarios and existing private-production Free sign-in/account/sign-out pass; new-account email, real paid lifecycle and complete live member operations remain separate gates | `private_free_verified_complete_member_pending` |
 
 ## 2026-10-07 本地结构优化验证
 

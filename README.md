@@ -113,14 +113,21 @@ existing sign-in page were connected using the unchanged production image. Only 
 mode and its public router changed. See traceability for the saved runtime and rollback configuration.
 The customer website was subsequently restricted to Harold's exact current public IPv4/IPv6
 addresses at Cloudflare and the origin; both allowlists must be updated if those addresses change.
-The registration changes described below remain local and have not been deployed.
+On 2026-10-12, launch membership, capacity pricing and the registration changes described below
+were deployed as fixed candidate `ec71a710` to that private entry. Ordinary-account sign-in,
+account pages, bilingual pricing, paired recovery and runtime/data readback passed. Real SMTP,
+paid plans, new Price Checks and advanced launch switches remain disabled; see traceability
+for the exact production image, accepted scope and remaining external gates.
 
 The optional `docker-compose.customer.yml` overlay prepares direct Free-account registration,
 password sign-in and account access at `https://tymra.nz/{en,zh}/sign-up` and `/sign-in`.
 It retains hidden discovery and keeps new Price Checks, the anonymous funnel, paid plans,
-export and member API disabled. Existing Admin routing remains separate. It does not configure
-DNS, send mail or deploy by itself: merge it into a reviewed fixed production configuration
-after the applicable release checks, preserving the actual runtime secrets, networks and mounts.
+export disabled; customer API/webhooks are deferred beyond the launch scope. Existing Admin
+routing remains separate. It does not configure DNS, send mail or deploy by itself: merge it into
+a reviewed fixed production configuration
+after the applicable release checks, preserving the actual runtime secrets, networks, mounts and
+both the origin IP allowlist and Cloudflare restriction. Do not replace the live customer router
+with the overlay defaults during an image update.
 The 2026-10-11 request defers real email setup. Registration can create an unverified Free account
 and session while mail is unavailable; the UI reports that state and supports later resend.
 Production log delivery never counts as a sent account-verification email. Verification still
@@ -166,6 +173,7 @@ Choose checks for the actual change; documentation-only work checks facts, links
 | `pnpm verify` | Lint + workspace types + unit + guarded integration + isolated build; excludes Playwright and external provider/Stripe acceptance |
 | `pnpm test:e2e` | Desktop/mobile fixture flows; creates, migrates, seeds and removes its own Compose test stack |
 | `pnpm test:e2e:member-matrix` | Four-plan entitlement and launch-gate routes in the same isolated desktop/mobile runtime |
+| `pnpm exec playwright test --config=playwright.membership-launch.config.ts` | Launch capacity quotes, paid changes, ownership, quotas, portfolio controls and exports in an isolated desktop/mobile runtime |
 | `pnpm test:e2e:hidden` | Existing isolated loopback candidate with customer routes available and `CLIENT_DISCOVERY_MODE=DEPLOYED_HIDDEN`; set `TYMRA_HIDDEN_BASE_URL` |
 | `pnpm compose:smoke` | Creates an isolated stack and removes its own containers/test volumes on completion; excludes Scheduler |
 | `pnpm test:cycle-review` | Historical five-source evaluator's synthetic regression; not a current production health check |
