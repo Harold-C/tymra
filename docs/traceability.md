@@ -58,8 +58,20 @@ SMTP、Stripe 与托管人机验证未配置，发信、收费与新查询仍未
 `verify` 与 `browser` 均通过，包含端到端测试、会员矩阵及首发容量定价验证。
 文档提交未改变受测代码；两端只读复查未发现待删载荷或传输残片，恢复／配置哈希、
 服务器脚本与提交内容、发布助手收尾入口及九个既有容器状态保持一致。
-导出工作流新增按 artifact ID 下载回读后才删 runner 暂存，本次没有发起新镜像导出；
-真实新导出的端到端分支留待下次获准发布验证，GitHub 七天分发暂存策略保持。
+随后按用户仅验证导出传输的授权，固定完整 CI 已通过的 `07d24b3`，使用验证标签
+`tymra-retention-upload-validation-20261013` 执行
+[真实镜像上传／下载回读](https://github.com/Harold-C/tymra/actions/runs/38331167533)，
+NZ 2026-10-13 14:17 最终 `success`。实际构建 linux/amd64 的 production 镜像目标，
+上传 artifact `11782617930`（574,427,702 字节），下载步骤日志确认使用同一 artifact ID；
+固定 revision、manifest 字节哈希与两份镜像的 manifest SHA-256 校验通过，随后成功删除
+runner 的两份暂存目录。artifact ZIP 摘要为
+`80d98b6eb5f07526d1473832426b4018ac74d197d0bd14b5ca1705e0b03f9c6f`，
+上传日志与 GitHub artifact 元数据一致；七天分发暂存策略保持，预计 NZ 10-20 到期。
+此项关闭此前真实上传回读未实测的缺口；本轮没有修改导出代码、发布应用、装载生产镜像、
+重启服务或写生产数据库。生产前后只读核对九个既有容器的身份／镜像／启动时间／配置、
+服务器收尾脚本及原当前／回退两份完整包均保持。验证收据及脱敏日志证据保存于上述
+既有目录的 `retention-upload-verification.json`，对应前后读回为
+`retention-upload-runtime-before.json`／`retention-upload-runtime-after.json`。
 变更在最新 `origin/main` 的独立工作树中限定提交／推送；原工程会员、首页、账户等
 其他未提交内容保留，未混入本任务提交。
 
