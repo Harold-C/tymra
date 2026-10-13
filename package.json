@@ -8,6 +8,9 @@
     "pnpm": ">=10 <12"
   },
   "scripts": {
+    "release:finalize": "python3 scripts/finalize-release.py --apply",
+    "release:complete": "python3 scripts/complete-release.py",
+    "test:release-retention": "python3 scripts/test-release-retention.py",
     "cli": "tsx --env-file=.env apps/worker/src/cli.ts",
     "compose:up": "sh scripts/start-local-dev.sh",
     "compose:down": "docker compose down --remove-orphans",
