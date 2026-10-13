@@ -17,6 +17,49 @@ SMTP、Stripe 与托管人机验证未配置，发信、收费与新查询仍未
 目标合同见[产品入口](product/README.md)，变迁见[决策记录](decisions.md#文档与运行阶段变迁)。
 历史提交、镜像、计划数量及 nextRun 均须在下一次操作前重新核对。
 
+## 2026-10-13 发布包保留策略与验收后收尾：生产与本机已完成
+
+按 Harold 授权，重新核对 `spm-prod-01` 实际四应用后执行发布传输包维护；没有沿用
+10 月 11 日历史版本。当前为 `account-home-20261013`／`1d0161d537278ff812456da995e7f339200c4aa0`
+（镜像 `bf0972ac…`），明确回退为 `admin-grants-20261012-2`／
+`5b174fb742f0361c93a8d0460467e4233008c0c6`（镜像 `7f56a087…`）。
+服务器及本机各仅保留这两个版本的完整镜像包，分别为 `image.tar.gz`（574,393,753 字节）
+和 `private-ci-image.tar.gz`（566,155,703 字节）；配置、源码和小型记录分别保留。
+规则与配置字段见[发布包保留流程](../README.md#release-package-retention-and-required-finalization)。
+
+本轮复用今天已实际完成的隔离恢复：`account-home-20261013-cutover-3` 的 89 个模型、
+1,064 份证据及前后两镜像读取兼容性。重新读取原恢复实现、结果、配置及备份，逐文件
+核对保留快照哈希，并完整读取两个压缩包，各 20 层与镜像配置 `rootfs.diff_ids` 匹配；
+镜像执行配置、当前／回退 Compose 环境和命令核对通过。新增完整包检查没有冒充
+新的数据库恢复；恢复状态来自上述已有真实恢复。当前业务验收与生产页面证据绑定
+实际容器身份、镜像和配置摘要；SMTP／Stripe 和既有采集故障不在本次验收结论内。
+
+逐文件删除服务器 13 个已退休镜像／差分／ZIP 载荷，释放 **6,304,602,892 字节**。
+本机先补齐当前及回退两份完整包并核对传输哈希，再删除原四个旧载荷
+**2,034,483,970 字节**；扣除新增恢复包后，本机镜像载荷净减少 **893,934,514 字节**。
+两端重复执行均删除零文件／零字节。服务器九个既有容器的身份、镜像、启动时间、
+重启数和完整配置摘要前后保持，四应用运行／健康及 Worker、Scheduler 心跳通过；
+受保护配置、恢复材料再次核验保持。历史 Compose、数据库备份、业务数据、登录态、
+源码、原始证据、Docker 镜像／容器／卷与其他项目均未删除，没有应用发布、服务重启或数据库写入。
+
+已安装 `/srv/apps/tymra/bin/{finalize-release.py,complete-release.py,install-release-finalization.py}`，
+并通过安装器接入当前真实发布助手的 `complete` 阶段，保存 `release.py.before-retention`。
+实际调用 `python3 /srv/apps/tymra/releases/account-home-20261013/release.py complete` 成功，
+不是仅增加文档入口。后续每个发布助手仍须接入该必经阶段，在真实部署／业务验收通过后
+提供匹配的 `retention-finalization.json`；缺证据、配置漂移或恢复失败均阻止清理。
+这不是按时间盲删的定时任务，也不自动把未验收候选标为通过。
+
+两端逐文件计划、验收绑定、首次和重复回执、最终读回位于各自既有
+`account-home-20261013/retention-*.json`；服务器根为 `/srv/apps/tymra/releases`，
+本机根为 `/Users/haroldchen/Development/tymra/runtime/release-candidates`。
+13 项保留／恢复门禁、四应用完整性、配置漂移、使用中阻断、上传核验及安装幂等测试
+本地与 [CI 保留策略步骤](https://github.com/Harold-C/tymra/actions/runs/38328594713)通过。
+导出工作流新增按 artifact ID 下载回读后才删 runner 暂存，本次没有发起新镜像导出；
+真实新导出的端到端分支留待下次获准发布验证，GitHub 七天分发暂存策略保持。
+变更在最新 `origin/main` 的独立工作树中限定提交／推送；原工程会员、首页、账户等
+其他未提交内容保留，未混入本任务提交。
+
+
 ## 2026-10-13 完整首页与账户总览生产发布
 
 用户授权推送并发布，后确认先开放可运行功能，邮件和收费待配置。以最新 `origin/main`

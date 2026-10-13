@@ -164,7 +164,7 @@ matching acceptance and complete-image restore receipts:
 python3 scripts/finalize-release.py --config /absolute/tymra/finalization.json --output /absolute/tymra/plan.json
 # Required successful-release completion step:
 pnpm release:complete --config /absolute/tymra/finalization.json --output /absolute/tymra/completion.json
-# On a server without pnpm, use the same Python entry point with --apply.
+# On a server without pnpm, use python3 /srv/apps/tymra/bin/complete-release.py.
 ```
 
 `scripts/finalize-release.py` is the canonical post-deployment cleanup implementation;
