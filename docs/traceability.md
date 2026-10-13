@@ -53,7 +53,11 @@ SMTP、Stripe 与托管人机验证未配置，发信、收费与新查询仍未
 `account-home-20261013/retention-*.json`；服务器根为 `/srv/apps/tymra/releases`，
 本机根为 `/Users/haroldchen/Development/tymra/runtime/release-candidates`。
 13 项保留／恢复门禁、四应用完整性、配置漂移、使用中阻断、上传核验及安装幂等测试
-本地与 [CI 保留策略步骤](https://github.com/Harold-C/tymra/actions/runs/38328594713)通过。
+本地与 CI 保留策略步骤通过。后续复查确认代码提交 `07d24b3` 的
+[完整 CI](https://github.com/Harold-C/tymra/actions/runs/38328594713)最终为 `success`：
+`verify` 与 `browser` 均通过，包含端到端测试、会员矩阵及首发容量定价验证。
+文档提交未改变受测代码；两端只读复查未发现待删载荷或传输残片，恢复／配置哈希、
+服务器脚本与提交内容、发布助手收尾入口及九个既有容器状态保持一致。
 导出工作流新增按 artifact ID 下载回读后才删 runner 暂存，本次没有发起新镜像导出；
 真实新导出的端到端分支留待下次获准发布验证，GitHub 七天分发暂存策略保持。
 变更在最新 `origin/main` 的独立工作树中限定提交／推送；原工程会员、首页、账户等
