@@ -56,6 +56,8 @@ eligibility, unassessed historical quotes, unsubmitted formal panel and unauthor
 Both planners support explicit one/two-night checkouts locally; no real Argus two-night capture,
 worker persistence, source-capability acceptance or scheduler wiring was performed for this cohort.
 
+### Existing bounded source pilots
+
 The six approved sources are `booking`, `airbnb`, `expedia`, `bookabach`, `agoda`, and `trip`.
 `ota:production:prepare --source <key> --confirm BOUNDED_PRODUCTION_OTA` creates only the named
 non-demo source, four public capabilities and one disabled daily plan. It never overwrites existing

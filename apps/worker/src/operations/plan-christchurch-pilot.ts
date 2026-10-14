@@ -70,4 +70,3 @@ async function main() {
   process.stdout.write(JSON.stringify({ status: plan.status, frozenMembers: panel.members.length, snapshotCandidates: review.length, labelledCandidates: taggedCandidates.length, budget: plan.budget, activationBlockers: plan.activationBlockers }) + "\n");
 }
 main().catch(error => { process.stderr.write(`${error instanceof Error ? error.message : "Planning failed"}\n`); process.exitCode = 1; });
-
