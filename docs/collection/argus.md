@@ -4,6 +4,58 @@ Last updated: 2026-10-06 (bounded public queue wait and execution deadlines)
 
 ## Bounded OTA production pilots
 
+### Christchurch staged observation pilot (local only, 2026-10-15)
+
+This is the current small-pilot preparation contract. The older large-panel planning API remains a separate example, not the budget or entry gate for these seven objects. No collection is authorized.
+
+`market-observation.ts` separates source-scoped observation eligibility, per-quote comparability,
+formal `christchurch-fixed-panel-v2` admission and execution permission. A reviewed source listing
+and repeatable unit plus attributable two-adult support permit observation. Exact residential address,
+24-month history, all six dates being available and approved reserves are not required at this stage.
+An attributable selected two-adult quote does not establish maximum occupancy. Unknown fees or
+conflicting cancellation amounts retain raw evidence but cannot produce a comparison key/amount.
+Comparison keys isolate unit, stay dates, nights, adults, units, currency, immutable public profile,
+terms and instant/request booking mode. Two-night totals are actual package totals; nightly equivalents
+are descriptive only and never spliced into single-night series. Formal panel gates remain unchanged.
+
+Current local source: `runtime/market-data/christchurch-supply-20261014/sources/staged-observation-review.json`.
+Its seven objects are Aalton and Carnmore (one night, 3 checks/week), Cosy and Lincoln (two nights,
+3/week), Michael (two nights, 1/week), Karen and William (one night, 1/week). All check two fixed stays.
+Cosy/Lincoln retain their common building concentration; they are not independent reserves. Airbnb
+source-scoped objects do not add verified locality coverage. Existing quantity/fee evidence is dated
+2026-10-14, not a fresh quote. Carnmore's reviewed room signature still requires exact-selection preflight.
+
+Example observation dates: 2026-10-19 through 2026-11-15; stays: 2026-11-17 and 2026-11-21, both
+after the observation period. November 21 is a proposed anchor without saved inventory verification.
+Rebase the whole plan before activation if start changes, and lock anchors after initial preflight;
+never substitute dates/units in response to unavailable inventory. The pure planner generates 28 days:
+120 quote captures + 14 initial detail/capability captures + 28 weekly identity captures + 33 shared
+retry captures = **195 proposed maximum executions**, **0 authorized**. Source base allocations:
+Expedia 48 quotes + 4 initial + 8 weekly; Booking the same; Airbnb 24 + 6 + 12. Retries share one pool,
+max 2 attempts/query, concurrency 1, daily ceiling 42. Extra captures count toward these limits.
+Cost/capture and monetary cap stay null until measured; current live limits are not changed.
+
+Week 1 checks identity/context/field quality; week 2 matched quotes and fee conflicts; week 3 missingness
+and concentration; week 4 per-object review of cost, actual observation days and comparability. Classified
+unavailability is not price success. Regional publication requires separate coverage/representation review.
+Challenge/login/rate limits stop the source; identity changes stop that object; budgets never expand
+automatically. Unknown terms block comparison, not future observation. No booking/request submission.
+
+Offline generation, without environment loader, DB, queue or provider calls:
+
+```sh
+node node_modules/tsx/dist/cli.mjs apps/worker/src/operations/plan-christchurch-observations.ts \
+  --roster /absolute/path/staged-observation-review.json --out /absolute/path/new-plan.json
+```
+
+The existing local preparation generator embeds this evaluated plan in
+`holiday-home-preparation.json → scopedPilotPreparation.stagedObservation` and updates the existing
+Chinese sample report. Old `qualified=false` values and v12 holds remain historical formal-panel
+preparation facts; they are not observation-eligibility results. The current output reports observation
+eligibility, unassessed historical quotes, unsubmitted formal panel and unauthorized execution separately.
+Both planners support explicit one/two-night checkouts locally; no real Argus two-night capture,
+worker persistence, source-capability acceptance or scheduler wiring was performed for this cohort.
+
 The six approved sources are `booking`, `airbnb`, `expedia`, `bookabach`, `agoda`, and `trip`.
 `ota:production:prepare --source <key> --confirm BOUNDED_PRODUCTION_OTA` creates only the named
 non-demo source, four public capabilities and one disabled daily plan. It never overwrites existing
