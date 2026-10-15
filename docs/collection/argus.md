@@ -1,16 +1,17 @@
 # Argus browser collection boundary
 
-Last updated: 2026-10-06 (bounded public queue wait and execution deadlines)
+Last updated: 2026-10-16 (optional room-area compatibility; observation execution remains disabled)
 
 ## Bounded OTA production pilots
 
-### Public OTA room-area compatibility (2026-10-16 release candidate)
+### Public OTA room-area compatibility (2026-10-16 production release)
 
 The consumer preserves optional positive `areaSquareMetres` on extracted units so a room's
 observed area can support identity review. Missing or null area remains unknown; area alone
 does not establish an exact unit or price comparability. Existing deliveries without this field
-remain valid. This candidate includes no local manual observation executor, execution ledger,
-temporary daily-cap exception or four-week scheduler activation. Release evidence is tracked
+remain valid. The release includes no local manual observation executor, execution ledger,
+temporary daily-cap exception or four-week scheduler activation. Production and rollback verification
+is recorded in [traceability](../traceability.md#2026-10-16-公开-ota-房型面积接收生产发布),
 separately from the historical preparation contract below.
 
 ### Christchurch staged observation pilot (local only, 2026-10-15)
