@@ -1,6 +1,6 @@
 # Argus browser collection boundary
 
-Last updated: 2026-10-16 (optional room-area compatibility; observation execution remains disabled)
+Last updated: 2026-10-16 (full selected-sample formal schedule enabled; no automatic retries)
 
 ## Bounded OTA production pilots
 
