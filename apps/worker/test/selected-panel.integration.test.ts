@@ -1,9 +1,25 @@
-import { beforeEach, afterEach, afterAll, describe, it, expect } from "vitest";
-import { prisma } from "@tymra/db";
+import { beforeAll, beforeEach, afterEach, afterAll, describe, it, expect, vi } from "vitest";
+import { prisma as adminPrisma, PrismaClient } from "@tymra/db";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { assertIsolatedTestEnvironment } from "../../../test/isolation";
 import { selectedFixture } from "./selected-panel-fixtures";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey } from "../src/operations/selected-panel-plan";
-import { enqueueSelectedPanel, selectedCapturePermission, selectedInput } from "../src/operations/selected-panel-production";
 const now = new Date("2026-10-16T06:00:00Z");
+const isolated = assertIsolatedTestEnvironment();
+const databaseName = `${isolated.databaseName}_selected${process.pid}`;
+const databaseUrl = new URL(process.env.DATABASE_URL!); databaseUrl.pathname = `/${databaseName}`;
+const prisma = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
+vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@tymra/db")>("@tymra/db")), prisma }));
+const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await import("../src/operations/selected-panel-production");
+beforeAll(async () => {
+  if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
+  await adminPrisma.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
+  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const migration = spawnSync(process.execPath, [root + "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", root + "packages/db/prisma/schema.prisma"], {
+    cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl.toString(), TYMRA_TEST_DATABASE_NAME: databaseName }, encoding: "utf8" });
+  if (migration.status !== 0) throw Error("Isolated selected-panel test schema setup failed");
+}, 30000);
 let historicalId: string | null = null;
 let sourceBefore: Awaited<ReturnType<typeof prisma.dataSource.findMany>> = [];
 beforeEach(async () => {
@@ -22,7 +38,11 @@ afterEach(async () => {
   await prisma.scheduleDefinition.deleteMany({ where: { key: SELECTED_PANEL_KEY } });
   for (const s of sourceBefore) await prisma.dataSource.update({ where: { id: s.id }, data: { enabled: s.enabled, lifecycle: s.lifecycle, operationalStatus: s.operationalStatus, dailyBudget: s.dailyBudget, concurrencyLimit: s.concurrencyLimit, environments: s.environments, isDemo: s.isDemo, updatedAt: s.updatedAt } });
 });
-afterAll(async () => { await prisma.$disconnect(); });
+afterAll(async () => {
+  await prisma.$disconnect();
+  await adminPrisma.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`);
+  await adminPrisma.$disconnect();
+});
 describe("selected collection isolated persistence", () => {
   it("serializes concurrent dispatch and never changes sources or unrelated schedules", async () => {
     const sources = await prisma.dataSource.findMany();
@@ -78,5 +98,12 @@ describe("selected collection isolated persistence", () => {
     const parent = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
     await expect(selectedCapturePermission(parent, selectedInput(selectedFixture().manifest.members[0], quote, job.id), source.id, now)).rejects.toThrow("SELECTED_IDENTITY_NOT_VERIFIED");
+  });
+  it("does not block on unrelated future work or modify it", async () => {
+    const future = await prisma.job.create({ data: { type: "RATE_COLLECTION", queueName: "future-unrelated", sourceId: "booking", maxAttempts: 1,
+      payload: {}, idempotencyKey: "selected-test:future", runAt: new Date(now.getTime() + 86400000) } });
+    historicalId = future.id;
+    expect(await enqueueSelectedPanel(now)).not.toBeNull();
+    expect(await prisma.job.findUnique({ where: { id: future.id } })).toEqual(future);
   });
 });

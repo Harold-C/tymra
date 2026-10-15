@@ -42,7 +42,9 @@ export async function enqueueSelectedPanel(now = new Date()) {
     if (!control?.enabled) return null;
     const state = selectedStateSchema.parse(control.payload);
     // Yield to existing work. No cancellation, quota waiver or shared runtime change.
-    if (await tx.job.count({ where: { type: { in: ["RATE_COLLECTION", "CATALOG_DISCOVERY"] }, status: { in: ["PENDING", "RUNNING"] } } })) return null;
+    if (await tx.job.count({ where: { type: { in: ["RATE_COLLECTION", "CATALOG_DISCOVERY"] }, OR: [
+      { status: "RUNNING" }, { status: "PENDING", OR: [{ queueName: SELECTED_PANEL_QUEUE }, { runAt: { lte: now } }] },
+    ] } })) return null;
     if (await tx.argusExecution.count({ where: { status: { in: [...activeStatuses] } } })) return null;
     const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE }, orderBy: { createdAt: "desc" } });
     const matching = jobs.filter(j => selectedJobSchema.parse(j.payload).manifestHash === state.manifestHash);
