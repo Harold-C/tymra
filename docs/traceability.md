@@ -30,7 +30,10 @@
 服务器和本机的必需发布收尾均通过，各退役两个旧/重复传输包，共1,149,102,080字节；
 保留当前与回退完整镜像、配置、最新配对备份和恢复证明，未清理业务数据或Docker镜像。
 受保护运行证据沿用服务器同名release目录及本机 `runtime/release-candidates/public-ota-repair-20261016`。
-Argus 公共解析修复的独立镜像门禁与发布记录以 Argus `docs/current-state.md` 为准。
+配套 Argus 采集服务已发布 `f89fee16175c7d113ac398ee48f8d58e0afb3de9`／`argus-release-20261016-2`。
+生产Tymra Worker读取Argus健康/就绪及自己既有任务均200，未获授权的运行清单读取仍403；
+没有扩权或新建采集任务。Argus独立镜像门禁、首次部署配置失败后的回退与最新恢复记录
+以 Argus `docs/current-state.md` 为准。
 
 ## 2026-10-15 分阶段观察规划生产发布（采集保持关闭）
 
