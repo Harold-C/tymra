@@ -24,6 +24,8 @@ import { nzStartOfDay } from "@tymra/domain";
 import { ACTIVE_OTA_SOURCE_KEYS } from "../operations/ota-health";
 import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, productionOtaDailyBudgetWaivedForTrial } from "../operations/production-ota";
 import { withRedisLockWait } from "@tymra/queue";
+import { isObservationJob } from "../operations/observation-pilot";
+import { observationCapturePermission } from "../operations/observation-production";
 
 const pollDelayMs = 1_000;
 const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"]);
@@ -70,13 +72,22 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
     if (environment.NODE_ENV === "production" && ACTIVE_OTA_SOURCE_KEYS.some((key) => input.connectorId === `${key}-public`)) {
       const parent = await prisma.job.findUniqueOrThrow({ where: { id: context.parentJobId } });
       const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: context.dataSourceId } });
-      if (!isProductionOtaPayload(parent.payload) || parent.payload.sourceId !== source.key || !otaSourceApproved(source)) return { ok: false, httpStatus: 403, message: "Unapproved production OTA capture" };
+      const observation = isObservationJob(parent.payload);
+      if (observation) await observationCapturePermission(parent, input, source.id);
+      else if (!isProductionOtaPayload(parent.payload) || parent.payload.sourceId !== source.key || !otaSourceApproved(source)) return { ok: false, httpStatus: 403, message: "Unapproved production OTA capture" };
       const count = await prisma.argusExecution.count({ where: { dataSourceId: source.id, submittedAt: { gte: nzStartOfDay(new Date()) } } });
       const jobCount = await prisma.argusExecution.count({ where: { parentJobId: context.parentJobId } });
-      const dailyBudgetWaived = productionOtaDailyBudgetWaivedForTrial(source.metadata, parent.idempotencyKey);
+      const dailyBudgetWaived = !observation && productionOtaDailyBudgetWaivedForTrial(source.metadata, parent.idempotencyKey);
       if ((!dailyBudgetWaived && count >= OTA_DAILY_EXECUTION_BUDGET) || jobCount >= 3) return { ok: false, httpStatus: 429, message: "Bounded OTA execution budget exhausted" };
       const active = await prisma.argusExecution.count({ where: { connectorId: { in: ACTIVE_OTA_SOURCE_KEYS.map((key) => `${key}-public`) }, status: { in: ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] } } });
       if (active) return { ok: false, httpStatus: 429, message: "Another Tymra OTA execution is active" };
+      if (observation) {
+        // Persist uncertainty before sending. A crash after acceptance cannot blindly submit again.
+        const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: context.collectionRunId } });
+        const scope = run.scope as Prisma.JsonObject;
+        if (scope.captureReserved === true) throw new Error("OBSERVATION_SUBMISSION_UNCERTAIN_RECONCILE_REQUIRED");
+        await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: { ...scope, captureReserved: true } } });
+      }
     }
     const noVncCapacity = await memberNoVncCapacity(context.parentJobId);
     if (!noVncCapacity.allowed) return { ok: false, httpStatus: 429, message: "The membership already has the maximum number of active manual browser sessions" };
@@ -179,7 +190,7 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     });
   }
 
-  if (execution.deadlineAt <= new Date() && environment.NODE_ENV === "production" && isProductionOtaPayload(parent?.payload)) {
+  if (execution.deadlineAt <= new Date() && environment.NODE_ENV === "production" && (isProductionOtaPayload(parent?.payload) || isObservationJob(parent?.payload))) {
     try { await cancelArgusJob(environment, execution.argusJobId, true); }
     catch { throw new DeferredJobError("Bounded OTA cancellation is not yet confirmed", new Date(Date.now() + 30_000)); }
     const released = await getArgusJob(environment, execution.argusJobId);
@@ -256,7 +267,7 @@ export async function pollArgusExecution(environment: Environment, executionId: 
       && action.session_ttl_seconds > 0 && action.session_ttl_seconds <= 900
       && Date.parse(action.expires_at) > Date.now()
       && Date.parse(action.expires_at) <= Date.now() + action.session_ttl_seconds * 1_000 + 1_000;
-    if (waitingForManual && environment.NODE_ENV === "production" && isProductionOtaPayload(parent?.payload) && !boundedCaptcha) {
+    if (waitingForManual && environment.NODE_ENV === "production" && ((isProductionOtaPayload(parent?.payload) && !boundedCaptcha) || isObservationJob(parent?.payload))) {
       // Only a valid CAPTCHA handoff may wait within the existing execution
       // deadline. Other challenges release this pilot's own browser session.
       try { await cancelArgusJob(environment, execution.argusJobId, true); }
@@ -314,7 +325,8 @@ export async function acknowledgePersistedArgusResults(
   environment: Environment,
   parentJobId: string,
 ): Promise<void> {
-  const boundedPilot = environment.NODE_ENV === "production" && isProductionOtaPayload((await prisma.job.findUnique({ where: { id: parentJobId }, select: { payload: true } }))?.payload);
+  const parentPayload = (await prisma.job.findUnique({ where: { id: parentJobId }, select: { payload: true } }))?.payload;
+  const boundedPilot = environment.NODE_ENV === "production" && (isProductionOtaPayload(parentPayload) || isObservationJob(parentPayload));
   const executions = await prisma.argusExecution.findMany({
     where: { parentJobId, status: { in: boundedPilot ? ["COMPLETED", "FAILED", "CANCELLED"] : ["COMPLETED", "FAILED"] }, result: { not: Prisma.DbNull } },
     select: { id: true, argusJobId: true, collectionRunId: true, result: true },

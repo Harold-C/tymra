@@ -9,6 +9,9 @@ import type { Environment } from "@tymra/config";
 const mocks = vi.hoisted(() => ({
   diskFault: "",
   diskEvents: [] as string[],
+  observationPermission: vi.fn(),
+  observationRunFind: vi.fn(),
+  observationRunUpdate: vi.fn(),
   enqueueJob: vi.fn(),
   executionFind: vi.fn(),
   executionCount: vi.fn(),
@@ -79,6 +82,8 @@ vi.mock("@tymra/db", () => ({
     },
     dataSource: { findUniqueOrThrow: mocks.sourceFind },
     collectionRun: {
+      findUniqueOrThrow: mocks.observationRunFind,
+      update: mocks.observationRunUpdate,
       findMany: mocks.collectionRunFindMany,
       updateMany: mocks.collectionRunUpdateMany,
     },
@@ -89,6 +94,8 @@ vi.mock("@tymra/db", () => ({
     },
   },
 }));
+
+vi.mock("../src/operations/observation-production", () => ({ observationCapturePermission: mocks.observationPermission }));
 
 vi.mock("@tymra/queue", async (original) => ({ ...await original<typeof import("@tymra/queue")>(), withRedisLockWait: async (_key: string, _ttl: number, operation: () => Promise<unknown>) => operation() }));
 
@@ -145,6 +152,23 @@ afterEach(async () => {
 });
 
 describe("durable Argus orchestration", () => {
+  it("reserves observation submission before network and refuses uncertain restart", async () => {
+    mocks.executionFind.mockResolvedValue(null);
+    mocks.parentFind.mockResolvedValue({status:"RUNNING",payload:{observationPilot:"christchurch-three-observations-20261016",manifestHash:"hash",taskKey:"canary:one",sourceId:"booking"}});
+    mocks.sourceFind.mockResolvedValue({id:"source-1",key:"booking"});mocks.executionCount.mockResolvedValue(0);
+    mocks.observationPermission.mockResolvedValue(undefined);
+    mocks.observationRunFind.mockResolvedValue({id:"run-1",scope:{captureReserved:true}});
+    await expect(captureBrowserTaskWithDurableArgus({...environment,NODE_ENV:"production"},{...input,connectorId:"booking-public",workflowId:"resolve_listing"},context)).rejects.toThrow("OBSERVATION_SUBMISSION_UNCERTAIN_RECONCILE_REQUIRED");
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+  it("stops an observation challenge without waiting for interactive login", async () => {
+    mocks.executionFind.mockResolvedValue({...activeExecution(),connectorId:"booking-public"});
+    mocks.parentFind.mockResolvedValue({status:"PENDING",payload:{observationPilot:"christchurch-three-observations-20261016",manifestHash:"hash",taskKey:"canary:one",sourceId:"booking"}});
+    mocks.getJob.mockResolvedValue({ok:true,job:{job_id:"argus-1",status:"WAITING_FOR_MANUAL"}});
+    await expect(pollArgusExecution({...environment,NODE_ENV:"production"},"execution-1")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.cancel).toHaveBeenCalledWith({...environment,NODE_ENV:"production"},"argus-1",true);
+    expect(mocks.executionUpdate).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:"CANCEL_REQUESTED",errorCategory:"ACCESS_CHALLENGE"})}));
+  });
   it.each(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"])("allows %s to wait in the shared queue beyond its execution timeout", async (connectorId) => {
     const submittedAt = new Date(Date.now() - 240_000);
     mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId, submittedAt, deadlineAt: new Date(submittedAt.getTime() + 180_000) });

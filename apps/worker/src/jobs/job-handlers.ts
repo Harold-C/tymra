@@ -4,6 +4,8 @@ import { WorkerService } from "../services/worker-service";
 import { enqueueDueMembershipAnalyses } from "../membership/scheduler";
 import { acknowledgePersistedArgusResults, pollArgusExecution } from "../services/argus-orchestrator";
 import { DeferredJobError } from "./deferred-job";
+import { isObservationJob } from "../operations/observation-pilot";
+import { handleObservationJob } from "../operations/observation-production";
 import { membershipIsServiceable } from "@tymra/domain";
 import { applyMemberResultStrategy, recordMemberAlerts } from "../membership/strategy";
 import { isProductionOtaPayload, pauseProductionOta } from "../operations/production-ota";
@@ -51,6 +53,7 @@ async function executeJob(job: Job, environment: Environment): Promise<void> {
       await pollArgusExecution(environment, requiredString(payload, "executionId"));
       return;
     case "RATE_COLLECTION":
+      if (isObservationJob(payload)) { await handleObservationJob(job, environment); return; }
       if (analysisRequestId) return void await workerService!.collectAnalysis(analysisRequestId, job.id);
       await collectRates(requiredString(payload, "priceCheckId"), job.id, environment);
       return;

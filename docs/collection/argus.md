@@ -16,6 +16,39 @@ separately from the historical preparation contract below.
 
 ### Christchurch staged observation pilot (local only, 2026-10-15)
 
+#### Three-object production preparation (2026-10-16)
+
+The reviewed December series supersedes the seven-object November planning example below for the
+next bounded canary. `observation-pilot.ts` freezes three reviewed source units, two stay anchors and
+28 observation days. The private manifest and historical ledger are deployment inputs, never image
+contents. The baseline is 42 spent of 195; at most 90 further reservations are permitted, leaving 63
+unallocated. The initial production canary contains three identities and six price tasks (nine calls,
+within ten reserved). Scheduled capacity is 48 prices plus 12 weekly identity checks. Twenty retry
+slots and one unused canary slot are reserves, not automatically dispatched work or a new allowance.
+
+`observation-production.ts` stores disabled intent in one dedicated ScheduleDefinition and reserves
+each task as a durable Job under its row lock. A task key includes the observation cycle and stay;
+replaying the same key does not create another capture. Missed days are not caught up in a burst.
+Scheduled identity checks fall on separate days. The production source cap remains six/day and
+concurrency one, counting existing production executions as well as reserved pilot work. No local
+one-day quota exception is imported. The historical baseline contains receipts, not executable policy.
+
+The explicit canary permission expires within 24 hours and permits only the exact frozen inputs;
+it does not enable source discovery, change a source's lifecycle or revive old OTA schedules.
+BLOCKED sources remain prohibited. The four-week schedule stays disabled until separately authorized;
+the preparation CLI has no activation command. Challenge/login/rate-limit conditions stop that source,
+other identity or extraction failures hold the affected object. No alternate room/date is substituted.
+Uncertain submissions are retained and require reconciliation instead of blind resubmission.
+
+The existing Worker/Argus orchestration owns polling and leases. CollectionRun.scope retains the
+source-scoped identity or evaluated raw offers; ArgusExecution retains wire delivery and RawArtifact
+retains verified evidence before ACK/purge. These observations do not enter public RateObservation
+or market indices. Unknown actual anonymous-profile or booking-mode attestation and unmatched terms
+remain RAW_ONLY; they are observation findings, not fabricated comparable prices. Independent reserve
+and long-operation evidence are follow-up work, not prerequisites for source-scoped observation.
+
+Preparation, production deployment and actual canary outcomes are recorded separately in traceability.
+
 This is the current small-pilot preparation contract. The older large-panel planning API remains a separate example, not the budget or entry gate for these seven objects. No collection is authorized.
 
 `market-observation.ts` separates source-scoped observation eligibility, per-quote comparability,
