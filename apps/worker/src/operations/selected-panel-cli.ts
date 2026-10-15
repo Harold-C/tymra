@@ -5,6 +5,7 @@ import { prisma, Prisma } from "@tymra/db";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedManifestSchema, selectedHash } from "./selected-panel-plan";
 import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE } from "./observation-pilot";
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
+import { acquireSelectedActivationLock } from "./selected-panel-lock";
 
 const environment = getEnvironment();
 if (environment.NODE_ENV !== "production" || new URL(environment.ARGUS_API_BASE_URL).hostname !== "api.argus.nz") throw Error("Production target required");
@@ -13,7 +14,7 @@ try {
   if (operation !== "activate" || !file) throw Error("Use activate <reviewed-manifest.json>");
   const manifest = selectedManifestSchema.parse(JSON.parse(await readFile(file, "utf8"))), manifestHash = selectedHash(manifest);
   const result = await prisma.$transaction(async tx => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${SELECTED_PANEL_KEY}))`;
+    await acquireSelectedActivationLock(tx);
     if (await tx.scheduleDefinition.findUnique({ where: { key: SELECTED_PANEL_KEY } })) throw Error("Formal plan already exists; inspect its state instead of rearming");
     const beforeSchedules = await tx.scheduleDefinition.findMany({ orderBy: { key: "asc" }, select: { key: true, enabled: true, payload: true, jobType: true, queueName: true, cronExpression: true } });
     const beforeSources = await tx.dataSource.findMany({ orderBy: { key: "asc" } });

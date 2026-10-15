@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { assertIsolatedTestEnvironment } from "../../../test/isolation";
 import { selectedFixture } from "./selected-panel-fixtures";
+import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey } from "../src/operations/selected-panel-plan";
 const now = new Date("2026-10-16T06:00:00Z");
 const isolated = assertIsolatedTestEnvironment();
@@ -44,6 +45,15 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("holds the activation lock until the transaction ends without decoding void", async () => {
+    await prisma.$transaction(async tx => {
+      await acquireSelectedActivationLock(tx);
+      const competing = await prisma.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${SELECTED_PANEL_KEY})) AS locked`;
+      expect(competing).toEqual([{ locked: false }]);
+    });
+    const released = await prisma.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${SELECTED_PANEL_KEY})) AS locked`;
+    expect(released).toEqual([{ locked: true }]);
+  });
   it("serializes concurrent dispatch and never changes sources or unrelated schedules", async () => {
     const sources = await prisma.dataSource.findMany();
     const jobs = await Promise.all([enqueueSelectedPanel(now), enqueueSelectedPanel(now)]);
