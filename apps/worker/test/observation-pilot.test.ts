@@ -10,6 +10,21 @@ export function fixtureManifest(): PilotManifest {
       evidenceRefs:["test"], evidenceObservedOn:"2099-10-15", identityConflicts:[], geography:{ locality:null,physicalUnitKey:null,precision:"SOURCE_SCOPED" }, possibleDuplicateGroup:null,concentrationGroup:null,quoteGaps:[],executionGaps:[],followUpGaps:[],reserve:{status:"GAP",candidateIds:[],reason:"observation only"} } })) });
 }
 describe("production observation plan", () => {
+  it("permits only a bounded repair for its held object without reopening canary or scheduled work", () => {
+    const manifest=fixtureManifest();
+    const repair={id:"verified-fix",candidateId:"candidate2",enabled:true,expiresAt:"2099-10-18T00:00:00.000Z",reservedBefore:7,reason:"Reviewed repair"};
+    const state={manifest,manifestHash:pilotHash(manifest),canaryEnabled:false,canaryExpiresAt:repair.expiresAt,heldCandidates:["candidate2"],stoppedSources:[],repairs:[repair]};
+    const tasks=pilotTasks(manifest,state.repairs).filter(t=>t.mode==="repair");
+    expect(tasks).toHaveLength(3);expect(tasks.every(t=>t.bucket==="retry" && t.candidateId==="candidate2")).toBe(true);
+    expect(new Set(tasks.map(t=>t.key)).size).toBe(3);
+    for(const task of tasks){
+      expect(taskAllowed(state,false,task,new Date("2099-10-17T00:00:00Z"))).toBe(true);
+      expect(taskAllowed(state,true,task,new Date("2099-10-17T00:00:00Z"))).toBe(false);
+      expect(taskAllowed(state,false,task,new Date(repair.expiresAt))).toBe(false);
+      expect(taskAllowed({...state,stoppedSources:["booking"]},false,task,new Date("2099-10-17T00:00:00Z"))).toBe(false);
+    }
+    expect(pilotTasks(manifest).filter(t=>t.mode==="repair")).toHaveLength(0);
+  });
   it("preserves a verified receipt through JSONB key ordering while rejecting changed content", () => {
     const a={job_id:"one",items:[{price:16400,currency:"NZD"}],result_sha256:"wire"};
     const b={result_sha256:"wire",items:[{currency:"NZD",price:16400}],job_id:"one"};

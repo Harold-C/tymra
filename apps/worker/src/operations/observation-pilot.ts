@@ -24,7 +24,13 @@ export const pilotManifestSchema = z.object({
   }
 });
 export type PilotManifest = z.infer<typeof pilotManifestSchema>;
-export type PilotTask = { key: string; candidateId: string; workflow: "resolve_listing" | "collect_rates"; checkIn: string; due: string; bucket: "initial" | "quotes" | "weeklyIdentity"; mode: "canary" | "scheduled" };
+export const pilotRepairSchema = z.object({
+  id: z.string().regex(/^[a-z0-9-]{1,64}$/), candidateId: z.string().min(1),
+  enabled: z.boolean(), expiresAt: z.string().datetime(),
+  reservedBefore: z.number().int().min(0).max(87), reason: z.string().min(1).max(500),
+}).strict();
+export type PilotRepair = z.infer<typeof pilotRepairSchema>;
+export type PilotTask = { key: string; candidateId: string; workflow: "resolve_listing" | "collect_rates"; checkIn: string; due: string; bucket: "initial" | "quotes" | "weeklyIdentity" | "retry"; mode: "canary" | "scheduled" | "repair"; repairId?: string };
 export const pilotHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 /** JSONB changes object key order; the verified wire receipt must survive that round trip. */
 export function pilotCanonicalHash(value: unknown): string {
@@ -32,7 +38,7 @@ export function pilotCanonicalHash(value: unknown): string {
     ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical((v as Record<string, unknown>)[k])])) : v;
   return pilotHash(canonical(value));
 }
-export function pilotTasks(manifest: PilotManifest): PilotTask[] {
+export function pilotTasks(manifest: PilotManifest, repairs: PilotRepair[] = []): PilotTask[] {
   const m = pilotManifestSchema.parse(manifest);
   const result: PilotTask[] = [];
   for (const { candidate: c } of m.candidates) {
@@ -44,19 +50,31 @@ export function pilotTasks(manifest: PilotManifest): PilotTask[] {
       for (const offset of [0, 3]) for (const stay of m.stays) result.push({ key: `week${week}:${offset}:${c.id}:${stay}`, candidateId: c.id, workflow: "collect_rates", checkIn: stay, due: addNzCalendarDays(m.start, week * 7 + offset), bucket: "quotes", mode: "scheduled" });
     }
   }
+  for (const repair of repairs) {
+    if (!m.candidates.some(c => c.candidate.id === repair.candidateId)) throw new Error("UNKNOWN_REPAIR_OBJECT");
+    const common = { candidateId: repair.candidateId, due: m.start, bucket: "retry" as const, mode: "repair" as const, repairId: repair.id };
+    result.push({ ...common, key: `repair:${repair.id}:${repair.candidateId}:identity`, workflow: "resolve_listing", checkIn: m.stays[0] });
+    for (const stay of m.stays) result.push({ ...common, key: `repair:${repair.id}:${repair.candidateId}:${stay}`, workflow: "collect_rates", checkIn: stay });
+  }
   return result.sort((a,b) => a.due.localeCompare(b.due) || Number(a.workflow !== "resolve_listing") - Number(b.workflow !== "resolve_listing") || a.key.localeCompare(b.key));
 }
 export const pilotStateSchema = z.object({
   manifest: pilotManifestSchema, manifestHash: z.string(), canaryEnabled: z.boolean(), canaryExpiresAt: z.string().datetime(),
   heldCandidates: z.array(z.string()), stoppedSources: z.array(z.string()),
-}).strict().refine(s => pilotHash(s.manifest) === s.manifestHash, "Manifest changed");
+  repairs: z.array(pilotRepairSchema).optional(),
+}).strict().refine(s => pilotHash(s.manifest) === s.manifestHash, "Manifest changed")
+  .refine(s => new Set((s.repairs ?? []).map(r => r.id)).size === (s.repairs ?? []).length, "Duplicate repair authorization");
 export const pilotJobSchema = z.object({ observationPilot: z.literal(OBSERVATION_PILOT_KEY), manifestHash: z.string(), taskKey: z.string(), sourceId: z.enum(["booking", "expedia"]) }).strict();
 export function isObservationJob(payload: unknown) { return pilotJobSchema.safeParse(payload).success; }
 export function nzDate(now: Date) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit" }).format(now); }
 export function taskAllowed(state: z.infer<typeof pilotStateSchema>, enabled: boolean, task: PilotTask, now: Date) {
-  if (state.heldCandidates.includes(task.candidateId)) return false;
   const source = state.manifest.candidates.find(c => c.candidate.id === task.candidateId)?.candidate.source.toLowerCase();
   if (!source || state.stoppedSources.includes(source)) return false;
+  if (task.mode === "repair") {
+    const repair = state.repairs?.find(r => r.id === task.repairId && r.candidateId === task.candidateId);
+    return !enabled && !state.canaryEnabled && !!repair?.enabled && now < new Date(repair.expiresAt);
+  }
+  if (state.heldCandidates.includes(task.candidateId)) return false;
   if (task.mode === "canary") return state.canaryEnabled && now < new Date(state.canaryExpiresAt);
   return enabled && nzDate(now) === task.due && nzDate(now) <= state.manifest.end;
 }

@@ -49,6 +49,17 @@ and long-operation evidence are follow-up work, not prerequisites for source-sco
 
 Preparation, production deployment and actual canary outcomes are recorded separately in traceability.
 
+An explicitly reviewed repair uses `prepare-repair` with an authorization ID, the held candidate,
+a reason, and the exact current reserved/remaining counts. It requires an idle pilot with canary and
+scheduled collection closed. Each authorization creates at most three distinct tasks: identity first,
+then the two original stay anchors; all three consume the existing retry reserve and overall limits.
+No old Job, failed receipt, source policy, frozen unit or stay duration is overwritten. A stale budget,
+stopped source or exhausted daily capacity blocks execution. An authorization expires within 24 hours
+and cannot be implicitly extended or reopened. Any failure closes that object's repair permission.
+`close-repair` releases the held object only after all three Jobs succeed and their deliveries are
+verified; it always leaves the four-week schedule disabled. Repair results use the same evidence,
+wire verification, RAW_ONLY evaluation and ACK chain as the initial canary.
+
 This is the current small-pilot preparation contract. The older large-panel planning API remains a separate example, not the budget or entry gate for these seven objects. No collection is authorized.
 
 `market-observation.ts` separates source-scoped observation eligibility, per-quote comparability,

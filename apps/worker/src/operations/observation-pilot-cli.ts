@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { getEnvironment } from "@tymra/config";
 import { prisma } from "@tymra/db";
 import { pilotManifestSchema, OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotStateSchema } from "./observation-pilot";
-import { prepareObservationPilot, enqueueObservationTask } from "./observation-production";
+import { prepareObservationPilot, enqueueObservationTask, prepareObservationRepair, closeObservationRepair } from "./observation-production";
+import { z } from "zod";
 
 const env = getEnvironment();
 if (env.NODE_ENV !== "production" || new URL(env.ARGUS_API_BASE_URL).hostname !== "api.argus.nz") throw new Error("Production pilot requires the selected production environment");
@@ -19,8 +20,16 @@ try {
       || baseline.limits?.total !== 195 || baseline.automaticCollectionEnabled !== false) throw new Error("Baseline ledger mismatch");
     await prepareObservationPilot(manifest, new Date(Date.now() + 12 * 3600_000).toISOString());
     console.log(JSON.stringify({ prepared: true, automaticEnabled: false, carriedSpent: 42, remaining: 153 }));
-  } else if (operation === "enqueue-canary") {
-    const job = await enqueueObservationTask("canary");
+  } else if (operation === "prepare-repair") {
+    if (!file) throw new Error("Reviewed repair authorization file required");
+    const input = z.object({ id: z.string(), candidateId: z.string(), reason: z.string(), expectedReserved: z.number().int(), expectedRemaining: z.number().int() }).strict().parse(JSON.parse(await readFile(file, "utf8")));
+    const repair = await prepareObservationRepair(input, new Date(Date.now() + 12 * 3600_000).toISOString());
+    console.log(JSON.stringify({ repairId: repair.id, repairEnabled: repair.enabled, maxCaptures: 3, automaticEnabled: false }));
+  } else if (operation === "close-repair") {
+    if (!file) throw new Error("Repair authorization ID required");
+    console.log(JSON.stringify(await closeObservationRepair(file)));
+  } else if (operation === "enqueue-canary" || operation === "enqueue-repair") {
+    const job = await enqueueObservationTask(operation === "enqueue-repair" ? "repair" : "canary");
     console.log(JSON.stringify({ jobId: job?.id ?? null, automaticEnabled: false }));
   } else if (operation === "close-canary") {
     const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
@@ -31,5 +40,5 @@ try {
     const control = await prisma.scheduleDefinition.findUnique({ where: { key: OBSERVATION_PILOT_KEY } });
     const jobs = await prisma.job.findMany({ where: { queueName: OBSERVATION_QUEUE }, select: { id: true, status: true, payload: true, lastErrorCode: true } });
     console.log(JSON.stringify({ automaticEnabled: control?.enabled ?? false, state: control?.payload, reserved: jobs.length, remaining: 153 - jobs.length, jobs }));
-  } else throw new Error("Use prepare, enqueue-canary, close-canary or status. No activation command is provided.");
+  } else throw new Error("Use prepare, enqueue-canary, close-canary, prepare-repair, enqueue-repair, close-repair or status. No activation command is provided.");
 } finally { await prisma.$disconnect(); }

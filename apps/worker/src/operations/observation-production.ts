@@ -2,7 +2,7 @@ import { prisma, Prisma, type Job } from "@tymra/db";
 import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 import type { Environment } from "@tymra/config";
 import type { ArgusCaptureInput } from "../clients/argus-client";
-import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash, pilotJobSchema, pilotStateSchema, pilotTasks, taskAllowed, type PilotManifest } from "./observation-pilot";
+import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash, pilotJobSchema, pilotStateSchema, pilotRepairSchema, pilotTasks, taskAllowed, type PilotManifest, type PilotRepair } from "./observation-pilot";
 import { resolveObservationUnit, evaluateCapturedObservation } from "./observation-evaluation";
 import { DeferredJobError } from "../jobs/deferred-job";
 
@@ -41,7 +41,53 @@ export async function prepareObservationPilot(manifest: PilotManifest, expiresAt
 }
 
 /** Budget reservation is the durable parent Job, created under the pilot row lock before any submission. */
-export async function enqueueObservationTask(mode: "canary" | "scheduled", now = new Date()) {
+export async function prepareObservationRepair(input: { id: string; candidateId: string; reason: string; expectedReserved: number; expectedRemaining: number }, expiresAt: string) {
+  const repair = pilotRepairSchema.parse({ id: input.id, candidateId: input.candidateId, reason: input.reason,
+    reservedBefore: input.expectedReserved, enabled: true, expiresAt });
+  if (new Date(expiresAt).getTime() > Date.now() + 24 * 3600_000 || new Date(expiresAt).getTime() <= Date.now()) throw new Error("REPAIR_PERMISSION_MUST_EXPIRE_WITHIN_24H");
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${OBSERVATION_PILOT_KEY} FOR UPDATE`;
+    const control = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
+    const state = pilotStateSchema.parse(control.payload);
+    const existing = state.repairs?.find(r => r.id === repair.id);
+    if (existing) {
+      if (existing.candidateId !== repair.candidateId || existing.reason !== repair.reason || existing.reservedBefore !== repair.reservedBefore) throw new Error("REPAIR_AUTHORIZATION_CHANGED");
+      return existing; // Never extend or rearm an existing authorization.
+    }
+    const jobs = await tx.job.findMany({ where: { queueName: OBSERVATION_QUEUE } });
+    if (control.enabled || state.canaryEnabled || state.repairs?.some(r => r.enabled)
+      || jobs.some(j => ["PENDING", "RUNNING"].includes(j.status))) throw new Error("REPAIR_REQUIRES_CLOSED_IDLE_PILOT");
+    if (jobs.length !== input.expectedReserved || state.manifest.totalLimit - state.manifest.baselineSpent - jobs.length !== input.expectedRemaining
+      || jobs.length + 3 > state.manifest.additionalLimit) throw new Error("REPAIR_BUDGET_CHANGED");
+    const candidate = state.manifest.candidates.find(c => c.candidate.id === repair.candidateId);
+    if (!candidate || !state.heldCandidates.includes(repair.candidateId) || state.stoppedSources.includes(candidate.candidate.source.toLowerCase())) throw new Error("REPAIR_REQUIRES_HELD_OBJECT_WITH_AVAILABLE_SOURCE");
+    const tasks = pilotTasks(state.manifest, state.repairs);
+    if (jobs.filter(j => tasks.find(t => t.key === pilotJobSchema.parse(j.payload).taskKey)?.bucket === "retry").length + 3 > state.manifest.remainingBuckets.retry) throw new Error("REPAIR_RESERVE_EXHAUSTED");
+    state.repairs = [...(state.repairs ?? []), repair];
+    await tx.scheduleDefinition.update({ where: { id: control.id }, data: { payload: json(state) } });
+    return repair;
+  });
+}
+
+export async function closeObservationRepair(id: string) {
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${OBSERVATION_PILOT_KEY} FOR UPDATE`;
+    const control = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
+    const state = pilotStateSchema.parse(control.payload);
+    const repair = state.repairs?.find(r => r.id === id);
+    if (!repair) throw new Error("UNKNOWN_REPAIR_AUTHORIZATION");
+    repair.enabled = false;
+    const keys = pilotTasks(state.manifest, [repair]).filter(t => t.repairId === id).map(t => t.key);
+    const jobs = (await tx.job.findMany({ where: { queueName: OBSERVATION_QUEUE } })).filter(j => keys.includes(pilotJobSchema.parse(j.payload).taskKey));
+    const verified = await tx.argusExecution.count({ where: { parentJobId: { in: jobs.map(j => j.id) }, deliveryVerifiedAt: { not: null } } });
+    const passed = jobs.length === 3 && jobs.every(j => j.status === "SUCCEEDED") && verified === 3;
+    if (passed) state.heldCandidates = state.heldCandidates.filter(c => c !== repair.candidateId);
+    await tx.scheduleDefinition.update({ where: { id: control.id }, data: { enabled: false, nextRunAt: null, payload: json(state) } });
+    return { passed, held: state.heldCandidates.includes(repair.candidateId), repairEnabled: false, automaticEnabled: false };
+  });
+}
+
+export async function enqueueObservationTask(mode: "canary" | "scheduled" | "repair", now = new Date()) {
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${OBSERVATION_PILOT_KEY} FOR UPDATE`;
     const control = await tx.scheduleDefinition.findUnique({ where: { key: OBSERVATION_PILOT_KEY } });
@@ -53,7 +99,7 @@ export async function enqueueObservationTask(mode: "canary" | "scheduled", now =
     }
     const jobs = await tx.job.findMany({ where: { queueName: OBSERVATION_QUEUE } });
     if (jobs.length >= state.manifest.additionalLimit || jobs.some(j => ["PENDING", "RUNNING"].includes(j.status))) return null;
-    const tasks = pilotTasks(state.manifest);
+    const tasks = pilotTasks(state.manifest, state.repairs);
     const used = new Set(jobs.map(j => pilotJobSchema.parse(j.payload).taskKey));
     const candidates = tasks.filter(t => t.mode === mode && !used.has(t.key) && taskAllowed(state, control.enabled, t, now));
     if (mode === "canary" && jobs.filter(j => pilotJobSchema.parse(j.payload).taskKey.startsWith("canary:")).length >= state.manifest.canaryLimit) return null;
@@ -69,7 +115,9 @@ export async function enqueueObservationTask(mode: "canary" | "scheduled", now =
       if (daily >= Math.min(6, source.dailyBudget)) continue;
       if (jobs.filter(j => tasks.find(t => t.key === pilotJobSchema.parse(j.payload).taskKey)?.bucket === task.bucket).length >= state.manifest.remainingBuckets[task.bucket]) continue;
       // Canary exact identity is a prerequisite for each rate; scheduled rates reuse that reviewed identity.
-      if (task.workflow === "collect_rates" && !jobs.some(j => pilotJobSchema.parse(j.payload).taskKey === `canary:${task.candidateId}:identity` && j.status === "SUCCEEDED")) continue;
+      const identityKeys = task.mode === "repair" ? [`repair:${task.repairId}:${task.candidateId}:identity`]
+        : tasks.filter(t => t.candidateId === task.candidateId && t.workflow === "resolve_listing" && t.mode !== "scheduled").map(t => t.key);
+      if (task.workflow === "collect_rates" && !jobs.some(j => identityKeys.includes(pilotJobSchema.parse(j.payload).taskKey) && j.status === "SUCCEEDED")) continue;
       return tx.job.create({ data: { type: "RATE_COLLECTION", queueName: OBSERVATION_QUEUE, sourceId, maxAttempts: 1,
         idempotencyKey: `${OBSERVATION_PILOT_KEY}:${state.manifestHash}:${task.key}`,
         payload: json({ observationPilot: OBSERVATION_PILOT_KEY, manifestHash: state.manifestHash, taskKey: task.key, sourceId }), runAt: now, createdAt: now } });
@@ -82,14 +130,14 @@ export async function observationCapturePermission(parent: Job, input: ArgusCapt
   const payload = pilotJobSchema.parse(parent.payload);
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
   const state = pilotStateSchema.parse(control.payload);
-  const task = pilotTasks(state.manifest).find(t => t.key === payload.taskKey);
+  const task = pilotTasks(state.manifest, state.repairs).find(t => t.key === payload.taskKey);
   if (!task || payload.manifestHash !== state.manifestHash || parent.type !== "RATE_COLLECTION" || parent.queueName !== OBSERVATION_QUEUE || parent.maxAttempts !== 1
     || parent.idempotencyKey !== `${OBSERVATION_PILOT_KEY}:${state.manifestHash}:${task.key}` || !taskAllowed(state, control.enabled, task, now)) throw new Error("OBSERVATION_PERMISSION_CLOSED");
   const c = state.manifest.candidates.find(c => c.candidate.id === task.candidateId)!;
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: dataSourceId } });
   if (source.key !== payload.sourceId || parent.sourceId !== source.key || source.key !== c.candidate.source.toLowerCase()
     || source.isDemo || !source.environments.includes("PRODUCTION") || source.lifecycle === "BLOCKED" || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus) || source.concurrencyLimit !== 1) throw new Error("OBSERVATION_SOURCE_BLOCKED");
-  const expected = observationInput(state.manifest, task.key, parent.id);
+  const expected = observationInput(state.manifest, task.key, parent.id, state.repairs);
   if (JSON.stringify(input) !== JSON.stringify(expected)) throw new Error("OBSERVATION_INPUT_CHANGED");
   const jobs = await prisma.job.count({ where: { queueName: OBSERVATION_QUEUE } });
   if (jobs > state.manifest.additionalLimit || jobs + state.manifest.baselineSpent > state.manifest.totalLimit) throw new Error("OBSERVATION_BUDGET_EXHAUSTED");
@@ -97,8 +145,8 @@ export async function observationCapturePermission(parent: Job, input: ArgusCapt
   if (daily >= Math.min(6, source.dailyBudget)) throw new Error("OBSERVATION_SOURCE_DAILY_LIMIT");
 }
 
-export function observationInput(manifest: PilotManifest, taskKey: string, parentId: string): ArgusCaptureInput {
-  const task = pilotTasks(manifest).find(t => t.key === taskKey);
+export function observationInput(manifest: PilotManifest, taskKey: string, parentId: string, repairs?: PilotRepair[]): ArgusCaptureInput {
+  const task = pilotTasks(manifest, repairs).find(t => t.key === taskKey);
   if (!task) throw new Error("UNKNOWN_OBSERVATION_TASK");
   const { candidate: c, unitExternalId } = manifest.candidates.find(c => c.candidate.id === task.candidateId)!;
   const stay = { checkIn: task.checkIn, checkOut: addNzCalendarDays(task.checkIn, c.nights), adults: 2, children: 0 as const, units: 1, currency: "NZD" as const };
@@ -113,6 +161,7 @@ export async function stopObservationObject(candidateId: string, sourceId?: stri
     const control = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
     const state = pilotStateSchema.parse(control.payload);
     state.heldCandidates = [...new Set([...state.heldCandidates, candidateId])];
+    for (const repair of state.repairs ?? []) if (repair.candidateId === candidateId) repair.enabled = false;
     if (sourceId) state.stoppedSources = [...new Set([...state.stoppedSources, sourceId])];
     await tx.scheduleDefinition.update({ where: { id: control.id }, data: { payload: json(state) } });
   });
@@ -124,7 +173,7 @@ export async function handleObservationJob(job: Job, environment: Environment) {
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
   const state = pilotStateSchema.parse(control.payload);
   if (payload.manifestHash !== state.manifestHash) throw new Error("MANIFEST_CHANGED");
-  const task = pilotTasks(state.manifest).find(t => t.key === payload.taskKey)!;
+  const task = pilotTasks(state.manifest, state.repairs).find(t => t.key === payload.taskKey)!;
   const selected = state.manifest.candidates.find(c => c.candidate.id === task?.candidateId);
   if (!selected) throw new Error("UNKNOWN_OBSERVATION_OBJECT");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: payload.sourceId } });
@@ -132,7 +181,7 @@ export async function handleObservationJob(job: Job, environment: Environment) {
   if (!run) run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "RUNNING", startedAt: new Date(), scope: json({ observationPilot: OBSERVATION_PILOT_KEY, manifestHash: state.manifestHash, task, comparison: "RAW_ONLY", captureReserved: false }) } });
   const { captureBrowserTaskWithDurableArgus, acknowledgePersistedArgusResults } = await import("../services/argus-orchestrator");
   try {
-    const input = observationInput(state.manifest, task.key, job.id);
+    const input = observationInput(state.manifest, task.key, job.id, state.repairs);
     const response = await captureBrowserTaskWithDurableArgus(environment, input, { parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id });
     if (!response.ok || !response.payload.ok) throw new Error("OBSERVATION_CAPTURE_FAILED");
     const extracted = response.payload.extracted;
