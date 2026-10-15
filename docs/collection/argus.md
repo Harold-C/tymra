@@ -14,7 +14,48 @@ temporary daily-cap exception or four-week scheduler activation. Production and 
 is recorded in [traceability](../traceability.md#2026-10-16-公开-ota-房型面积接收生产发布),
 separately from the historical preparation contract below.
 
-### Christchurch staged observation pilot (local only, 2026-10-15)
+### Christchurch selected-sample formal collection (2026-10-16)
+
+The user cancelled the one-off 195-execution acceptance ceiling and authorized the full selected
+roster for production collection, retaining normal source daily limits, concurrency and stop-on-block,
+with no automatic retry. `christchurch-selected-samples` supersedes the disabled three-object plan;
+historical jobs/results and their original budget receipts remain immutable. No 143/195 lifetime limit,
+90-new-capture ceiling, four-week graduation gate or expiry from the old pilot controls this schedule.
+
+The protected manifest `runtime/market-data/christchurch-supply-20261014/selected-collection-manifest.json`
+contains all 52 initial property seats plus subsequent selected commercial and holiday-home members,
+deduplicated against the seven-object roster. It records 68 members, 67 enabled for source/room execution
+and one explicit hold (Spencer Beach: no exact OTA binding). These counts describe configured members,
+not successful price captures. Reserves and probable aliases do not become extra independent seats.
+
+The initial 52 property proposals had no frozen OTA unit binding. Where an exact two-adult OTA room
+was manually observed, it can seed a NEW source-unit baseline; its actual ID/name and differences from
+the operator proposal are retained. This never establishes a physical cross-platform room crosswalk,
+splices old different-room prices or guarantees capacity/amenities. Dorm beds and powered sites are excluded.
+The later reviewed Aalton/Carnmore/Lincoln choices are preserved. Missing 24-month history, independent
+reserves, all six available dates or normalized terms do not block capture of attributable raw outcomes.
+
+Each member resolves its unique source unit once, reuses verified delivered identities for up to 28 days,
+and is priced independently; no all-members preflight barrier. Where names/signatures are used, ambiguous
+or absent matches hold only that member. Each source retains at most six captures per NZ day (or its lower
+configured allowance), concurrency one, and existing Argus policies. The scheduler yields to existing work.
+The oldest unpriced members get priority; two weekly quote opportunities per member are a maximum,
+not a promise above source capacity. There is no automatic replay, retry, quota waiver or fallback unit.
+Blocked/login/challenge/rate-limit outcomes stop this schedule's source; other errors hold the member.
+
+Stay anchors are versioned by observation month: start from the first of that month +60 days, then the
+next Tuesday and Saturday (including that base date). October anchors remain Dec 1/5; November opens
+a distinct Jan 5/2 cohort. Both stay length and exact stay dates remain in each observation and comparison key;
+never splice cohorts into a seasonal or city-wide index. Calendar boundaries use Pacific/Auckland.
+Normal collection remains outside NZ weekday 09:00–17:00 office hours. Every capture and parent job has
+maxAttempts=1; delivery polling/confirmation is not a new source capture. Persist hash-verified evidence
+before ACK, including failed mapping evidence; successful raw artifacts retain 72 hours, failures 168.
+
+Actual profile, booking mode and unresolved fee/term facts remain unknown. CollectionRun retains raw
+observations and quality flags; they cannot automatically become comparable prices, RateObservation or
+regional published metrics. Production activation and natural-run results are recorded in traceability.
+
+### Earlier Christchurch staged observation pilot (local only, 2026-10-15)
 
 #### Three-object production preparation (2026-10-16)
 

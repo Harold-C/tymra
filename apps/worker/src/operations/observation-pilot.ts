@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { addNzCalendarDays, evaluateObservationAdmission, observationCandidateSchema } from "@tymra/domain";
+import { isSelectedPanelJob } from "./selected-panel-plan";
 
 export const OBSERVATION_PILOT_KEY = "christchurch-three-observations-20261016";
 export const OBSERVATION_QUEUE = "christchurch-observation";
@@ -65,7 +66,7 @@ export const pilotStateSchema = z.object({
 }).strict().refine(s => pilotHash(s.manifest) === s.manifestHash, "Manifest changed")
   .refine(s => new Set((s.repairs ?? []).map(r => r.id)).size === (s.repairs ?? []).length, "Duplicate repair authorization");
 export const pilotJobSchema = z.object({ observationPilot: z.literal(OBSERVATION_PILOT_KEY), manifestHash: z.string(), taskKey: z.string(), sourceId: z.enum(["booking", "expedia"]) }).strict();
-export function isObservationJob(payload: unknown) { return pilotJobSchema.safeParse(payload).success; }
+export function isObservationJob(payload: unknown) { return pilotJobSchema.safeParse(payload).success || isSelectedPanelJob(payload); }
 export function nzDate(now: Date) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Auckland", year: "numeric", month: "2-digit", day: "2-digit" }).format(now); }
 export function taskAllowed(state: z.infer<typeof pilotStateSchema>, enabled: boolean, task: PilotTask, now: Date) {
   const source = state.manifest.candidates.find(c => c.candidate.id === task.candidateId)?.candidate.source.toLowerCase();

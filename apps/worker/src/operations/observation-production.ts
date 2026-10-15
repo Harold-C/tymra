@@ -5,10 +5,11 @@ import type { ArgusCaptureInput } from "../clients/argus-client";
 import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash, pilotJobSchema, pilotStateSchema, pilotRepairSchema, pilotTasks, taskAllowed, type PilotManifest, type PilotRepair } from "./observation-pilot";
 import { resolveObservationUnit, evaluateCapturedObservation } from "./observation-evaluation";
 import { DeferredJobError } from "../jobs/deferred-job";
+import { isSelectedPanelJob } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
-async function persistObservationEvidence(parentJobId: string, runId: string, sourceId: string, traceId: string, failure: boolean) {
+export async function persistObservationEvidence(parentJobId: string, runId: string, sourceId: string, traceId: string, failure: boolean, evidenceOwner = OBSERVATION_PILOT_KEY) {
   const execution = await prisma.argusExecution.findFirstOrThrow({ where: { parentJobId } });
   const wire = execution.result as unknown as import("../clients/argus-client").ArgusJobResult;
   if (!wire?.result_sha256) throw new Error("RESULT_NOT_READY_FOR_RETENTION");
@@ -22,7 +23,7 @@ async function persistObservationEvidence(parentJobId: string, runId: string, so
     if (pointer.containsSensitiveData !== false || pointer.traceId !== traceId) throw new Error("UNSAFE_EVIDENCE");
     const id = `observation-${pilotHash([runId, pointer.storageRef]).slice(0,32)}`;
     await prisma.rawArtifact.upsert({ where: { id }, update: {}, create: { id, dataSourceId: sourceId, collectionRunId: runId, artifactType: pointer.kind.toUpperCase(), storageRef: pointer.storageRef, contentHash: pointer.sha256,
-      payload: json({ pointer, observationPilot: OBSERVATION_PILOT_KEY }), parserFailure: failure, expiresAt: new Date(Date.now() + (failure ? 168 : 72) * 3600_000) } });
+      payload: json({ pointer, observationPilot: evidenceOwner }), parserFailure: failure, expiresAt: new Date(Date.now() + (failure ? 168 : 72) * 3600_000) } });
   }
   if (!failure && !result?.evidence.some(e => e.kind === "html")) throw new Error("REQUIRED_EVIDENCE_MISSING");
 }
@@ -127,6 +128,7 @@ export async function enqueueObservationTask(mode: "canary" | "scheduled" | "rep
 }
 
 export async function observationCapturePermission(parent: Job, input: ArgusCaptureInput, dataSourceId: string, now = new Date()) {
+  if (isSelectedPanelJob(parent.payload)) return (await import("./selected-panel-production")).selectedCapturePermission(parent, input, dataSourceId, now);
   const payload = pilotJobSchema.parse(parent.payload);
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });
   const state = pilotStateSchema.parse(control.payload);
@@ -168,6 +170,7 @@ export async function stopObservationObject(candidateId: string, sourceId?: stri
 }
 
 export async function handleObservationJob(job: Job, environment: Environment) {
+  if (isSelectedPanelJob(job.payload)) return (await import("./selected-panel-production")).handleSelectedPanelJob(job, environment);
   if (environment.NODE_ENV !== "production" || new URL(environment.ARGUS_API_BASE_URL).hostname !== "api.argus.nz") throw new Error("PRODUCTION_OBSERVATION_TARGET_REQUIRED");
   const payload = pilotJobSchema.parse(job.payload);
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: OBSERVATION_PILOT_KEY } });

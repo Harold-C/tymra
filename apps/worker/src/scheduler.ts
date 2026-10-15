@@ -9,6 +9,8 @@ import { enqueueScheduleIfDue } from "./operations/schedule-enqueue";
 import { recordRuntimeHeartbeat } from "./operations/runtime-heartbeat";
 import { OBSERVATION_PILOT_KEY } from "./operations/observation-pilot";
 import { enqueueObservationTask } from "./operations/observation-production";
+import { SELECTED_PANEL_KEY } from "./operations/selected-panel-plan";
+import { enqueueSelectedPanel } from "./operations/selected-panel-production";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -31,6 +33,10 @@ await prisma.$disconnect();
 async function enqueueDueSchedules(now = new Date()) {
   const schedules = await prisma.scheduleDefinition.findMany({ where: { enabled: true, waivers: { none: { revokedAt: null, expiresAt: { gt: now } } }, OR: [{ nextRunAt: null }, { nextRunAt: { lte: now } }] }, orderBy: { key: "asc" } });
   for (const schedule of schedules) {
+    if (schedule.key === SELECTED_PANEL_KEY) {
+      if (environment.NODE_ENV === "production" && nextCollectionOutsideOfficeHours(now) <= now) await enqueueSelectedPanel(now);
+      continue;
+    }
     if (schedule.key === OBSERVATION_PILOT_KEY) {
       if (environment.NODE_ENV === "production" && nextCollectionOutsideOfficeHours(now) <= now) await enqueueObservationTask("scheduled", now);
       continue;
