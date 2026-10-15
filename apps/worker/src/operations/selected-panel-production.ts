@@ -46,7 +46,7 @@ export async function enqueueSelectedPanel(now = new Date()) {
       { status: "RUNNING" }, { status: "PENDING", OR: [{ queueName: SELECTED_PANEL_QUEUE }, { runAt: { lte: now } }] },
     ] } })) return null;
     if (await tx.argusExecution.count({ where: { status: { in: [...activeStatuses] } } })) return null;
-    const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE }, orderBy: { createdAt: "desc" } });
+    const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, orderBy: { createdAt: "desc" } });
     const matching = jobs.filter(j => selectedJobSchema.parse(j.payload).manifestHash === state.manifestHash);
     const runs = await tx.collectionRun.findMany({ where: { jobId: { in: matching.map(j => j.id) }, status: "SUCCEEDED" }, orderBy: { finishedAt: "desc" } });
     const progress: MemberProgress[] = state.manifest.members.map(member => {
@@ -58,11 +58,13 @@ export async function enqueueSelectedPanel(now = new Date()) {
         unitExternalId: (identity?.scope as { evaluated?: { externalId?: string } } | undefined)?.evaluated?.externalId ?? prior?.unitExternalId ?? null };
     });
     const tasks = nextSelectedTasks(state, progress, new Set(matching.map(j => j.idempotencyKey!)), now);
+    const sources = await tx.dataSource.findMany({ where: { key: { in: [...new Set(tasks.map(t => t.sourceId))] } } });
+    const dailyExecutions = await tx.argusExecution.findMany({ where: { dataSourceId: { in: sources.map(s => s.id) }, submittedAt: { gte: nzStartOfDay(now) } }, select: { dataSourceId: true, parentJobId: true } });
     for (const task of tasks) {
-      const source = await tx.dataSource.findUnique({ where: { key: task.sourceId } });
+      const source = sources.find(s => s.key === task.sourceId);
       if (!source || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1
         || source.lifecycle === "BLOCKED" || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) continue;
-      const executions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: nzStartOfDay(now) } }, select: { parentJobId: true } });
+      const executions = dailyExecutions.filter(e => e.dataSourceId === source.id);
       const reserved = jobs.filter(j => j.sourceId === task.sourceId && j.createdAt >= nzStartOfDay(now) && !executions.some(e => e.parentJobId === j.id));
       if (executions.length + reserved.length >= Math.min(6, source.dailyBudget)) continue;
       return tx.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: task.sourceId, maxAttempts: 1,
