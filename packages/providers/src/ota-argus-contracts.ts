@@ -38,6 +38,7 @@ export const otaUnitExtractionSchema = z.object({
   capacity: z.number().int().positive().nullable(),
   bedrooms: z.number().int().nonnegative().nullable(),
   bathrooms: z.number().nonnegative().nullable(),
+  areaSquareMetres: z.number().finite().positive().nullable().optional(),
   bedTypes: z.array(z.string().min(1)),
   amenities: z.array(z.string().min(1)),
   entireOrShared: z.enum(["ENTIRE", "PRIVATE", "SHARED"]),

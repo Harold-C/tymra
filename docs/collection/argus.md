@@ -4,6 +4,15 @@ Last updated: 2026-10-06 (bounded public queue wait and execution deadlines)
 
 ## Bounded OTA production pilots
 
+### Public OTA room-area compatibility (2026-10-16 release candidate)
+
+The consumer preserves optional positive `areaSquareMetres` on extracted units so a room's
+observed area can support identity review. Missing or null area remains unknown; area alone
+does not establish an exact unit or price comparability. Existing deliveries without this field
+remain valid. This candidate includes no local manual observation executor, execution ledger,
+temporary daily-cap exception or four-week scheduler activation. Release evidence is tracked
+separately from the historical preparation contract below.
+
 ### Christchurch staged observation pilot (local only, 2026-10-15)
 
 This is the current small-pilot preparation contract. The older large-panel planning API remains a separate example, not the budget or entry gate for these seven objects. No collection is authorized.
