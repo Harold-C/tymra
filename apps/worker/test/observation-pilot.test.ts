@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pilotManifestSchema, pilotHash, pilotTasks, taskAllowed, type PilotManifest } from "../src/operations/observation-pilot";
+import { pilotManifestSchema, pilotHash, pilotCanonicalHash, pilotTasks, taskAllowed, type PilotManifest } from "../src/operations/observation-pilot";
 
 export function fixtureManifest(): PilotManifest {
   return pilotManifestSchema.parse({ version: "christchurch-production-observation-v1", baselineLedgerSha256: "a".repeat(64), baselineSpent: 42, totalLimit: 195, additionalLimit: 90, canaryLimit: 10,
@@ -10,6 +10,12 @@ export function fixtureManifest(): PilotManifest {
       evidenceRefs:["test"], evidenceObservedOn:"2099-10-15", identityConflicts:[], geography:{ locality:null,physicalUnitKey:null,precision:"SOURCE_SCOPED" }, possibleDuplicateGroup:null,concentrationGroup:null,quoteGaps:[],executionGaps:[],followUpGaps:[],reserve:{status:"GAP",candidateIds:[],reason:"observation only"} } })) });
 }
 describe("production observation plan", () => {
+  it("preserves a verified receipt through JSONB key ordering while rejecting changed content", () => {
+    const a={job_id:"one",items:[{price:16400,currency:"NZD"}],result_sha256:"wire"};
+    const b={result_sha256:"wire",items:[{currency:"NZD",price:16400}],job_id:"one"};
+    expect(pilotCanonicalHash(a)).toBe(pilotCanonicalHash(b));
+    b.items[0].price=16600;expect(pilotCanonicalHash(a)).not.toBe(pilotCanonicalHash(b));
+  });
   it("allocates 9 canary, 48 price and 12 weekly identity captures, preserving a 21-call margin inside 90", () => {
     const tasks = pilotTasks(fixtureManifest());
     expect(tasks).toHaveLength(69); expect(new Set(tasks.map(t=>t.key)).size).toBe(69);

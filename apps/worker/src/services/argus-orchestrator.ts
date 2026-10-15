@@ -24,7 +24,7 @@ import { nzStartOfDay } from "@tymra/domain";
 import { ACTIVE_OTA_SOURCE_KEYS } from "../operations/ota-health";
 import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, productionOtaDailyBudgetWaivedForTrial } from "../operations/production-ota";
 import { withRedisLockWait } from "@tymra/queue";
-import { isObservationJob } from "../operations/observation-pilot";
+import { isObservationJob, pilotCanonicalHash } from "../operations/observation-pilot";
 import { observationCapturePermission } from "../operations/observation-production";
 
 const pollDelayMs = 1_000;
@@ -296,6 +296,12 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     throw new DeferredJobError(resultResponse.message, queueAware && execution.deadlineAt <= new Date() ? new Date(Date.now() + 30_000) : nextPoll(execution.deadlineAt));
   }
   const job = resultResponse.job;
+  if (isObservationJob(parent?.payload)) {
+    // getArgusJobResult has checked the original wire hash before JSONB reorders keys.
+    const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: execution.collectionRunId } });
+    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: { ...(run.scope as Prisma.JsonObject),
+      verifiedWire: { argusJobId: job.job_id, resultSha256: job.result_sha256, canonicalSha256: pilotCanonicalHash(job) } } } });
+  }
   const terminalStatus = job.status === "CANCELLED"
     ? "CANCELLED"
     : job.status === "COMPLETED" || job.status === "COMPLETED_WITH_WARNINGS"

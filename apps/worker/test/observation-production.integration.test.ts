@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, afterAll, describe, it, expect, vi } from "vitest";
 import { prisma } from "@tymra/db";
 import { prepareObservationPilot, enqueueObservationTask, observationCapturePermission, observationInput, stopObservationObject } from "../src/operations/observation-production";
-import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotStateSchema } from "../src/operations/observation-pilot";
+import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotStateSchema, pilotCanonicalHash } from "../src/operations/observation-pilot";
 import { fixtureManifest } from "./observation-pilot.test";
 
 let sourceBefore: Awaited<ReturnType<typeof prisma.dataSource.findMany>> = [];
@@ -21,6 +21,11 @@ afterEach(async()=>{
 });
 afterAll(async()=>{await prisma.$disconnect();});
 describe("bounded production observation integration",()=>{
+  it("verifies the same wire content after an actual PostgreSQL JSONB round trip",async()=>{
+    const wire={result_sha256:"original-wire-hash",job_id:"one",items:[{z:2,a:1,offers:[{currency:"NZD",amount:16400}]}]};
+    const rows=await prisma.$queryRaw<Array<{payload:unknown}>>`SELECT ${JSON.stringify(wire)}::jsonb AS payload`;
+    expect(pilotCanonicalHash(rows[0].payload)).toBe(pilotCanonicalHash(wire));
+  });
   it("creates disabled intent, carries 42, and concurrent dispatch reserves only one job",async()=>{
     const m=fixtureManifest();const before=await prisma.dataSource.findMany({where:{key:{in:["booking","expedia"]}}});
     await prepareObservationPilot(m,new Date(Date.now()+3600000).toISOString());

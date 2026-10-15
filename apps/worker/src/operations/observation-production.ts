@@ -2,7 +2,7 @@ import { prisma, Prisma, type Job } from "@tymra/db";
 import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 import type { Environment } from "@tymra/config";
 import type { ArgusCaptureInput } from "../clients/argus-client";
-import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotJobSchema, pilotStateSchema, pilotTasks, taskAllowed, type PilotManifest } from "./observation-pilot";
+import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash, pilotJobSchema, pilotStateSchema, pilotTasks, taskAllowed, type PilotManifest } from "./observation-pilot";
 import { resolveObservationUnit, evaluateCapturedObservation } from "./observation-evaluation";
 import { DeferredJobError } from "../jobs/deferred-job";
 
@@ -12,8 +12,10 @@ async function persistObservationEvidence(parentJobId: string, runId: string, so
   const execution = await prisma.argusExecution.findFirstOrThrow({ where: { parentJobId } });
   const wire = execution.result as unknown as import("../clients/argus-client").ArgusJobResult;
   if (!wire?.result_sha256) throw new Error("RESULT_NOT_READY_FOR_RETENTION");
-  const { result_sha256, ...content } = wire;
-  if (pilotHash(content) !== result_sha256 || wire.job_id !== execution.argusJobId || wire.items.length !== 1 || wire.items[0].trace_id !== traceId) throw new Error("RESULT_IDENTITY_OR_HASH_MISMATCH");
+  const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: runId } });
+  const proof = (run.scope as { verifiedWire?: { argusJobId: string; resultSha256: string; canonicalSha256: string } }).verifiedWire;
+  if (!proof || proof.argusJobId !== wire.job_id || proof.resultSha256 !== wire.result_sha256 || proof.canonicalSha256 !== pilotCanonicalHash(wire)
+    || wire.job_id !== execution.argusJobId || wire.items.length !== 1 || wire.items[0].trace_id !== traceId) throw new Error("RESULT_IDENTITY_OR_HASH_MISMATCH");
   const result = wire.items[0].result;
   if (result && (result.trace_id !== traceId || result.readonly_only !== true || result.external_side_effects_performed !== false)) throw new Error("UNSAFE_CAPTURE");
   for (const pointer of wire.items.flatMap(item => item.result?.evidence ?? [])) {

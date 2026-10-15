@@ -26,6 +26,12 @@ export const pilotManifestSchema = z.object({
 export type PilotManifest = z.infer<typeof pilotManifestSchema>;
 export type PilotTask = { key: string; candidateId: string; workflow: "resolve_listing" | "collect_rates"; checkIn: string; due: string; bucket: "initial" | "quotes" | "weeklyIdentity"; mode: "canary" | "scheduled" };
 export const pilotHash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+/** JSONB changes object key order; the verified wire receipt must survive that round trip. */
+export function pilotCanonicalHash(value: unknown): string {
+  const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
+    ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical((v as Record<string, unknown>)[k])])) : v;
+  return pilotHash(canonical(value));
+}
 export function pilotTasks(manifest: PilotManifest): PilotTask[] {
   const m = pilotManifestSchema.parse(manifest);
   const result: PilotTask[] = [];
