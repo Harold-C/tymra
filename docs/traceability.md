@@ -1,5 +1,36 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-16 Spencer 单席复核与民宿替换完成
+
+用户授权补齐Spencer的OTA房源/房型，当前无法接入时只替换这一席位，其他67个保持正常调度。
+已核实Spencer Agoda物业ID9774411及100 Heyders Road地址；12/1–2、12/5–6与12/5–7都显示无房且无可绑定房型。
+Booking直接入口跳回搜索，带closed_msg=5508871，未返回可售单元；官网Studio Units仍可见，但直订Newbook不属于既有OTA合同。
+本次只能判定当前窗口未建立可执行OTA房型绑定，不推定永久停业、其他日期或所有平台均不可接入；原研究记录保留。
+
+按现有民宿候选及实际固定窗口，选择Airbnb `17624439`，Character Home - Modern Comfort | Close to Airport，
+整套5卧、11床、3.5卫，两成人两晚；140条评价、4.69/5、公开房东BookaHome显示12年经验。
+12/1–3匿名付款前不可退套餐NZD819.60、12/5–7 NZD943.80；可退款套餐分别889/1027及其期限单独保留。
+原房东押金/退还卡费和可退款套餐取消冲突仍留质量缺口，继续RAW_ONLY；未登录、输入付款资料或提交订单。
+Upper Riccarton/Yaldhurst Road仅为房东地理声明，边界尚未核实，不顶替Spencerville营地地理/类型覆盖。
+新物业与现有成员无相同Listing或五卧单元标签，但精确门牌未公开，不宣称全平台物理交叉映射已完；
+与Latimer Loft共享公开BookaHome运营方线索，保留集中度，不算独立经营者候补。
+
+NZ 13:33生产回读：68成员、68进入解析/报价轮转，原Spencer席位移出当前manifest、研究证据保留。
+当前来源Booking50、Expedia7、Airbnb7、Bookabach3、Trip1。新成员追加到队尾，原67成员内容及相对顺序、
+3个已验证身份、held/stoppedSources、所有来源控制及其他85条计划完整指纹一致；正式计划nextRunAt仍NZ当日17:00。
+事务锁内再次拒绝任何已有正式Job的manifest更改，确认尚无正式Job后才切换指纹，未重置、重发或取消其他样本任务。
+新manifest指纹 `89b1543c09275f81fd42bc7c30571938e8bb1610266413ded1b63746c9734424`，
+审计 `cmva8grch0000l8ewl2h0y9p7`；本轮未部署、重启、改变来源限额/并发/重试规则或Argus配置。
+当前引擎仍f4a7689。临时单席运维文件SHA校验、现行镜像schema及范围验证通过，执行后已移除；
+实际业务回读通过不等于新房源Argus解析/报价已通过，后者由正常调度逐次验收。
+
+当前清单、前后控制快照、审计和人工窗口证据在受保护
+`runtime/market-data/christchurch-supply-20261014`，其中`sources/spencer-seat-before.json`、
+`spencer-seat-validation.json`、`spencer-seat-activation.json`、`spencer-seat-after.json`及
+`spencer-ota-recheck-20261016.json`明确区分配置、人工核验和真实执行。
+既有每日08:00只读复核任务已同步68/68和新指纹；新对象实际必须唯一匹配整套五卧，遇阻按现行规则暂停，
+不自动重试或恢复，不拼接不同退款套餐/晚数，不提前发布区域指数。
+
 ## 2026-10-16 完整已选名单正式采集已部署并启用
 
 最新用户授权取消旧195次验收总上限，直接使用完整已选名单，保留来源每日限额、并发及遇阻暂停，
