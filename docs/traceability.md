@@ -2,7 +2,7 @@
 
 ## 2026-10-16 原8个暂缓样本修复候选，尚未生产验收
 
-只读生产核验NZ19:03：原8个仍held，之后另有15个新增held，其中13个是Argus的
+逐条核对NZ19:03基线与20:27回读：原8个仍held，另外14个held，其中12个是Argus的
 SOURCE_DAILY_BUDGET_EXHAUSTED；未改动它们的状态、旧失败Job或任何正常计划。
 原Jailhouse/Haka的完整截图和HTTP500证明Booking返回错误页，不能据此宣称房源下线。
 Lilac、Akaroa、Tasman的原始wire及SHA正确，Prisma JSON传输改变经度末位造成持久化校验失败，
@@ -14,10 +14,30 @@ Lilac、Akaroa、Tasman的原始wire及SHA正确，Prisma JSON传输改变经度
 Cosy保存实页离线重放恢复756903401、两成人12/1–3、总价667NZD（含税费），
 11/26前免费取消、11/24前无需付款；只读同一offer的Guests标签，不采用单成人665或页面basket总价。
 这些是已保存实页离线证据，尚不证明新的实站验收或解除held。
-本地27项隔离DB/执行合同回归、18项相关单测及Worker类型通过；完整固定候选发布检查待完成。
+本地27项隔离DB/执行合同回归、157项SDK/selected/wire相关单测、53项交付编排及Worker类型通过；
+固定源码Tymra c0d597d、Argus 91d735b已push。
+[Tymra完整流水线38866557918](https://github.com/Harold-C/tymra/actions/runs/38866557918)的完整验证、
+桌面/手机与会员浏览器检查、固定镜像导出均通过；两端归档及完整20层校验、本机断网业务smoke通过。
+固定镜像配置ID9f092d46、归档SHA256 05613524fc3330308eb95d084664083633d8d96780aef0370709bdeeb5a88408；
+本机Docker Desktop载入为OCI ID4137839c，全部层和执行配置一致，仅省略已逐项核对的空/false元数据。
+[Argus完整流水线38866603289](https://github.com/Harold-C/argus/actions/runs/38866603289)通过：
+源码1081通过/269条件项、精确镜像586通过/1条件项；全部条件项已由同一镜像断网保存实页及对应环境补验覆盖，
+完整12层核验、流水线隔离配对恢复和运行恢复通过。上述均不算生产部署或新的实站验收。
+生产共享Argus另有1个私有Profile锁（零活动Job）；释放前不停止或重启该服务。
+本计划Booking NZ10/16的24次额度已用完，不补发、回收或以重启绕过；新实站验收未开始。
+现68成员中22 held、46未held，其他60成员、历史Jobs/Runs和计划控制与修复前逐项一致。
 受保护证据在既有`runtime/release-candidates/selected-dual-window-20261016/eight-*`，无新来源采集、
 自动重试或其他60成员修改；生产仅补齐上述3份交付及对应审计。后续实站须先核对已消耗的日额度，
 不用服务重启重置额度。
+
+NZ20:43附近候选镜像准备期间生产磁盘写满，PG无法写恢复检查点，API/readiness暂时500。
+本次准备未充分检查非root可用空间；没有切换镜像或重启应用。仅退休本次三个重复传输/被替代载荷、
+新候选的服务器归档及两个无容器引用的候选镜像（均保留已校验本机副本），未删数据库、证据或当前/回滚材料。
+NZ20:56 PG自行恢复，`pg_is_in_recovery=false`、API/readiness均200、Worker/Scheduler健康；
+37条正式Jobs、63条RateObservation、44项migration及全部原历史Jobs/Runs/68成员/计划控制回读保持。
+当前非root可用约3.8GB，不足继续发布。已在本批运维入口补充下载/解包、镜像载入和备份恢复的10GiB
+可用空间门槛；只读preflight实测按预期阻断，未暂停应用。生产仍b1adb530与Argus31142ec4，未启用重试。
+本机固定候选与完整校验结果保留；服务器候选载荷因空间恢复已退休，后续不得按旧staging证明直接切换。
 
 ## 2026-10-16 双窗口轮转与 Booking 独立额度生产发布
 
