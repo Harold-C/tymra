@@ -11,7 +11,7 @@ export async function legacyOtaDailyWhere(dataSourceId: string, sourceKey: strin
   const state = selectedStateSchema.safeParse(control?.payload);
   if (!state.success || !state.data.cadence) return where;
   const jobs = await db.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, sourceId: "booking",
-    createdAt: { gte: nzStartOfDay(now) } }, select: { id: true, payload: true } });
+    createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, select: { id: true, payload: true } });
   const ids = jobs.filter(j => selectedJobSchema.safeParse(j.payload).success).map(j => j.id);
   return ids.length ? { ...where, parentJobId: { notIn: ids } } : where;
 }

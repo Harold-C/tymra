@@ -61,12 +61,12 @@ describe("selected collection isolated persistence", () => {
     await expect(selectedCapturePermission(job, selectedInput(selectedFixture().manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
     expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
   });
-  it("stops at 24 dedicated captures and preserves the other plans' unused allowance", async () => {
+  it("stops at 24 dedicated captures including prior-day jobs, preserving the other plans' unused allowance", async () => {
     await upgrade();
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
     for (let i = 0; i < 24; i++) {
       const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: selectedFixture().manifestHash, memberId: "sample0", sourceId: "booking", phase: "identity", checkIn: "2026-12-01", unitExternalId: null, round: `capacity${i}` });
-      const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "SUCCEEDED", queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", payload: task, maxAttempts: 1, createdAt: now, idempotencyKey: selectedTaskKey(task) } });
+      const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "SUCCEEDED", queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", payload: task, maxAttempts: 1, createdAt: i === 0 ? new Date(now.getTime() - 86400000) : now, idempotencyKey: selectedTaskKey(task) } });
       await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:dedicated${i}`, parentJobId: job.id, collectionRunId: `dedicated${i}`, dataSourceId: source.id,
         argusJobId: `dedicated${i}`, traceId: `dedicated${i}`, connectorId: "booking-public", workflowId: "resolve_listing", requestedUrl: "https://www.booking.com/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
     }

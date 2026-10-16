@@ -106,7 +106,7 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
     if (!identity?.finishedAt || now.getTime() - identity.finishedAt.getTime() >= 28 * 86_400_000
       || (identity.scope as { evaluated?: { externalId?: string } }).evaluated?.externalId !== task.unitExternalId) throw Error("SELECTED_IDENTITY_NOT_VERIFIED");
   } else if (task.unitExternalId !== null) throw Error("INVALID_IDENTITY_TASK");
-  const dedicatedJobs = state.cadence && member.source === "booking" ? await prisma.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", createdAt: { gte: nzStartOfDay(now) } }, select: { id: true } }) : null;
+  const dedicatedJobs = state.cadence && member.source === "booking" ? await prisma.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, select: { id: true } }) : null;
   const daily = await prisma.argusExecution.count({ where: { dataSourceId, submittedAt: { gte: nzStartOfDay(now) }, ...(dedicatedJobs ? { parentJobId: { in: dedicatedJobs.map(j => j.id) } } : {}) } });
   if (daily >= selectedDailyLimit(state, member.source, source.dailyBudget, now)) throw new DeferredJobError("Waiting for the source plan daily allowance", nzStartOfDay(new Date(now.getTime() + 86_400_000)));
 }
