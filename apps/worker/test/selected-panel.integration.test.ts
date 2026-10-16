@@ -6,6 +6,7 @@ import { assertIsolatedTestEnvironment } from "../../../test/isolation";
 import { selectedFixture } from "./selected-panel-fixtures";
 import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey } from "../src/operations/selected-panel-plan";
+import { legacyOtaDailyWhere } from "../src/operations/selected-panel-budget";
 const now = new Date("2026-10-16T06:00:00Z");
 const isolated = assertIsolatedTestEnvironment();
 const databaseName = `${isolated.databaseName}_selected${process.pid}`;
@@ -45,6 +46,35 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  async function upgrade() {
+    const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
+    await prisma.scheduleDefinition.update({ where: { id: control.id }, data: { payload: { ...(control.payload as object),
+      cadence: { version: "dual-window-weekly-v2", startsOn: "2026-10-16", bookingBootstrapDaily: 24, bookingSteadyDaily: 20 } } } });
+  }
+  it("keeps the dedicated Booking allowance independent of six existing other-plan captures", async () => {
+    await upgrade();
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    for (let i = 0; i < 6; i++) await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:legacy${i}`, parentJobId: `legacy${i}`, collectionRunId: `legacy${i}`, dataSourceId: source.id,
+      argusJobId: `legacy${i}`, traceId: `legacy${i}`, connectorId: "booking-public", workflowId: "collect_rates", requestedUrl: "https://www.booking.com/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
+    const job = (await enqueueSelectedPanel(now))!;
+    expect(job).not.toBeNull();
+    await expect(selectedCapturePermission(job, selectedInput(selectedFixture().manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
+    expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
+  });
+  it("stops at 24 dedicated captures and preserves the other plans' unused allowance", async () => {
+    await upgrade();
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    for (let i = 0; i < 24; i++) {
+      const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: selectedFixture().manifestHash, memberId: "sample0", sourceId: "booking", phase: "identity", checkIn: "2026-12-01", unitExternalId: null, round: `capacity${i}` });
+      const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "SUCCEEDED", queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", payload: task, maxAttempts: 1, createdAt: now, idempotencyKey: selectedTaskKey(task) } });
+      await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:dedicated${i}`, parentJobId: job.id, collectionRunId: `dedicated${i}`, dataSourceId: source.id,
+        argusJobId: `dedicated${i}`, traceId: `dedicated${i}`, connectorId: "booking-public", workflowId: "resolve_listing", requestedUrl: "https://www.booking.com/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
+    }
+    expect(await enqueueSelectedPanel(now)).toBeNull();
+    const where = await legacyOtaDailyWhere(source.id, source.key, now, prisma);
+    expect(await prisma.argusExecution.count({ where })).toBe(0);
+    expect(await enqueueSelectedPanel(new Date(now.getTime() + 86400000))).not.toBeNull();
+  });
   it("holds the activation lock until the transaction ends without decoding void", async () => {
     await prisma.$transaction(async tx => {
       await acquireSelectedActivationLock(tx);

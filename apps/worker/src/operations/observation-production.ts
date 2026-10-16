@@ -6,6 +6,7 @@ import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash
 import { resolveObservationUnit, evaluateCapturedObservation } from "./observation-evaluation";
 import { DeferredJobError } from "../jobs/deferred-job";
 import { isSelectedPanelJob } from "./selected-panel-plan";
+import { legacyOtaDailyWhere } from "./selected-panel-budget";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
@@ -110,7 +111,7 @@ export async function enqueueObservationTask(mode: "canary" | "scheduled" | "rep
       const source = await tx.dataSource.findUniqueOrThrow({ where: { key: sourceId } });
       if (!["HEALTHY", "DEGRADED"].includes(source.operationalStatus) || source.lifecycle === "BLOCKED" || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1) continue;
       // Include reserved Jobs without an ArgusExecution as spent; never reclaim uncertain submissions.
-      const executions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: nzStartOfDay(now) } }, select: { parentJobId: true } });
+      const executions = await tx.argusExecution.findMany({ where: await legacyOtaDailyWhere(source.id, sourceId, now, tx), select: { parentJobId: true } });
       const reserved = jobs.filter(j => j.sourceId === sourceId && j.createdAt >= nzStartOfDay(now));
       const daily = executions.length + reserved.filter(j => !executions.some(e => e.parentJobId === j.id)).length;
       if (daily >= Math.min(6, source.dailyBudget)) continue;
@@ -143,7 +144,7 @@ export async function observationCapturePermission(parent: Job, input: ArgusCapt
   if (JSON.stringify(input) !== JSON.stringify(expected)) throw new Error("OBSERVATION_INPUT_CHANGED");
   const jobs = await prisma.job.count({ where: { queueName: OBSERVATION_QUEUE } });
   if (jobs > state.manifest.additionalLimit || jobs + state.manifest.baselineSpent > state.manifest.totalLimit) throw new Error("OBSERVATION_BUDGET_EXHAUSTED");
-  const daily = await prisma.argusExecution.count({ where: { dataSourceId, submittedAt: { gte: nzStartOfDay(now) } } });
+  const daily = await prisma.argusExecution.count({ where: await legacyOtaDailyWhere(dataSourceId, source.key, now) });
   if (daily >= Math.min(6, source.dailyBudget)) throw new Error("OBSERVATION_SOURCE_DAILY_LIMIT");
 }
 

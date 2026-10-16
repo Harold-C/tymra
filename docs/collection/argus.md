@@ -37,15 +37,26 @@ reserves, all six available dates or normalized terms do not block capture of at
 
 Each member resolves its unique source unit once, reuses verified delivered identities for up to 28 days,
 and is priced independently; no all-members preflight barrier. Where names/signatures are used, ambiguous
-or absent matches hold only that member. Each source retains at most six captures per NZ day (or its lower
-configured allowance), concurrency one, and existing Argus policies. The scheduler yields to existing work.
-The oldest unpriced members get priority; two weekly quote opportunities per member are a maximum,
-not a promise above source capacity. There is no automatic replay, retry, quota waiver or fallback unit.
+or absent matches hold only that member. Explicit `dual-window-weekly-v2` cadence gives this plan alone
+a dedicated Booking allowance of 24 captures per NZ day for its first seven NZ dates, then 20/day.
+Other sources retain six/day or their lower configured allowance. DataSource rows and other schedules
+keep their settings; dedicated Booking traffic does not consume legacy plans' six-call counter.
+Concurrency stays one and existing work takes priority under the shared submission lock. Without the
+explicit cadence the legacy six/day rule remains. No automatic replay, retry or fallback unit is added.
 Blocked/login/challenge/rate-limit outcomes stop this schedule's source; other errors hold the member.
 
+Upgraded cycles last seven NZ dates from activation. Exact member/stay windows already observed in the
+cycle are not dispatched again; missing windows precede repeats. Both anchors freeze from the cycle's
+starting month, including across a month boundary, so a Monday reset cannot starve Saturday windows.
+Successful raw unavailable outcomes count as observations, never as fabricated prices. In spare capacity
+after cycle quotes, identities renew oldest first between day21 and day28 to avoid a synchronized expiry
+backlog; the maximum validity is still 28 days. Failed renewals hold the member with no automatic retry.
+This is capacity for weekly pairs when sources remain available, not a guarantee of prices for blocked
+or unavailable listings. Show held members and actual raw outcomes independently.
+
 Stay anchors are versioned by observation month: start from the first of that month +60 days, then the
-next Tuesday and Saturday (including that base date). October anchors remain Dec 1/5; November opens
-a distinct Jan 5/2 cohort. Both stay length and exact stay dates remain in each observation and comparison key;
+next Tuesday and Saturday (including that base date). October anchors remain Dec 1/5; a cycle starting
+in November opens a distinct Jan 5/2 cohort. Both stay length and exact stay dates remain in each observation and comparison key;
 never splice cohorts into a seasonal or city-wide index. Calendar boundaries use Pacific/Auckland.
 Normal collection remains outside NZ weekday 09:00–17:00 office hours. Every capture and parent job has
 maxAttempts=1; delivery polling/confirmation is not a new source capture. Persist hash-verified evidence

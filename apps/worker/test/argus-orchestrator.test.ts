@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   executionFind: vi.fn(),
   executionCount: vi.fn(),
   sourceFind: vi.fn(),
+  scheduleFind: vi.fn(),
   executionFindMany: vi.fn(),
   executionUpsert: vi.fn(),
   executionUpdate: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock("@tymra/db", () => ({
       updateMany: mocks.parentUpdateMany,
     },
     dataSource: { findUniqueOrThrow: mocks.sourceFind },
+    scheduleDefinition: { findUnique: mocks.scheduleFind },
     collectionRun: {
       findUniqueOrThrow: mocks.observationRunFind,
       update: mocks.observationRunUpdate,
@@ -139,6 +141,7 @@ const input = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.scheduleFind.mockResolvedValue(null);
   mocks.diskFault = "";
   mocks.diskEvents = [];
   mocks.rawArtifactFindMany.mockResolvedValue([]);

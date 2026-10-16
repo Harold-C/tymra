@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { addNzCalendarDays, nzDayOfWeek, nzDateKey as nzDate } from "@tymra/domain";
 export function selectedHash(value: unknown): string {
-  const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
+  const canonical = (v: unknown): unknown => v instanceof Date ? v.toISOString() : Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
     ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical((v as Record<string, unknown>)[k])])) : v;
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
@@ -47,6 +47,8 @@ export const selectedStateSchema = z.object({
   manifest: selectedManifestSchema, manifestHash: text,
   held: z.array(z.object({ memberId: text, reason: text }).strict()), stoppedSources: z.array(source),
   bindings: z.array(z.object({ memberId: text, unitExternalId: text, verifiedAt: z.string().datetime(), sourceRunId: text }).strict()).default([]),
+  cadence: z.object({ version: z.literal("dual-window-weekly-v2"), startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    bookingBootstrapDaily: z.literal(24), bookingSteadyDaily: z.literal(20) }).strict().optional(),
 }).strict().refine(s => selectedHash(s.manifest) === s.manifestHash, "Manifest changed");
 export const selectedJobSchema = z.object({
   selectedPanel: z.literal(SELECTED_PANEL_KEY), manifestHash: text, memberId: text, sourceId: source,
@@ -72,11 +74,24 @@ export function selectedListingId(c: SelectedMember) {
   return `${c.source}:${c.sourceListingId}`;
 }
 
-export type MemberProgress = { memberId: string; lastQuoteAt: Date | null; identityAt: Date | null; unitExternalId: string | null };
+export type MemberProgress = { memberId: string; lastQuoteAt: Date | null; identityAt: Date | null; unitExternalId: string | null;
+  windows?: { checkIn: string; finishedAt: Date }[] };
+export function selectedCycle(state: z.infer<typeof selectedStateSchema>, now: Date) {
+  if (!state.cadence) return { round: selectedWeek(now), anchors: selectedAnchors(now) };
+  const days = Math.floor((Date.parse(nzDate(now)) - Date.parse(state.cadence.startsOn)) / 86_400_000);
+  const round = addNzCalendarDays(state.cadence.startsOn, Math.floor(Math.max(0, days) / 7) * 7);
+  // Noon NZ time also avoids UTC/month-boundary and DST ambiguities.
+  return { round, anchors: selectedAnchors(new Date(`${round}T00:00:00Z`)) };
+}
+export function selectedDailyLimit(state: z.infer<typeof selectedStateSchema>, sourceKey: string, normalDaily: number, now: Date) {
+  if (state.cadence && sourceKey === "booking" && nzDate(now) >= state.cadence.startsOn)
+    return nzDate(now) < addNzCalendarDays(state.cadence.startsOn, 7) ? state.cadence.bookingBootstrapDaily : state.cadence.bookingSteadyDaily;
+  return Math.min(6, normalDaily);
+}
 /** Least recently priced first, stable manifest order for ties; no all-members preflight barrier. */
 export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, progress: MemberProgress[], used: Set<string>, now: Date): SelectedTask[] {
   if (nzDate(now) < state.manifest.start) return [];
-  const anchors = selectedAnchors(now), round = selectedWeek(now);
+  const { anchors, round } = selectedCycle(state, now);
   const members = state.manifest.members.filter(c => c.enabled && !state.held.some(h => h.memberId === c.id) && !state.stoppedSources.includes(c.source));
   members.sort((a, b) => (progress.find(p => p.memberId === a.id)?.lastQuoteAt?.getTime() ?? 0) - (progress.find(p => p.memberId === b.id)?.lastQuoteAt?.getTime() ?? 0));
   return members.flatMap(c => {
@@ -84,8 +99,23 @@ export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, pr
     const common = { selectedPanel: SELECTED_PANEL_KEY as typeof SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: c.id, sourceId: c.source };
     const fresh = p?.identityAt && p.unitExternalId && now.getTime() - p.identityAt.getTime() < state.manifest.identityTtlDays * 86_400_000;
     const tasks: SelectedTask[] = fresh
-      ? anchors.map(checkIn => ({ ...common, phase: "quote", checkIn, unitExternalId: p.unitExternalId, round }))
+      ? anchors.filter(checkIn => !state.cadence || !p.windows?.some(w => w.checkIn === checkIn && nzDate(w.finishedAt) >= round))
+        .map(checkIn => ({ ...common, phase: "quote", checkIn, unitExternalId: p.unitExternalId, round }))
       : [{ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: nzDate(now) }];
+    // Renew in spare capacity during the final valid week; avoid a synchronized 28-day spike.
+    if (state.cadence && fresh && !tasks.length && now.getTime() - p.identityAt!.getTime() >= 21 * 86_400_000)
+      tasks.push({ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: nzDate(now) });
     return tasks.filter(t => !used.has(selectedTaskKey(t)));
+  }).sort((a, b) => {
+    if (!state.cadence) return 0;
+    const renewal = (t: SelectedTask) => { const p = progress.find(p => p.memberId === t.memberId);
+      return t.phase === "identity" && p?.identityAt && now.getTime() - p.identityAt.getTime() < 28 * 86_400_000; };
+    if (!!renewal(a) !== !!renewal(b)) return renewal(a) ? 1 : -1;
+    if (renewal(a) && renewal(b)) return progress.find(p => p.memberId === a.memberId)!.identityAt!.getTime()
+      - progress.find(p => p.memberId === b.memberId)!.identityAt!.getTime();
+    // Fairness is per exact stay window, not per member's most recent other-window price.
+    const last = (t: SelectedTask) => progress.find(p => p.memberId === t.memberId)?.windows
+      ?.filter(w => w.checkIn === t.checkIn).reduce((n, w) => Math.max(n, w.finishedAt.getTime()), 0) ?? 0;
+    return last(a) - last(b);
   });
 }

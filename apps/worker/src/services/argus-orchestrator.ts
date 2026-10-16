@@ -26,6 +26,8 @@ import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, 
 import { withRedisLockWait } from "@tymra/queue";
 import { isObservationJob, pilotCanonicalHash } from "../operations/observation-pilot";
 import { observationCapturePermission } from "../operations/observation-production";
+import { isSelectedPanelJob } from "../operations/selected-panel-plan";
+import { legacyOtaDailyWhere } from "../operations/selected-panel-budget";
 
 const pollDelayMs = 1_000;
 const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"]);
@@ -75,9 +77,10 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
       const observation = isObservationJob(parent.payload);
       if (observation) await observationCapturePermission(parent, input, source.id);
       else if (!isProductionOtaPayload(parent.payload) || parent.payload.sourceId !== source.key || !otaSourceApproved(source)) return { ok: false, httpStatus: 403, message: "Unapproved production OTA capture" };
-      const count = await prisma.argusExecution.count({ where: { dataSourceId: source.id, submittedAt: { gte: nzStartOfDay(new Date()) } } });
+      const selected = isSelectedPanelJob(parent.payload);
+      const count = selected ? 0 : await prisma.argusExecution.count({ where: await legacyOtaDailyWhere(source.id, source.key, new Date()) });
       const jobCount = await prisma.argusExecution.count({ where: { parentJobId: context.parentJobId } });
-      const dailyBudgetWaived = !observation && productionOtaDailyBudgetWaivedForTrial(source.metadata, parent.idempotencyKey);
+      const dailyBudgetWaived = selected || (!observation && productionOtaDailyBudgetWaivedForTrial(source.metadata, parent.idempotencyKey));
       if ((!dailyBudgetWaived && count >= OTA_DAILY_EXECUTION_BUDGET) || jobCount >= 3) return { ok: false, httpStatus: 429, message: "Bounded OTA execution budget exhausted" };
       const active = await prisma.argusExecution.count({ where: { connectorId: { in: ACTIVE_OTA_SOURCE_KEYS.map((key) => `${key}-public`) }, status: { in: ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] } } });
       if (active) return { ok: false, httpStatus: 429, message: "Another Tymra OTA execution is active" };

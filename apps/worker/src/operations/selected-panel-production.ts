@@ -6,7 +6,7 @@ import type { ArgusCaptureInput } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedAnchors, selectedWeek, nextSelectedTasks, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedDailyLimit, nextSelectedTasks, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
@@ -55,7 +55,9 @@ export async function enqueueSelectedPanel(now = new Date()) {
       const quote = own.find(r => (r.scope as { phase?: string }).phase === "quote");
       const prior = state.bindings.find(b => b.memberId === member.id);
       return { memberId: member.id, lastQuoteAt: quote?.finishedAt ?? null, identityAt: identity?.finishedAt ?? (prior ? new Date(prior.verifiedAt) : null),
-        unitExternalId: (identity?.scope as { evaluated?: { externalId?: string } } | undefined)?.evaluated?.externalId ?? prior?.unitExternalId ?? null };
+        unitExternalId: (identity?.scope as { evaluated?: { externalId?: string } } | undefined)?.evaluated?.externalId ?? prior?.unitExternalId ?? null,
+        windows: own.flatMap(r => { const scope = r.scope as { phase?: string; task?: SelectedTask }; return scope.phase === "quote" && r.finishedAt && scope.task
+          ? [{ checkIn: scope.task.checkIn, finishedAt: r.finishedAt }] : []; }) };
     });
     const tasks = nextSelectedTasks(state, progress, new Set(matching.map(j => j.idempotencyKey!)), now);
     const sources = await tx.dataSource.findMany({ where: { key: { in: [...new Set(tasks.map(t => t.sourceId))] } } });
@@ -64,9 +66,10 @@ export async function enqueueSelectedPanel(now = new Date()) {
       const source = sources.find(s => s.key === task.sourceId);
       if (!source || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1
         || source.lifecycle === "BLOCKED" || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) continue;
-      const executions = dailyExecutions.filter(e => e.dataSourceId === source.id);
+      const dedicated = !!state.cadence && task.sourceId === "booking";
+      const executions = dailyExecutions.filter(e => e.dataSourceId === source.id && (!dedicated || jobs.some(j => j.id === e.parentJobId)));
       const reserved = jobs.filter(j => j.sourceId === task.sourceId && j.createdAt >= nzStartOfDay(now) && !executions.some(e => e.parentJobId === j.id));
-      if (executions.length + reserved.length >= Math.min(6, source.dailyBudget)) continue;
+      if (executions.length + reserved.length >= selectedDailyLimit(state, task.sourceId, source.dailyBudget, now)) continue;
       return tx.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: task.sourceId, maxAttempts: 1,
         payload: json(task), idempotencyKey: selectedTaskKey(task), runAt: now, createdAt: now } });
     }
@@ -82,8 +85,8 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
     || parent.maxAttempts !== 1 || parent.idempotencyKey !== selectedTaskKey(task) || task.sourceId !== member.source || parent.sourceId !== member.source
     || nzDateKey(now) < state.manifest.start || task.checkIn <= nzDateKey(now)
-    || !selectedAnchors(parent.createdAt).includes(task.checkIn)
-    || task.round !== (task.phase === "quote" ? selectedWeek(parent.createdAt) : nzDateKey(parent.createdAt))) throw Error("SELECTED_PANEL_PERMISSION_CLOSED");
+    || !selectedCycle(state, parent.createdAt).anchors.includes(task.checkIn)
+    || task.round !== (task.phase === "quote" ? selectedCycle(state, parent.createdAt).round : nzDateKey(parent.createdAt))) throw Error("SELECTED_PANEL_PERMISSION_CLOSED");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: dataSourceId } });
   if (source.key !== member.source || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1
     || source.lifecycle === "BLOCKED" || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw Error("SELECTED_SOURCE_BLOCKED");
@@ -103,8 +106,9 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
     if (!identity?.finishedAt || now.getTime() - identity.finishedAt.getTime() >= 28 * 86_400_000
       || (identity.scope as { evaluated?: { externalId?: string } }).evaluated?.externalId !== task.unitExternalId) throw Error("SELECTED_IDENTITY_NOT_VERIFIED");
   } else if (task.unitExternalId !== null) throw Error("INVALID_IDENTITY_TASK");
-  const daily = await prisma.argusExecution.count({ where: { dataSourceId, submittedAt: { gte: nzStartOfDay(now) } } });
-  if (daily >= Math.min(6, source.dailyBudget)) throw new DeferredJobError("Waiting for the normal source daily allowance", nzStartOfDay(new Date(now.getTime() + 86_400_000)));
+  const dedicatedJobs = state.cadence && member.source === "booking" ? await prisma.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", createdAt: { gte: nzStartOfDay(now) } }, select: { id: true } }) : null;
+  const daily = await prisma.argusExecution.count({ where: { dataSourceId, submittedAt: { gte: nzStartOfDay(now) }, ...(dedicatedJobs ? { parentJobId: { in: dedicatedJobs.map(j => j.id) } } : {}) } });
+  if (daily >= selectedDailyLimit(state, member.source, source.dailyBudget, now)) throw new DeferredJobError("Waiting for the source plan daily allowance", nzStartOfDay(new Date(now.getTime() + 86_400_000)));
 }
 
 function evaluationCandidate(member: SelectedMember, unitExternalId: string, twoAdultEvidence: string) {
