@@ -1,5 +1,39 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-16 双窗口轮转与 Booking 独立额度生产发布
+
+已push并发布固定源码`b1adb530fb3fe995497ba97504c3c9081750c85e`，版本`selected-dual-window-20261016`，
+镜像`sha256:51fcb47d8141374859937cd32007204d1dc424ce203bb27ae8a35b555e66ec7d`。四应用健康，
+Worker/Scheduler源码心跳一致，环境仅变发布身份，入口/IP限制/挂载/原任务控制保留；共享Argus未部署或重启。
+[同次固定候选流水线38844034144](https://github.com/Harold-C/tymra/actions/runs/38844034144)通过：
+348项领域/Web、541项Worker、226项集成、独立空库6项OTA、35项浏览器、8项会员矩阵和26项容量检查。
+5项真实来源条件项和1项浏览器条件项仍跳过；集成阶段6项OTA条件跳过已由后续独立空库实跑覆盖。
+68个实际成员/既有身份/当日额度的8周离线重放，每周期136窗口，理想首轮10月22日排齐；不是实站有价保证。
+
+两端576MB归档、源码SHA及20层完整校验通过。第一次实际恢复后的隔离校验脚本因只读挂载的读取权限失败，
+保护流程恢复原f4应用，没有切换业务代码或改业务数据；修正的是隔离容器读取身份，生产应用权限不变。
+随后重新生成最新数据库快照，复用逐字节未变的证据归档并复核实际恢复的1,142份文件；
+新旧镜像89类模型读取、新cadence解析及仅移除cadence的旧镜像回滚实际验证通过，无migration。
+最终备份已异机复制9份文件并逐份SHA核验；备份归档最终为普通独立文件，未削弱发布保留检查。
+恢复/发布/配置审计/异机恢复材料沿用受保护`runtime/release-candidates/selected-dual-window-20261016`。
+
+生产`cadence.startsOn=2026-10-16`；本计划Booking独立首7个NZ日期24次/日，10月23日00:00起20次/日。
+DataSource全局Booking仍6/日，其他计划原额度不被专用流量占用；其他来源限额、并发1、暂停与不重试均保留。
+配置审计`cmvag96l50000pg6diw3u90vc`。为避免取消已到17:00自然运行的任务，仅短暂延后本计划新派发，
+待既有Job完成后配置；恢复原nextRunAt=UTC04:00审计`cmvaga7kz0000pg7uh0gi0jdv`，未重发旧Job。
+68成员/指纹89b1543c、绑定、既有Job和当时held原样保留；其他85条计划和全部来源控制对照通过。
+
+NZ17:19自然回读：新额度已允许当天原6次之后的French Bay身份与报价任务，报价返回UNAVAILABLE，未伪造价格。
+已完成同周期窗口未重新提交；尚缺窗口按新周期轮转。当前68配置成员，8个暂缓、60可继续：
+Jailhouse Accommodation、Haka House Christchurch为INTERNAL_ERROR；Lilac Rose Boutique Bed and Breakfast
+为RESULT_IDENTITY_OR_HASH_MISMATCH；Cosy/two-bedroom townhouse为PARSING_ERROR；
+Akaroa TOP 10、North South、Tasman Christchurch、South Brighton四个Holiday Park为SELECTED_ROOM_NOT_RETURNED。
+23个正式Job、40份已核验原始文件，3个运行交付未确认；原始异常保留、不强制ACK、不自动重试/恢复。
+其他不可订、最少晚数和有价逐项区分，RAW_ONLY及费用/条款缺口不变，不自动发布地区指数。
+每日NZ08:00既有只读复核已同步新周期与专用额度，保留48小时提醒及72小时证据复核。
+本机和生产主机发布收尾均已通过，保留当前b1与兼容回滚f4的完整镜像包，各仅清理2份已核验旧/重复载荷，
+未删除数据库、证据或备份；不将自然首周完成提前计作通过。正式采集按额度继续，暂缓对象单列。
+
 ## 2026-10-16 双窗口轮转与 Booking 独立额度候选
 
 用户授权保留68个样本，修复双窗口轮转、首轮一周完成的容量和后续每周双窗口，验证后发布生产；
