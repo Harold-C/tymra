@@ -307,7 +307,14 @@ masquerading is disabled. Scheduler, Stripe, paid launch gates and real provider
 Setup failures and normal teardown remove only this test stack and its volume. Do not run two
 isolated browser invocations concurrently. Live-member and Stripe acceptance retain separate entries.
 
-CI runs guarded verification, six-source delivery in a separate empty database, and an isolated browser job. A configured workflow
+Pushes, pull requests and tags do not start Actions. Do relevant checks locally during development.
+For a fixed release candidate, manually dispatch `export-private-release.yml` on that candidate
+ref with `release_version`. It calls `ci.yml` for the same event SHA and builds/exports only after
+both verification and browser jobs pass; no separate CI dispatch is needed. `ci.yml` remains
+manually runnable for verification without building a release image. Reuse the existing verified
+image for redeployment or rollback. Neither workflow deploys production.
+
+Release CI runs guarded verification, six-source delivery in a separate empty database, and an isolated browser job. A configured workflow
 is not evidence of an executed cloud run. A skipped test is not a pass; report required conditional
 cases and their separate evidence.
 
