@@ -14,7 +14,7 @@ export function selectedInput(member: SelectedMember, task: SelectedTask, parent
   const stay = { checkIn: task.checkIn, checkOut: addNzCalendarDays(task.checkIn, member.nights), adults: 2, children: 0 as const, units: 1, currency: "NZD" as const };
   return { traceId: `selected-${selectedHash([parentId, task]).slice(0, 30)}`, connectorId: `${member.source}-public` as ArgusCaptureInput["connectorId"],
     workflowId: task.phase === "identity" ? "resolve_listing" : "collect_rates", url: member.sourceUrl,
-    maxRecords: 20, maxAttempts: 1, timeoutMs: 60000,
+    maxRecords: task.phase === "identity" && member.source === "booking" ? 50 : 20, maxAttempts: 1, timeoutMs: 60000,
     ...(task.phase === "quote" ? { ...stay, unitExternalId: task.unitExternalId! } : member.source === "expedia" ? { identityStay: stay } : {}) };
 }
 export function resolveSelectedUnit(member: SelectedMember, extracted: unknown) {
@@ -166,7 +166,7 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
       await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${SELECTED_PANEL_KEY} FOR UPDATE`;
       const c = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } }), s = selectedStateSchema.parse(c.payload);
       if (!s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
-      if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
+      if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED|SOURCE_DAILY_BUDGET_EXHAUSTED|SOURCE_CIRCUIT_OPEN/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
       await tx.scheduleDefinition.update({ where: { id: c.id }, data: { payload: json(s) } });
     });
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: reason.slice(0, 200), finishedAt: new Date() } });

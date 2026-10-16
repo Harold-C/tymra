@@ -9,6 +9,14 @@ const identity = (units = [unit]) => ({ data_schema: "ota-public.resolve_listing
   canonicalUrl: selectedMember().sourceUrl, canonicalName: "Selected property", address: "1 Test Road", city: "Christchurch", region: "Canterbury", territorialAuthority: null,
   postcode: null, countryCode: "NZ", latitude: null, longitude: null, propertyType: "Motel", units, observedAt: now.toISOString(), fieldSources: {}, warnings: ["BOOKING_INTERNAL_PROPERTY_ID=100"], quality: "complete" });
 describe("selected sample formal collection", () => {
+  it("keeps source-scoped commercial rooms with unknown sharing without inferring an entire home", () => {
+    const value = { ...identity(), schema_version: "1.1.0", quality: "partial", units: [{ ...unit, entireOrShared: null }] };
+    expect(resolveSelectedUnit(selectedMember(), value).externalId).toBe("unit0");
+    expect(() => resolveSelectedUnit({ ...selectedMember(), entireBedrooms: 2 }, value)).toThrow("SELECTED_ROOM_NOT_RETURNED");
+    expect(() => resolveSelectedUnit(selectedMember(), { ...value, schema_version: "1.0.0" })).toThrow();
+    const task = nextSelectedTasks(selectedFixture(), [], new Set(), now)[0];
+    expect(selectedInput(selectedMember(), task, "parent").maxRecords).toBe(50);
+  });
   const upgraded = (count = 3) => ({ ...selectedFixture(count), cadence: { version: "dual-window-weekly-v2" as const, startsOn: "2026-10-16", bookingBootstrapDaily: 24 as const, bookingSteadyDaily: 20 as const } });
   it("finishes the missing exact window before starting a fresh pair, including the Monday boundary", () => {
     const state = upgraded();

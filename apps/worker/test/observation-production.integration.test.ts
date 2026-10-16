@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, afterAll, describe, it, expect, vi } from "vitest";
+import { beforeAll, beforeEach, afterEach, afterAll, describe, it, expect, vi } from "vitest";
 import { prisma } from "@tymra/db";
 import { prepareObservationPilot, enqueueObservationTask, observationCapturePermission, observationInput, stopObservationObject, prepareObservationRepair, closeObservationRepair } from "../src/operations/observation-production";
 import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotStateSchema, pilotCanonicalHash, pilotTasks, pilotHash } from "../src/operations/observation-pilot";
@@ -6,6 +6,7 @@ import { fixtureManifest } from "./observation-pilot.test";
 
 let sourceBefore: Awaited<ReturnType<typeof prisma.dataSource.findMany>> = [];
 
+beforeAll(async () => { await prisma.$connect(); }); // Initialize before advancing Date decades ahead.
 beforeEach(async () => {
   vi.useFakeTimers({toFake:["Date"]});vi.setSystemTime(new Date("2080-10-16T00:00:00Z"));
   sourceBefore=await prisma.dataSource.findMany({where:{key:{in:["booking","expedia"]}}});

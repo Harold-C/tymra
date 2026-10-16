@@ -7,6 +7,9 @@ import { selectedFixture } from "./selected-panel-fixtures";
 import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey } from "../src/operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../src/operations/selected-panel-budget";
+import { observationWireProof, verifiedObservationWire } from "../src/operations/observation-wire";
+import { createHash } from "node:crypto";
+import type { ArgusJobResult } from "../src/clients/argus-client";
 const now = new Date("2026-10-16T06:00:00Z");
 const isolated = assertIsolatedTestEnvironment();
 const databaseName = `${isolated.databaseName}_selected${process.pid}`;
@@ -46,6 +49,16 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("retains original verified coordinates through a real Prisma JSON round trip", async () => {
+    const job = (await enqueueSelectedPanel(now))!;
+    const payload={contract_version:"1.0",job_id:"wire-roundtrip",status:"COMPLETED",items:[{trace_id:"wire-roundtrip",result:{data:{longitude:172.60886259377003},evidence:[]}}]};
+    const wire={...payload,result_sha256:createHash("sha256").update(JSON.stringify(payload)).digest("hex")} as unknown as ArgusJobResult;
+    // Job.payload uses the same Prisma JSON transport without creating immutable history just for teardown.
+    const stored=await prisma.job.update({where:{id:job.id},data:{payload:JSON.parse(JSON.stringify({result:wire}))}});
+    await prisma.job.update({where:{id:job.id},data:{payload:JSON.parse(JSON.stringify({result:(stored.payload as any).result,verifiedWire:observationWireProof(wire,(stored.payload as any).result)}))}});
+    const receipt=await prisma.job.findUniqueOrThrow({where:{id:job.id}});
+    expect(verifiedObservationWire((receipt.payload as any).result,(receipt.payload as any).verifiedWire)).toEqual(wire);
+  });
   async function upgrade() {
     const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
     await prisma.scheduleDefinition.update({ where: { id: control.id }, data: { payload: { ...(control.payload as object),

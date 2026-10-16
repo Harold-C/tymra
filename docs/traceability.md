@@ -1,5 +1,21 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-16 原8个暂缓样本修复候选，尚未生产验收
+
+只读生产核验NZ19:03：原8个仍held，之后另有15个新增held，其中13个是Argus的
+SOURCE_DAILY_BUDGET_EXHAUSTED；未改动它们的状态、旧失败Job或任何正常计划。
+原Jailhouse/Haka的完整截图和HTTP500证明Booking返回错误页，不能据此宣称房源下线。
+Lilac、Akaroa、Tasman的原始wire及SHA正确，Prisma JSON传输改变经度末位造成持久化校验失败，
+三份结果尚未ACK；候选分别保存原wire文本和数据库回读摘要，不降低哈希、身份或证据门槛。
+四个Holiday Park目标房型都在原始快照；unknown sharing过滤、North South前20房型截断造成漏房型。
+候选接收Booking partial resolve 1.1.0的null sharing，并将Booking identity限50；正式可比房型仍需已知sharing。
+Cosy保存实页离线重放恢复756903401、两成人12/1–3、总价667NZD（含税费），
+11/26前免费取消、11/24前无需付款；只读同一offer的Guests标签，不采用单成人665或页面basket总价。
+这些是已保存实页离线证据，尚不证明新的实站验收或解除held。
+本地27项隔离DB/执行合同回归、18项相关单测及Worker类型通过；完整固定候选发布检查待完成。
+受保护证据在既有`runtime/release-candidates/selected-dual-window-20261016/eight-*`，无新来源采集、
+生产写入、自动重试或其他60成员修改。后续实站须先核对已消耗的日额度，不用服务重启重置额度。
+
 ## 2026-10-16 双窗口轮转与 Booking 独立额度生产发布
 
 已push并发布固定源码`b1adb530fb3fe995497ba97504c3c9081750c85e`，版本`selected-dual-window-20261016`，
