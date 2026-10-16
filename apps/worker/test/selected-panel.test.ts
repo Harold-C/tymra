@@ -16,6 +16,8 @@ describe("selected sample formal collection", () => {
     expect(() => resolveSelectedUnit(selectedMember(), { ...value, schema_version: "1.0.0" })).toThrow();
     const task = nextSelectedTasks(selectedFixture(), [], new Set(), now)[0];
     expect(selectedInput(selectedMember(), task, "parent").maxRecords).toBe(50);
+    expect(selectedInput(selectedMember(), task, "parent").includeUnknownSharing).toBe(true);
+    expect(selectedInput(selectedMember(), { ...task, phase: "quote", unitExternalId: "unit0" }, "parent").includeUnknownSharing).toBeUndefined();
   });
   const upgraded = (count = 3) => ({ ...selectedFixture(count), cadence: { version: "dual-window-weekly-v2" as const, startsOn: "2026-10-16", bookingBootstrapDaily: 24 as const, bookingSteadyDaily: 20 as const } });
   it("finishes the missing exact window before starting a fresh pair, including the Monday boundary", () => {

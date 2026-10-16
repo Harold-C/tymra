@@ -6,15 +6,18 @@
 SOURCE_DAILY_BUDGET_EXHAUSTED；未改动它们的状态、旧失败Job或任何正常计划。
 原Jailhouse/Haka的完整截图和HTTP500证明Booking返回错误页，不能据此宣称房源下线。
 Lilac、Akaroa、Tasman的原始wire及SHA正确，Prisma JSON传输改变经度末位造成持久化校验失败，
-三份结果尚未ACK；候选分别保存原wire文本和数据库回读摘要，不降低哈希、身份或证据门槛。
+三份结果已按原wire与实际证据校验、持久留存、ACK/410补齐交付；历史失败Job/Run保持不变。
+候选分别保存原wire文本和数据库回读摘要，事务内一起提交，不降低哈希、身份或证据门槛。
 四个Holiday Park目标房型都在原始快照；unknown sharing过滤、North South前20房型截断造成漏房型。
-候选接收Booking partial resolve 1.1.0的null sharing，并将Booking identity限50；正式可比房型仍需已知sharing。
+仅本计划明确opt-in接收Booking partial resolve 1.1.0的null sharing，并将Booking identity限50；
+未opt-in调用者继续原1.0.0过滤与上限行为，正式可比房型仍需已知sharing。
 Cosy保存实页离线重放恢复756903401、两成人12/1–3、总价667NZD（含税费），
 11/26前免费取消、11/24前无需付款；只读同一offer的Guests标签，不采用单成人665或页面basket总价。
 这些是已保存实页离线证据，尚不证明新的实站验收或解除held。
 本地27项隔离DB/执行合同回归、18项相关单测及Worker类型通过；完整固定候选发布检查待完成。
 受保护证据在既有`runtime/release-candidates/selected-dual-window-20261016/eight-*`，无新来源采集、
-生产写入、自动重试或其他60成员修改。后续实站须先核对已消耗的日额度，不用服务重启重置额度。
+自动重试或其他60成员修改；生产仅补齐上述3份交付及对应审计。后续实站须先核对已消耗的日额度，
+不用服务重启重置额度。
 
 ## 2026-10-16 双窗口轮转与 Booking 独立额度生产发布
 

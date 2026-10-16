@@ -283,6 +283,7 @@ export type ArgusCaptureInput = {
   children?: number;
   units?: number;
   unitExternalId?: string;
+  includeUnknownSharing?: boolean;
   identityStay?: { checkIn: string; checkOut: string; adults: number; children: 0; units: number; currency: "NZD" };
   currency?: "NZD";
   maxAttempts?: 1 | 2;
@@ -595,7 +596,7 @@ async function cancelAndCollectArgusDelivery(
 
 export function mapArgusJobResult(
   job: ArgusJobResult,
-  input: Pick<ArgusCaptureInput, "traceId" | "connectorId" | "workflowId">,
+  input: Pick<ArgusCaptureInput, "traceId" | "connectorId" | "workflowId" | "includeUnknownSharing">,
   environment: Environment,
 ): CaptureResponse {
   if (job.status === "CANCELLED") {
@@ -617,7 +618,7 @@ export function mapArgusJobResult(
     return {
       ok: true,
       httpStatus: 200,
-      payload: mapArgusResult(item.result, input.connectorId, input.workflowId, environment),
+      payload: mapArgusResult(item.result, input.connectorId, input.workflowId, environment, input.includeUnknownSharing === true),
       delivery: { jobId: job.job_id, resultSha256: job.result_sha256, job },
     };
   } catch (error) {
@@ -646,6 +647,7 @@ function mapArgusResult(
   connectorId: ArgusConnectorId,
   workflowId: ArgusWorkflowId,
   environment: Environment,
+  includeUnknownSharing = false,
 ): ArgusBrowserTaskResult {
   if (
     result.contract_version !== "1.0"
@@ -658,7 +660,7 @@ function mapArgusResult(
   }
   const hasConnectorData = result.status === "success" || result.status === "partial";
   if (hasConnectorData) {
-    assertArgusDataContract(result.data, connectorId, workflowId);
+    assertArgusDataContract(result.data, connectorId, workflowId, includeUnknownSharing);
   } else if (result.data !== null) {
     throw new Error("Argus returned connector data for an unsuccessful capture");
   }
@@ -773,13 +775,15 @@ function assertArgusDataContract(
   data: unknown,
   connectorId: ArgusConnectorId,
   workflowId: ArgusWorkflowId,
+  includeUnknownSharing = false,
 ): asserts data is Record<string, unknown> {
   const expected = expectedArgusDataContract(connectorId, workflowId);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error(`Argus returned no ${expected.dataSchema}@${expected.schemaVersion} data object`);
   }
   const record = data as Record<string, unknown>;
-  if (record.data_schema !== expected.dataSchema || record.schema_version !== expected.schemaVersion) {
+  const optedInBookingVersion = includeUnknownSharing && connectorId === "booking-public" && workflowId === "resolve_listing" && record.schema_version === "1.1.0";
+  if (record.data_schema !== expected.dataSchema || (record.schema_version !== expected.schemaVersion && !optedInBookingVersion)) {
     throw new Error(
       `Argus returned unexpected data contract; expected ${expected.dataSchema}@${expected.schemaVersion}`,
     );
@@ -864,6 +868,7 @@ function failedResponse(
 }
 
 function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
+  if (input.includeUnknownSharing !== undefined && (input.connectorId !== "booking-public" || input.workflowId !== "resolve_listing")) throw Error("Unknown sharing is supported only for Booking room resolution");
   return {
     contract_version: "1.0",
     idempotency_key: input.traceId,
@@ -888,6 +893,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.children === undefined ? {} : { children: input.children }),
       ...(input.units === undefined ? {} : { units: input.units }),
       ...(input.unitExternalId === undefined ? {} : { unitExternalId: input.unitExternalId }),
+      ...(input.includeUnknownSharing === undefined ? {} : { include_unknown_sharing: input.includeUnknownSharing }),
       ...(input.identityStay === undefined ? {} : { identity_stay: { check_in: input.identityStay.checkIn, check_out: input.identityStay.checkOut, adults: input.identityStay.adults, children: input.identityStay.children, units: input.identityStay.units, currency: input.identityStay.currency } }),
       ...(input.currency === undefined ? {} : { currency: input.currency }),
       timeout_ms: input.timeoutMs ?? environment.ARGUS_TIMEOUT_MS,

@@ -6,14 +6,17 @@ Last updated: 2026-10-16 (full selected-sample formal schedule enabled; no autom
 
 ### Selected Booking repair compatibility (2026-10-16 candidate)
 
-The consumer accepts partial Booking resolve_listing schema 1.1.0 with unknown unit sharing,
+Only selected raw-observation identity requests explicitly set `include_unknown_sharing: true`.
+For these requests the consumer accepts partial Booking resolve_listing schema 1.1.0 with unknown unit sharing,
 preserving the exact room ID/name without inferring an entire home. Existing 1.0.0 deliveries remain
 readable. Only source-scoped raw observation may use this unknown fact; canonical catalog/comparable
 units still require known sharing and capacity. Selected Booking identity requests return up to 50
-rooms; rate scope remains 20. A missing late-listed room must not be replaced by an earlier room.
+rooms; rate scope remains 20. Other callers retain known-sharing-only 1.0.0 behavior, including
+filtering before the room limit. A missing late-listed room must not be replaced by an earlier room.
 
 The verified Argus JSON is retained as text alongside independent canonical hashes for the original
-wire and the actual persisted Prisma representation. Prisma can round a coordinate's final binary
+wire and the actual persisted Prisma representation, committed atomically with the execution result.
+Prisma can round a coordinate's final binary
 digit during JSON transport. Original wire/result SHA verification, persisted-receipt integrity,
 trace identity, immutable evidence bytes and before-ACK retention all remain required. Existing
 in-flight receipts use their original strict checks; failed historical jobs are not replayed or
