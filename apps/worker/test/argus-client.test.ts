@@ -13,6 +13,7 @@ import {
   getArgusHealth,
   getArgusJobResult,
   mapArgusJobResult,
+  submitArgusCapture,
 } from "../src/clients/argus-client";
 
 let server: http.Server | undefined;
@@ -24,6 +25,34 @@ afterEach(async () => {
 });
 
 describe("Argus async Job client", () => {
+  it.each([undefined, false, true])("accepts Booking 1.1.0 unknown sharing only with explicit opt-in: %s", async includeUnknownSharing => {
+    let requestBody: Record<string, unknown> | undefined;
+    const traceId = "booking-unknown-sharing", url = "https://www.booking.com/hotel/nz/fixture.html";
+    server = jobServer(async request => {
+      requestBody = JSON.parse(await body(request));
+      const result = otaResolveListingResult({ traceId, connectorId: "booking-public", provider: "booking", url });
+      result.status = "partial";
+      Object.assign(result.data as Record<string, unknown>, { schema_version: "1.1.0", quality: "partial", warnings: ["UNIT_SHARING_NOT_PUBLIC"] });
+      ((result.data as Record<string, unknown>).units as Array<Record<string, unknown>>)[0].entireOrShared = null;
+      return result;
+    });
+    const response = await captureBrowserTaskWithArgus(await listenEnvironment(), { traceId, connectorId: "booking-public", workflowId: "resolve_listing", url,
+      ...(includeUnknownSharing === undefined ? {} : { includeUnknownSharing }) });
+    assert.equal(response.ok, includeUnknownSharing === true);
+    const task = (requestBody?.captures as Array<Record<string, unknown>>)[0];
+    assert.equal(task.include_unknown_sharing, includeUnknownSharing);
+    assert.equal("include_unknown_sharing" in task, includeUnknownSharing !== undefined);
+    if (response.ok) assert.equal((response.payload.extracted as { units: Array<{ entireOrShared: unknown }> }).units[0].entireOrShared, null);
+  });
+
+  it("rejects unknown-sharing input on another connector before submission", async () => {
+    let called = false; const original = globalThis.fetch;
+    globalThis.fetch = async () => { called = true; throw Error("Network must not be called"); };
+    try {
+      const response = await submitArgusCapture({ ARGUS_API_BASE_URL: "https://argus.test" } as Environment, { traceId: "wrong-sharing-scope", connectorId: "airbnb-public", workflowId: "resolve_listing", url: "https://www.airbnb.com/rooms/123", includeUnknownSharing: true });
+      assert.equal(response.ok, false); assert.equal(called, false);
+    } finally { globalThis.fetch = original; }
+  });
   it.each(["healthy", "draining", "false-ready", "false-health", "access-html"])("checks the Argus response body for %s", async scenario => {
     server = http.createServer((request, response) => {
       const isReady = request.url === "/readiness";

@@ -1,6 +1,21 @@
 # Argus browser collection boundary
 
-Last updated: 2026-10-16 (full selected-sample formal schedule enabled; no automatic retries)
+Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual acceptance remains separate)
+
+The latest user authorization removes Argus daily/lifetime count ceilings and this selected roster's
+Tymra daily count gate on every OTA channel. Other plans' DataSource settings remain unchanged;
+selected-roster executions do not spend their legacy counters. The 24/20/6 and 195/143 numbers below
+are historical descriptions, not current limits. Concurrency one, pacing, cooldown/circuit protection,
+stop on block and no automatic retry remain.
+
+Selected Booking identity explicitly opts into partial 1.1.0 units with unknown sharing; other callers
+keep their existing response. Unknown sharing does not establish canonical units or comparable prices.
+Verified original wire JSON is retained as text beside independent database-representation hashes and
+committed atomically with terminal execution state; no numeric rounding bypasses integrity checks.
+An operator may authorize an exact held-member identity and its two unchanged stay windows using
+expiring, HMAC-audited one-attempt jobs. The marker is in the idempotency key, leaving rollback task/state
+schemas unchanged. The scheduler never creates these jobs; failed members remain held. Only successful
+identity/window deliveries plus original-source review release that member, preserving other members.
 
 ## Bounded OTA production pilots
 

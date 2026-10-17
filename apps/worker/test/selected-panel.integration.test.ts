@@ -14,14 +14,17 @@ const databaseUrl = new URL(process.env.DATABASE_URL!); databaseUrl.pathname = `
 const prisma = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
 vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@tymra/db")>("@tymra/db")), prisma }));
 const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await import("../src/operations/selected-panel-production");
-beforeAll(async () => {
+const { authorizeSelectedManualReview, closeSelectedManualReview } = await import("../src/operations/selected-panel-review");
+const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
+async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
   await adminPrisma.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
   const root = fileURLToPath(new URL("../../../", import.meta.url));
   const migration = spawnSync(process.execPath, [root + "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", root + "packages/db/prisma/schema.prisma"], {
     cwd: root, env: { ...process.env, DATABASE_URL: databaseUrl.toString(), TYMRA_TEST_DATABASE_NAME: databaseName }, encoding: "utf8" });
   if (migration.status !== 0) throw Error("Isolated selected-panel test schema setup failed");
-}, 30000);
+}
+beforeAll(createIsolatedDatabase, 30000);
 let historicalId: string | null = null;
 let sourceBefore: Awaited<ReturnType<typeof prisma.dataSource.findMany>> = [];
 beforeEach(async () => {
@@ -31,14 +34,12 @@ beforeEach(async () => {
   await prisma.scheduleDefinition.create({ data: { key: SELECTED_PANEL_KEY, enabled: true, queueName: SELECTED_PANEL_QUEUE, jobType: "RATE_COLLECTION", cronExpression: "daily", payload: selectedFixture() } });
 });
 afterEach(async () => {
-  const jobs = await prisma.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE }, select: { id: true } });
-  const ids = jobs.map(j => j.id);
-  await prisma.argusExecution.deleteMany({ where: { OR: [{ parentJobId: { in: ids } }, { orchestrationKey: { startsWith: "selected-test:" } }] } });
-  await prisma.collectionRun.deleteMany({ where: { jobId: { in: ids } } });
-  await prisma.job.deleteMany({ where: { OR: [{ queueName: SELECTED_PANEL_QUEUE }, ...(historicalId ? [{ id: historicalId }] : [])] } });
+  // Preserve immutable histories until this explicitly disposable suite database
+  // is replaced; never disable the production CollectionRun history trigger.
+  await prisma.$disconnect();
+  await adminPrisma.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`);
+  await createIsolatedDatabase();
   historicalId = null;
-  await prisma.scheduleDefinition.deleteMany({ where: { key: SELECTED_PANEL_KEY } });
-  for (const s of sourceBefore) await prisma.dataSource.update({ where: { id: s.id }, data: { enabled: s.enabled, lifecycle: s.lifecycle, operationalStatus: s.operationalStatus, dailyBudget: s.dailyBudget, concurrencyLimit: s.concurrencyLimit, environments: s.environments, isDemo: s.isDemo, updatedAt: s.updatedAt } });
 });
 afterAll(async () => {
   await prisma.$disconnect();
@@ -46,6 +47,77 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("round-trips original long coordinates through the actual Prisma transport without weakening either hash", async () => {
+    const { createHash } = await import("node:crypto");
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    const payload = { contract_version: "1.0", job_id: "isolated-wire", status: "COMPLETED", items: [{ trace_id: "trace", result: { data: { longitude: 172.60966256260872 }, evidence: [] } }] };
+    const wire = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+    const execution = await prisma.argusExecution.create({ data: { orchestrationKey: "selected-test:precision", parentJobId: "precision", collectionRunId: "precision", dataSourceId: source.id,
+      argusJobId: "isolated-wire", traceId: "trace", connectorId: "booking-public", workflowId: "resolve_listing", requestedUrl: "https://www.booking.com/hotel/nz/fixture.html", status: "COMPLETED", deadlineAt: now, result: wire } });
+    const proof = observationWireProof(wire as never, execution.result);
+    const roundtrip = await prisma.$queryRaw<Array<{ value: typeof proof }>>`SELECT ${JSON.stringify(proof)}::jsonb AS value`;
+    expect(verifiedObservationWire(execution.result as never, roundtrip[0].value)).toEqual(wire);
+    const tampered = JSON.parse(JSON.stringify(execution.result)); tampered.items[0].result.data.longitude = 1;
+    expect(() => verifiedObservationWire(tampered, roundtrip[0].value)).toThrow("RESULT_IDENTITY_OR_HASH_MISMATCH");
+  });
+  it("releases only the reviewed member after identity and both exact-window deliveries, while normal members remain schedulable", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
+    try {
+      const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "PARSING_ERROR" }, { memberId: "sample1", reason: "OTHER_HOLD" }];
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      const common = { batch: "held-review-complete", memberId: "sample0", manifestHash: state.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() };
+      for (const [phase, checkIn] of [["identity", "2026-12-01"], ["quote", "2026-12-01"], ["quote", "2026-12-05"]] as const) {
+        const q = await authorizeSelectedManualReview({ ...common, phase, checkIn, unitExternalId: phase === "identity" ? null : "unit0" }, now);
+        expect(q.status).toBe("queued");
+        const job = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in q ? q.jobId : "" } });
+        const task = selectedJobSchema.parse(job.payload);
+        await expect(selectedCapturePermission(job, selectedInput(state.manifest.members[0], task, job.id), source.id, now)).resolves.toBeUndefined();
+        const run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: now,
+          scope: { selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: "sample0", phase, task, evaluated: { externalId: "unit0" } } } });
+        await prisma.argusExecution.create({ data: { orchestrationKey: "selected-test:" + job.id, parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id,
+          argusJobId: job.id, traceId: job.id, connectorId: "booking-public", workflowId: phase === "identity" ? "resolve_listing" : "collect_rates",
+          requestedUrl: state.manifest.members[0].sourceUrl, status: "COMPLETED", deadlineAt: now, deliveryVerifiedAt: now } });
+        await prisma.job.update({ where: { id: job.id }, data: { status: "SUCCEEDED" } });
+        if (phase === "identity") await expect(closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).rejects.toThrow("MANUAL_REVIEW_INCOMPLETE_KEEP_HELD");
+      }
+      const normal = await enqueueSelectedPanel(now); expect((normal!.payload as { memberId: string }).memberId).toBe("sample2");
+      expect(await closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).toEqual({ released: true });
+      expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload).held).toEqual([{ memberId: "sample1", reason: "OTHER_HOLD" }]);
+    } finally { vi.unstubAllEnvs(); }
+  });
+  it("requires a signed exact-task operator grant, keeps the held roster isolated and never repeats a failed review", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
+    try {
+      const state = selectedFixture();
+      state.held = [{ memberId: "sample0", reason: "PARSING_ERROR" }];
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      const input = { batch: "held-review-test", memberId: "sample0", phase: "identity" as const, checkIn: "2026-12-01",
+        unitExternalId: null, manifestHash: state.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() };
+      const queued = await authorizeSelectedManualReview(input, now);
+      expect(queued.status).toBe("queued");
+      const job = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in queued ? queued.jobId : "" } });
+      const task = selectedJobSchema.parse(job.payload);
+      expect(job.idempotencyKey).toBe(selectedTaskKey(task) + ":manual-review:" + input.batch);
+      expect(Reflect.has(task, "manualReview")).toBe(false);
+      await expect(selectedCapturePermission(job, selectedInput(state.manifest.members[0], task, job.id), source.id, now)).resolves.toBeUndefined();
+      expect((await authorizeSelectedManualReview(input, now)).status).toBe("existing");
+      expect(await prisma.job.count({ where: { queueName: SELECTED_PANEL_QUEUE } })).toBe(1);
+      await expect(selectedCapturePermission({ ...job, idempotencyKey: selectedTaskKey(task) + ":manual-review:no-receipt" },
+        selectedInput(state.manifest.members[0], task, job.id), source.id, now)).rejects.toThrow("MANUAL_REVIEW_PERMISSION_CLOSED");
+      await expect(selectedCapturePermission(job, selectedInput(state.manifest.members[0], task, job.id), source.id,
+        new Date(now.getTime() + 3601_000))).rejects.toThrow("MANUAL_REVIEW_PERMISSION_CLOSED");
+      await prisma.job.update({ where: { id: job.id }, data: { status: "DEAD_LETTER" } });
+      await expect(authorizeSelectedManualReview({ ...input, checkIn: "2026-12-05" }, now)).rejects.toThrow("MANUAL_REVIEW_FAILED_NO_RETRY");
+      const after = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      expect(after.held).toEqual(state.held);
+      expect(after.manifestHash).toBe(state.manifestHash);
+      expect(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } })).toEqual(source);
+      await expect(closeSelectedManualReview(input.batch, "sample0", "a".repeat(64))).rejects.toThrow("MANUAL_REVIEW_INCOMPLETE_KEEP_HELD");
+    } finally { vi.unstubAllEnvs(); }
+  });
   async function upgrade() {
     const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
     await prisma.scheduleDefinition.update({ where: { id: control.id }, data: { payload: { ...(control.payload as object),

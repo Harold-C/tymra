@@ -243,7 +243,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
       });
       await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { discoveredFor: check.propertyId, sourceListingId: candidate.sourceListingId } });
       const comparableUnits = candidateUnits
-        .filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null)
+        .filter((unit): unit is typeof unit & { capacity: number; entireOrShared: "ENTIRE" | "PRIVATE" | "SHARED" } => unit.capacity !== null && unit.entireOrShared !== null)
         .sort((left, right) => {
           const leftTypePenalty = left.unitType === check.unit!.unitType ? 0 : 10;
           const rightTypePenalty = right.unitType === check.unit!.unitType ? 0 : 10;

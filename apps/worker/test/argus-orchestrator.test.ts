@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   observationPermission: vi.fn(),
   observationRunFind: vi.fn(),
   observationRunUpdate: vi.fn(),
+  transaction: vi.fn(),
   enqueueJob: vi.fn(),
   executionFind: vi.fn(),
   executionCount: vi.fn(),
@@ -66,6 +67,7 @@ vi.mock("@tymra/db", () => ({
   enqueueJob: mocks.enqueueJob,
   findEffectiveMembership: mocks.effectiveMembership,
   prisma: {
+    $transaction: mocks.transaction,
     argusExecution: {
       findUnique: mocks.executionFind,
       findUniqueOrThrow: mocks.executionFind,
@@ -141,6 +143,10 @@ const input = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.transaction.mockImplementation(async (operation) => operation({
+    argusExecution: { update: mocks.executionUpdate },
+    collectionRun: { findUniqueOrThrow: mocks.observationRunFind, update: mocks.observationRunUpdate },
+  }));
   mocks.scheduleFind.mockResolvedValue(null);
   mocks.diskFault = "";
   mocks.diskEvents = [];
@@ -155,6 +161,18 @@ afterEach(async () => {
 });
 
 describe("durable Argus orchestration", () => {
+  it("persists an observation result and its independently verified receipt in one transaction", async () => {
+    mocks.executionFind.mockResolvedValue(activeExecution());
+    mocks.parentFind.mockResolvedValue({status:"PENDING",payload:{observationPilot:"christchurch-three-observations-20261016",manifestHash:"hash",taskKey:"canary:one",sourceId:"booking"}});
+    const job = completedJob();
+    mocks.getJob.mockResolvedValue({ok:true,job});
+    mocks.getResult.mockResolvedValue({ok:true,job});
+    mocks.executionUpdate.mockResolvedValue({result:job});
+    mocks.observationRunFind.mockResolvedValue({id:"run-1",scope:{captureReserved:true}});
+    await pollArgusExecution(environment,"execution-1");
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.observationRunUpdate).toHaveBeenCalledWith(expect.objectContaining({data:{scope:expect.objectContaining({captureReserved:true,verifiedWire:expect.objectContaining({wireJson:JSON.stringify(job)})})}}));
+  });
   it("reserves observation submission before network and refuses uncertain restart", async () => {
     mocks.executionFind.mockResolvedValue(null);
     mocks.parentFind.mockResolvedValue({status:"RUNNING",payload:{observationPilot:"christchurch-three-observations-20261016",manifestHash:"hash",taskKey:"canary:one",sourceId:"booking"}});

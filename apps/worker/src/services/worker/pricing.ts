@@ -111,7 +111,7 @@ export async function validatePriceCheckOtaListing(this: WorkerContext, priceChe
     listingMatchConfidence = addressMatch.confidence;
   }
 
-  const usableUnits = extraction.units.filter((unit): unit is typeof unit & { capacity: number } => unit.capacity !== null);
+  const usableUnits = extraction.units.filter((unit): unit is typeof unit & { capacity: number; entireOrShared: "ENTIRE" | "PRIVATE" | "SHARED" } => unit.capacity !== null && unit.entireOrShared !== null);
   if (usableUnits.length === 0) {
     const identityNotPublic = extraction.unitIdentityStatus === "not_public" && extraction.units.length === 0;
     await this.markOtaListingConflict(

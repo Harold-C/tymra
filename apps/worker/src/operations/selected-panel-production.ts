@@ -6,6 +6,7 @@ import type { ArgusCaptureInput } from "../clients/argus-client";
 import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
+import { assertSelectedManualReview, selectedManualBatch } from "./selected-panel-review";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedDailyLimit, nextSelectedTasks, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -14,10 +15,11 @@ export function selectedInput(member: SelectedMember, task: SelectedTask, parent
   const stay = { checkIn: task.checkIn, checkOut: addNzCalendarDays(task.checkIn, member.nights), adults: 2, children: 0 as const, units: 1, currency: "NZD" as const };
   return { traceId: `selected-${selectedHash([parentId, task]).slice(0, 30)}`, connectorId: `${member.source}-public` as ArgusCaptureInput["connectorId"],
     workflowId: task.phase === "identity" ? "resolve_listing" : "collect_rates", url: member.sourceUrl,
-    maxRecords: 20, maxAttempts: 1, timeoutMs: 60000,
-    ...(task.phase === "quote" ? { ...stay, unitExternalId: task.unitExternalId! } : member.source === "expedia" ? { identityStay: stay } : {}) };
+    maxRecords: task.phase === "identity" && member.source === "booking" ? 50 : 20, maxAttempts: 1, timeoutMs: 60000,
+    ...(task.phase === "identity" && member.source === "booking" ? { includeUnknownSharing: true } : {}),
+    ...(task.phase === "quote" ? { ...stay, unitExternalId: task.unitExternalId! } : ["expedia", "trip"].includes(member.source) ? { identityStay: stay } : {}) };
 }
-export function resolveSelectedUnit(member: SelectedMember, extracted: unknown) {
+export function resolveSelectedUnit(member: SelectedMember, extracted: unknown, prior?: { externalId: string; unit: { officialName: string; capacity: number | null; areaSquareMetres?: number | null; bedTypes: string[] } }) {
   const data = otaResolveListingExtractionSchema.parse(extracted);
   if (data.provider !== member.source || data.sourceListingId !== selectedListingId(member)) throw Error("LISTING_IDENTITY_MISMATCH");
   if (member.source === "booking" && !data.warnings.includes(`BOOKING_INTERNAL_PROPERTY_ID=${member.sourceListingId}`)) throw Error("BOOKING_PROPERTY_ID_UNVERIFIED");
@@ -32,6 +34,14 @@ export function resolveSelectedUnit(member: SelectedMember, extracted: unknown) 
     return member.expectedUnitName !== null && name(unit.officialName) === name(member.expectedUnitName);
   });
   if (matches.length !== 1) throw Error(matches.length ? "UNIT_IDENTITY_AMBIGUOUS" : "SELECTED_ROOM_NOT_RETURNED");
+  const unit = matches[0];
+  const nameKey = `expedia:${member.sourceListingId}:unit:${unit.officialName.toLocaleLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "").slice(0, 100)}`;
+  if (member.source === "expedia" && prior?.externalId === nameKey && unit.externalId !== prior.externalId
+    && name(prior.unit.officialName) === name(unit.officialName) && prior.unit.capacity === unit.capacity
+    && prior.unit.areaSquareMetres === unit.areaSquareMetres && selectedHash(prior.unit.bedTypes) === selectedHash(unit.bedTypes)) {
+    return { externalId: prior.externalId, unit: { ...unit, externalId: prior.externalId, identityQuality: "partial" as const },
+      observedSourceUnitExternalId: unit.externalId, observedAt: data.observedAt };
+  }
   return { externalId: matches[0].externalId, unit: matches[0], observedAt: data.observedAt };
 }
 
@@ -81,9 +91,11 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
   const task = selectedJobSchema.parse(parent.payload);
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
   const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(c => c.id === task.memberId);
-  if (!control.enabled || task.manifestHash !== state.manifestHash || !member?.enabled || state.held.some(h => h.memberId === member.id)
+  const manualBatch = selectedManualBatch(parent);
+  if (manualBatch) await assertSelectedManualReview(parent, task, control.id, now);
+  if (!control.enabled || task.manifestHash !== state.manifestHash || !member?.enabled || (!manualBatch && state.held.some(h => h.memberId === member.id))
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
-    || parent.maxAttempts !== 1 || parent.idempotencyKey !== selectedTaskKey(task) || task.sourceId !== member.source || parent.sourceId !== member.source
+    || parent.maxAttempts !== 1 || (!manualBatch && parent.idempotencyKey !== selectedTaskKey(task)) || task.sourceId !== member.source || parent.sourceId !== member.source
     || nzDateKey(now) < state.manifest.start || task.checkIn <= nzDateKey(now)
     || !selectedCycle(state, parent.createdAt).anchors.includes(task.checkIn)
     || task.round !== (task.phase === "quote" ? selectedCycle(state, parent.createdAt).round : nzDateKey(parent.createdAt))) throw Error("SELECTED_PANEL_PERMISSION_CLOSED");
@@ -143,9 +155,9 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     if (!response.payload.ok) throw Error("SELECTED_CAPTURE_FAILED");
     let evaluated: unknown;
     if (task.phase === "identity") {
-      const resolved = resolveSelectedUnit(member, response.payload.extracted);
       const previous = await prisma.collectionRun.findMany({ where: { status: "SUCCEEDED", scope: { path: ["selectedPanel"], equals: SELECTED_PANEL_KEY } }, orderBy: { finishedAt: "desc" } });
       const prior = previous.find(r => { const s = r.scope as { manifestHash?: string; memberId?: string; phase?: string }; return s.manifestHash === state.manifestHash && s.memberId === member.id && s.phase === "identity"; });
+      const resolved = resolveSelectedUnit(member, response.payload.extracted, (prior?.scope as { evaluated?: Parameters<typeof resolveSelectedUnit>[2] } | undefined)?.evaluated);
       if (prior && (prior.scope as { evaluated?: { externalId?: string } }).evaluated?.externalId !== resolved.externalId) throw Error("REVIEWED_UNIT_CHANGED");
       evaluated = resolved;
     } else {
@@ -155,7 +167,8 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
       evaluated = evaluateCapturedObservation(evaluationCandidate(member, task.unitExternalId!, run.id), task.unitExternalId!, task.checkIn, data, run.id);
     }
     await persistObservationEvidence(job.id, run.id, source.id, input.traceId, false, SELECTED_PANEL_KEY);
-    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: json({ ...(run.scope as object), evaluated, captureReserved: true }) } });
+    const retainedRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } });
+    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: json({ ...(retainedRun.scope as object), evaluated, captureReserved: true }) } });
     await acknowledgePersistedArgusResults(environment, job.id);
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: 1, finishedAt: new Date() } });
   } catch (error) {
@@ -166,7 +179,7 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
       await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${SELECTED_PANEL_KEY} FOR UPDATE`;
       const c = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } }), s = selectedStateSchema.parse(c.payload);
       if (!s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
-      if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
+      if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED|SOURCE_DAILY_BUDGET_EXHAUSTED|SOURCE_CIRCUIT_OPEN/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
       await tx.scheduleDefinition.update({ where: { id: c.id }, data: { payload: json(s) } });
     });
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: reason.slice(0, 200), finishedAt: new Date() } });

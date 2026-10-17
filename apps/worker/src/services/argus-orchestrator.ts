@@ -24,7 +24,8 @@ import { nzStartOfDay } from "@tymra/domain";
 import { ACTIVE_OTA_SOURCE_KEYS } from "../operations/ota-health";
 import { isProductionOtaPayload, OTA_DAILY_EXECUTION_BUDGET, otaSourceApproved, productionOtaDailyBudgetWaivedForTrial } from "../operations/production-ota";
 import { withRedisLockWait } from "@tymra/queue";
-import { isObservationJob, pilotCanonicalHash } from "../operations/observation-pilot";
+import { isObservationJob } from "../operations/observation-pilot";
+import { observationWireProof } from "../operations/observation-wire";
 import { observationCapturePermission } from "../operations/observation-production";
 import { isSelectedPanelJob } from "../operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../operations/selected-panel-budget";
@@ -299,12 +300,6 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     throw new DeferredJobError(resultResponse.message, queueAware && execution.deadlineAt <= new Date() ? new Date(Date.now() + 30_000) : nextPoll(execution.deadlineAt));
   }
   const job = resultResponse.job;
-  if (isObservationJob(parent?.payload)) {
-    // getArgusJobResult has checked the original wire hash before JSONB reorders keys.
-    const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: execution.collectionRunId } });
-    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: { ...(run.scope as Prisma.JsonObject),
-      verifiedWire: { argusJobId: job.job_id, resultSha256: job.result_sha256, canonicalSha256: pilotCanonicalHash(job) } } } });
-  }
   const terminalStatus = job.status === "CANCELLED"
     ? "CANCELLED"
     : job.status === "COMPLETED" || job.status === "COMPLETED_WITH_WARNINGS"
@@ -314,18 +309,29 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   const itemCategory = matchingItem?.error_category ?? matchingItem?.result?.error?.category;
   const safeItemCategory = typeof itemCategory === "string" && /^[A-Z][A-Z0-9_]{0,63}$/u.test(itemCategory)
     ? itemCategory : null;
-  await prisma.argusExecution.update({
-    where: { id: execution.id },
-    data: {
-      status: queueAware && execution.errorCategory === "TIMEOUT" ? "FAILED" : terminalStatus,
-      result: job as unknown as Prisma.InputJsonValue,
-      errorCategory: queueAware && execution.errorCategory === "TIMEOUT" ? "TIMEOUT" : execution.errorCategory === "ACCESS_CHALLENGE" ? "ACCESS_CHALLENGE" : job.error?.category ?? safeItemCategory,
-      errorMessage: queueAware && execution.errorCategory === "TIMEOUT" ? execution.errorMessage : execution.errorCategory === "ACCESS_CHALLENGE" ? "Bounded public OTA challenge cancelled and session released" : job.error?.message ?? null,
-      retryable: job.error?.retryable ?? matchingItem?.result?.error?.retryable ?? null,
-      lastPolledAt: new Date(),
-      completedAt: new Date(),
-    },
-  });
+  const persistResult = async (db: Pick<typeof prisma, "argusExecution" | "collectionRun">) => {
+    const persistedExecution = await db.argusExecution.update({
+      where: { id: execution.id },
+      data: {
+        status: queueAware && execution.errorCategory === "TIMEOUT" ? "FAILED" : terminalStatus,
+        result: job as unknown as Prisma.InputJsonValue,
+        errorCategory: queueAware && execution.errorCategory === "TIMEOUT" ? "TIMEOUT" : execution.errorCategory === "ACCESS_CHALLENGE" ? "ACCESS_CHALLENGE" : job.error?.category ?? safeItemCategory,
+        errorMessage: queueAware && execution.errorCategory === "TIMEOUT" ? execution.errorMessage : execution.errorCategory === "ACCESS_CHALLENGE" ? "Bounded public OTA challenge cancelled and session released" : job.error?.message ?? null,
+        retryable: job.error?.retryable ?? matchingItem?.result?.error?.retryable ?? null,
+        lastPolledAt: new Date(),
+        completedAt: new Date(),
+      },
+    });
+    if (isObservationJob(parent?.payload)) {
+      // Original bytes and database representation have independent integrity receipts.
+      const run = await db.collectionRun.findUniqueOrThrow({ where: { id: execution.collectionRunId } });
+      await db.collectionRun.update({ where: { id: run.id }, data: { scope: { ...(run.scope as Prisma.JsonObject),
+        verifiedWire: observationWireProof(job, persistedExecution.result) } } });
+    }
+  };
+  // A terminal result must never become visible without its verified wire receipt.
+  if (isObservationJob(parent?.payload)) await prisma.$transaction(persistResult);
+  else await persistResult(prisma);
   await settleCancelledCollectionRun(execution.parentJobId);
   await wakeParent(execution.parentJobId);
 }

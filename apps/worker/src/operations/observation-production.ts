@@ -2,22 +2,23 @@ import { prisma, Prisma, type Job } from "@tymra/db";
 import { addNzCalendarDays, nzStartOfDay } from "@tymra/domain";
 import type { Environment } from "@tymra/config";
 import type { ArgusCaptureInput } from "../clients/argus-client";
-import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotCanonicalHash, pilotJobSchema, pilotStateSchema, pilotRepairSchema, pilotTasks, taskAllowed, type PilotManifest, type PilotRepair } from "./observation-pilot";
+import { OBSERVATION_PILOT_KEY, OBSERVATION_QUEUE, pilotHash, pilotJobSchema, pilotStateSchema, pilotRepairSchema, pilotTasks, taskAllowed, type PilotManifest, type PilotRepair } from "./observation-pilot";
 import { resolveObservationUnit, evaluateCapturedObservation } from "./observation-evaluation";
 import { DeferredJobError } from "../jobs/deferred-job";
 import { isSelectedPanelJob } from "./selected-panel-plan";
 import { legacyOtaDailyWhere } from "./selected-panel-budget";
+import { verifiedObservationWire, type ObservationWireProof } from "./observation-wire";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
 export async function persistObservationEvidence(parentJobId: string, runId: string, sourceId: string, traceId: string, failure: boolean, evidenceOwner = OBSERVATION_PILOT_KEY) {
   const execution = await prisma.argusExecution.findFirstOrThrow({ where: { parentJobId } });
-  const wire = execution.result as unknown as import("../clients/argus-client").ArgusJobResult;
-  if (!wire?.result_sha256) throw new Error("RESULT_NOT_READY_FOR_RETENTION");
+  const persisted = execution.result as unknown as import("../clients/argus-client").ArgusJobResult;
+  if (!persisted?.result_sha256) throw new Error("RESULT_NOT_READY_FOR_RETENTION");
   const run = await prisma.collectionRun.findUniqueOrThrow({ where: { id: runId } });
-  const proof = (run.scope as { verifiedWire?: { argusJobId: string; resultSha256: string; canonicalSha256: string } }).verifiedWire;
-  if (!proof || proof.argusJobId !== wire.job_id || proof.resultSha256 !== wire.result_sha256 || proof.canonicalSha256 !== pilotCanonicalHash(wire)
-    || wire.job_id !== execution.argusJobId || wire.items.length !== 1 || wire.items[0].trace_id !== traceId) throw new Error("RESULT_IDENTITY_OR_HASH_MISMATCH");
+  const proof = (run.scope as { verifiedWire?: ObservationWireProof }).verifiedWire;
+  const wire = verifiedObservationWire(persisted, proof);
+  if (wire.job_id !== execution.argusJobId || wire.items.length !== 1 || wire.items[0].trace_id !== traceId) throw new Error("RESULT_IDENTITY_OR_HASH_MISMATCH");
   const result = wire.items[0].result;
   if (result && (result.trace_id !== traceId || result.readonly_only !== true || result.external_side_effects_performed !== false)) throw new Error("UNSAFE_CAPTURE");
   for (const pointer of wire.items.flatMap(item => item.result?.evidence ?? [])) {
@@ -193,7 +194,8 @@ export async function handleObservationJob(job: Job, environment: Environment) {
       : evaluateCapturedObservation(selected.candidate, selected.unitExternalId, task.checkIn, extracted, run.id);
     if (task.workflow === "resolve_listing" && (evaluated as { externalId: string }).externalId !== selected.unitExternalId) throw new Error("REVIEWED_UNIT_CHANGED");
     await persistObservationEvidence(job.id, run.id, source.id, input.traceId, false);
-    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: json({ ...(run.scope as object), evaluated, captureReserved: true }) } });
+    const retainedRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } });
+    await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: json({ ...(retainedRun.scope as object), evaluated, captureReserved: true }) } });
     await acknowledgePersistedArgusResults(environment, job.id);
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: 1, finishedAt: new Date() } });
   } catch (error) {

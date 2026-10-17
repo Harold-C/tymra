@@ -104,4 +104,23 @@ describe("selected sample formal collection", () => {
     expect(() => resolveSelectedUnit({ ...selectedMember(), expectedUnitId: null }, identity([unit, { ...unit, externalId: "another" }]))).toThrow("UNIT_IDENTITY_AMBIGUOUS");
     expect(() => resolveSelectedUnit(selectedMember(), identity([{ ...unit, officialName: "Bed in dorm" }]))).toThrow("SELECTED_ROOM_NOT_RETURNED");
   });
+  it("keeps unknown sharing partial and scopes the opt-in and dated identities to their supported sources", () => {
+    const task = nextSelectedTasks(selectedFixture(), [], new Set(), now)[0];
+    expect(selectedInput(selectedMember(), task, "parent")).toMatchObject({ maxRecords: 50, includeUnknownSharing: true, maxAttempts: 1 });
+    const partial = { ...identity(), schema_version: "1.1.0", quality: "partial", units: [{ ...unit, entireOrShared: null }] };
+    expect(resolveSelectedUnit(selectedMember(), partial).unit.entireOrShared).toBeNull();
+    expect(() => resolveSelectedUnit({ ...selectedMember(), entireBedrooms: 2 }, partial)).toThrow("SELECTED_ROOM_NOT_RETURNED");
+    expect(selectedInput({ ...selectedMember(), source: "trip" }, task, "parent").identityStay).toMatchObject({ checkIn: "2026-12-01", adults: 2, children: 0, units: 1 });
+  });
+  it("preserves a prior partial Expedia name identity only for an unchanged unique room signature", () => {
+    const member = { ...selectedMember(), source: "expedia" as const, expectedUnitId: null };
+    const current = { ...unit, externalId: "expedia:100:room:999", areaSquareMetres: 24 };
+    const data = { ...identity(), provider: "expedia", sourceListingId: "expedia:100", units: [current] };
+    const prior = { externalId: "expedia:100:unit:studio", unit: { ...current, externalId: "expedia:100:unit:studio" } };
+    const resolved = resolveSelectedUnit(member, data, prior);
+    expect(resolved.externalId).toBe(prior.externalId);
+    expect(resolved).toMatchObject({ observedSourceUnitExternalId: current.externalId, unit: { identityQuality: "partial" } });
+    expect(resolveSelectedUnit(member, { ...data, units: [{ ...current, capacity: 3 }] }, prior).externalId).toBe(current.externalId);
+    expect(() => resolveSelectedUnit(member, { ...data, units: [current, { ...current, externalId: "other" }] }, prior)).toThrow("UNIT_IDENTITY_AMBIGUOUS");
+  });
 });
