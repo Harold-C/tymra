@@ -61,7 +61,7 @@ describe("selected collection isolated persistence", () => {
     await expect(selectedCapturePermission(job, selectedInput(selectedFixture().manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
     expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
   });
-  it("stops at 24 dedicated captures including prior-day jobs, preserving the other plans' unused allowance", async () => {
+  it("continues after 24 dedicated captures without spending another plan's allowance or weakening serialization", async () => {
     await upgrade();
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
     for (let i = 0; i < 24; i++) {
@@ -70,10 +70,13 @@ describe("selected collection isolated persistence", () => {
       await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:dedicated${i}`, parentJobId: job.id, collectionRunId: `dedicated${i}`, dataSourceId: source.id,
         argusJobId: `dedicated${i}`, traceId: `dedicated${i}`, connectorId: "booking-public", workflowId: "resolve_listing", requestedUrl: "https://www.booking.com/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
     }
-    expect(await enqueueSelectedPanel(now)).toBeNull();
+    const job = (await enqueueSelectedPanel(now))!;
+    expect(job).not.toBeNull();
+    await expect(selectedCapturePermission(job, selectedInput(selectedFixture().manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
+    expect(await enqueueSelectedPanel(now)).toBeNull(); // the pending job still serializes dispatch
     const where = await legacyOtaDailyWhere(source.id, source.key, now, prisma);
     expect(await prisma.argusExecution.count({ where })).toBe(0);
-    expect(await enqueueSelectedPanel(new Date(now.getTime() + 86400000))).not.toBeNull();
+    expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
   });
   it("holds the activation lock until the transaction ends without decoding void", async () => {
     await prisma.$transaction(async tx => {
@@ -96,11 +99,15 @@ describe("selected collection isolated persistence", () => {
       payload: { ...proto, round: `history${i}` }, idempotencyKey: selectedTaskKey({ ...proto, round: `history${i}` }), maxAttempts: 1, createdAt: new Date("2026-10-14T00:00:00Z") })) });
     expect(await enqueueSelectedPanel(now)).not.toBeNull();
   });
-  it("respects source daily caps even when global lifetime caps are removed", async () => {
+  it("continues selected collection after six legacy captures while preserving their count and source settings", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
     for (let i = 0; i < 6; i++) await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:other${i}`, parentJobId: `other${i}`, collectionRunId: `other${i}`, dataSourceId: source.id,
       argusJobId: `other${i}`, traceId: `other${i}`, connectorId: "booking-public", workflowId: "collect_rates", requestedUrl: "https://www.booking.com/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
-    expect(await enqueueSelectedPanel(now)).toBeNull();
+    const job = (await enqueueSelectedPanel(now))!;
+    expect(job).not.toBeNull();
+    await expect(selectedCapturePermission(job, selectedInput(selectedFixture().manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
+    expect(await prisma.argusExecution.count({ where: await legacyOtaDailyWhere(source.id, source.key, now, prisma) })).toBe(6);
+    expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
   });
   it("yields to shared work without cancelling it or consuming a capture", async () => {
     const shared = await prisma.argusExecution.create({ data: { orchestrationKey: "selected-test:shared", parentJobId: "shared", collectionRunId: "shared", dataSourceId: "other",
