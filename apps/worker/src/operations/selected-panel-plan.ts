@@ -40,6 +40,7 @@ export const selectedManifestSchema = z.object({
     if (u.protocol !== "https:" || u.username || u.password || !hosts[c.source].includes(u.hostname)) invalid("Unapproved source URL");
     if (c.enabled && (c.holdReason || (!c.expectedUnitId && !c.expectedUnitName && !c.entireBedrooms))) invalid("Unresolved target cannot execute");
     if (!c.enabled && !c.holdReason) invalid("Held member needs a reason");
+    try { selectedMemberExecutionHash({ manifestHash: "" }, c); } catch { invalid("Invalid unchanged-member execution lineage"); }
   }
 });
 export type SelectedManifest = z.infer<typeof selectedManifestSchema>;
@@ -56,6 +57,22 @@ export const selectedJobSchema = z.object({
   unitExternalId: text.nullable(), round: text,
 }).strict().refine(t => (t.phase === "identity") === (t.unitExternalId === null), "Invalid phase/unit binding");
 export type SelectedTask = z.infer<typeof selectedJobSchema>;
+const lineageSchema = z.object({ manifestHash: z.string().regex(/^[a-f0-9]{64}$/), memberHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
+/** Preserve an unchanged member's original manifest context without borrowing a changed unit's history. */
+export function selectedMemberDefinitionHash(member: SelectedMember): string {
+  const labels = { ...member.labels }; delete labels.selectedExecutionLineage;
+  return selectedHash({ ...member, labels });
+}
+export function selectedMemberExecutionHash(state: { manifestHash: string }, member: SelectedMember): string {
+  if (member.labels.selectedExecutionLineage === undefined) return state.manifestHash;
+  const lineage = lineageSchema.parse(member.labels.selectedExecutionLineage);
+  if (lineage.memberHash !== selectedMemberDefinitionHash(member)) throw Error("SELECTED_MEMBER_LINEAGE_CHANGED");
+  return lineage.manifestHash;
+}
+export function selectedTaskMatchesState(state: z.infer<typeof selectedStateSchema>, task: SelectedTask): boolean {
+  const member = state.manifest.members.find(m => m.id === task.memberId);
+  return !!member && task.sourceId === member.source && task.manifestHash === selectedMemberExecutionHash(state, member);
+}
 export function isSelectedPanelJob(value: unknown) { return selectedJobSchema.safeParse(value).success; }
 export function selectedTaskKey(t: SelectedTask) { return `${SELECTED_PANEL_KEY}:${selectedHash(t)}`; }
 
@@ -95,7 +112,7 @@ export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, pr
   members.sort((a, b) => (progress.find(p => p.memberId === a.id)?.lastQuoteAt?.getTime() ?? 0) - (progress.find(p => p.memberId === b.id)?.lastQuoteAt?.getTime() ?? 0));
   return members.flatMap(c => {
     const p = progress.find(p => p.memberId === c.id);
-    const common = { selectedPanel: SELECTED_PANEL_KEY as typeof SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: c.id, sourceId: c.source };
+    const common = { selectedPanel: SELECTED_PANEL_KEY as typeof SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, c), memberId: c.id, sourceId: c.source };
     const fresh = p?.identityAt && p.unitExternalId && now.getTime() - p.identityAt.getTime() < state.manifest.identityTtlDays * 86_400_000;
     const tasks: SelectedTask[] = fresh
       ? anchors.filter(checkIn => !state.cadence || !p.windows?.some(w => w.checkIn === checkIn && nzDate(w.finishedAt) >= round))

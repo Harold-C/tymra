@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { prisma, Prisma, type Job } from "@tymra/db";
 import { nzDateKey } from "@tymra/domain";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedCycle, selectedHash, type SelectedTask } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedCycle, selectedHash, selectedMemberExecutionHash, type SelectedTask } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const eventType = "selected_manual_acceptance_authorized";
@@ -29,7 +29,7 @@ export async function authorizeSelectedManualReview(input: {
     const cycle = selectedCycle(state, now);
     if (!control.enabled || state.manifestHash !== input.manifestHash || !member?.enabled || !held
       || state.stoppedSources.includes(member.source) || !cycle.anchors.includes(input.checkIn)) throw Error("MANUAL_REVIEW_SCOPE_CHANGED");
-    const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash,
+    const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, member),
       memberId: member.id, sourceId: member.source, phase: input.phase, checkIn: input.checkIn,
       unitExternalId: input.unitExternalId, round: input.phase === "identity" ? nzDateKey(now) : cycle.round });
     // Keep the task/state schemas readable by the verified rollback image.
@@ -51,7 +51,7 @@ export async function authorizeSelectedManualReview(input: {
       || await tx.job.count({ where: { type: { in: ["RATE_COLLECTION", "CATALOG_DISCOVERY"] }, OR: [{ status: "RUNNING" }, { status: "PENDING", runAt: { lte: now } }] } })) return { status: "waiting" as const };
     const job = await tx.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: member.source,
       maxAttempts: 1, payload: json(task), idempotencyKey: key, createdAt: now, runAt: now } });
-    const payload = { controlId: control.id, batch: input.batch, memberId: member.id, manifestHash: state.manifestHash,
+    const payload = { controlId: control.id, batch: input.batch, memberId: member.id, manifestHash: task.manifestHash, controlManifestHash: state.manifestHash,
       taskHash: selectedHash(task), expiresAt: input.expiresAt, originalHold: held.reason, maxAttempts: 1, automaticRetry: false };
     await tx.auditEvent.create({ data: { eventType, entityType: "Job", entityId: job.id, payload: json(payload),
       eventHash: createHmac("sha256", process.env.ACCESS_KEY_SECRET!).update(selectedHash(payload)).digest("hex") } });
@@ -85,7 +85,7 @@ export async function closeSelectedManualReview(batch: string, memberId: string,
     const tasks = jobs.map(j => selectedJobSchema.parse(j.payload));
     const anchors = selectedCycle(state, new Date()).anchors;
     if (jobs.length !== 3 || jobs.some(j => j.status !== "SUCCEEDED" || j.maxAttempts !== 1)
-      || tasks.some(t => t.manifestHash !== state.manifestHash || t.memberId !== memberId)
+      || tasks.some(t => t.manifestHash !== selectedMemberExecutionHash(state, member) || t.memberId !== memberId)
       || jobs.some(j => selectedManualBatch(j) !== batch)
       || tasks.filter(t => t.phase === "identity").length !== 1 || anchors.some(d => !tasks.some(t => t.phase === "quote" && t.checkIn === d))) throw Error("MANUAL_REVIEW_INCOMPLETE_KEEP_HELD");
     for (const j of jobs) if (!await tx.collectionRun.count({ where: { jobId: j.id, status: "SUCCEEDED" } })

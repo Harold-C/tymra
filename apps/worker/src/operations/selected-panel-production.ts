@@ -7,7 +7,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
 import { assertSelectedManualReview, selectedManualBatch } from "./selected-panel-review";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedDailyLimit, nextSelectedTasks, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
@@ -74,7 +74,7 @@ export async function enqueueSelectedPanel(now = new Date()) {
     ] } })) return null;
     if (await tx.argusExecution.count({ where: { status: { in: [...activeStatuses] } } })) return null;
     const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, orderBy: { createdAt: "desc" } });
-    const matching = jobs.filter(j => selectedJobSchema.parse(j.payload).manifestHash === state.manifestHash);
+    const matching = jobs.filter(j => selectedTaskMatchesState(state, selectedJobSchema.parse(j.payload)));
     const runs = await tx.collectionRun.findMany({ where: { jobId: { in: matching.map(j => j.id) }, status: "SUCCEEDED" }, orderBy: { finishedAt: "desc" } });
     const progress: MemberProgress[] = state.manifest.members.map(member => {
       const own = runs.filter(r => (r.scope as { memberId?: string }).memberId === member.id);
@@ -110,7 +110,7 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
   const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(c => c.id === task.memberId);
   const manualBatch = selectedManualBatch(parent);
   if (manualBatch) await assertSelectedManualReview(parent, task, control.id, now);
-  if (!control.enabled || task.manifestHash !== state.manifestHash || !member?.enabled || (!manualBatch && state.held.some(h => h.memberId === member.id))
+  if (!control.enabled || !selectedTaskMatchesState(state, task) || !member?.enabled || (!manualBatch && state.held.some(h => h.memberId === member.id))
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
     || parent.maxAttempts !== 1 || (!manualBatch && parent.idempotencyKey !== selectedTaskKey(task)) || task.sourceId !== member.source || parent.sourceId !== member.source
     || nzDateKey(now) < state.manifest.start || task.checkIn <= nzDateKey(now)
@@ -122,7 +122,7 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
   if (JSON.stringify(input) !== JSON.stringify(selectedInput(member, task, parent.id))) throw Error("SELECTED_INPUT_CHANGED");
   if (task.phase === "quote") {
     const runs = await prisma.collectionRun.findMany({ where: { status: "SUCCEEDED", scope: { path: ["selectedPanel"], equals: SELECTED_PANEL_KEY } }, orderBy: { finishedAt: "desc" } });
-    let identity = runs.find(r => { const s = r.scope as { memberId?: string; manifestHash?: string; phase?: string }; return s.memberId === member.id && s.manifestHash === state.manifestHash && s.phase === "identity"; });
+    let identity = runs.find(r => { const s = r.scope as { memberId?: string; manifestHash?: string; phase?: string }; return s.memberId === member.id && s.manifestHash === selectedMemberExecutionHash(state, member) && s.phase === "identity"; });
     if (!identity) {
       const seed = state.bindings.find(b => b.memberId === member.id);
       if (seed) {
@@ -152,11 +152,11 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
   const task = selectedJobSchema.parse(job.payload);
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
   const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(c => c.id === task.memberId);
-  if (!member || task.manifestHash !== state.manifestHash) throw Error("MANIFEST_CHANGED");
+  if (!member || !selectedTaskMatchesState(state, task)) throw Error("MANIFEST_CHANGED");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: member.source } });
   let run = await prisma.collectionRun.findFirst({ where: { jobId: job.id } });
   if (!run) run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "RUNNING", startedAt: new Date(),
-    scope: json({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: member.id, phase: task.phase, task, comparison: "RAW_ONLY", captureReserved: false }) } });
+    scope: json({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: task.manifestHash, controlManifestHash: state.manifestHash, memberId: member.id, phase: task.phase, task, comparison: "RAW_ONLY", captureReserved: false }) } });
   const { captureBrowserTaskWithDurableArgus, acknowledgePersistedArgusResults } = await import("../services/argus-orchestrator");
   try {
     const input = selectedInput(member, task, job.id);
@@ -173,7 +173,7 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     let evaluated: unknown;
     if (task.phase === "identity") {
       const previous = await prisma.collectionRun.findMany({ where: { status: "SUCCEEDED", scope: { path: ["selectedPanel"], equals: SELECTED_PANEL_KEY } }, orderBy: { finishedAt: "desc" } });
-      const prior = previous.find(r => { const s = r.scope as { manifestHash?: string; memberId?: string; phase?: string }; return s.manifestHash === state.manifestHash && s.memberId === member.id && s.phase === "identity"; });
+      const prior = previous.find(r => { const s = r.scope as { manifestHash?: string; memberId?: string; phase?: string }; return s.manifestHash === selectedMemberExecutionHash(state, member) && s.memberId === member.id && s.phase === "identity"; });
       const resolved = resolveSelectedUnit(member, response.payload.extracted, (prior?.scope as { evaluated?: Parameters<typeof resolveSelectedUnit>[2] } | undefined)?.evaluated);
       if (prior && (prior.scope as { evaluated?: { externalId?: string } }).evaluated?.externalId !== resolved.externalId) throw Error("REVIEWED_UNIT_CHANGED");
       evaluated = resolved;

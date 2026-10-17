@@ -3,7 +3,7 @@ import { prisma as adminPrisma, PrismaClient } from "@tymra/db";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { assertIsolatedTestEnvironment } from "../../../test/isolation";
-import { selectedFixture } from "./selected-panel-fixtures";
+import { selectedFixture, selectedMember } from "./selected-panel-fixtures";
 import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash } from "../src/operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../src/operations/selected-panel-budget";
@@ -15,6 +15,7 @@ const prisma = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
 vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@tymra/db")>("@tymra/db")), prisma }));
 const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await import("../src/operations/selected-panel-production");
 const { authorizeSelectedManualReview, closeSelectedManualReview } = await import("../src/operations/selected-panel-review");
+const { applySelectedReplacement, rollbackSelectedReplacement } = await import("../src/operations/selected-panel-replacement-production");
 const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
 async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
@@ -47,6 +48,38 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("replaces a held seat transactionally without repeating other completed windows, and restores controls before an image rollback", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
+    vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
+    try {
+      const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "MISSING_UNIT" }];
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      for (const i of [1, 2]) for (const [phase, checkIn] of [["identity", "2026-12-01"], ["quote", "2026-12-01"], ["quote", "2026-12-05"]] as const) {
+        const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash,
+          memberId: `sample${i}`, sourceId: "booking", phase, unitExternalId: phase === "identity" ? null : `unit${i}`,
+          checkIn, round: phase === "identity" ? "2026-10-16" : "2026-10-12" });
+        const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: "booking",
+          status: "SUCCEEDED", maxAttempts: 1, createdAt: now, payload: task, idempotencyKey: selectedTaskKey(task) } });
+        await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: now,
+          scope: { selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: `sample${i}`, phase, task, evaluated: { externalId: `unit${i}` } } } });
+      }
+      const jobs = await prisma.job.findMany({ orderBy: { id: "asc" } }), runs = await prisma.collectionRun.findMany({ orderBy: { id: "asc" } });
+      const result = await applySelectedReplacement({ expectedStateHash: selectedHash(state), changes: [{ oldMemberId: "sample0",
+        replacement: { ...selectedMember(99), id: "new-home", nights: 2, accommodationType: "HOLIDAY_HOME" }, reason: "Reviewed replacement", evidenceRefs: ["reviewed-source"] }] });
+      expect(result.unchangedMembers).toBe(2);
+      expect(await enqueueSelectedPanel(now)).toBeNull();
+      expect(await prisma.job.findMany({ orderBy: { id: "asc" } })).toEqual(jobs);
+      expect(await prisma.collectionRun.findMany({ orderBy: { id: "asc" } })).toEqual(runs);
+      const updated = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      await expect(applySelectedReplacement({ expectedStateHash: selectedHash(state), changes: [] })).rejects.toThrow();
+      await expect(rollbackSelectedReplacement(result.auditId, selectedHash(updated))).resolves.toMatchObject({ status: "passed", manifestHash: state.manifestHash, sourceCaptures: 0 });
+      expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload)).toEqual(state);
+      expect(await prisma.job.findMany({ orderBy: { id: "asc" } })).toEqual(jobs);
+      expect(await prisma.collectionRun.findMany({ orderBy: { id: "asc" } })).toEqual(runs);
+      expect(await prisma.auditEvent.count({ where: { eventType: { in: ["selected_members_replaced", "selected_members_replacement_rolled_back"] } } })).toBe(2);
+    } finally { vi.unstubAllEnvs(); }
+  });
   it("round-trips original long coordinates through the actual Prisma transport without weakening either hash", async () => {
     const { createHash } = await import("node:crypto");
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
