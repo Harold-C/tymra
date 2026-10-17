@@ -219,10 +219,27 @@ replaying the same run is idempotent.
 Booking's additive optional `referencePrices` field in `ota-public.collect_rates@1.0.0` preserves
 explicit original comparison and member-only amounts separately from public price fields. The
 receiving schema bounds each amount/label and rejects an available/priced `REFERENCE_ONLY` rate.
+For the Christchurch selected-sample observation plan, Harold approved visible member prices as
+valid conditional references on 2026-10-17. The observation evaluator retains explicitly labelled
+`MEMBER_ONLY` entries as `MEMBER_REFERENCE` outcomes after the existing exact provider, listing,
+unit, stay, NZD and query-count checks. `raw.totalMinor` is the displayed member reference amount,
+not an attested anonymously bookable all-in total; `referencePrice` retains its source label and
+rate-plan ID. Original/struck-through amounts do not become valid member observations. The
+membership tier/eligibility, offer-level occupancy and availability, mandatory fees and terms
+remain explicitly unverified when the wire does not attest them. Public-row cancellation,
+payment, meals and fee declarations are never copied onto a member reference. References stay
+RAW_ONLY with null normalized/comparison amounts, and are counted separately from public quotes.
+This permits a valid reference capture to complete without pausing the selected member merely
+because an anonymous public total is absent. It does not change source challenge/timeout or
+identity failures, automatically reopen held members, or change general public-price acceptance.
+New manual acceptance still verifies identity and both original stay windows, preserves old
+terminal failures, and closes only the individually reviewed member. Exact duplicate reference
+metadata repeated across public rows is shown once; original wire evidence remains intact.
+
 Validated same-provider references are saved in `RawArtifact.payload.otaReferenceRates`, with
 listing/unit identity, NZD, dates and guest/unit counts, before the public acceptance gate. The
 wire result and original evidence retain their normal integrity and ACK rules. Booking reference-only
-captures complete with `rateOutcome=REFERENCE_ONLY`, zero public-price successes and a retained
+captures in the separate general panel pipeline complete with `rateOutcome=REFERENCE_ONLY`, zero public-price successes and a retained
 `REFERENCE_PRICES_ONLY` coverage gap. They create no public price observation, do not increase
 price coverage or last-success time, and allow the source to continue collecting other units.
 Replaying that completed capture neither fetches nor charges again. Invalid or mismatched evidence

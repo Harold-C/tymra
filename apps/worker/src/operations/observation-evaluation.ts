@@ -35,9 +35,15 @@ export function evaluateCapturedObservation(candidate: ObservationCandidate, uni
   if (data.provider.toUpperCase() !== candidate.source || data.sourceListingId !== observationListingId(candidate)) throw new Error("LISTING_IDENTITY_MISMATCH");
   if (!data.rates.length || data.rates.some(rate => rate.sourceListingId !== data.sourceListingId || rate.unitExternalId !== unitExternalId)) throw new Error("EXACT_UNIT_NOT_RETURNED");
   if (data.rates.some(rate => rate.checkIn !== checkIn || rate.checkOut !== checkOut || rate.adults !== 2 || rate.children !== 0 || rate.units !== 1 || rate.currency !== "NZD")) throw new Error("STAY_CONTEXT_UNVERIFIED");
-  if (data.rates.some(rate => !["AVAILABLE", "MINIMUM_STAY_RESTRICTION", "UNAVAILABLE", "SOLD_OUT", "NOT_LISTED"].includes(rate.availabilityStatus))) throw new Error("AVAILABILITY_OUTCOME_UNCLASSIFIED");
+  const memberReferences = (rate: typeof data.rates[number]) => data.provider === "booking"
+    && ["AVAILABLE", "UNKNOWN"].includes(rate.availabilityStatus)
+    && (rate.availabilityStatus !== "UNKNOWN" || rate.rateFence === "REFERENCE_ONLY")
+    ? (rate.referencePrices ?? []).filter(reference => reference.kind === "MEMBER_ONLY"
+      && /^Members-only price\b/i.test(reference.sourceText)) : [];
+  if (data.rates.some(rate => !["AVAILABLE", "MINIMUM_STAY_RESTRICTION", "UNAVAILABLE", "SOLD_OUT", "NOT_LISTED"].includes(rate.availabilityStatus)
+    && !(rate.availabilityStatus === "UNKNOWN" && memberReferences(rate).length))) throw new Error("AVAILABILITY_OUTCOME_UNCLASSIFIED");
   // Preserve each offer independently; a refundable and non-refundable offer are not one price.
-  return data.rates.map(rate => evaluateObservationQuote(candidate, {
+  const publicObservations = data.rates.filter(rate => rate.availabilityStatus !== "UNKNOWN").map(rate => evaluateObservationQuote(candidate, {
     candidateId: candidate.id, sourceUnitKey: candidate.unit.key, evidenceRef, observedAt: rate.collectedAt,
     checkIn, checkOut, nights: candidate.nights, adults: 2, children: 0, units: 1, currency: "NZD",
     // The current v1 connector does not attest the actual browser login/region/profile or booking mode.
@@ -50,4 +56,24 @@ export function evaluateCapturedObservation(candidate: ObservationCandidate, uni
     mealPlan: rate.mealPlan, cancellationPolicy: rate.cancellationPolicy, paymentTerms: rate.paymentTerms,
     rateFence: rate.rateFence, qualityFlags: rate.qualityFlags,
   }));
+  // Visible membership amounts are useful observations, not proof that this guest can
+  // book an anonymous public all-in total. Never attach a public row's terms to them.
+  const seen = new Set<string>();
+  const references = data.rates.flatMap(rate => memberReferences(rate).flatMap(reference => {
+    const key = JSON.stringify([rate.unitExternalId, reference.ratePlanExternalId, reference.amountMinor, reference.sourceText]);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ ...evaluateObservationQuote(candidate, {
+      candidateId: candidate.id, sourceUnitKey: candidate.unit.key, evidenceRef, observedAt: rate.collectedAt,
+      checkIn, checkOut, nights: candidate.nights, adults: 2, children: 0, units: 1, currency: "NZD",
+      collectionProfile: null, bookingMode: "UNKNOWN", outcome: "MEMBER_REFERENCE",
+      totalMinor: reference.amountMinor, mandatoryFees: "UNKNOWN", mealPlan: "UNKNOWN",
+      cancellationPolicy: "UNKNOWN", paymentTerms: "UNKNOWN", rateFence: "MEMBER_ONLY",
+      qualityFlags: [...new Set([...rate.qualityFlags.filter(flag => flag !== "NO_PRICE_FOR_REQUESTED_CONTEXT"),
+        "MEMBER_PRICE_REFERENCE", "MEMBERSHIP_ELIGIBILITY_UNVERIFIED", "PUBLIC_PRICE_NOT_VERIFIED",
+        "REFERENCE_AVAILABILITY_UNVERIFIED", "REFERENCE_OCCUPANCY_UNVERIFIED", "REFERENCE_FEES_AND_TERMS_UNVERIFIED"])],
+    }), referencePrice: { ...reference, sourceAvailability: rate.availabilityStatus,
+      priceBasis: "DISPLAYED_MEMBER_REFERENCE" as const } }];
+  }));
+  return [...publicObservations, ...references];
 }
