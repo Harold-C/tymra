@@ -32,6 +32,7 @@ export type OtaArgusConnectorId = `${OtaProvider}-public`;
 
 export const otaUnitExtractionSchema = z.object({
   externalId: z.string().min(1),
+  sourceRoomGroupExternalId: z.string().regex(/^trip:[1-9]\d*:room-group:[1-9]\d*$/).optional(),
   identityQuality: z.enum(["complete", "partial"]).optional(),
   officialName: z.string().min(1),
   unitType: z.string().min(1),
@@ -87,6 +88,12 @@ export const otaResolveListingExtractionSchema = otaListingIdentitySchema.extend
   data_schema: z.literal("ota-public.resolve_listing"),
   schema_version: z.enum(["1.0.0", "1.1.0"]),
 }).superRefine((value, context) => {
+  value.units.forEach((unit, index) => {
+    if (unit.sourceRoomGroupExternalId && (value.provider !== "trip"
+      || !unit.sourceRoomGroupExternalId.startsWith(`${value.sourceListingId}:room-group:`))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["units", index, "sourceRoomGroupExternalId"], message: "Room group must belong to this Trip property" });
+    }
+  });
   if (value.units.some(unit => unit.entireOrShared === null)
     && (value.schema_version !== "1.1.0" || value.provider !== "booking" || value.quality !== "partial")) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["units"], message: "Unknown sharing requires partial Booking resolve_listing 1.1.0" });

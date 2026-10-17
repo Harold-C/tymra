@@ -33,6 +33,23 @@ export function resolveSelectedUnit(member: SelectedMember, extracted: unknown, 
     if (member.entireBedrooms !== null) return unit.entireOrShared === "ENTIRE" && unit.bedrooms === member.entireBedrooms;
     return member.expectedUnitName !== null && name(unit.officialName) === name(member.expectedUnitName);
   });
+  // Trip's supplier room IDs can represent different meal/payment offers of
+  // one physical card. Only an explicit same-property source card can link
+  // these variants; equal names alone remain ambiguous.
+  const group = member.source === "trip" && !member.expectedUnitId && !member.signature && member.entireBedrooms === null
+    && matches.length > 0 ? matches[0].sourceRoomGroupExternalId : undefined;
+  if (group && group.startsWith(`${data.sourceListingId}:room-group:`)
+    && matches.every(unit => unit.sourceRoomGroupExternalId === group && unit.officialName === matches[0].officialName
+      && unit.entireOrShared === matches[0].entireOrShared && unit.unitType === matches[0].unitType)) {
+    const first = matches[0];
+    const common = <K extends "capacity" | "bedrooms" | "bathrooms" | "areaSquareMetres">(key: K) =>
+      matches.every(unit => unit[key] === first[key]) ? first[key] : null;
+    return { externalId: group, unit: { ...first, externalId: group, identityQuality: "partial" as const,
+      capacity: common("capacity"), bedrooms: common("bedrooms"), bathrooms: common("bathrooms"), areaSquareMetres: common("areaSquareMetres"),
+      bedTypes: first.bedTypes.filter(bed => matches.every(unit => unit.bedTypes.includes(bed))),
+      amenities: first.amenities.filter(amenity => matches.every(unit => unit.amenities.includes(amenity))) },
+      observedSourceUnitExternalIds: matches.map(unit => unit.externalId), observedAt: data.observedAt };
+  }
   if (matches.length !== 1) throw Error(matches.length ? "UNIT_IDENTITY_AMBIGUOUS" : "SELECTED_ROOM_NOT_RETURNED");
   const unit = matches[0];
   const nameKey = `expedia:${member.sourceListingId}:unit:${unit.officialName.toLocaleLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "").slice(0, 100)}`;

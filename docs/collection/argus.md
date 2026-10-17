@@ -236,6 +236,19 @@ New manual acceptance still verifies identity and both original stay windows, pr
 terminal failures, and closes only the individually reviewed member. Exact duplicate reference
 metadata repeated across public rows is shown once; original wire evidence remains intact.
 
+Trip resolution can add optional `sourceRoomGroupExternalId=trip:<hotel>:room-group:<card>`
+without replacing the legacy supplier `externalId`. In the selected roster, an expected-name
+target without a pinned supplier/signature may resolve to this explicit own-property visible
+physical card when all matching variants identify the same group and room name/type/sharing.
+Equal names alone, missing/conflicting groups, another property and room upgrades remain errors.
+The resolved identity retains the observed supplier IDs; conflicting or missing capacity, area
+and bed metadata stays unknown rather than being selected from one offer. Group quotes retain
+each supplier's own meal/payment/cancellation package and require visible offer-level adult
+counts, excluding one-adult recommendations. Other rooms' prices never fill an absent target:
+a verified dated table with another exact-adult public group may instead yield NOT_LISTED/null.
+The executor must support this optional group identity before this caller is released. Older
+executors fail closed for group-only requests; no automatic retry or alternate room is permitted.
+
 Validated same-provider references are saved in `RawArtifact.payload.otaReferenceRates`, with
 listing/unit identity, NZD, dates and guest/unit counts, before the public acceptance gate. The
 wire result and original evidence retain their normal integrity and ACK rules. Booking reference-only

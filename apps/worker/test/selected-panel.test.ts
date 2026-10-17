@@ -126,4 +126,18 @@ describe("selected sample formal collection", () => {
     expect(resolveSelectedUnit(member, { ...data, units: [{ ...current, capacity: 3 }] }, prior).externalId).toBe(current.externalId);
     expect(() => resolveSelectedUnit(member, { ...data, units: [current, { ...current, externalId: "other" }] }, prior)).toThrow("UNIT_IDENTITY_AMBIGUOUS");
   });
+  it("links Trip supplier variants only through one explicit own-property visible room group", () => {
+    const member = { ...selectedMember(), source: "trip" as const, expectedUnitId: null };
+    const group = "trip:100:room-group:926";
+    const first = { ...unit, externalId: "trip:100:room:101", sourceRoomGroupExternalId: group };
+    const second = { ...first, externalId: "trip:100:room:102", capacity: null, bedTypes: [] };
+    const data = { ...identity(), provider: "trip", sourceListingId: "trip:100", units: [first, second] };
+    const result = resolveSelectedUnit(member, data);
+    expect(result).toMatchObject({ externalId: group, unit: { externalId: group, capacity: null, bedTypes: [], identityQuality: "partial" }, observedSourceUnitExternalIds: [first.externalId, second.externalId] });
+    expect(() => resolveSelectedUnit(member, { ...data, units: [first, { ...second, sourceRoomGroupExternalId: "trip:100:room-group:927" }] })).toThrow("UNIT_IDENTITY_AMBIGUOUS");
+    expect(() => resolveSelectedUnit(member, { ...data, units: [{ ...first, sourceRoomGroupExternalId: undefined }, { ...second, sourceRoomGroupExternalId: undefined }] })).toThrow("UNIT_IDENTITY_AMBIGUOUS");
+    expect(() => resolveSelectedUnit(member, { ...data, units: [first, { ...second, sourceRoomGroupExternalId: "trip:999:room-group:926" }] })).toThrow();
+    expect(resolveSelectedUnit(member, { ...data, units: [first] }).externalId).toBe(group);
+    expect(resolveSelectedUnit({ ...member, expectedUnitId: first.externalId }, data).externalId).toBe(first.externalId);
+  });
 });
