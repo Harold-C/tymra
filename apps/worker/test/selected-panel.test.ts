@@ -23,13 +23,13 @@ describe("selected sample formal collection", () => {
     expect(selectedCycle(upgraded(), new Date("2026-11-02T00:00:00Z"))).toEqual({ round: "2026-10-30", anchors: ["2026-12-01", "2026-12-05"] });
     expect(selectedCycle(upgraded(), new Date("2026-11-06T00:00:00Z"))).toEqual({ round: "2026-11-06", anchors: ["2027-01-05", "2027-01-02"] });
   });
-  it("uses 24 Booking calls only in the first seven NZ dates and 20 thereafter, leaving all other limits unchanged", () => {
+  it("does not apply any daily count ceiling to the selected roster, including legacy low source limits", () => {
     const s = upgraded();
-    expect(selectedDailyLimit(s, "booking", 6, now)).toBe(24);
-    expect(selectedDailyLimit(s, "booking", 6, new Date("2026-10-22T11:00:00Z"))).toBe(20);
-    expect(selectedDailyLimit(s, "expedia", 6, now)).toBe(6);
-    expect(selectedDailyLimit(s, "trip", 2, now)).toBe(2);
-    expect(selectedDailyLimit(selectedFixture(), "booking", 6, now)).toBe(6);
+    expect(selectedDailyLimit(s, "booking", 6, now)).toBe(Infinity);
+    expect(selectedDailyLimit(s, "booking", 6, new Date("2026-10-22T11:00:00Z"))).toBe(Infinity);
+    expect(selectedDailyLimit(s, "expedia", 6, now)).toBe(Infinity);
+    expect(selectedDailyLimit(s, "trip", 2, now)).toBe(Infinity);
+    expect(selectedDailyLimit(selectedFixture(), "booking", 6, now)).toBe(Infinity);
   });
   it("covers 68 members' exact two windows every cycle for eight weeks with identity expiry and a month change", () => {
     const s = upgraded(68);

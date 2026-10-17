@@ -83,10 +83,9 @@ export function selectedCycle(state: z.infer<typeof selectedStateSchema>, now: D
   // Noon NZ time also avoids UTC/month-boundary and DST ambiguities.
   return { round, anchors: selectedAnchors(new Date(`${round}T00:00:00Z`)) };
 }
-export function selectedDailyLimit(state: z.infer<typeof selectedStateSchema>, sourceKey: string, normalDaily: number, now: Date) {
-  if (state.cadence && sourceKey === "booking" && nzDate(now) >= state.cadence.startsOn)
-    return nzDate(now) < addNzCalendarDays(state.cadence.startsOn, 7) ? state.cadence.bookingBootstrapDaily : state.cadence.bookingSteadyDaily;
-  return Math.min(6, normalDaily);
+/** The selected roster has no daily count ceiling. Legacy cadence fields remain readable for rollback. */
+export function selectedDailyLimit(_state: z.infer<typeof selectedStateSchema>, _sourceKey: string, _normalDaily: number, _now: Date) {
+  return Number.POSITIVE_INFINITY;
 }
 /** Least recently priced first, stable manifest order for ties; no all-members preflight barrier. */
 export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, progress: MemberProgress[], used: Set<string>, now: Date): SelectedTask[] {
