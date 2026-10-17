@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { assertIsolatedTestEnvironment } from "../../../test/isolation";
 import { selectedFixture } from "./selected-panel-fixtures";
 import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey } from "../src/operations/selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash } from "../src/operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../src/operations/selected-panel-budget";
 const now = new Date("2026-10-16T06:00:00Z");
 const isolated = assertIsolatedTestEnvironment();
@@ -86,6 +86,27 @@ describe("selected collection isolated persistence", () => {
     });
     const released = await prisma.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(hashtext(${SELECTED_PANEL_KEY})) AS locked`;
     expect(released).toEqual([{ locked: true }]);
+  });
+  it("isolates Expedia roster traffic while retaining two legacy executions and their unchanged source settings", async () => {
+    const state = selectedFixture();
+    for (const member of state.manifest.members) {
+      member.source = "expedia";
+      member.sourceUrl = `https://www.expedia.co.nz/Christchurch-Hotels-Selected.h${member.sourceListingId}.Hotel-Information`;
+    }
+    state.manifestHash = selectedHash(state.manifest);
+    await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "expedia" } });
+    for (let i = 0; i < 8; i++) {
+      const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: "sample0", sourceId: "expedia", phase: "identity", checkIn: "2026-12-01", unitExternalId: null, round: `expedia-history${i}` });
+      const job = i < 6 ? await prisma.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: "expedia", status: "SUCCEEDED", payload: task, maxAttempts: 1, idempotencyKey: selectedTaskKey(task), createdAt: now } }) : null;
+      await prisma.argusExecution.create({ data: { orchestrationKey: `selected-test:expedia${i}`, parentJobId: job?.id ?? `legacy-expedia${i}`, collectionRunId: `expedia${i}`, dataSourceId: source.id,
+        argusJobId: `expedia${i}`, traceId: `expedia${i}`, connectorId: "expedia-public", workflowId: "resolve_listing", requestedUrl: "https://www.expedia.co.nz/", status: "COMPLETED", submittedAt: now, deadlineAt: now } });
+    }
+    expect(await prisma.argusExecution.count({ where: await legacyOtaDailyWhere(source.id, source.key, now, prisma) })).toBe(2);
+    const job = (await enqueueSelectedPanel(now))!;
+    expect(job).not.toBeNull();
+    await expect(selectedCapturePermission(job, selectedInput(state.manifest.members[0], selectedJobSchema.parse(job.payload), job.id), source.id, now)).resolves.toBeUndefined();
+    expect(await prisma.dataSource.findUnique({ where: { id: source.id } })).toEqual(source);
   });
   it("serializes concurrent dispatch and never changes sources or unrelated schedules", async () => {
     const sources = await prisma.dataSource.findMany();
