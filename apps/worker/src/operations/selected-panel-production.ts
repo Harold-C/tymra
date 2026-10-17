@@ -17,7 +17,7 @@ export function selectedInput(member: SelectedMember, task: SelectedTask, parent
     workflowId: task.phase === "identity" ? "resolve_listing" : "collect_rates", url: member.sourceUrl,
     maxRecords: task.phase === "identity" && member.source === "booking" ? 50 : 20, maxAttempts: 1, timeoutMs: 60000,
     ...(task.phase === "identity" && member.source === "booking" ? { includeUnknownSharing: true } : {}),
-    ...(task.phase === "quote" ? { ...stay, unitExternalId: task.unitExternalId! } : ["expedia", "trip"].includes(member.source) ? { identityStay: stay } : {}) };
+    ...(task.phase === "quote" ? { ...stay, unitExternalId: task.unitExternalId! } : ["booking", "expedia", "trip"].includes(member.source) ? { identityStay: stay } : {}) };
 }
 export function resolveSelectedUnit(member: SelectedMember, extracted: unknown, prior?: { externalId: string; unit: { officialName: string; capacity: number | null; areaSquareMetres?: number | null; bedTypes: string[] } }) {
   const data = otaResolveListingExtractionSchema.parse(extracted);

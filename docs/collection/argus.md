@@ -2,6 +2,12 @@
 
 Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual acceptance remains separate)
 
+Selected Booking identities carry the exact frozen dates, two adults, zero children, one room and
+NZD through optional `identity_stay`; physical capacity remains source-derived. Deploy this caller
+change only after shared Argus supports dated Booking identity. Anonymous partner offers retain
+`PARTNER_OFFER` and `BOOKING_PARTNER_OFFER`; they remain RAW_ONLY with null comparison keys and
+unknown fee components preserved, never merged with direct PUBLIC products.
+
 The latest user authorization removes Argus daily/lifetime count ceilings and this selected roster's
 Tymra daily count gate on every OTA channel. Other plans' DataSource settings remain unchanged;
 selected-roster executions do not spend their legacy counters. The 24/20/6 and 195/143 numbers below

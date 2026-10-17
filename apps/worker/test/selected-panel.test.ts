@@ -111,6 +111,9 @@ describe("selected sample formal collection", () => {
     expect(resolveSelectedUnit(selectedMember(), partial).unit.entireOrShared).toBeNull();
     expect(() => resolveSelectedUnit({ ...selectedMember(), entireBedrooms: 2 }, partial)).toThrow("SELECTED_ROOM_NOT_RETURNED");
     expect(selectedInput({ ...selectedMember(), source: "trip" }, task, "parent").identityStay).toMatchObject({ checkIn: "2026-12-01", adults: 2, children: 0, units: 1 });
+    expect(selectedInput(selectedMember(), task, "parent").identityStay).toEqual({ checkIn: "2026-12-01", checkOut: "2026-12-02", adults: 2, children: 0, units: 1, currency: "NZD" });
+    expect(selectedInput({ ...selectedMember(), nights: 2 }, task, "parent").identityStay?.checkOut).toBe("2026-12-03");
+    expect(selectedInput({ ...selectedMember(), source: "airbnb" }, task, "parent").identityStay).toBeUndefined();
   });
   it("preserves a prior partial Expedia name identity only for an unchanged unique room signature", () => {
     const member = { ...selectedMember(), source: "expedia" as const, expectedUnitId: null };

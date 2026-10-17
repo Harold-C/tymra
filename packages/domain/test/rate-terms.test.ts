@@ -36,6 +36,9 @@ describe("versioned public rate terms", () => {
   it("retains source quality exclusions and public-fence protection", () => {
     expect(normalizeRateTerms({ ...base, qualityFlags: ["UNIT_IDENTITY_PARTIAL"] }).comparisonKey).toBeNull();
     expect(normalizeRateTerms({ ...base, rateFence: "MEMBER_ONLY" }).comparisonKey).toBeNull();
+    const partner = normalizeRateTerms({ ...base, rateFence: "PARTNER_OFFER" });
+    expect(partner.comparisonKey).toBeNull();
+    expect(partner.raw.rateFence).toBe("PARTNER_OFFER");
     expect(normalizeRateTerms({ ...base, paymentTerms: null }).comparisonKey).toBeNull();
   });
 });
