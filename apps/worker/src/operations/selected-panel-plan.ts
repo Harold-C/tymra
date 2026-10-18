@@ -49,8 +49,9 @@ export const selectedStateSchema = z.object({
   manifest: selectedManifestSchema, manifestHash: text,
   held: z.array(z.object({ memberId: text, reason: text }).strict()), stoppedSources: z.array(source),
   bindings: z.array(z.object({ memberId: text, unitExternalId: text, verifiedAt: z.string().datetime(), sourceRunId: text }).strict()).default([]),
-  cadence: z.object({ version: z.literal("dual-window-weekly-v2"), startsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    bookingBootstrapDaily: z.literal(24), bookingSteadyDaily: z.literal(20) }).strict().optional(),
+  cadence: z.object({ version: z.enum(["dual-window-weekly-v2", "dual-window-daily-v1"]), startsOn: z.string().date(),
+    bookingBootstrapDaily: z.literal(24), bookingSteadyDaily: z.literal(20), dailyStartsOn: z.string().date().optional() }).strict()
+    .refine(c => c.version !== "dual-window-daily-v1" || (!!c.dailyStartsOn && c.dailyStartsOn >= c.startsOn), "Daily activation date required").optional(),
 }).strict().refine(s => selectedHash(s.manifest) === s.manifestHash, "Manifest changed");
 export const selectedJobSchema = z.object({
   selectedPanel: z.literal(SELECTED_PANEL_KEY), manifestHash: text, memberId: text, sourceId: source,
@@ -109,7 +110,9 @@ export function selectedCycle(state: z.infer<typeof selectedStateSchema>, now: D
   const days = Math.floor((Date.parse(nzDate(now)) - Date.parse(state.cadence.startsOn)) / 86_400_000);
   const round = addNzCalendarDays(state.cadence.startsOn, Math.floor(Math.max(0, days) / 7) * 7);
   // Noon NZ time also avoids UTC/month-boundary and DST ambiguities.
-  return { round, anchors: selectedAnchors(new Date(`${round}T00:00:00Z`)) };
+  // Observation frequency never moves the reviewed weekly/monthly stay cohort.
+  const daily = state.cadence.version === "dual-window-daily-v1" && nzDate(now) >= state.cadence.dailyStartsOn!;
+  return { round: daily ? nzDate(now) : round, anchors: selectedAnchors(new Date(`${round}T00:00:00Z`)) };
 }
 /** The selected roster has no daily count ceiling. Legacy cadence fields remain readable for rollback. */
 export function selectedDailyLimit(_state: z.infer<typeof selectedStateSchema>, _sourceKey: string, _normalDaily: number, _now: Date) {

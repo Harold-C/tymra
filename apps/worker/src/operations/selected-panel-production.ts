@@ -1,4 +1,4 @@
-import { prisma, Prisma, retainSampleReferencePackages, type Job } from "@tymra/db";
+import { prisma, Prisma, retainSampleReferencePackages, type Job, type CollectionRun } from "@tymra/db";
 import type { Environment } from "@tymra/config";
 import { addNzCalendarDays, nzStartOfDay, nzDateKey, observationCandidateSchema } from "@tymra/domain";
 import { otaResolveListingExtractionSchema, otaCollectRatesExtractionSchema } from "@tymra/providers/ota-argus-contracts";
@@ -11,6 +11,16 @@ import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selected
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
+// Daily history grows quickly. Do not load retained wire/HTML for progress or identity checks.
+async function selectedProgressRuns(client: Pick<Prisma.TransactionClient, "$queryRaw">, now = new Date()) {
+  return client.$queryRaw<Pick<CollectionRun, "id" | "jobId" | "dataSourceId" | "finishedAt" | "scope">[]>(Prisma.sql`
+    SELECT id, "jobId", "dataSourceId", "finishedAt", jsonb_build_object(
+      'selectedPanel', scope->'selectedPanel', 'manifestHash', scope->'manifestHash', 'memberId', scope->'memberId',
+      'phase', scope->'phase', 'task', scope->'task',
+      'evaluated', CASE WHEN scope->>'phase' = 'identity' THEN scope->'evaluated' ELSE NULL END) AS scope
+    FROM "CollectionRun" WHERE status = 'SUCCEEDED' AND scope->>'selectedPanel' = ${SELECTED_PANEL_KEY}
+      AND "finishedAt" >= ${new Date(now.getTime() - 28 * 86_400_000)} ORDER BY "finishedAt" DESC`);
+}
 export function selectedInput(member: SelectedMember, task: SelectedTask, parentId: string): ArgusCaptureInput {
   const stay = { checkIn: task.checkIn, checkOut: addNzCalendarDays(task.checkIn, member.nights), adults: 2, children: 0 as const, units: 1, currency: "NZD" as const };
   return { traceId: `selected-${selectedHash([parentId, task]).slice(0, 30)}`, connectorId: `${member.source}-public` as ArgusCaptureInput["connectorId"],
@@ -75,7 +85,8 @@ export async function enqueueSelectedPanel(now = new Date()) {
     if (await tx.argusExecution.count({ where: { status: { in: [...activeStatuses] } } })) return null;
     const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, orderBy: { createdAt: "desc" } });
     const matching = jobs.filter(j => selectedTaskMatchesState(state, selectedJobSchema.parse(j.payload)));
-    const runs = await tx.collectionRun.findMany({ where: { jobId: { in: matching.map(j => j.id) }, status: "SUCCEEDED" }, orderBy: { finishedAt: "desc" } });
+    const matchingIds = new Set(matching.map(j => j.id));
+    const runs = (await selectedProgressRuns(tx, now)).filter(r => !!r.jobId && matchingIds.has(r.jobId));
     const progress: MemberProgress[] = state.manifest.members.map(member => {
       const own = runs.filter(r => (r.scope as { memberId?: string }).memberId === member.id);
       const identity = own.find(r => (r.scope as { phase?: string }).phase === "identity");
@@ -110,6 +121,8 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
   const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(c => c.id === task.memberId);
   const manualBatch = selectedManualBatch(parent);
   if (manualBatch) await assertSelectedManualReview(parent, task, control.id, now);
+  if (!manualBatch && state.cadence?.version === "dual-window-daily-v1" && task.phase === "quote"
+    && task.round >= state.cadence.dailyStartsOn! && task.round !== nzDateKey(now)) throw Error("SELECTED_DAILY_WINDOW_EXPIRED");
   if (!control.enabled || !selectedTaskMatchesState(state, task) || !member?.enabled || (!manualBatch && state.held.some(h => h.memberId === member.id))
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
     || parent.maxAttempts !== 1 || (!manualBatch && parent.idempotencyKey !== selectedTaskKey(task)) || task.sourceId !== member.source || parent.sourceId !== member.source
@@ -121,7 +134,7 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
     || source.lifecycle === "BLOCKED" || !["HEALTHY", "DEGRADED"].includes(source.operationalStatus)) throw Error("SELECTED_SOURCE_BLOCKED");
   if (JSON.stringify(input) !== JSON.stringify(selectedInput(member, task, parent.id))) throw Error("SELECTED_INPUT_CHANGED");
   if (task.phase === "quote") {
-    const runs = await prisma.collectionRun.findMany({ where: { status: "SUCCEEDED", scope: { path: ["selectedPanel"], equals: SELECTED_PANEL_KEY } }, orderBy: { finishedAt: "desc" } });
+    const runs = await selectedProgressRuns(prisma, now);
     let identity = runs.find(r => { const s = r.scope as { memberId?: string; manifestHash?: string; phase?: string }; return s.memberId === member.id && s.manifestHash === selectedMemberExecutionHash(state, member) && s.phase === "identity"; });
     if (!identity) {
       const seed = state.bindings.find(b => b.memberId === member.id);
@@ -172,7 +185,7 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     if (!response.payload.ok) throw Error("SELECTED_CAPTURE_FAILED");
     let evaluated: unknown;
     if (task.phase === "identity") {
-      const previous = await prisma.collectionRun.findMany({ where: { status: "SUCCEEDED", scope: { path: ["selectedPanel"], equals: SELECTED_PANEL_KEY } }, orderBy: { finishedAt: "desc" } });
+      const previous = await selectedProgressRuns(prisma);
       const prior = previous.find(r => { const s = r.scope as { manifestHash?: string; memberId?: string; phase?: string }; return s.manifestHash === selectedMemberExecutionHash(state, member) && s.memberId === member.id && s.phase === "identity"; });
       const resolved = resolveSelectedUnit(member, response.payload.extracted, (prior?.scope as { evaluated?: Parameters<typeof resolveSelectedUnit>[2] } | undefined)?.evaluated);
       if (prior && (prior.scope as { evaluated?: { externalId?: string } }).evaluated?.externalId !== resolved.externalId) throw Error("REVIEWED_UNIT_CHANGED");
@@ -196,7 +209,8 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${SELECTED_PANEL_KEY} FOR UPDATE`;
       const c = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } }), s = selectedStateSchema.parse(c.payload);
-      if (!s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
+      // An unstarted prior-day window is a recorded gap, not a source failure or a retry.
+      if (reason !== "SELECTED_DAILY_WINDOW_EXPIRED" && !s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
       if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED|SOURCE_DAILY_BUDGET_EXHAUSTED|SOURCE_CIRCUIT_OPEN/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
       await tx.scheduleDefinition.update({ where: { id: c.id }, data: { payload: json(s) } });
     });

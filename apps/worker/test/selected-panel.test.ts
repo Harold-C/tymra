@@ -3,6 +3,7 @@ vi.mock("@tymra/db", () => ({ prisma: {}, Prisma: {} }));
 import { selectedFixture, selectedMember } from "./selected-panel-fixtures";
 import { selectedAnchors, selectedHash, selectedManifestSchema, selectedStateSchema, selectedTaskKey, nextSelectedTasks, selectedJobSchema, selectedCycle, selectedDailyLimit, type MemberProgress } from "../src/operations/selected-panel-plan";
 import { resolveSelectedUnit, selectedInput } from "../src/operations/selected-panel-production";
+import { prepareSelectedDaily } from "../src/operations/selected-panel-daily";
 const now = new Date("2026-10-16T06:00:00Z");
 const unit = { externalId: "unit0", officialName: "Studio", unitType: "Hotel room", capacity: 2, bedrooms: null, bathrooms: 1, bedTypes: ["1 Queen"], amenities: [], entireOrShared: "PRIVATE" };
 const identity = (units = [unit]) => ({ data_schema: "ota-public.resolve_listing", schema_version: "1.0.0", provider: "booking", sourceListingId: "selected-0",
@@ -10,6 +11,27 @@ const identity = (units = [unit]) => ({ data_schema: "ota-public.resolve_listing
   postcode: null, countryCode: "NZ", latitude: null, longitude: null, propertyType: "Motel", units, observedAt: now.toISOString(), fieldSources: {}, warnings: ["BOOKING_INTERNAL_PROPERTY_ID=100"], quality: "complete" });
 describe("selected sample formal collection", () => {
   const upgraded = (count = 3) => ({ ...selectedFixture(count), cadence: { version: "dual-window-weekly-v2" as const, startsOn: "2026-10-16", bookingBootstrapDaily: 24 as const, bookingSteadyDaily: 20 as const } });
+  it("opens 136 daily windows without changing stay anchors, roster, holds or history", () => {
+    const before = selectedStateSchema.parse(upgraded(68));
+    const s = prepareSelectedDaily(before, { expectedStateHash: selectedHash(before), effectiveOn: "2026-10-19" }, now);
+    expect({ ...s, cadence: before.cadence }).toEqual(before);
+    const start = new Date("2026-10-19T00:00:00Z");
+    const progress: MemberProgress[] = s.manifest.members.map(m => ({ memberId: m.id, identityAt: start, unitExternalId: m.expectedUnitId, lastQuoteAt: null, windows: [] }));
+    const used = new Set<string>();
+    for (let day = 0; day < 7; day++) {
+      const at = new Date(start.getTime() + day * 86400000), tasks = nextSelectedTasks(s, progress, used, at);
+      expect(tasks.filter(t => t.phase === "quote")).toHaveLength(136);
+      expect(new Set(tasks.map(t => t.round))).toEqual(new Set([`2026-10-${19 + day}`]));
+      for (const task of tasks) { used.add(selectedTaskKey(task)); progress.find(p => p.memberId === task.memberId)!.windows!.push({ checkIn: task.checkIn, finishedAt: at }); }
+      expect(nextSelectedTasks(s, progress, used, at)).toHaveLength(0);
+    }
+    const crossMonth = selectedCycle(s, new Date("2026-11-01T00:00:00Z"));
+    expect(crossMonth).toEqual({ round: "2026-11-01", anchors: ["2026-12-01", "2026-12-05"] });
+    s.held.push({ memberId: "sample0", reason: "BLOCKED" });
+    expect(nextSelectedTasks(s, progress, used, new Date("2026-10-26T00:00:00Z")).filter(t => t.memberId === "sample0")).toHaveLength(0);
+    expect(() => prepareSelectedDaily(before, { expectedStateHash: "f".repeat(64), effectiveOn: "2026-10-19" }, now)).toThrow();
+    expect(() => prepareSelectedDaily(before, { expectedStateHash: selectedHash(before), effectiveOn: "2026-10-15" }, now)).toThrow();
+  });
   it("finishes the missing exact window before starting a fresh pair, including the Monday boundary", () => {
     const state = upgraded();
     const p = [{ memberId: "sample0", identityAt: now, unitExternalId: "unit0", lastQuoteAt: now,

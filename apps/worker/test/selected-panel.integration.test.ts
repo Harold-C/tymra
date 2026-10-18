@@ -17,6 +17,7 @@ const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await
 const { authorizeSelectedManualReview, closeSelectedManualReview } = await import("../src/operations/selected-panel-review");
 const { applySelectedReplacement, rollbackSelectedReplacement } = await import("../src/operations/selected-panel-replacement-production");
 const { applySelectedWindowUpgrade, rollbackSelectedWindowUpgrade } = await import("../src/operations/selected-panel-window-upgrade-production");
+const { applySelectedDaily, rollbackSelectedDaily } = await import("../src/operations/selected-panel-daily");
 const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
 async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
@@ -49,6 +50,27 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("audits a daily activation and rollback while preserving later holds, sources and all other schedules", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-daily-signing-secret"); vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
+    try {
+      const before = selectedStateSchema.parse({ ...selectedFixture(), cadence: { version: "dual-window-weekly-v2", startsOn: "2026-10-16", bookingBootstrapDaily: 24, bookingSteadyDaily: 20 } });
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: before } });
+      const other = await prisma.scheduleDefinition.create({ data: { key: "unrelated-daily-test", enabled: true, jobType: "RATE_COLLECTION", queueName: "other", cronExpression: "daily", payload: { keep: true } } });
+      const sources = await prisma.dataSource.findMany({ orderBy: { id: "asc" } });
+      const result = await applySelectedDaily({ expectedStateHash: selectedHash(before), effectiveOn: "2026-10-19" }, now);
+      const state = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      expect(state.cadence?.version).toBe("dual-window-daily-v1"); expect({ ...state, cadence: before.cadence }).toEqual(before);
+      await expect(applySelectedDaily({ expectedStateHash: selectedHash(before), effectiveOn: "2026-10-19" }, now)).rejects.toThrow();
+      state.held.push({ memberId: "sample1", reason: "LATER_BLOCK" });
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      await rollbackSelectedDaily(result.auditId, selectedHash(state));
+      const restored = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      expect(restored).toEqual({ ...before, held: state.held });
+      expect(await prisma.scheduleDefinition.findUnique({ where: { id: other.id } })).toEqual(other);
+      expect(await prisma.dataSource.findMany({ orderBy: { id: "asc" } })).toEqual(sources);
+      expect(await prisma.job.count()).toBe(0); expect(await prisma.argusExecution.count()).toBe(0);
+    } finally { vi.unstubAllEnvs(); }
+  });
   it("audits reviewed three-night windows, rejects an old anchor, and restores old controls without deleting new history", async () => {
     vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-window-review-signing-secret");
     vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
