@@ -1,6 +1,22 @@
 # Tymra 实现与验收追踪
 
-## 2026-10-19 补充窗口与灵活日期参考：已切换，逐项实站待完成
+## 2026-10-19 当前：补充窗口、三晚与灵活日期参考已完成生产验收
+
+本批采集／名单、参考／筛选和排队修复已按逻辑提交并push到`feat/sample-supplement-windows-20261019`。实际运行固定源码`23c99f2bd8faece987a7d816a90e125309c23638`、版本`sample-supplement-queue-20261019`、镜像`sha256:b56ab3575bb63155dba223a1f8f8a8f04693fcfb0d2253b321fcb084c1befda3`；[最终候选完整门禁](https://github.com/Harold-C/tymra/actions/runs/39133080791)通过。当前四应用版本、配置、IP访问限制、health／readiness回读通过，Argus仍bc163e5／argus-release-20261018-1，本批未部署或重启共享Argus。以下过程记录是历史快照，最终状态以本条及实时核验为准。
+
+正式名单68物业未换，manifestHash为`bbc7b814f22bb1b22dad64910b0fd187f3effea8c624cc70c88a500abdf27387`：Booking47／Airbnb10／Expedia7／Bookabach3／Trip1，53一晚／14两晚／1三晚。十席补充窗口分别冻结到每周期周二的已核验偏移；French Bay独立两晚、Cosy独立三晚，Southwark同物业Deluxe Apartment卡片两窗口核实，39㎡／住2人／Queen签名仍为部分语义关联，不伪造来源数字ID或物理跨平台身份。原58席执行上下文、所有绑定、cadence、其他85条计划和来源控制保持。旧三对象／四周限制不恢复，次数额度仍取消；并发1、访问节奏／熔断、遇阻暂停和不自动重试保持。
+
+新批次`supplement-queue-acceptance-20261019`完成10身份＋20报价，共30次实际来源执行，每步一次，60份HTML／PNG通过SHA、wire、可靠保存及ACK／410校验。十席均有原文业务复核收据并解除暂缓，当前68可执行／0暂缓；20窗口为10公开正价＋1会员参考＋9不可订或目标单元未列出，每席至少一笔参考价。逐窗口原生金额：French700；Cosy480.70（三晚）；Private685.40；Maison472；Pavilions502；Fino396（不可退）；Southwark303／329；Ramada254.48（会员参考）；Michael356.50；George1154，均NZD实际住宿总额。Airbnb与Ramada页面舍入另存，不借用划线原价或其他套餐，Southwark先前浏览器306不改写为本批实站报价。未知费用拆项、会员资格及标准化付款取消保持未知／RAW_ONLY；George面积资料冲突、Maison关联运营方及既有集中度限制保留。
+
+生产API为68已观察／68至少一笔显示价／68进入参考：公开／合作方56、会员12，共41条分组序列，目前仍只有首周期基线。136个完成窗口中31无价、1失败是该次读取口径，旧Lincoln失败及Garden其他窗口SOURCE_CONFLICT仍保留，不把参考68说成全部双窗口有价或地区指数。固定入住日只在相邻周期同套餐条件齐备时配对；灵活日期按工作日／周末与提前期区间描述水平，不生成涨跌百分比。一／两／三晚、会员、餐食及费用分别展示，无价不补零、不当真实入住率。
+
+同版本生产API、匿名401／307、非法日期400、private/no-store，以及中英文1440／390／320px筛选、手机导航、实际Cosy三晚480.70、会员与餐食／费用分组均通过，控制台错误及严重无障碍问题为0；已目视检查关键实际截图。此为加密SSH直达生产镜像／数据库的响应式模拟，不称公网Cloudflare路径或物理设备验收。本批临时QA会话已撤销。原2913阶段诊断曾带出短期QA令牌，该会话已撤销、日志脱敏，长期凭证未涉及；独立GET连接问题也已补验，不冒充来源失败。
+
+最终新备份为`/srv/apps/tymra/backups/sample-supplement-queue-20261019-windows-final`，本机独立完整副本SHA通过；本机隔离Docker实际恢复90张表及1,935份证据、逐项数据库／模式／证据摘要一致，当前23c99f2与回滚2913c12均读出68参考／41序列及三晚480.70。Docker Desktop的OCI manifest标识与生产config标识分别留存，原配置字节和完整20层核验，不混称镜像身份。没有向生产恢复数据或migration。旧有全部六张采集关联表的既存行摘要、原360条selected Job／Run、80张未变表及会员／客户／正式价格63条保持；只新增本批采集、审计、短期QA会话及Ramada一份派生套餐和一条LineageEdge。
+
+两端`complete-release.py`正式收尾均passed／runtime_unchanged；完整当前版和2913回滚包保留，只退休此前b8与ca两份已取代的完整镜像归档，各端约1.14GB，不删Docker镜像、配置、原始证据或备份。受保护本批目录`runtime/release-candidates/sample-supplement-queue-20261019`内`manual-business-review.json`、`final-business-acceptance.json`、`final-scope-verification.json`、`post-upgrade-recovery.json`及`completion-{local,remote}.json`为证据入口。每日08:00只读复核沿用既有任务，新增30运行已关联业务收据，390运行／713证据机器复核无问题；48小时提醒／72小时上限及静默规则保持。
+
+## 2026-10-19 补充窗口发布过程记录（已被上方最终验收取代）
 
 用户随后明确授权按逻辑push并部署以上优化。当前候选增加十席同物业窗口升级操作、固定每周期偏移、独立三晚、v4灵活日期参考，以及中英文三晚／比较方式筛选。原58席保留逐成员执行上下文；十席改动新开基线，原负面及所有Job／Run不修改。新窗口以冻结周二为基准：Fino／Ramada／Pavilions／George／Southwark／Maison偏移7、11日，French Bay偏移5、12日并改两晚，Private偏移1、11日，Michael偏移−14、−10日，Cosy偏移−28、−24日并改三晚。总68物业、53一晚／14两晚／1三晚，Southwark仍是原物业，Deluxe唯一名称＋39㎡／住2人／Queen签名必须实站核验，不伪造来源数字ID。
 
@@ -12,7 +28,11 @@
 
 窗口升级审计`cmvdum6yn0000s11pgbr7nrxf`已应用，新manifestHash`bbc7b814f22bb1b22dad64910b0fd187f3effea8c624cc70c88a500abdf27387`，68物业不变，原58执行上下文保持；10席先held待实站。首个French Bay身份任务在Argus既有执行＋7条排队后等待超时，来源attempts=0、未started，进入取消请求，不是房型／OTA失败。后续提交已暂停并增加共享队列空闲的人工验收准入；不取消其他任务、不重启服务、不自动重发该任务。十席原文业务验收、升级后最新实际恢复与两端正式收尾尚未完成，不能将代码上线称为完整发布收尾或68新窗口已采齐。
 
-后续Cosy身份同样在实际来源attempts=0、未started时进入取消请求；提交前空闲无法消除其他调用方的竞争，已停止整批继续提交。根因是这68席仍以提交时刻计算180秒执行等待，而已有公共事件队列逻辑区分排队与开始执行。新增修复仅匹配生产selectedPanel与对应source-public，排队沿用现有一小时等待窗，Argus不可变started_at之后才计执行时限；同一远端Job轮询，不重发，不改变其他OTA计划、共享Argus或来源节奏。584项Worker回归（含五渠道排队、固定开始时间、队列／执行到期取消与单次提交）和类型检查通过；该补充修复尚未部署，须固定候选完整门禁、最新恢复与安全切换后验收。两条零来源访问的排队失败完整保留，不称来源访问失败或费用消耗。
+后续Cosy身份同样在实际来源attempts=0、未started时进入取消请求；提交前空闲无法消除其他调用方的竞争，已停止整批继续提交。根因是这68席仍以提交时刻计算180秒执行等待，而已有公共事件队列逻辑区分排队与开始执行。修复仅匹配生产selectedPanel与对应source-public，排队沿用现有一小时等待窗，Argus不可变started_at之后才计执行时限；同一远端Job轮询，不重发，不改变其他OTA计划、共享Argus或来源节奏。584项Worker回归（含五渠道排队、固定开始时间、队列／执行到期取消与单次提交）和类型检查通过。两条旧记录已最终取消、交付和ACK验证，均来源attempts=0、未started，失败原样保留；Cosy曾只对该在途执行追加一条审计，等待已接受取消的回执，停止刷新取消请求，不提交或恢复任何来源访问，该执行现已终态。
+
+当前生产为固定源码`23c99f2bd8faece987a7d816a90e125309c23638`／`sample-supplement-queue-20261019`／镜像`sha256:b56ab3575bb63155dba223a1f8f8a8f04693fcfb0d2253b321fcb084c1befda3`；完整20层包SHA`d385505267843cda5f0d147afd5e113510fc47ff0a7ba01068f147a58f9e454e`两端核验。[最终候选完整门禁](https://github.com/Harold-C/tymra/actions/runs/39133080791)全部通过；最新备份实际恢复89模型／1,875证据、两个v4镜像兼容读取、异机备份、四应用版本／健康／readiness及来源／计划／业务数据读回通过，无migration，回滚为2913c12。受保护本批目录`runtime/release-candidates/sample-supplement-queue-20261019`，不重标上一目录两条零访问失败的执行版本。空间按完整镜像展开量、证据、数据库恢复工作区及独立2GiB余量逐阶段实测核对；没有删除现有数据库、证据、备份或Docker镜像。
+
+新批次`supplement-queue-acceptance-20261019`对十席更新后的单元／入住安排各执行一次身份与双窗口，每步maxAttempts=1，暂缓状态仍逐项原文核验后解除。French身份及首个两晚窗口已完成交付，原Deluxe单元226298506、12月6–8日、2成人、NZD700含税费及早餐、11月22日前免费取消、无需预付款到店支付可见；RAW_ONLY／标准付款取消与profile未知不补零，尚不将执行完成当作全部业务验收。其余实站、同版本页面、新数据最新恢复和两端正式收尾仍在进行。
 
 ## 2026-10-19 十席补充日期与同物业房型只读实站核验
 
