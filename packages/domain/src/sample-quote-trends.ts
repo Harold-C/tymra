@@ -1,15 +1,15 @@
 import { z } from "zod";
-import { addNzCalendarDays, nzDateKey } from "./nz-time";
+import { addNzCalendarDays, nzDateKey, nzDayOfWeek } from "./nz-time";
 import { observationQuoteSchema } from "./market-observation";
 import { sampleReferencePackageSchema } from "./sample-quote-packages";
 
-export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v3";
+export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v4";
 export type SampleQuoteBasis = "PUBLIC_TOTAL" | "MEMBER_REFERENCE";
 export type SampleMealGroup = "ROOM_ONLY" | "BREAKFAST_INCLUDED" | "BREAKFAST_EXTRA" | "NOT_APPLICABLE" | "UNDISCLOSED";
 export type SampleFeeGroup = "INCLUSIVE" | "UNDISCLOSED" | "MEMBER_UNVERIFIED";
 export type SampleTrendMember = {
   id: string; name: string; source: string; sourceListingId: string; sourceUrl: string;
-  accommodationType: string; locality: string | null; nights: 1 | 2; executionHash: string;
+  accommodationType: string; locality: string | null; nights: 1 | 2 | 3; executionHash: string;
 };
 export type SampleTrendRun = {
   id: string; memberId: string; manifestHash: string; checkIn: string; unitExternalId: string | null;
@@ -20,7 +20,8 @@ export type SampleTrendRun = {
 export const sampleTrendFilterSchema = z.object({
   from: z.string().date(), to: z.string().date(),
   basis: z.enum(["ALL", "PUBLIC_TOTAL", "MEMBER_REFERENCE"]).default("PUBLIC_TOTAL"),
-  nights: z.enum(["ALL", "1", "2"]).default("ALL"),
+  nights: z.enum(["ALL", "1", "2", "3"]).default("ALL"),
+  comparison: z.enum(["FIXED", "ROLLING"]).optional(),
   stay: z.union([z.literal("ALL"), z.string().date()]).default("ALL"),
   category: z.string().max(80).default("ALL"),
   lead: z.enum(["ALL", "0-30", "31-60", "61-90", "91+"]).default("ALL"),
@@ -47,6 +48,7 @@ export type SampleTrendPoint = {
 export type SampleTrendSeries = {
   key: string; basis: SampleQuoteBasis; nights: number; category: string; checkIn: string; checkOut: string;
   mealGroup: SampleMealGroup; feeGroup: SampleFeeGroup;
+  arrivalKind?: "WEEKDAY" | "WEEKEND"; leadBand?: string; arrivalDates?: string[];
   points: SampleTrendPoint[];
 };
 export type SampleQuoteTrendSummary = {
@@ -218,7 +220,10 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
   for (const m of input.members) if (matches(m) && !observed.has(m.id)) addGap(m.id, "NO_COMPLETED_WINDOW");
   const groups = new Map<string, Observation[]>();
   for (const row of included) {
-    const key = JSON.stringify([row.basis, row.member.nights, row.member.accommodationType, row.checkIn, row.checkOut, row.mealGroup, row.feeGroup]);
+    const day = nzDayOfWeek(row.checkIn), arrivalKind = day === 0 || day === 6 ? "WEEKEND" : "WEEKDAY";
+    const leadBand = row.leadDays < 0 ? "PAST" : row.leadDays <= 30 ? "0-30" : row.leadDays <= 60 ? "31-60" : row.leadDays <= 90 ? "61-90" : "91+";
+    const stayGroup = filter.comparison === "ROLLING" ? ["ROLLING", arrivalKind, leadBand] : [row.checkIn, row.checkOut];
+    const key = JSON.stringify([row.basis, row.member.nights, row.member.accommodationType, ...stayGroup, row.mealGroup, row.feeGroup]);
     if (!groups.has(key)) groups.set(key, []); groups.get(key)!.push(row);
   }
   const series: SampleTrendSeries[] = [];
@@ -228,10 +233,11 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
       const current = rows.filter(r => r.cycle === cycle), prior = rows.filter(r => r.cycle === addNzCalendarDays(cycle, -7));
       const prices = new Map<string, number[]>(), changes = new Map<string, number[]>();
       // Multiple duplicated offers/runs never make a listing count twice.
-      const unique = new Map(current.map(r => [JSON.stringify([r.member.id, r.offerKey, r.sourceContext]), r]));
+      const unique = new Map(current.map(r => [JSON.stringify([r.member.id, r.offerKey, r.sourceContext, r.checkIn, r.checkOut]), r]));
       for (const row of unique.values()) {
         if (!prices.has(row.member.id)) prices.set(row.member.id, []); prices.get(row.member.id)!.push(row.amountMinor);
-        const old = prior.find(p => p.member.id === row.member.id && p.offerKey === row.offerKey && p.sourceContext === row.sourceContext);
+        const old = filter.comparison === "ROLLING" ? undefined : prior.find(p => p.member.id === row.member.id && p.offerKey === row.offerKey && p.sourceContext === row.sourceContext
+          && p.checkIn === row.checkIn && p.checkOut === row.checkOut);
         if (!old) continue;
         if (!changes.has(row.member.id)) changes.set(row.member.id, []);
         changes.get(row.member.id)!.push((row.amountMinor / old.amountMinor - 1) * 100);
@@ -242,7 +248,10 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
         changePct: input.complete === false || !changes.size ? null : median([...changes.values()].map(median)) });
     }
     series.push({ key, basis: sample.basis, nights: sample.member.nights, category: sample.member.accommodationType,
-      checkIn: sample.checkIn, checkOut: sample.checkOut, mealGroup: sample.mealGroup, feeGroup: sample.feeGroup, points });
+      checkIn: sample.checkIn, checkOut: sample.checkOut, mealGroup: sample.mealGroup, feeGroup: sample.feeGroup, points,
+      ...(filter.comparison === "ROLLING" ? { arrivalKind: [0, 6].includes(nzDayOfWeek(sample.checkIn)) ? "WEEKEND" as const : "WEEKDAY" as const,
+        leadBand: sample.leadDays < 0 ? "PAST" : sample.leadDays <= 30 ? "0-30" : sample.leadDays <= 60 ? "31-60" : sample.leadDays <= 90 ? "61-90" : "91+",
+        arrivalDates: [...new Set(rows.map(r => r.checkIn))].sort() } : {}) });
   }
   return { version: SAMPLE_QUOTE_TRENDS_VERSION, asOf: input.asOf, filter, startsOn: input.startsOn,
     configuredMembers: input.members.length, observedMembers: observed.size, pricedMembers: priced.size,

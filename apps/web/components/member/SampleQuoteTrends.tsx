@@ -4,10 +4,12 @@ import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, Samp
 
 type Locale = "en" | "zh";
 const copy = {
-  en: { title: "Christchurch sample quote trends", intro: "Follow the selected accommodation samples without mixing membership prices, stay lengths or arrival dates.",
+  en: { title: "Christchurch sample quote trends", intro: "Follow selected accommodation quotes with separate membership, stay-length and date views.",
     back: "Account home", reference: "Sample quote reference · not a city price index", limits: "These are advertised sample quotes, not transaction prices or occupancy. Browser login, location and personalisation are not fully attested. Changes are source-quote references, not certified market-price changes.",
     from: "Observed from", to: "Observed to", basis: "Price basis", public: "Public / partner displayed totals", member: "Displayed member references", all: "All (separate series)",
-    nights: "Stay length", one: "One night", two: "Two nights", stay: "Arrival date", allDates: "All arrival dates (separate series)", category: "Accommodation type",
+    nights: "Stay length", one: "One night", two: "Two nights", three: "Three nights", stay: "Arrival date", allDates: "All arrival dates", category: "Accommodation type",
+    comparison: "Comparison view", fixed: "Fixed arrival · matched changes", rolling: "Flexible dates · quote levels", weekday: "Weekday arrivals", weekend: "Weekend arrivals",
+    rollingNote: "Different arrival dates are grouped by weekday/weekend and lead-time band. Stay lengths, membership, meals and fee disclosures remain separate. These are sample quote levels; sample mix and exact lead times can change, so no matched percentage change is calculated.",
     lead: "Days before arrival", anyLead: "Any lead time", apply: "Apply filters", dateHint: "Up to 90 New Zealand observation dates. Arrival and departure dates stay fixed within each series.",
     members: "Selected samples", observed: "Observed in this view", priced: "With a displayed price", included: "In reference series", coverage: "Analysis gaps do not stop the existing collection plan.",
     publicNote: "A verified displayed price for the same unit, dates and guests can be a reference. Inclusive fees and undisclosed fees form separate series; undisclosed meals stay separate from room-only and breakfast offers. Missing payment or cancellation detail is labelled, not invented. Public and partner offers never match each other. These references do not establish a final bookable total or equivalent purchase terms.",
@@ -21,10 +23,12 @@ const copy = {
     includedTag: "In reference series", excludedTag: "Display only", noQuotes: "No displayed quotes in this view.", source: "Source", observedOn: "Observed", updated: "Read at", method: "Method and limitations", end: "Departure",
     incomplete: "The read reached its safety limit. Coverage is partial; changes are withheld. Narrow the observation dates.", missing: "The selected collection plan is not available yet.", error: "Sample quotes are temporarily unavailable. Please reload shortly.", invalid: "Choose valid dates within 90 NZ dates and supported filters.",
     weekdays: "Workdays and weekends are distinct arrival dates; this view does not estimate a general weekend premium.", retry: "Reset filters" },
-  zh: { title: "基督城样本报价走势", intro: "持续观察已选住宿样本，会员价格、住宿晚数和入住日期分别展示。",
+  zh: { title: "基督城样本报价走势", intro: "持续观察已选住宿样本，区分会员价格、住宿晚数，以及固定或灵活入住日期。",
     back: "会员首页", reference: "样本报价参考 · 非全市价格指数", limits: "这里是样本展示报价，不是成交价或入住率。浏览器登录状态、地区与个性化环境尚未完整证明；涨跌仅作来源报价参考，不代表已认证的市场价格变化。",
     from: "观察开始日期", to: "观察结束日期", basis: "价格口径", public: "公开／合作方显示总价", member: "会员显示参考价", all: "全部（分别展示）",
-    nights: "住宿晚数", one: "一晚", two: "两晚", stay: "入住日期", allDates: "全部入住日期（分别展示）", category: "住宿类型",
+    nights: "住宿晚数", one: "一晚", two: "两晚", three: "三晚", stay: "入住日期", allDates: "全部入住日期", category: "住宿类型",
+    comparison: "比较方式", fixed: "固定入住日 · 配对涨跌", rolling: "灵活日期 · 参考报价", weekday: "工作日入住", weekend: "周末入住",
+    rollingNote: "不同入住日期按工作日／周末及提前期区间分组，晚数、会员、餐食和费用披露仍分开。这里展示样本报价水平；样本构成和实际提前天数可能变化，因此不计算同条件涨跌百分比。",
     lead: "提前预订天数", anyLead: "不限提前期", apply: "查看走势", dateHint: "最多查看90个新西兰观察日期；每条序列保留精确入住及退房日期。",
     members: "固定样本", observed: "本次范围已观察", priced: "有显示价格", included: "纳入参考序列", coverage: "分析字段不足不会暂停原有采集计划。",
     publicNote: "同一单元、日期和人数的已核实展示价格可作参考。明确含必付费用与费用未核实分别成组；餐食未披露与不含餐、含早餐分别成组。付款或取消细节不足时明确标注，不补造条款。公开价与合作方报价不交叉匹配；这些参考不代表最终可订总价或购买条件完全一致。",
@@ -68,25 +72,26 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
     <aside className="sample-trend-notice"><strong>{c.reference}</strong><p>{c.limits}</p></aside>
     <form className="sample-trend-filters" method="get" aria-label={locale === "zh" ? "报价走势筛选" : "Quote trend filters"}>
       <label>{c.basis}<select name="basis" defaultValue={filter.basis}><option value="PUBLIC_TOTAL">{c.public}</option><option value="MEMBER_REFERENCE">{c.member}</option><option value="ALL">{c.all}</option></select></label>
-      <label>{c.nights}<select name="nights" defaultValue={filter.nights}><option value="ALL">{c.all}</option><option value="1">{c.one}</option><option value="2">{c.two}</option></select></label>
+      <label>{c.comparison}<select name="comparison" defaultValue={filter.comparison ?? "FIXED"}><option value="FIXED">{c.fixed}</option><option value="ROLLING">{c.rolling}</option></select></label>
+      <label>{c.nights}<select name="nights" defaultValue={filter.nights}><option value="ALL">{c.all}</option><option value="1">{c.one}</option><option value="2">{c.two}</option><option value="3">{c.three}</option></select></label>
       <label>{c.stay}<select name="stay" defaultValue={filter.stay}><option value="ALL">{c.allDates}</option>{data?.stayDates.map(day => <option key={day} value={day}>{date(day, locale)}</option>)}</select></label>
       <label>{c.category}<select name="category" defaultValue={filter.category}><option value="ALL">{c.all}</option>{data?.categories.map(value => <option key={value} value={value}>{categoryLabel(value, locale)}</option>)}</select></label>
       <label>{c.lead}<select name="lead" defaultValue={filter.lead}><option value="ALL">{c.anyLead}</option>{["0-30", "31-60", "61-90", "91+"].map(value => <option key={value}>{value}</option>)}</select></label>
       <label>{c.from}<input name="from" type="date" defaultValue={filter.from} required /></label>
       <label>{c.to}<input name="to" type="date" defaultValue={filter.to} min={filter.from} required /></label>
       <button className="button button-primary" type="submit">{c.apply}</button>
-      <p className="sample-trend-filter-hint">{c.dateHint}</p>
+      <p className="sample-trend-filter-hint">{filter.comparison === "ROLLING" ? c.rollingNote : c.dateHint}</p>
     </form>
     {error ? <p role="alert">{c[error]} <Link className="text-link" href={`/${locale}/account/market/sample-quotes`}>{c.retry}</Link></p> : !data ? <p role="status">{c.missing}</p> : <>
       <p className="sample-trend-caption">{c.members} {data.configuredMembers} · {c.updated} {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(data.asOf))} (NZ)</p>
       {!data.complete ? <p role="alert" className="sample-trend-notice">{c.incomplete}</p> : null}
       <dl className="sample-trend-metrics">{[[c.observed, data.observedMembers], [c.priced, data.pricedMembers], [c.included, data.includedMembers]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       <p>{c.coverage}</p>
-      <details className="sample-trend-method"><summary>{c.method}</summary><p>{c.publicNote}</p><p>{c.memberNote}</p><p>{c.clockNote}</p><p>{c.weekdays}</p><p>{c.pointHint}</p></details>
+      <details className="sample-trend-method"><summary>{c.method}</summary><p>{c.publicNote}</p><p>{c.memberNote}</p><p>{filter.comparison === "ROLLING" ? c.rollingNote : c.clockNote}</p><p>{c.weekdays}</p><p>{c.pointHint}</p></details>
       {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} />)}
       <div className="sample-trend-caption">{c.unavailable}: {data.noPriceWindows} · {c.failed}: {data.failedWindows}</div>
       <details className="sample-trend-method"><summary>{c.gaps} ({data.gaps.length})</summary>{!data.gaps.length ? <p>{c.none}</p> : <ul className="sample-trend-gaps">{data.gaps.map(gap => <li key={gap.memberId}><strong>{gap.name}</strong><span>{gap.reasons.map(reason => gapCopy[reason]?.[locale === "zh" ? 1 : 0] ?? reason).join(" · ")}</span></li>)}</ul>}</details>
-      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : c.two}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)}</span>{q.disclosures.length ? <small>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</small> : null}<span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
+      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : q.nights === 2 ? c.two : c.three}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)}</span>{q.disclosures.length ? <small>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</small> : null}<span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
     </>}
   </section>;
 }
@@ -94,17 +99,18 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
 function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale }) {
   const c = copy[locale], values = series.points.filter(p => p.changePct !== null), span = Math.max(1, ...values.map(p => Math.abs(p.changePct!)));
   return <article className="sample-trend-section" data-price-basis={series.basis} data-nights={series.nights} data-meals={series.mealGroup} data-fees={series.feeGroup}>
-    <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : c.two}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {c.stay} {date(series.checkIn, locale)} → {c.end} {date(series.checkOut, locale)}</p>
+    <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : series.nights === 2 ? c.two : c.three}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {series.arrivalKind ? `${series.arrivalKind === "WEEKEND" ? c.weekend : c.weekday} · ${c.lead}: ${series.leadBand}` : `${c.stay} ${date(series.checkIn, locale)} → ${c.end} ${date(series.checkOut, locale)}`}</p>
+    {series.arrivalDates ? <p className="sample-trend-caption">{c.stay}: {series.arrivalDates.map(d => date(d, locale)).join(" · ")}</p> : null}
     <p><strong>{groupLabel(series.mealGroup, series.feeGroup, locale)}</strong></p>
     {series.basis === "MEMBER_REFERENCE" ? <p className="sample-trend-member-note">{c.memberNote}</p> : null}
-    <p className="sample-trend-caption">{c.clockNote}</p>
+    <p className="sample-trend-caption">{series.arrivalKind ? c.rollingNote : c.clockNote}</p>
     {values.length ? <div className="sample-trend-change-chart" role="img" aria-label={c.change}>{values.map(p => <div key={p.cycle}><span>{date(p.cycle, locale)}</span><div className="sample-trend-change-track"><i style={{ width: `${Math.abs(p.changePct!) / span * 50}%`, left: `${p.changePct! < 0 ? 50 - Math.abs(p.changePct!) / span * 50 : 50}%` }} /><b /></div><strong>{p.changePct! > 0 ? "+" : ""}{p.changePct!.toFixed(1)}%</strong></div>)}</div> : null}
     <div className="sample-trend-points">{series.points.map((p, index) => <dl className="sample-trend-point" key={p.cycle}>
       <div><dt>{c.period}</dt><dd><time dateTime={p.cycle}>{date(p.cycle, locale)}</time></dd></div>
       <div><dt>{c.median}</dt><dd>{money(p.medianTotalMinor, locale)}</dd></div>
       <div><dt>{c.count}</dt><dd>{p.sampleCount}</dd></div>
       <div><dt>{c.advance}</dt><dd>{p.leadDaysMin === p.leadDaysMax ? p.leadDaysMin : `${p.leadDaysMin}–${p.leadDaysMax}`}</dd></div>
-      <div><dt>{c.change}</dt><dd>{p.changePct === null ? <span className="sample-trend-caption">{index === 0 ? c.baseline : c.noPair}</span> : <><strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong><small>{p.pairedSamples} {c.paired}</small></>}</dd></div>
-    </dl>)}</div><p className="sample-trend-caption">{c.pointHint}</p>
+      {!series.arrivalKind ? <div><dt>{c.change}</dt><dd>{p.changePct === null ? <span className="sample-trend-caption">{index === 0 ? c.baseline : c.noPair}</span> : <><strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong><small>{p.pairedSamples} {c.paired}</small></>}</dd></div> : null}
+    </dl>)}</div><p className="sample-trend-caption">{series.arrivalKind ? c.rollingNote : c.pointHint}</p>
   </article>;
 }

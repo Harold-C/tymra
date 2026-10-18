@@ -4,7 +4,7 @@ import { z } from "zod";
 import { projectLegacySampleQuoteWire } from "./sample-quote-wire";
 
 const manifestMember = z.object({ id: z.string(), name: z.string(), source: z.string(), sourceListingId: z.string(), sourceUrl: z.string().url(),
-  accommodationType: z.string(), locality: z.string().nullable(), nights: z.union([z.literal(1), z.literal(2)]), labels: z.record(z.unknown()) });
+  accommodationType: z.string(), locality: z.string().nullable(), nights: z.union([z.literal(1), z.literal(2), z.literal(3)]), labels: z.record(z.unknown()) });
 const controlSchema = z.object({ manifestHash: z.string(), manifest: z.object({ start: z.string().date(), members: z.array(manifestMember).max(200) }),
   cadence: z.object({ startsOn: z.string().date() }).optional() });
 const lineage = z.object({ manifestHash: z.string().regex(/^[a-f0-9]{64}$/u) });

@@ -3,7 +3,7 @@ import { addNzCalendarDays, nzDateKey } from "@tymra/domain";
 import { assertIsolatedTestEnvironment } from "./isolation";
 
 /** Synthetic data only, in an explicitly disposable local/CI database. Never calls a source or enables a schedule. */
-export async function seedSampleQuoteTrendFixture(db: PrismaClient, now = new Date()) {
+export async function seedSampleQuoteTrendFixture(db: PrismaClient, now = new Date(), includeThreeNights = false) {
   assertIsolatedTestEnvironment();
   const today = nzDateKey(now), startsOn = addNzCalendarDays(today, -14), checkIn = addNzCalendarDays(today, 45);
   const existing = await db.scheduleDefinition.findUnique({ where: { key: "christchurch-selected-samples" } });
@@ -12,7 +12,7 @@ export async function seedSampleQuoteTrendFixture(db: PrismaClient, now = new Da
     if (p.manifestHash !== "synthetic" || !p.manifest || existing.enabled) throw Error("Refuse to replace a non-fixture selected plan");
     return { planId: existing.id, from: p.manifest.start, to: addNzCalendarDays(p.manifest.start, 14), checkIn: addNzCalendarDays(p.manifest.start, 59) };
   }
-  const members = [1, 2].map(n => ({ id: `trend-fixture-${n}`, name: n === 1 ? "Synthetic breakfast hotel" : "Synthetic member holiday home",
+  const members = [1, 2, ...(includeThreeNights ? [3] : [])].map(n => ({ id: `trend-fixture-${n}`, name: n === 1 ? "Synthetic breakfast hotel" : n === 2 ? "Synthetic member holiday home" : "Synthetic three-night holiday home",
     source: "booking", sourceListingId: String(n), sourceUrl: `https://www.booking.com/hotel/nz/synthetic-trend-${n}.html`,
     accommodationType: n === 1 ? "HOTEL" : "HOLIDAY_HOME", locality: "Riccarton", nights: n, labels: {} }));
   const control = { manifestHash: "synthetic", manifest: { start: startsOn, members }, cadence: { startsOn } };
@@ -21,7 +21,7 @@ export async function seedSampleQuoteTrendFixture(db: PrismaClient, now = new Da
   const source = await db.dataSource.create({ data: { key: "sample-trend-fixture", name: "Synthetic sample quote tests", providerType: "OTA", sourceType: "OTA", acquisitionMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", enabled: false, isDemo: false } });
   for (const member of members) for (const index of [0, 1]) {
     const day = addNzCalendarDays(startsOn, index * 7), at = new Date(`${day}T02:00:00.000Z`), unit = `unit-${member.id}`;
-    const amount = member.nights === 1 ? (index === 0 ? 10000 : 11000) : (index === 0 ? 30000 : 33000);
+    const amount = member.nights === 1 ? (index === 0 ? 10000 : 11000) : member.nights === 2 ? (index === 0 ? 30000 : 33000) : (index === 0 ? 48100 : 52910);
     const checkOut = addNzCalendarDays(checkIn, member.nights), reference = member.nights === 2 ? {
       kind: "MEMBER_ONLY", amountMinor: amount, ratePlanExternalId: "member-plan", sourceText: "Members-only price" } : null;
     const conditions = { mealPlan: "breakfast included", cancellationPolicy: "Non-refundable", paymentTerms: "Pay online", rateFence: "PUBLIC" };

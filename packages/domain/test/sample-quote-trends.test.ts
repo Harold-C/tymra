@@ -22,6 +22,27 @@ function alterRaw(r: SampleTrendRun, changes: object) { const e = r.evaluated as
 function alterRate(r: SampleTrendRun, changes: object) { return { ...r, rates: [{ ...(r.rates as object[])[0], ...changes }] }; }
 
 describe("sample source-quote trends (separate from formal market comparability)", () => {
+  it("groups flexible dates by weekday and lead time without presenting composition changes as matched inflation", () => {
+    const dated = (id: string, observed: string, checkIn: string, checkOut: string, amount: number) => {
+      const r = run(id, observed, amount, { checkIn });
+      return alterRate(alterRaw(r, { checkIn, checkOut }), { checkIn, checkOut });
+    };
+    const filter = { from: "2026-10-16", to: "2026-11-10", basis: "ALL", nights: "ALL", stay: "ALL", category: "ALL", lead: "ALL", comparison: "ROLLING" };
+    const result = build([dated("a", "2026-10-16", "2026-12-01", "2026-12-02", 10000),
+      dated("b", "2026-10-23", "2026-12-08", "2026-12-09", 20000),
+      dated("c", "2026-10-23", "2026-12-12", "2026-12-13", 30000)], [member], { filter });
+    expect(result.series).toHaveLength(2);
+    const weekdays = result.series.find(s => s.arrivalKind === "WEEKDAY")!;
+    expect(weekdays.arrivalDates).toEqual(["2026-12-01", "2026-12-08"]);
+    expect(weekdays.points.map(p => p.medianTotalMinor)).toEqual([10000, 20000]);
+    expect(result.series.every(s => s.points.every(p => p.changePct === null && p.pairedSamples === 0))).toBe(true);
+  });
+  it("keeps an approved three-night total separate and rejects a mismatched two-night quote", () => {
+    const home = { ...member, nights: 3 as const };
+    const r = alterRate(alterRaw(run("three", "2026-10-16", 48100), { nights: 3, checkOut: "2026-12-04" }), { checkOut: "2026-12-04" });
+    const good = build([r], [home]); expect(good.includedMembers).toBe(1); expect(good.series[0].nights).toBe(3);
+    expect(build([r], [{ ...home, nights: 2 }]).includedMembers).toBe(0);
+  });
   it("shows one baseline without manufacturing change or upgrading raw facts", () => {
     const r = run("a", "2026-10-16"), before = structuredClone(r), result = build([r]);
     expect(result.includedMembers).toBe(1); expect(result.series[0].points[0].changePct).toBeNull(); expect(r).toEqual(before);
