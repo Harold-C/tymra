@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { ArrowLeft, ChartNoAxesCombined } from "lucide-react";
-import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, SampleTrendSeries } from "@tymra/domain";
+import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, SampleTrendSeries, SampleMealGroup, SampleFeeGroup } from "@tymra/domain";
 
 type Locale = "en" | "zh";
 const copy = {
   en: { title: "Christchurch sample quote trends", intro: "Follow the selected accommodation samples without mixing membership prices, stay lengths or arrival dates.",
     back: "Account home", reference: "Sample quote reference · not a city price index", limits: "These are advertised sample quotes, not transaction prices or occupancy. Browser login, location and personalisation are not fully attested. Changes are source-quote references, not certified market-price changes.",
-    from: "Observed from", to: "Observed to", basis: "Price basis", public: "Public / partner stay totals", member: "Displayed member references", all: "All (separate series)",
+    from: "Observed from", to: "Observed to", basis: "Price basis", public: "Public / partner displayed totals", member: "Displayed member references", all: "All (separate series)",
     nights: "Stay length", one: "One night", two: "Two nights", stay: "Arrival date", allDates: "All arrival dates (separate series)", category: "Accommodation type",
     lead: "Days before arrival", anyLead: "Any lead time", apply: "Apply filters", dateHint: "Up to 90 New Zealand observation dates. Arrival and departure dates stay fixed within each series.",
     members: "Selected samples", observed: "Observed in this view", priced: "With a displayed price", included: "In reference series", coverage: "Analysis gaps do not stop the existing collection plan.",
-    publicNote: "Public/partner totals enter a reference series only with an exact offer and explicit inclusive fees, meal, payment and cancellation wording. Public and partner offers never match each other.",
+    publicNote: "A verified displayed price for the same unit, dates and guests can be a reference. Inclusive fees and undisclosed fees form separate series; undisclosed meals stay separate from room-only and breakfast offers. Missing payment or cancellation detail is labelled, not invented. Public and partner offers never match each other. These references do not establish a final bookable total or equivalent purchase terms.",
     memberNote: "Member references compare the same membership offer’s displayed amount only. Membership eligibility, availability, fees and purchase terms remain unverified; these are not all-in bookable totals. Public offer terms are never borrowed.",
     clockNote: "Fixed-arrival tracking includes the effect of getting closer to arrival. Lead-time filters do not make all days in a band equivalent. Different arrival months remain separate; seasonality and event effects are not removed.",
     period: "NZ collection cycle", median: "Sample median stay total", count: "Samples", advance: "Actual days before arrival", change: "Matched change from prior cycle", paired: "paired samples",
@@ -23,11 +23,11 @@ const copy = {
     weekdays: "Workdays and weekends are distinct arrival dates; this view does not estimate a general weekend premium.", retry: "Reset filters" },
   zh: { title: "基督城样本报价走势", intro: "持续观察已选住宿样本，会员价格、住宿晚数和入住日期分别展示。",
     back: "会员首页", reference: "样本报价参考 · 非全市价格指数", limits: "这里是样本展示报价，不是成交价或入住率。浏览器登录状态、地区与个性化环境尚未完整证明；涨跌仅作来源报价参考，不代表已认证的市场价格变化。",
-    from: "观察开始日期", to: "观察结束日期", basis: "价格口径", public: "公开／合作方住宿总价", member: "会员显示参考价", all: "全部（分别展示）",
+    from: "观察开始日期", to: "观察结束日期", basis: "价格口径", public: "公开／合作方显示总价", member: "会员显示参考价", all: "全部（分别展示）",
     nights: "住宿晚数", one: "一晚", two: "两晚", stay: "入住日期", allDates: "全部入住日期（分别展示）", category: "住宿类型",
     lead: "提前预订天数", anyLead: "不限提前期", apply: "查看走势", dateHint: "最多查看90个新西兰观察日期；每条序列保留精确入住及退房日期。",
     members: "固定样本", observed: "本次范围已观察", priced: "有显示价格", included: "纳入参考序列", coverage: "分析字段不足不会暂停原有采集计划。",
-    publicNote: "公开／合作方总价须有明确套餐、含必付费用说明，以及明确餐食、付款和取消原文，才进入参考序列。公开价和合作方报价不交叉匹配。",
+    publicNote: "同一单元、日期和人数的已核实展示价格可作参考。明确含必付费用与费用未核实分别成组；餐食未披露与不含餐、含早餐分别成组。付款或取消细节不足时明确标注，不补造条款。公开价与合作方报价不交叉匹配；这些参考不代表最终可订总价或购买条件完全一致。",
     memberNote: "会员参考仅比较同一会员套餐的显示金额；会员资格、可订库存、完整费用及购买条款仍未核实，不等于含完整费用的可订总价，也不借用公开套餐条款。",
     clockNote: "固定入住日的报价变化包含临近入住的影响。提前期筛选不代表区间内天数等价；不同入住月份分别展示，未剥离季节和活动影响。",
     period: "新西兰采集周期", median: "样本住宿总价中位数", count: "样本数", advance: "实际提前天数", change: "与上周期配对变化", paired: "个配对样本",
@@ -51,6 +51,9 @@ const gapCopy: Record<string, [string, string]> = {
   PRICE_FENCE_UNSUPPORTED: ["Offer conditions not supported", "报价条件未支持"], MEAL_TERMS_MISSING: ["Meal terms unknown", "餐食条件未知"],
   PAYMENT_TERMS_MISSING: ["Payment terms unknown", "付款条件未知"], CANCELLATION_TERMS_MISSING: ["Cancellation terms incomplete", "取消条款不完整"],
 };
+const mealCopy: Record<SampleMealGroup, [string, string]> = { ROOM_ONLY: ["Room only", "不含餐"], BREAKFAST_INCLUDED: ["Breakfast included", "含早餐"], NOT_APPLICABLE: ["Meals not applicable", "餐食不适用"], UNDISCLOSED: ["Meals undisclosed", "餐食未披露"] };
+const feeCopy: Record<SampleFeeGroup, [string, string]> = { INCLUSIVE: ["Mandatory fees included", "已注明含必付费用"], UNDISCLOSED: ["Fees unverified · displayed amount only", "费用未核实 · 仅显示金额"], MEMBER_UNVERIFIED: ["Member fees unverified", "会员费用未核实"] };
+function groupLabel(meal: SampleMealGroup, fees: SampleFeeGroup, locale: Locale) { const i = locale === "zh" ? 1 : 0; return `${mealCopy[meal][i]} · ${feeCopy[fees][i]}`; }
 function categoryLabel(value: string, locale: Locale) { return categories[value]?.[locale === "zh" ? 1 : 0] ?? value; }
 function basisLabel(basis: SampleQuoteBasis, locale: Locale) { return basis === "MEMBER_REFERENCE" ? copy[locale].member : copy[locale].public; }
 function date(day: string, locale: Locale) { return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { year: "numeric", month: "short", day: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(`${day.slice(0, 10)}T00:00:00Z`)); }
@@ -83,15 +86,16 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
       {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} />)}
       <div className="sample-trend-caption">{c.unavailable}: {data.noPriceWindows} · {c.failed}: {data.failedWindows}</div>
       <details className="sample-trend-method"><summary>{c.gaps} ({data.gaps.length})</summary>{!data.gaps.length ? <p>{c.none}</p> : <ul className="sample-trend-gaps">{data.gaps.map(gap => <li key={gap.memberId}><strong>{gap.name}</strong><span>{gap.reasons.map(reason => gapCopy[reason]?.[locale === "zh" ? 1 : 0] ?? reason).join(" · ")}</span></li>)}</ul>}</details>
-      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : c.two}</span><span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
+      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : c.two}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)}</span>{q.disclosures.length ? <small>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</small> : null}<span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
     </>}
   </section>;
 }
 
 function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale }) {
   const c = copy[locale], values = series.points.filter(p => p.changePct !== null), span = Math.max(1, ...values.map(p => Math.abs(p.changePct!)));
-  return <article className="sample-trend-section" data-price-basis={series.basis} data-nights={series.nights}>
+  return <article className="sample-trend-section" data-price-basis={series.basis} data-nights={series.nights} data-meals={series.mealGroup} data-fees={series.feeGroup}>
     <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : c.two}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {c.stay} {date(series.checkIn, locale)} → {c.end} {date(series.checkOut, locale)}</p>
+    <p><strong>{groupLabel(series.mealGroup, series.feeGroup, locale)}</strong></p>
     {series.basis === "MEMBER_REFERENCE" ? <p className="sample-trend-member-note">{c.memberNote}</p> : null}
     <p className="sample-trend-caption">{c.clockNote}</p>
     {values.length ? <div className="sample-trend-change-chart" role="img" aria-label={c.change}>{values.map(p => <div key={p.cycle}><span>{date(p.cycle, locale)}</span><div className="sample-trend-change-track"><i style={{ width: `${Math.abs(p.changePct!) / span * 50}%`, left: `${p.changePct! < 0 ? 50 - Math.abs(p.changePct!) / span * 50 : 50}%` }} /><b /></div><strong>{p.changePct! > 0 ? "+" : ""}{p.changePct!.toFixed(1)}%</strong></div>)}</div> : null}

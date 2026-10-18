@@ -3,6 +3,9 @@ import { prisma as adminPrisma, PrismaClient } from "@tymra/db";
 import { spawnSync } from "node:child_process";
 import { assertIsolatedTestEnvironment } from "../../../../../../../test/isolation";
 import { seedSampleQuoteTrendFixture } from "../../../../../../../test/sample-quote-trend-fixtures";
+import { observationCanonicalHash } from "@tymra/domain/observation-wire";
+import { createHash } from "node:crypto";
+import { Prisma } from "@tymra/db";
 
 const isolated = assertIsolatedTestEnvironment(), databaseName = `${isolated.databaseName}_sampletrends${process.pid}`;
 const url = new URL(process.env.DATABASE_URL!); url.pathname = `/${databaseName}`;
@@ -42,5 +45,39 @@ describe("sample quote read chain", () => {
     const result = await readSampleQuoteTrends(filter.data);
     expect(result!.series).toHaveLength(1); expect(result!.series[0].basis).toBe("MEMBER_REFERENCE");
     expect(result!.series[0].nights).toBe(2);
+  });
+  it("replays legacy receipts only for their verified execution and rejects a tampered persisted quote", async () => {
+    const run = await prisma.collectionRun.findFirstOrThrow({ where: { scope: { path: ["memberId"], equals: "trend-fixture-1" } }, orderBy: { finishedAt: "asc" } });
+    const scope = run.scope as { verifiedWire: { wireJson: string } } & Record<string, unknown>;
+    const originalJob = await prisma.job.findUniqueOrThrow({ where: { id: run.jobId! } });
+    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL" }, now); if (!filter.success) throw Error("Invalid test filter");
+    // Completed receipts remain immutable even in fixtures; create later observations instead of editing them.
+    async function observation(index: number, tampered = false, delivered = true) {
+      const at = new Date(run.finishedAt!.getTime() + index * 1000), argusId = `synthetic-legacy-${index}`;
+      const payload = { job_id: argusId, ...JSON.parse(scope.verifiedWire.wireJson) };
+      const wire = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+      const proof = { argusJobId: wire.job_id, resultSha256: wire.result_sha256, canonicalSha256: observationCanonicalHash(wire) };
+      const copied = JSON.parse(JSON.stringify(scope)); copied.verifiedWire = proof;
+      for (const e of copied.evaluated) e.raw.observedAt = at.toISOString();
+      const job = await prisma.job.create({ data: { type: originalJob.type, queueName: originalJob.queueName, status: "SUCCEEDED", maxAttempts: 1,
+        idempotencyKey: argusId, payload: originalJob.payload as Prisma.InputJsonValue } });
+      const created = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: run.dataSourceId, mode: run.mode, status: "SUCCEEDED", isDemo: false,
+        startedAt: at, finishedAt: at, scope: copied } });
+      if (tampered) wire.items[0].result.data.rates[0].totalPriceMinor++;
+      await prisma.argusExecution.create({ data: { orchestrationKey: argusId, parentJobId: job.id, collectionRunId: created.id, dataSourceId: run.dataSourceId,
+        argusJobId: argusId, traceId: argusId, connectorId: "booking-public", workflowId: "collect_rates", requestedUrl: "https://www.booking.com/hotel/nz/synthetic.html",
+        status: "COMPLETED", deadlineAt: at, deliveryVerifiedAt: delivered ? at : null, result: wire } });
+    }
+    await observation(1);
+    const result = await readSampleQuoteTrends(filter.data);
+    expect(result!.series[0].points[1].changePct).toBeCloseTo(10);
+    expect(result!.series[0].feeGroup).toBe("INCLUSIVE");
+    await observation(2, true);
+    const rejected = await readSampleQuoteTrends(filter.data);
+    expect(rejected!.series[0].points).toHaveLength(1);
+    expect(rejected!.failedWindows).toBe(1);
+    expect(rejected!.gaps[0].reasons).toContain("DELIVERY_OR_CAPTURE_FAILED");
+    await observation(3, false, false);
+    expect((await readSampleQuoteTrends(filter.data))!.failedWindows).toBe(1);
   });
 });

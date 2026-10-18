@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSampleQuoteTrends, sampleQuoteCycle, type SampleTrendMember, type SampleTrendRun } from "../src/sample-quote-trends";
+import { buildSampleQuoteTrends, sampleQuoteCycle, sampleReferenceTerms, type SampleTrendMember, type SampleTrendRun } from "../src/sample-quote-trends";
 
 const member: SampleTrendMember = { id: "m1", name: "Sample hotel", source: "booking", sourceListingId: "123", sourceUrl: "https://www.booking.com/hotel/nz/sample.html",
   accommodationType: "HOTEL", locality: "Riccarton", nights: 1, executionHash: "original" };
@@ -42,15 +42,37 @@ describe("sample source-quote trends (separate from formal market comparability)
   });
   it("changed terms, source executor and missing periods do not produce false pairs", () => {
     const a = run("a", "2026-10-16"), b = alterRate(alterRaw(run("b", "2026-10-23"), { mealPlan: "ROOM_ONLY" }), { mealPlan: "ROOM_ONLY" });
-    expect(build([a, b]).series[0].points[1].changePct).toBeNull();
+    expect(build([a, b]).series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
     expect(build([a, run("c", "2026-10-30", 5000)]).series[0].points[1].changePct).toBeNull();
     expect(build([a, run("d", "2026-10-23", 5000, { executor: "managed" })]).includedMembers).toBe(1);
   });
-  it("fees and unknown or contaminated terms block public changes without hiding raw prices", () => {
-    for (const changes of [{ mandatoryFees: "UNKNOWN" }, { mealPlan: "UNKNOWN" }, { cancellationPolicy: "free cancellationGreat breakfast for NZD 38.00 (opt" }]) {
-      const result = build([alterRaw(run("a", "2026-10-16"), changes)]);
-      expect(result.includedMembers).toBe(0); expect(result.pricedMembers).toBe(1); expect(result.recentQuotes[0].included).toBe(false);
-    }
+  it("tracks unique displayed references with missing detail without claiming equivalent fees or meals", () => {
+    const a = alterRaw(run("a", "2026-10-16"), { mandatoryFees: "UNKNOWN" });
+    expect(build([a]).series[0].feeGroup).toBe("UNDISCLOSED");
+    const changes = { mealPlan: "UNKNOWN", cancellationPolicy: "free cancellationGreat breakfast for NZD 38.00 (opt", paymentTerms: "You won't be charged yet" };
+    const b = alterRate(alterRaw(run("b", "2026-10-23"), changes), { ...changes, ratePlanExternalId: null });
+    const result = build([a, b]);
+    expect(result.includedMembers).toBe(1); expect(result.series).toHaveLength(2);
+    expect(result.series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
+    expect(result.recentQuotes.find(q => q.observedOn === "2026-10-23")?.disclosures).toEqual(["MEAL_TERMS_MISSING", "PAYMENT_TERMS_MISSING", "CANCELLATION_TERMS_MISSING"]);
+    expect(sampleReferenceTerms(changes).signature).toContain("UNDISCLOSED");
+  });
+  it("parses Expedia and Trip literal labels without treating extras or a CTA as a meal/payment promise", () => {
+    expect(sampleReferenceTerms({ mealPlan: "No extras", cancellationPolicy: "Non-refundable, + NZ$0.", paymentTerms: "Reserve now, pay later" }))
+      .toMatchObject({ mealGroup: "UNDISCLOSED", disclosures: ["MEAL_TERMS_MISSING"] });
+    expect(sampleReferenceTerms({ mealPlan: "NO_MEAL_DISCLOSED", cancellationPolicy: "NON_REFUNDABLE", paymentTerms: "PAY_NOW" }).signature).toContain("NON_REFUNDABLE");
+    expect(sampleReferenceTerms({ cancellationPolicy: "Fully refundable before Fri, 4 Dec. More about the cancellation policy." }).signature)
+      .toContain("FREE_CANCELLATION_BEFORE:FRI, 4 DEC");
+    const changes = { mealPlan: "NO_MEAL_DISCLOSED", cancellationPolicy: "NON_REFUNDABLE", paymentTerms: "PAY_NOW", rateFence: "PUBLIC_SIGNED_OUT" };
+    const r = alterRate(alterRaw(run("a", "2026-10-16"), changes), changes);
+    expect(build([r]).includedMembers).toBe(1);
+  });
+  it("fee inclusion and unknown policy wording changes cannot create a pair", () => {
+    const a = alterRaw(run("a", "2026-10-16"), { mandatoryFees: "UNKNOWN" });
+    expect(build([a, run("b", "2026-10-23")]).series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
+    const x = { cancellationPolicy: "Unknown package A" }, y = { cancellationPolicy: "Unknown package B" };
+    const result = build([alterRate(alterRaw(run("a", "2026-10-16"), x), x), alterRate(alterRaw(run("b", "2026-10-23"), y), y)]);
+    expect(result.series[0].points[1].changePct).toBeNull();
   });
   it("members-only amounts form independent displayed-reference series without borrowed terms", () => {
     function ref(r: SampleTrendRun) {

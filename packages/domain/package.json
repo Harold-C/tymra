@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./membership": "./src/membership.ts",
     "./member-strategy": "./src/member-strategy.ts",
-    "./nz-time": "./src/nz-time.ts"
+    "./nz-time": "./src/nz-time.ts",
+    "./observation-wire": "./src/observation-wire.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

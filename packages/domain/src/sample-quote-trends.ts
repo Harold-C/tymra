@@ -2,8 +2,10 @@ import { z } from "zod";
 import { addNzCalendarDays, nzDateKey } from "./nz-time";
 import { observationQuoteSchema } from "./market-observation";
 
-export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v1";
+export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v2";
 export type SampleQuoteBasis = "PUBLIC_TOTAL" | "MEMBER_REFERENCE";
+export type SampleMealGroup = "ROOM_ONLY" | "BREAKFAST_INCLUDED" | "NOT_APPLICABLE" | "UNDISCLOSED";
+export type SampleFeeGroup = "INCLUSIVE" | "UNDISCLOSED" | "MEMBER_UNVERIFIED";
 export type SampleTrendMember = {
   id: string; name: string; source: string; sourceListingId: string; sourceUrl: string;
   accommodationType: string; locality: string | null; nights: 1 | 2; executionHash: string;
@@ -34,7 +36,7 @@ const offerSchema = z.object({ sourceListingId: z.string(), unitExternalId: z.st
 type Observation = {
   member: SampleTrendMember; runId: string; observedAt: string; observedOn: string; cycle: string;
   checkIn: string; checkOut: string; leadDays: number; basis: SampleQuoteBasis; amountMinor: number;
-  offerKey: string; terms: string; sourceContext: string;
+  offerKey: string; terms: string; sourceContext: string; mealGroup: SampleMealGroup; feeGroup: SampleFeeGroup;
 };
 export type SampleTrendPoint = {
   cycle: string; observations: number; sampleCount: number; medianTotalMinor: number;
@@ -42,6 +44,7 @@ export type SampleTrendPoint = {
 };
 export type SampleTrendSeries = {
   key: string; basis: SampleQuoteBasis; nights: number; category: string; checkIn: string; checkOut: string;
+  mealGroup: SampleMealGroup; feeGroup: SampleFeeGroup;
   points: SampleTrendPoint[];
 };
 export type SampleQuoteTrendSummary = {
@@ -51,7 +54,8 @@ export type SampleQuoteTrendSummary = {
   series: SampleTrendSeries[]; stayDates: string[]; categories: string[];
   gaps: { memberId: string; name: string; reasons: string[] }[];
   recentQuotes: { name: string; source: string; sourceUrl: string; basis: SampleQuoteBasis; nights: number;
-    checkIn: string; checkOut: string; observedOn: string; leadDays: number; amountMinor: number; included: boolean }[];
+    checkIn: string; checkOut: string; observedOn: string; leadDays: number; amountMinor: number; included: boolean;
+    mealGroup: SampleMealGroup; feeGroup: SampleFeeGroup; disclosures: string[] }[];
   complete: boolean;
 };
 
@@ -65,13 +69,23 @@ function median(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b), half = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[half] : (sorted[half - 1] + sorted[half]) / 2;
 }
-function knownTerms(raw: z.infer<typeof observationQuoteSchema>) {
-  const meal = token(raw.mealPlan ?? ""), pay = token(raw.paymentTerms ?? ""), cancel = text(raw.cancellationPolicy ?? "");
-  const blockers: string[] = [];
-  if (!["ROOM ONLY", "NO MEALS", "NO MEALS INCLUDED", "BREAKFAST INCLUDED", "NOT APPLICABLE"].includes(meal)) blockers.push("MEAL_TERMS_MISSING");
-  if (!/^(?:PAY ONLINE|PAY NOW|PREPAYMENT(?: REQUIRED)?|PAY AT (?:THE )?PROPERTY|NO PREPAYMENT NEEDED|RESERVE NOW, PAY LATER|PAY NOTHING UNTIL [A-Z]+ \d{1,2}, \d{4})$/u.test(pay)) blockers.push("PAYMENT_TERMS_MISSING");
-  if (!/^(?:NON[- ]REFUNDABLE\.?|FREE CANCELLATION BEFORE [A-Za-z]+ \d{1,2}, \d{4}\.?)$/iu.test(cancel)) blockers.push("CANCELLATION_TERMS_MISSING");
-  return { blockers, signature: JSON.stringify([meal, token(cancel), pay]) };
+/** Literal reference labels only: no invented meal inclusion, payment schedule or legal deadline. */
+export function sampleReferenceTerms(raw: { mealPlan?: string | null; paymentTerms?: string | null; cancellationPolicy?: string | null }) {
+  const meal = token(raw.mealPlan ?? ""), pay = token(raw.paymentTerms ?? ""), cancel = token(raw.cancellationPolicy ?? "");
+  const mealGroup: SampleMealGroup = ["ROOM ONLY", "NO MEALS", "NO MEALS INCLUDED"].includes(meal) ? "ROOM_ONLY"
+    : meal === "BREAKFAST INCLUDED" ? "BREAKFAST_INCLUDED" : meal === "NOT APPLICABLE" ? "NOT_APPLICABLE" : "UNDISCLOSED";
+  const payment = /^(?:PAY ONLINE|PAY NOW|PREPAYMENT(?: REQUIRED)?)$/u.test(pay) ? "PREPAYMENT"
+    : /^(?:PAY AT (?:THE )?PROPERTY|NO PREPAYMENT NEEDED)$/u.test(pay) ? "PAY_AT_PROPERTY"
+    : /^(?:RESERVE NOW, PAY LATER|PAY NOTHING UNTIL [A-Z]+ \d{1,2}, \d{4})$/u.test(pay) ? pay : "UNDISCLOSED";
+  // Strip only documented adjoining controls; an optional breakfast is never part of a cancellation policy.
+  const before = /^(?:FREE CANCELLATION|FULLY REFUNDABLE) BEFORE ((?:[A-Z]{3},? )?(?:[A-Z]+ \d{1,2}, \d{4}|\d{1,2} [A-Z]+(?: \d{4})?))(?=\.| CONTACT HOST|$)/u.exec(cancel);
+  const cancellation = /^NON REFUNDABLE(?:\.|, \+ NZ\$0\.)?$/u.test(cancel) ? "NON_REFUNDABLE"
+    : before ? `FREE_CANCELLATION_BEFORE:${before[1]}` : "UNDISCLOSED";
+  const disclosures = [mealGroup === "UNDISCLOSED" ? "MEAL_TERMS_MISSING" : null,
+    payment === "UNDISCLOSED" ? "PAYMENT_TERMS_MISSING" : null, cancellation === "UNDISCLOSED" ? "CANCELLATION_TERMS_MISSING" : null].filter((s): s is string => !!s);
+  // Unknown wording remains in the selector: a changed unparsed policy cannot produce a false pair.
+  return { mealGroup, disclosures, signature: JSON.stringify([mealGroup, cancellation, payment,
+    mealGroup === "UNDISCLOSED" ? meal : null, cancellation === "UNDISCLOSED" ? cancel : null, payment === "UNDISCLOSED" ? pay : null]) };
 }
 function memberLabelIdentity(value: string, amountMinor: number) {
   const match = /^Members-only price(?: NZD ([\d,]+)(?:\.(\d{1,2}))?)?$/iu.exec(text(value));
@@ -137,6 +151,9 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
       const matching = offers.filter(r => r.unitExternalId === raw.sourceUnitKey && r.checkIn === raw.checkIn && r.checkOut === raw.checkOut
         && r.adults === 2 && r.children === 0 && r.units === 1);
       let plan: string | null = null, terms = "";
+      const known = sampleReferenceTerms(raw), mealGroup = known.mealGroup;
+      const disclosures = [...known.disclosures];
+      let feeGroup: SampleFeeGroup = basis === "MEMBER_REFERENCE" ? "MEMBER_UNVERIFIED" : "UNDISCLOSED";
       if (basis === "MEMBER_REFERENCE") {
         const reference = referenceSchema.safeParse((e as { referencePrice?: unknown }).referencePrice);
         if (!reference.success || reference.data.amountMinor !== raw.totalMinor || !memberLabelIdentity(reference.data.sourceText, reference.data.amountMinor)) reasons.push("MEMBER_PLAN_MISSING");
@@ -154,26 +171,28 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
           && r.rateFence === raw.rateFence && r.availabilityStatus === "AVAILABLE");
         const same = sameTerms.filter(r => r.totalPriceMinor === raw.totalMinor);
         const plans = [...new Set(same.flatMap(r => r.ratePlanExternalId ? [r.ratePlanExternalId] : []))];
-        const known = knownTerms(raw); terms = known.signature; reasons.push(...known.blockers);
+        terms = known.signature;
         if (plans.length === 1 && same.every(r => r.ratePlanExternalId === plans[0])) {
           plan = JSON.stringify(["SOURCE_PLAN", plans[0]]);
           if (sameTerms.some(r => r.ratePlanExternalId === plans[0] && r.totalPriceMinor !== raw.totalMinor)) reasons.push("SOURCE_CONFLICT");
-        } else if (plans.length === 0 && same.length && !known.blockers.length && sameTerms.every(r => !r.ratePlanExternalId)
+        } else if (plans.length === 0 && same.length && sameTerms.every(r => !r.ratePlanExternalId)
           && new Set(sameTerms.map(r => r.totalPriceMinor)).size === 1) {
-          // An exact visible condition set is a selector, never a fabricated provider plan ID.
+          // A unique visible quote can be a descriptive reference with undisclosed conditions clearly grouped.
           plan = JSON.stringify(["UNIQUE_VISIBLE_TERMS", known.signature]);
         } else reasons.push("EXACT_RATE_PLAN_MISSING");
-        if (raw.mandatoryFees !== "COMPLETE" || !same.some(r => r.totalIncludesMandatoryFees === true && r.fieldSources.totalIncludesMandatoryFees)) reasons.push("TOTAL_FEES_UNVERIFIED");
-        if (!["PUBLIC", "PARTNER_OFFER"].includes(raw.rateFence ?? "")) reasons.push("PRICE_FENCE_UNSUPPORTED");
+        if (raw.mandatoryFees === "COMPLETE" && same.some(r => r.totalIncludesMandatoryFees === true && r.fieldSources.totalIncludesMandatoryFees)) feeGroup = "INCLUSIVE";
+        else disclosures.push("TOTAL_FEES_UNVERIFIED");
+        if (!["PUBLIC", "PUBLIC_SIGNED_OUT", "PARTNER_OFFER"].includes(raw.rateFence ?? "")) reasons.push("PRICE_FENCE_UNSUPPORTED");
       }
       const valid = !reasons.length && plan !== null;
       recentQuotes.push({ name: m.name, source: m.source, sourceUrl: m.sourceUrl, basis, nights: m.nights, checkIn: raw.checkIn,
-        checkOut: raw.checkOut, observedOn, leadDays: daysBetween(observedOn, raw.checkIn), amountMinor: raw.totalMinor, included: valid });
+        checkOut: raw.checkOut, observedOn, leadDays: daysBetween(observedOn, raw.checkIn), amountMinor: raw.totalMinor, included: valid,
+        mealGroup, feeGroup, disclosures });
       if (!valid) { rejectedOffers++; for (const reason of reasons) addGap(m.id, reason); continue; }
       included.push({ member: m, runId: run.id, observedAt: raw.observedAt, observedOn, cycle, checkIn: raw.checkIn, checkOut: raw.checkOut,
-        leadDays: daysBetween(observedOn, raw.checkIn), basis, amountMinor: raw.totalMinor, terms,
+        leadDays: daysBetween(observedOn, raw.checkIn), basis, amountMinor: raw.totalMinor, terms, mealGroup, feeGroup,
         sourceContext: JSON.stringify([run.executor, run.connectorId, run.connectorVersion]),
-        offerKey: JSON.stringify([m.source, m.sourceListingId, raw.sourceUnitKey, plan, raw.rateFence, terms, raw.nights, raw.adults, raw.children, raw.units, raw.currency]) });
+        offerKey: JSON.stringify([m.source, m.sourceListingId, raw.sourceUnitKey, plan, raw.rateFence, terms, feeGroup, raw.nights, raw.adults, raw.children, raw.units, raw.currency]) });
     }
     if (!windowHasPrice && (filter.basis === "ALL" || run.evaluated.every(e => !["QUOTED", "MEMBER_REFERENCE"].includes(e?.raw?.outcome)))) {
       noPriceWindows++; addGap(m.id, "NO_PRICE_FOR_WINDOW");
@@ -182,7 +201,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
   for (const m of input.members) if (matches(m) && !observed.has(m.id)) addGap(m.id, "NO_COMPLETED_WINDOW");
   const groups = new Map<string, Observation[]>();
   for (const row of included) {
-    const key = JSON.stringify([row.basis, row.member.nights, row.member.accommodationType, row.checkIn, row.checkOut]);
+    const key = JSON.stringify([row.basis, row.member.nights, row.member.accommodationType, row.checkIn, row.checkOut, row.mealGroup, row.feeGroup]);
     if (!groups.has(key)) groups.set(key, []); groups.get(key)!.push(row);
   }
   const series: SampleTrendSeries[] = [];
@@ -206,7 +225,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
         changePct: input.complete === false || !changes.size ? null : median([...changes.values()].map(median)) });
     }
     series.push({ key, basis: sample.basis, nights: sample.member.nights, category: sample.member.accommodationType,
-      checkIn: sample.checkIn, checkOut: sample.checkOut, points });
+      checkIn: sample.checkIn, checkOut: sample.checkOut, mealGroup: sample.mealGroup, feeGroup: sample.feeGroup, points });
   }
   return { version: SAMPLE_QUOTE_TRENDS_VERSION, asOf: input.asOf, filter, startsOn: input.startsOn,
     configuredMembers: input.members.length, observedMembers: observed.size, pricedMembers: priced.size,

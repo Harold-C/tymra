@@ -18,6 +18,8 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   const response = await page.goto(`${path}?${query}`); expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(locale === "zh" ? "基督城样本报价走势" : "Christchurch sample quote trends");
   await expect(page.locator('.sample-trend-section[data-price-basis="PUBLIC_TOTAL"]')).toHaveCount(1);
+  await expect(page.locator('.sample-trend-section[data-meals="BREAKFAST_INCLUDED"][data-fees="INCLUSIVE"]')).toHaveCount(1);
+  await expect(page.locator('.sample-trend-section[data-price-basis="PUBLIC_TOTAL"]')).toContainText(locale === "zh" ? "已注明含必付费用" : "Mandatory fees included");
   await expect(page.locator('.sample-trend-section[data-nights="1"]')).toContainText("+10.0%");
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -28,6 +30,7 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   await page.locator('select[name="nights"]').selectOption("2");
   await Promise.all([page.waitForURL(/basis=MEMBER_REFERENCE/u), page.locator('.sample-trend-filters button[type="submit"]').click()]);
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"][data-nights="2"]')).toHaveCount(1);
+  await expect(page.locator('.sample-trend-section[data-meals="UNDISCLOSED"][data-fees="MEMBER_UNVERIFIED"]')).toHaveCount(1);
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"]')).toContainText("+10.0%");
   await expect(page.locator(".sample-trend-member-note")).toContainText(locale === "zh" ? "不等于含完整费用的可订总价" : "not all-in bookable totals");
   await page.screenshot({ path: testInfo.outputPath(`${locale}-member.png`), fullPage: true });

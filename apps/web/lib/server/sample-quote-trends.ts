@@ -1,6 +1,7 @@
 import { Prisma, prisma } from "@tymra/db";
 import { buildSampleQuoteTrends, nzStartOfDay, addNzCalendarDays, type SampleTrendFilter, type SampleTrendMember, type SampleTrendRun } from "@tymra/domain";
 import { z } from "zod";
+import { projectLegacySampleQuoteWire } from "./sample-quote-wire";
 
 const manifestMember = z.object({ id: z.string(), name: z.string(), source: z.string(), sourceListingId: z.string(), sourceUrl: z.string().url(),
   accommodationType: z.string(), locality: z.string().nullable(), nights: z.union([z.literal(1), z.literal(2)]), labels: z.record(z.unknown()) });
@@ -8,7 +9,7 @@ const controlSchema = z.object({ manifestHash: z.string(), manifest: z.object({ 
   cadence: z.object({ startsOn: z.string().date() }).optional() });
 const lineage = z.object({ manifestHash: z.string().regex(/^[a-f0-9]{64}$/u) });
 const LIMIT = 6000;
-type RunRow = Omit<SampleTrendRun, "finishedAt"> & { finishedAt: Date };
+type RunRow = Omit<SampleTrendRun, "finishedAt"> & { finishedAt: Date; legacyProof: unknown; jobId: string };
 
 /** Only completed selected-plan facts are read. No enqueue, source request, job repair or normalization write. */
 export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
@@ -29,10 +30,10 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
     // Parse the retained verified JSON in PostgreSQL and project only the price facts used by this read model.
     const runs = await transaction.$queryRaw<RunRow[]>(Prisma.sql`
       WITH selected AS MATERIALIZED (
-        SELECT r.id, r.status, r."finishedAt", r.scope->'evaluated' AS evaluated,
+        SELECT r.id, r.status, r."finishedAt", r."jobId", r.scope->'evaluated' AS evaluated,
           j.payload->>'memberId' AS "memberId", j.payload->>'manifestHash' AS "manifestHash",
           j.payload->>'checkIn' AS "checkIn", j.payload->>'unitExternalId' AS "unitExternalId",
-          EXISTS (SELECT 1 FROM "ArgusExecution" e WHERE e."collectionRunId" = r.id AND e."deliveryVerifiedAt" IS NOT NULL) AS delivered
+          EXISTS (SELECT 1 FROM "ArgusExecution" e WHERE e."collectionRunId" = r.id AND e."parentJobId" = j.id AND e."deliveryVerifiedAt" IS NOT NULL) AS delivered
         FROM "Job" j JOIN "CollectionRun" r ON r."jobId" = j.id
         WHERE j."queueName" = 'christchurch-selected-samples' AND j.payload->>'phase' = 'quote'
           AND r.scope->>'selectedPanel' = 'christchurch-selected-samples'
@@ -43,7 +44,10 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
           AND r."finishedAt" < ${nzStartOfDay(addNzCalendarDays(filter.to, 2))}
         ORDER BY r."finishedAt" DESC, r.id DESC LIMIT ${LIMIT + 1}
       )
-      SELECT selected.id, selected.status, selected."finishedAt", evaluated, "memberId", "manifestHash", "checkIn", "unitExternalId", delivered,
+      SELECT selected.id, selected.status, selected."finishedAt", selected."jobId", evaluated, "memberId", "manifestHash", "checkIn", "unitExternalId", delivered,
+        CASE WHEN jsonb_typeof(original.scope->'verifiedWire') = 'object'
+          AND NOT (original.scope->'verifiedWire' ? 'wireJson') AND NOT (original.scope->'verifiedWire' ? 'wireCanonicalSha256')
+          THEN original.scope->'verifiedWire' ELSE NULL END AS "legacyProof",
         wire#>>'{items,0,executor}' AS executor, wire#>>'{items,0,lineage,connector_id}' AS "connectorId",
         wire#>>'{items,0,lineage,connector_version}' AS "connectorVersion",
         COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -60,8 +64,31 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
       FROM selected JOIN "CollectionRun" original ON original.id = selected.id
       LEFT JOIN LATERAL (SELECT CASE WHEN jsonb_typeof(original.scope#>'{verifiedWire,wireJson}') = 'string'
         THEN (original.scope#>>'{verifiedWire,wireJson}')::jsonb ELSE NULL END AS wire OFFSET 0) parsed ON true`);
-    return { members, startsOn: state.cadence?.startsOn ?? state.manifest.start,
-      complete: runs.length <= LIMIT, runs: runs.slice(0, LIMIT).map(r => ({ ...r, finishedAt: r.finishedAt.toISOString() })) };
-  }, { timeout: 15_000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    // Legacy records are bounded and verified one at a time; full evidence is never retained in the response.
+    // Never substitute a different execution, an unverified delivery, or a partial new-format receipt.
+    let legacyCount = 0, complete = runs.length <= LIMIT;
+    const projected: SampleTrendRun[] = [];
+    for (const { legacyProof, jobId, ...r } of runs.slice(0, LIMIT)) {
+      if (legacyProof && r.delivered) {
+        if (++legacyCount > 200) { complete = false; r.delivered = false; }
+        else {
+          const proof = z.object({ argusJobId: z.string() }).safeParse(legacyProof);
+          if (!proof.success) r.delivered = false;
+          else {
+            const rows = await transaction.$queryRaw<{ result: unknown }[]>(Prisma.sql`
+              SELECT e.result FROM "ArgusExecution" e WHERE e."collectionRunId" = ${r.id} AND e."parentJobId" = ${jobId}
+                AND e."argusJobId" = ${proof.data.argusJobId} AND e."deliveryVerifiedAt" IS NOT NULL
+                AND octet_length(e.result::text) <= 16777216 LIMIT 2`);
+            try {
+              if (rows.length !== 1) throw Error("LEGACY_EXECUTION_NOT_UNIQUE_OR_UNVERIFIED");
+              Object.assign(r, projectLegacySampleQuoteWire(rows[0].result, legacyProof));
+            } catch { r.delivered = false; }
+          }
+        }
+      }
+      projected.push({ ...r, finishedAt: r.finishedAt.toISOString() });
+    }
+    return { members, startsOn: state.cadence?.startsOn ?? state.manifest.start, complete, runs: projected };
+  }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   return data ? buildSampleQuoteTrends({ ...data, filter, asOf: now.toISOString() }) : null;
 }
