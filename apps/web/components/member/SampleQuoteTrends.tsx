@@ -51,7 +51,7 @@ const gapCopy: Record<string, [string, string]> = {
   PRICE_FENCE_UNSUPPORTED: ["Offer conditions not supported", "报价条件未支持"], MEAL_TERMS_MISSING: ["Meal terms unknown", "餐食条件未知"],
   PAYMENT_TERMS_MISSING: ["Payment terms unknown", "付款条件未知"], CANCELLATION_TERMS_MISSING: ["Cancellation terms incomplete", "取消条款不完整"],
 };
-const mealCopy: Record<SampleMealGroup, [string, string]> = { ROOM_ONLY: ["Room only", "不含餐"], BREAKFAST_INCLUDED: ["Breakfast included", "含早餐"], NOT_APPLICABLE: ["Meals not applicable", "餐食不适用"], UNDISCLOSED: ["Meals undisclosed", "餐食未披露"] };
+const mealCopy: Record<SampleMealGroup, [string, string]> = { ROOM_ONLY: ["Room only", "不含餐"], BREAKFAST_INCLUDED: ["Breakfast included", "含早餐"], BREAKFAST_EXTRA: ["Breakfast costs extra", "早餐另付"], NOT_APPLICABLE: ["Meals not applicable", "餐食不适用"], UNDISCLOSED: ["Meals undisclosed", "餐食未披露"] };
 const feeCopy: Record<SampleFeeGroup, [string, string]> = { INCLUSIVE: ["Mandatory fees included", "已注明含必付费用"], UNDISCLOSED: ["Fees unverified · displayed amount only", "费用未核实 · 仅显示金额"], MEMBER_UNVERIFIED: ["Member fees unverified", "会员费用未核实"] };
 function groupLabel(meal: SampleMealGroup, fees: SampleFeeGroup, locale: Locale) { const i = locale === "zh" ? 1 : 0; return `${mealCopy[meal][i]} · ${feeCopy[fees][i]}`; }
 function categoryLabel(value: string, locale: Locale) { return categories[value]?.[locale === "zh" ? 1 : 0] ?? value; }

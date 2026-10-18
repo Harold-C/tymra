@@ -15,6 +15,7 @@ export * from "./rate-terms";
 export * from "./fixed-market-panel";
 export * from "./market-observation";
 export * from "./sample-quote-trends";
+export * from "./sample-quote-packages";
 export * from "./market-sample-labels";
 export * from "./service-assurance";
 export * from "./historical-facts";

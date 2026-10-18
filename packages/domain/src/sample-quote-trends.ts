@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { addNzCalendarDays, nzDateKey } from "./nz-time";
 import { observationQuoteSchema } from "./market-observation";
+import { sampleReferencePackageSchema } from "./sample-quote-packages";
 
-export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v2";
+export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v3";
 export type SampleQuoteBasis = "PUBLIC_TOTAL" | "MEMBER_REFERENCE";
-export type SampleMealGroup = "ROOM_ONLY" | "BREAKFAST_INCLUDED" | "NOT_APPLICABLE" | "UNDISCLOSED";
+export type SampleMealGroup = "ROOM_ONLY" | "BREAKFAST_INCLUDED" | "BREAKFAST_EXTRA" | "NOT_APPLICABLE" | "UNDISCLOSED";
 export type SampleFeeGroup = "INCLUSIVE" | "UNDISCLOSED" | "MEMBER_UNVERIFIED";
 export type SampleTrendMember = {
   id: string; name: string; source: string; sourceListingId: string; sourceUrl: string;
@@ -14,6 +15,7 @@ export type SampleTrendRun = {
   id: string; memberId: string; manifestHash: string; checkIn: string; unitExternalId: string | null;
   status: string; finishedAt: string; delivered: boolean; evaluated: unknown;
   rates: unknown; executor: string | null; connectorId: string | null; connectorVersion: string | null;
+  referencePackages?: unknown;
 };
 export const sampleTrendFilterSchema = z.object({
   from: z.string().date(), to: z.string().date(),
@@ -73,7 +75,8 @@ function median(values: number[]) {
 export function sampleReferenceTerms(raw: { mealPlan?: string | null; paymentTerms?: string | null; cancellationPolicy?: string | null }) {
   const meal = token(raw.mealPlan ?? ""), pay = token(raw.paymentTerms ?? ""), cancel = token(raw.cancellationPolicy ?? "");
   const mealGroup: SampleMealGroup = ["ROOM ONLY", "NO MEALS", "NO MEALS INCLUDED"].includes(meal) ? "ROOM_ONLY"
-    : meal === "BREAKFAST INCLUDED" ? "BREAKFAST_INCLUDED" : meal === "NOT APPLICABLE" ? "NOT_APPLICABLE" : "UNDISCLOSED";
+    : meal === "BREAKFAST INCLUDED" ? "BREAKFAST_INCLUDED" : meal === "BREAKFAST EXTRA" ? "BREAKFAST_EXTRA"
+      : meal === "NOT APPLICABLE" ? "NOT_APPLICABLE" : "UNDISCLOSED";
   const payment = /^(?:PAY ONLINE|PAY NOW|PREPAYMENT(?: REQUIRED)?)$/u.test(pay) ? "PREPAYMENT"
     : /^(?:PAY AT (?:THE )?PROPERTY|NO PREPAYMENT NEEDED)$/u.test(pay) ? "PAY_AT_PROPERTY"
     : /^(?:RESERVE NOW, PAY LATER|PAY NOTHING UNTIL [A-Z]+ \d{1,2}, \d{4})$/u.test(pay) ? pay : "UNDISCLOSED";
@@ -131,6 +134,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
     if (run.status !== "SUCCEEDED" || !run.delivered) { failedWindows++; addGap(m.id, "DELIVERY_OR_CAPTURE_FAILED"); continue; }
     if (!Array.isArray(run.evaluated)) { addGap(m.id, "QUOTE_EVIDENCE_MISSING"); continue; }
     const offers = Array.isArray(run.rates) ? run.rates.flatMap(r => { const parsed = offerSchema.safeParse(r); return parsed.success ? [parsed.data] : []; }) : [];
+    const packages = z.array(sampleReferencePackageSchema).max(500).safeParse(run.referencePackages ?? []);
     const observedOn = nzDateKey(new Date(observationTime(run))), cycle = sampleQuoteCycle(input.startsOn, observedOn);
     const usableContext = run.executor === "self_hosted" && run.connectorId === `${m.source}-public` && !!run.connectorVersion;
     let windowHasPrice = false;
@@ -152,8 +156,8 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
       const matching = offers.filter(r => r.unitExternalId === raw.sourceUnitKey && r.checkIn === raw.checkIn && r.checkOut === raw.checkOut
         && r.adults === 2 && r.children === 0 && r.units === 1);
       let plan: string | null = null, terms = "";
-      const known = sampleReferenceTerms(raw), mealGroup = known.mealGroup;
-      const disclosures = [...known.disclosures];
+      let known = sampleReferenceTerms(raw), mealGroup = known.mealGroup;
+      let disclosures = [...known.disclosures];
       let feeGroup: SampleFeeGroup = basis === "MEMBER_REFERENCE" ? "MEMBER_UNVERIFIED" : "UNDISCLOSED";
       if (basis === "MEMBER_REFERENCE") {
         const reference = referenceSchema.safeParse((e as { referencePrice?: unknown }).referencePrice);
@@ -163,8 +167,20 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
           const sameRefs = matching.flatMap(r => r.referencePrices ?? []).filter(r => r.kind === "MEMBER_ONLY" && r.ratePlanExternalId === ref.ratePlanExternalId
             && r.amountMinor === ref.amountMinor && text(r.sourceText) === text(ref.sourceText));
           if (!sameRefs.length) reasons.push("MEMBER_PLAN_MISSING");
-          if (new Set(matching.flatMap(r => r.referencePrices ?? []).filter(r => r.kind === "MEMBER_ONLY" && r.ratePlanExternalId === ref.ratePlanExternalId).map(r => r.amountMinor)).size > 1) reasons.push("SOURCE_CONFLICT");
           plan = ref.ratePlanExternalId; terms = JSON.stringify(["DISPLAYED_MEMBER_REFERENCE", memberLabelIdentity(ref.sourceText, ref.amountMinor)]);
+          if (new Set(matching.flatMap(r => r.referencePrices ?? []).filter(r => r.kind === "MEMBER_ONLY" && r.ratePlanExternalId === ref.ratePlanExternalId).map(r => r.amountMinor)).size > 1
+            || (packages.success && packages.data.some(p => p.unitExternalId === raw.sourceUnitKey && p.ratePlanExternalId === ref.ratePlanExternalId))) {
+            const rows = packages.success ? packages.data.filter(p => p.unitExternalId === raw.sourceUnitKey
+              && p.ratePlanExternalId === ref.ratePlanExternalId && p.amountMinor === ref.amountMinor) : [];
+            const unique = [...new Map(rows.map(p => [JSON.stringify(p), p])).values()];
+            const row = unique.length === 1 ? unique[0] : null;
+            if (!row || !packages.success || packages.data.some(p => p.selector === row.selector && JSON.stringify(p) !== JSON.stringify(row))) reasons.push("SOURCE_CONFLICT");
+            else {
+              known = sampleReferenceTerms(row); mealGroup = known.mealGroup; disclosures = [...known.disclosures];
+              plan = JSON.stringify(["RETAINED_SOURCE_ROW", ref.ratePlanExternalId, row.selector]);
+              terms = JSON.stringify(["DISPLAYED_MEMBER_REFERENCE", memberLabelIdentity(ref.sourceText, ref.amountMinor), known.signature]);
+            }
+          }
         }
       } else {
         const sameTerms = matching.filter(r => token(r.mealPlan) === token(raw.mealPlan ?? "")

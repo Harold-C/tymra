@@ -4,7 +4,7 @@ Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual 
 
 2026-10-18 sample quote trends are a read-only consumer of completed selected-plan facts and
 verified delivery. No new Argus workflow, source capture, execution retry, schedule, quota or roster
-change is introduced. `sample-quote-trends-v2` keeps displayed member references separate from
+change is introduced. `sample-quote-trends-v3` keeps displayed member references separate from
 public/partner displayed totals, groups inclusive/undisclosed fees and disclosed/undisclosed meals,
 and retains RAW_ONLY/unknown browser context and booking-mode facts. Missing fine purchase terms
 are labelled rather than blocking a uniquely verified displayed-price reference. Ambiguous offers,
@@ -15,6 +15,13 @@ observations into certified comparable prices, RateObservation or a regional ind
 only the required rate facts from retained verified wire after a bounded date/row selection; legacy
 wire is verified and projected one at a time within explicit bounds. Full wire,
 HTML, screenshots, credentials and other queues never enter the member response.
+Repeated Booking member plan IDs may be disambiguated using exact row selectors and native
+amounts from the same retained, SHA-verified snapshot. Tymra appends a versioned TransformationRun
+and artifact lineage after reliable delivery/ACK and before completing the run; completed raw runs and original wire remain immutable. Historical
+evidence replay is a separate bounded operation with no source capture. The member read joins the
+derived receipt to its run, member/manifest/unit/date, wire SHA and artifact hash, including after
+the original artifact's normal TTL. Breakfast included and breakfast extra remain separate. This
+does not require a shared Argus release or change public-price, fee or membership eligibility facts.
 
 Selected Booking identities carry the exact frozen dates, two adults, zero children, one room and
 NZD through optional `identity_stay`; physical capacity remains source-derived. Deploy this caller

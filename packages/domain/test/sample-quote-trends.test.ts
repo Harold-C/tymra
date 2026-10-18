@@ -88,6 +88,34 @@ describe("sample source-quote trends (separate from formal market comparability)
     expect(build([ref(run("a", "2026-10-16")), ref(run("b", "2026-10-23"))]).series[0].points[1].changePct).toBe(0);
     expect(build([alterRate(ref(run("a", "2026-10-16")), { referencePrices: [] })]).includedMembers).toBe(0);
   });
+  it("reused member plan IDs need exact retained row packages; changing prices still pair the same package", () => {
+    function memberRun(id: string, day: string, increase = 0) {
+      const r = run(id, day), refs = [9000 + increase, 12000 + increase].map(amountMinor => ({ kind: "MEMBER_ONLY", amountMinor,
+        ratePlanExternalId: "reused-plan", sourceText: `Members-only price NZD ${amountMinor / 100}` }));
+      const first = (r.evaluated as { raw: object }[])[0];
+      r.evaluated = refs.map(ref => ({ raw: { ...first.raw, totalMinor: ref.amountMinor, outcome: "MEMBER_REFERENCE", mandatoryFees: "UNKNOWN",
+        rateFence: "MEMBER_ONLY", mealPlan: "UNKNOWN", paymentTerms: "UNKNOWN", cancellationPolicy: "UNKNOWN" }, referencePrice: ref }));
+      r.rates = [{ ...(r.rates as object[])[0], referencePrices: refs }];
+      r.referencePackages = refs.map((ref, i) => ({ amountMinor: ref.amountMinor, unitExternalId: "room1", ratePlanExternalId: ref.ratePlanExternalId,
+        selector: `source-row-${i}`, mealPlan: i === 0 ? "BREAKFAST_EXTRA" : "BREAKFAST_INCLUDED",
+        paymentTerms: "Pay online", cancellationPolicy: "Non-refundable" }));
+      return r;
+    }
+    const a = memberRun("a", "2026-10-16"), b = memberRun("b", "2026-10-23", 900);
+    expect(build([{ ...a, referencePackages: [] }]).includedMembers).toBe(0);
+    const result = build([a, b]);
+    expect(result.includedMembers).toBe(1); expect(result.series).toHaveLength(2);
+    expect(result.series.map(s => s.mealGroup).sort()).toEqual(["BREAKFAST_EXTRA", "BREAKFAST_INCLUDED"]);
+    expect(result.series.find(s => s.mealGroup === "BREAKFAST_EXTRA")!.points[1].changePct).toBeCloseTo(10);
+    expect(result.series.find(s => s.mealGroup === "BREAKFAST_INCLUDED")!.points[1].changePct).toBeCloseTo(7.5);
+    const single = { ...b, evaluated: (b.evaluated as unknown[]).slice(0, 1), referencePackages: (b.referencePackages as unknown[]).slice(0, 1),
+      rates: [{ ...(b.rates as { referencePrices: unknown[] }[])[0], referencePrices: (b.rates as { referencePrices: unknown[] }[])[0].referencePrices.slice(0, 1) }] };
+    expect(build([a, single]).series.find(s => s.mealGroup === "BREAKFAST_EXTRA")!.points[1].changePct).toBeCloseTo(10);
+    const conflict = (a.referencePackages as object[]).map(p => ({ ...p, selector: "same-row" }));
+    expect(build([{ ...a, referencePackages: conflict }]).includedMembers).toBe(0);
+    const wrongRoom = (a.referencePackages as object[]).map(p => ({ ...p, unitExternalId: "other-room" }));
+    expect(build([{ ...a, referencePackages: wrongRoom }]).includedMembers).toBe(0);
+  });
   it("does not compare different stay dates at a month boundary or mix actual one/two night packages", () => {
     const other = { ...member, id: "m2", nights: 2 as const };
     const two = alterRate(alterRaw(run("b", "2026-10-23", 12000, { memberId: "m2" }), { candidateId: "m2", nights: 2, checkOut: "2026-12-03" }), { checkOut: "2026-12-03" });

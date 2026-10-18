@@ -1,5 +1,5 @@
 import { Prisma, prisma } from "@tymra/db";
-import { buildSampleQuoteTrends, nzStartOfDay, addNzCalendarDays, type SampleTrendFilter, type SampleTrendMember, type SampleTrendRun } from "@tymra/domain";
+import { buildSampleQuoteTrends, SAMPLE_QUOTE_PACKAGE_VERSION, nzStartOfDay, addNzCalendarDays, type SampleTrendFilter, type SampleTrendMember, type SampleTrendRun } from "@tymra/domain";
 import { z } from "zod";
 import { projectLegacySampleQuoteWire } from "./sample-quote-wire";
 
@@ -50,6 +50,17 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
           THEN original.scope->'verifiedWire' ELSE NULL END AS "legacyProof",
         wire#>>'{items,0,executor}' AS executor, wire#>>'{items,0,lineage,connector_id}' AS "connectorId",
         wire#>>'{items,0,lineage,connector_version}' AS "connectorVersion",
+        (SELECT CASE WHEN count(*) = 1 THEN jsonb_agg(t.metadata->'packages')->0 ELSE '[]'::jsonb END
+          FROM "TransformationRun" t JOIN "RawArtifact" a ON a.id = t.metadata->>'artifactId'
+          WHERE t."collectionRunId" = selected.id AND t."transformationType" = 'SAMPLE_REFERENCE_PACKAGES'
+            AND t."transformationVersion" = ${SAMPLE_QUOTE_PACKAGE_VERSION} AND t.status = 'COMPLETED'
+            AND a."collectionRunId" = selected.id AND a."artifactType" = 'HTML' AND NOT a."containsSensitiveData"
+            AND a."contentHash" = t.metadata->>'artifactHash'
+            AND t.metadata->>'memberId' = selected."memberId" AND t.metadata->>'manifestHash' = selected."manifestHash"
+            AND t.metadata->>'unitExternalId' = selected."unitExternalId" AND t.metadata->>'checkIn' = selected."checkIn"
+            AND t.metadata->>'resultSha256' = original.scope#>>'{verifiedWire,resultSha256}'
+            AND EXISTS (SELECT 1 FROM "LineageEdge" edge WHERE edge."transformationRunId" = t.id
+              AND edge."inputType" = 'RAW_ARTIFACT' AND edge."inputId" = a.id AND edge."evidenceHash" = a."contentHash")) AS "referencePackages",
         COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'sourceListingId', o->'sourceListingId', 'unitExternalId', o->'unitExternalId',
           'ratePlanExternalId', o->'ratePlanExternalId', 'checkIn', o->'checkIn', 'checkOut', o->'checkOut',

@@ -1,4 +1,4 @@
-import { prisma, Prisma, type Job } from "@tymra/db";
+import { prisma, Prisma, retainSampleReferencePackages, type Job } from "@tymra/db";
 import type { Environment } from "@tymra/config";
 import { addNzCalendarDays, nzStartOfDay, nzDateKey, observationCandidateSchema } from "@tymra/domain";
 import { otaResolveListingExtractionSchema, otaCollectRatesExtractionSchema } from "@tymra/providers/ota-argus-contracts";
@@ -187,6 +187,7 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     const retainedRun = await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } });
     await prisma.collectionRun.update({ where: { id: run.id }, data: { scope: json({ ...(retainedRun.scope as object), evaluated, captureReserved: true }) } });
     await acknowledgePersistedArgusResults(environment, job.id);
+    if (task.phase === "quote" && member.source === "booking") await retainSampleReferencePackages(run.id, member.sourceUrl, member.nights);
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", successCount: 1, finishedAt: new Date() } });
   } catch (error) {
     if (error instanceof DeferredJobError) throw error;
