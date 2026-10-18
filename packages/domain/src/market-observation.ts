@@ -6,7 +6,7 @@ const text = z.string().trim().min(1);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   try { addNzCalendarDays(value, 0); return true; } catch { return false; }
 }, "Invalid NZ calendar date");
-export const observationNightsSchema = z.union([z.literal(1), z.literal(2)]);
+export const observationNightsSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 export const observationCandidateSchema = z.object({
   id: text, name: text, source: text, sourceListingId: text, sourceUrl: z.string().url(),
   market: z.literal("Christchurch City"), nights: observationNightsSchema,
@@ -87,7 +87,8 @@ export function evaluateObservationQuote(candidateInput: ObservationCandidate, q
 
 export const observationRosterSchema = z.object({
   version: z.literal("christchurch-observation-roster-v1"), preparedOn: date,
-  evidenceAsOf: date, proposedStart: date, candidates: z.array(observationCandidateSchema).min(1),
+  evidenceAsOf: date, proposedStart: date, candidates: z.array(observationCandidateSchema).min(1)
+    .refine(members => members.every(member => member.nights <= 2), "Legacy four-week planner supports one/two-night stays only"),
 }).strict().superRefine((roster, context) => {
   for (const keys of [roster.candidates.map(c => c.id), roster.candidates.map(c => `${c.source}:${c.sourceListingId}`),
     roster.candidates.flatMap(c => c.geography.physicalUnitKey ? [c.geography.physicalUnitKey] : []),

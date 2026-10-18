@@ -1,5 +1,19 @@
 # Argus browser collection boundary
 
+2026-10-19 approved reviewed-window extension (Tymra only): ten same-property members can receive
+`reviewed-stay-windows-v1` labels containing two ordered day offsets from the cycle's frozen Tuesday,
+review date and source-evidence SHA. Offsets are explicit, not derived from each capture's availability.
+They stay fixed throughout the seven-day cycle and shift with its starting-month anchors; past arrivals
+are not dispatched. The other 58 members retain original task keys, identities and completion history.
+French Bay's reviewed group is two nights, Cosy is a separate three-night group, and Southwark's
+reviewed alternate Deluxe Apartment starts a new unit baseline. All 68 property seats remain.
+Applying the bounded operator upgrade requires idle selected work and a fresh state hash, writes a
+signed audit, clears only the ten changed bindings and holds them pending individual identity and both
+new windows' original-source review. Old jobs/runs remain immutable. Source blocks/no retry and shared
+work priority remain; rollback restores compatible controls before the old image, retaining later
+unrelated holds and every job. No new schedule, source count quota, automatic fallback or shared Argus
+release is introduced. Actual release and source acceptance are tracked separately in traceability.
+
 Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual acceptance remains separate)
 
 2026-10-18 sample quote trends are a read-only consumer of completed selected-plan facts and

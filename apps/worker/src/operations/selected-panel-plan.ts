@@ -13,7 +13,7 @@ const source = z.enum(["booking", "expedia", "airbnb", "bookabach", "agoda", "tr
 const text = z.string().trim().min(1);
 export const selectedMemberSchema = z.object({
   id: text, name: text, source, sourceListingId: text, sourceUrl: z.string().url(),
-  locality: text.nullable(), accommodationType: text, nights: z.union([z.literal(1), z.literal(2)]),
+  locality: text.nullable(), accommodationType: text, nights: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   expectedUnitId: text.nullable(), expectedUnitName: text.nullable(),
   entireBedrooms: z.number().int().positive().nullable(),
   signature: z.object({ areaSquareMetres: z.number().positive(), capacity: z.number().int().positive(), bedType: text }).strict().optional(),
@@ -36,6 +36,7 @@ export const selectedManifestSchema = z.object({
   if (new Set(groups).size !== groups.length) invalid("Possible aliases cannot occupy two active seats");
   const hosts: Record<string, string[]> = { booking: ["www.booking.com"], expedia: ["www.expedia.co.nz"], airbnb: ["www.airbnb.com", "www.airbnb.co.nz"], bookabach: ["www.bookabach.co.nz"], agoda: ["www.agoda.com"], trip: ["nz.trip.com", "www.trip.com"] };
   for (const c of m.members) {
+    if (c.labels.reviewedWindowProfile !== undefined && !selectedWindowProfileSchema.safeParse(c.labels.reviewedWindowProfile).success) invalid("Invalid reviewed stay windows");
     const u = new URL(c.sourceUrl);
     if (u.protocol !== "https:" || u.username || u.password || !hosts[c.source].includes(u.hostname)) invalid("Unapproved source URL");
     if (c.enabled && (c.holdReason || (!c.expectedUnitId && !c.expectedUnitName && !c.entireBedrooms))) invalid("Unresolved target cannot execute");
@@ -82,6 +83,16 @@ export function selectedAnchors(now: Date): [string, string] {
   const base = addNzCalendarDays(monthStart, 60);
   return [2, 6].map(day => addNzCalendarDays(base, (day - nzDayOfWeek(base) + 7) % 7)) as [string, string];
 }
+export const selectedWindowProfileSchema = z.object({
+  version: z.literal("reviewed-stay-windows-v1"), offsets: z.tuple([z.number().int().min(-35).max(21), z.number().int().min(-35).max(21)]),
+  reviewedOn: z.string().date(), evidenceSha256: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict().refine(p => p.offsets[0] < p.offsets[1], "Reviewed windows must be distinct and ordered");
+/** Explicit reviewed offsets, never a search-for-any-price or automatic fallback. */
+export function selectedMemberAnchors(member: SelectedMember, cycle: { anchors: string[] }): string[] {
+  if (member.labels.reviewedWindowProfile === undefined) return cycle.anchors;
+  const profile = selectedWindowProfileSchema.parse(member.labels.reviewedWindowProfile);
+  return profile.offsets.map(offset => addNzCalendarDays(cycle.anchors[0], offset));
+}
 export function selectedWeek(now: Date) {
   const today = nzDate(now);
   return addNzCalendarDays(today, -((nzDayOfWeek(today) + 6) % 7));
@@ -107,10 +118,12 @@ export function selectedDailyLimit(_state: z.infer<typeof selectedStateSchema>, 
 /** Least recently priced first, stable manifest order for ties; no all-members preflight barrier. */
 export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, progress: MemberProgress[], used: Set<string>, now: Date): SelectedTask[] {
   if (nzDate(now) < state.manifest.start) return [];
-  const { anchors, round } = selectedCycle(state, now);
+  const cycle = selectedCycle(state, now), { round } = cycle;
   const members = state.manifest.members.filter(c => c.enabled && !state.held.some(h => h.memberId === c.id) && !state.stoppedSources.includes(c.source));
   members.sort((a, b) => (progress.find(p => p.memberId === a.id)?.lastQuoteAt?.getTime() ?? 0) - (progress.find(p => p.memberId === b.id)?.lastQuoteAt?.getTime() ?? 0));
   return members.flatMap(c => {
+    const anchors = selectedMemberAnchors(c, cycle).filter(day => day > nzDate(now));
+    if (!anchors.length) return [];
     const p = progress.find(p => p.memberId === c.id);
     const common = { selectedPanel: SELECTED_PANEL_KEY as typeof SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, c), memberId: c.id, sourceId: c.source };
     const fresh = p?.identityAt && p.unitExternalId && now.getTime() - p.identityAt.getTime() < state.manifest.identityTtlDays * 86_400_000;

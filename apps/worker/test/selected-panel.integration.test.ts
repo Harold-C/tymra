@@ -16,6 +16,7 @@ vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@
 const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await import("../src/operations/selected-panel-production");
 const { authorizeSelectedManualReview, closeSelectedManualReview } = await import("../src/operations/selected-panel-review");
 const { applySelectedReplacement, rollbackSelectedReplacement } = await import("../src/operations/selected-panel-replacement-production");
+const { applySelectedWindowUpgrade, rollbackSelectedWindowUpgrade } = await import("../src/operations/selected-panel-window-upgrade-production");
 const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
 async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
@@ -48,6 +49,32 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("audits reviewed three-night windows, rejects an old anchor, and restores old controls without deleting new history", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-window-review-signing-secret");
+    vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
+    try {
+      const state = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      const upgrade = await applySelectedWindowUpgrade({ expectedStateHash: selectedHash(state), changes: [{ memberId: "sample0", nights: 3,
+        profile: { version: "reviewed-stay-windows-v1", offsets: [-28, -24], reviewedOn: "2026-10-19", evidenceSha256: "a".repeat(64) } }] });
+      const next = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      expect(next.manifest.members).toHaveLength(3); expect(next.held).toEqual([{ memberId: "sample0", reason: "REVIEWED_WINDOW_ACCEPTANCE_REQUIRED" }]);
+      const input = { batch: "window-upgrade-test", memberId: "sample0", phase: "identity" as const, checkIn: "2026-11-03",
+        unitExternalId: null, manifestHash: next.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() };
+      await expect(authorizeSelectedManualReview({ ...input, checkIn: "2026-12-01" }, now)).rejects.toThrow("MANUAL_REVIEW_SCOPE_CHANGED");
+      const granted = await authorizeSelectedManualReview(input, now); expect(granted.status).toBe("queued");
+      const job = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in granted ? granted.jobId : "" } }), task = selectedJobSchema.parse(job.payload);
+      const capture = selectedInput(next.manifest.members[0], task, job.id);
+      expect(capture.identityStay).toMatchObject({ checkIn: "2026-11-03", checkOut: "2026-11-06" });
+      await expect(selectedCapturePermission(job, capture, source.id, now)).resolves.toBeUndefined();
+      const finished = await prisma.job.update({ where: { id: job.id }, data: { status: "DEAD_LETTER" } });
+      await rollbackSelectedWindowUpgrade(upgrade.auditId, selectedHash(next));
+      expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload)).toEqual(state);
+      expect(await prisma.job.findUniqueOrThrow({ where: { id: job.id } })).toEqual(finished);
+      expect(await prisma.auditEvent.count({ where: { eventType: { in: ["selected_windows_upgraded", "selected_windows_rolled_back"] } } })).toBe(2);
+      expect(await prisma.argusExecution.count()).toBe(0);
+    } finally { vi.unstubAllEnvs(); }
+  });
   it("replaces a held seat transactionally without repeating other completed windows, and restores controls before an image rollback", async () => {
     vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
     vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");

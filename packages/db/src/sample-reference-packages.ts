@@ -6,7 +6,7 @@ import { verifiedObservationWire } from "@tymra/domain/observation-wire";
 import { prisma } from "./index";
 
 /** Append a durable derived receipt; never edits a completed run, raw evidence, schedule, or formal price. */
-export async function retainSampleReferencePackages(runId: string, sourceUrl: string, nights: 1 | 2, database = prisma) {
+export async function retainSampleReferencePackages(runId: string, sourceUrl: string, nights: 1 | 2 | 3, database = prisma) {
   const run = await database.collectionRun.findUniqueOrThrow({ where: { id: runId }, include: { job: true, dataSource: true } });
   const parsed = samplePackageScopeSchema.safeParse(run.scope);
   if (!parsed.success || run.dataSource.key !== "booking" || !run.job || run.job.queueName !== "christchurch-selected-samples") return null;

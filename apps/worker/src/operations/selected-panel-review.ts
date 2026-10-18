@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { prisma, Prisma, type Job } from "@tymra/db";
 import { nzDateKey } from "@tymra/domain";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedCycle, selectedHash, selectedMemberExecutionHash, type SelectedTask } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedCycle, selectedMemberAnchors, selectedHash, selectedMemberExecutionHash, type SelectedTask } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const eventType = "selected_manual_acceptance_authorized";
@@ -28,7 +28,7 @@ export async function authorizeSelectedManualReview(input: {
     const held = state.held.find(h => h.memberId === input.memberId);
     const cycle = selectedCycle(state, now);
     if (!control.enabled || state.manifestHash !== input.manifestHash || !member?.enabled || !held
-      || state.stoppedSources.includes(member.source) || !cycle.anchors.includes(input.checkIn)) throw Error("MANUAL_REVIEW_SCOPE_CHANGED");
+      || state.stoppedSources.includes(member.source) || !selectedMemberAnchors(member, cycle).includes(input.checkIn)) throw Error("MANUAL_REVIEW_SCOPE_CHANGED");
     const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, member),
       memberId: member.id, sourceId: member.source, phase: input.phase, checkIn: input.checkIn,
       unitExternalId: input.unitExternalId, round: input.phase === "identity" ? nzDateKey(now) : cycle.round });
@@ -83,7 +83,7 @@ export async function closeSelectedManualReview(batch: string, memberId: string,
     const jobs = (await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, idempotencyKey: { endsWith: marker + batch } } }))
       .filter(j => (j.payload as { memberId: string }).memberId === memberId);
     const tasks = jobs.map(j => selectedJobSchema.parse(j.payload));
-    const anchors = selectedCycle(state, new Date()).anchors;
+    const anchors = member ? selectedMemberAnchors(member, selectedCycle(state, new Date())) : [];
     if (jobs.length !== 3 || jobs.some(j => j.status !== "SUCCEEDED" || j.maxAttempts !== 1)
       || tasks.some(t => t.manifestHash !== selectedMemberExecutionHash(state, member) || t.memberId !== memberId)
       || jobs.some(j => selectedManualBatch(j) !== batch)

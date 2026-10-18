@@ -7,7 +7,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
 import { assertSelectedManualReview, selectedManualBatch } from "./selected-panel-review";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedMemberAnchors, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
@@ -114,7 +114,7 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
     || parent.maxAttempts !== 1 || (!manualBatch && parent.idempotencyKey !== selectedTaskKey(task)) || task.sourceId !== member.source || parent.sourceId !== member.source
     || nzDateKey(now) < state.manifest.start || task.checkIn <= nzDateKey(now)
-    || !selectedCycle(state, parent.createdAt).anchors.includes(task.checkIn)
+    || !selectedMemberAnchors(member, selectedCycle(state, parent.createdAt)).includes(task.checkIn)
     || task.round !== (task.phase === "quote" ? selectedCycle(state, parent.createdAt).round : nzDateKey(parent.createdAt))) throw Error("SELECTED_PANEL_PERMISSION_CLOSED");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: dataSourceId } });
   if (source.key !== member.source || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1
