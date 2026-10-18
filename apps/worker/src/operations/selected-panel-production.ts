@@ -7,7 +7,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
 import { assertSelectedManualReview, selectedManualBatch } from "./selected-panel-review";
-import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedMemberAnchors, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
+import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedMemberAnchors, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, selectedWindowTime, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
@@ -16,7 +16,7 @@ async function selectedProgressRuns(client: Pick<Prisma.TransactionClient, "$que
   return client.$queryRaw<Pick<CollectionRun, "id" | "jobId" | "dataSourceId" | "finishedAt" | "scope">[]>(Prisma.sql`
     SELECT id, "jobId", "dataSourceId", "finishedAt", jsonb_build_object(
       'selectedPanel', scope->'selectedPanel', 'manifestHash', scope->'manifestHash', 'memberId', scope->'memberId',
-      'phase', scope->'phase', 'task', scope->'task',
+      'phase', scope->'phase', 'task', scope->'task', 'observedAt', scope#>'{evaluated,0,raw,observedAt}',
       'evaluated', CASE WHEN scope->>'phase' = 'identity' THEN scope->'evaluated' ELSE NULL END) AS scope
     FROM "CollectionRun" WHERE status = 'SUCCEEDED' AND scope->>'selectedPanel' = ${SELECTED_PANEL_KEY}
       AND "finishedAt" >= ${new Date(now.getTime() - 28 * 86_400_000)} ORDER BY "finishedAt" DESC`);
@@ -94,8 +94,8 @@ export async function enqueueSelectedPanel(now = new Date()) {
       const prior = state.bindings.find(b => b.memberId === member.id);
       return { memberId: member.id, lastQuoteAt: quote?.finishedAt ?? null, identityAt: identity?.finishedAt ?? (prior ? new Date(prior.verifiedAt) : null),
         unitExternalId: (identity?.scope as { evaluated?: { externalId?: string } } | undefined)?.evaluated?.externalId ?? prior?.unitExternalId ?? null,
-        windows: own.flatMap(r => { const scope = r.scope as { phase?: string; task?: SelectedTask }; return scope.phase === "quote" && r.finishedAt && scope.task
-          ? [{ checkIn: scope.task.checkIn, finishedAt: r.finishedAt }] : []; }) };
+        windows: own.flatMap(r => { const scope = r.scope as { phase?: string; task?: SelectedTask; observedAt?: unknown }; return scope.phase === "quote" && r.finishedAt && scope.task
+          ? [{ checkIn: scope.task.checkIn, finishedAt: selectedWindowTime(r.finishedAt, scope.observedAt, state.cadence?.version === "dual-window-daily-v1") }] : []; }) };
     });
     const tasks = nextSelectedTasks(state, progress, new Set(matching.map(j => j.idempotencyKey!)), now);
     const sources = await tx.dataSource.findMany({ where: { key: { in: [...new Set(tasks.map(t => t.sourceId))] } } });

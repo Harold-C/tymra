@@ -105,6 +105,10 @@ export function selectedListingId(c: SelectedMember) {
 
 export type MemberProgress = { memberId: string; lastQuoteAt: Date | null; identityAt: Date | null; unitExternalId: string | null;
   windows?: { checkIn: string; finishedAt: Date }[] };
+/** A midnight delivery delay must not consume the next observation date's window. */
+export function selectedWindowTime(finishedAt: Date, observedAt: unknown, daily: boolean): Date {
+  return daily && typeof observedAt === "string" && Number.isFinite(Date.parse(observedAt)) ? new Date(observedAt) : finishedAt;
+}
 export function selectedCycle(state: z.infer<typeof selectedStateSchema>, now: Date) {
   if (!state.cadence) return { round: selectedWeek(now), anchors: selectedAnchors(now) };
   const days = Math.floor((Date.parse(nzDate(now)) - Date.parse(state.cadence.startsOn)) / 86_400_000);

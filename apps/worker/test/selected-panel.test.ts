@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@tymra/db", () => ({ prisma: {}, Prisma: {} }));
 import { selectedFixture, selectedMember } from "./selected-panel-fixtures";
-import { selectedAnchors, selectedHash, selectedManifestSchema, selectedStateSchema, selectedTaskKey, nextSelectedTasks, selectedJobSchema, selectedCycle, selectedDailyLimit, type MemberProgress } from "../src/operations/selected-panel-plan";
+import { selectedAnchors, selectedHash, selectedManifestSchema, selectedStateSchema, selectedTaskKey, nextSelectedTasks, selectedJobSchema, selectedCycle, selectedDailyLimit, selectedWindowTime, type MemberProgress } from "../src/operations/selected-panel-plan";
 import { resolveSelectedUnit, selectedInput } from "../src/operations/selected-panel-production";
 import { prepareSelectedDaily } from "../src/operations/selected-panel-daily";
 const now = new Date("2026-10-16T06:00:00Z");
@@ -31,6 +31,12 @@ describe("selected sample formal collection", () => {
     expect(nextSelectedTasks(s, progress, used, new Date("2026-10-26T00:00:00Z")).filter(t => t.memberId === "sample0")).toHaveLength(0);
     expect(() => prepareSelectedDaily(before, { expectedStateHash: "f".repeat(64), effectiveOn: "2026-10-19" }, now)).toThrow();
     expect(() => prepareSelectedDaily(before, { expectedStateHash: selectedHash(before), effectiveOn: "2026-10-15" }, now)).toThrow();
+  });
+  it("uses the actual NZ observation date when a delivery crosses midnight", () => {
+    const finished = new Date("2026-10-19T11:00:10Z"), observed = "2026-10-19T10:59:50Z";
+    expect(selectedWindowTime(finished, observed, true).toISOString()).toBe(observed.replace("Z", ".000Z"));
+    expect(selectedWindowTime(finished, observed, false)).toBe(finished);
+    expect(selectedWindowTime(finished, "unknown", true)).toBe(finished);
   });
   it("finishes the missing exact window before starting a fresh pair, including the Monday boundary", () => {
     const state = upgraded();
