@@ -52,7 +52,7 @@ describe("selected collection isolated persistence", () => {
     vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
     vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
     try {
-      const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "MISSING_UNIT" }];
+      const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "MISSING_UNIT" }, { memberId: "sample2", reason: "UNRELATED_HOLD" }];
       await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
       const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
       for (const i of [1, 2]) for (const [phase, checkIn] of [["identity", "2026-12-01"], ["quote", "2026-12-01"], ["quote", "2026-12-05"]] as const) {
@@ -72,10 +72,20 @@ describe("selected collection isolated persistence", () => {
       expect(await prisma.job.findMany({ orderBy: { id: "asc" } })).toEqual(jobs);
       expect(await prisma.collectionRun.findMany({ orderBy: { id: "asc" } })).toEqual(runs);
       const updated = selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload);
+      const grant = await authorizeSelectedManualReview({ batch: "replacement-lineage-test", memberId: "sample2", phase: "identity", checkIn: "2026-12-01",
+        unitExternalId: null, manifestHash: updated.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() }, now);
+      expect(grant.status).toBe("queued");
+      const manualJob = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in grant ? grant.jobId : "" } });
+      const manualTask = selectedJobSchema.parse(manualJob.payload);
+      expect(manualTask.manifestHash).toBe(state.manifestHash);
+      await expect(selectedCapturePermission(manualJob, selectedInput(updated.manifest.members[2], manualTask, manualJob.id), source.id, now)).resolves.toBeUndefined();
+      const finishedManual = await prisma.job.update({ where: { id: manualJob.id }, data: { status: "DEAD_LETTER" } });
       await expect(applySelectedReplacement({ expectedStateHash: selectedHash(state), changes: [] })).rejects.toThrow();
       await expect(rollbackSelectedReplacement(result.auditId, selectedHash(updated))).resolves.toMatchObject({ status: "passed", manifestHash: state.manifestHash, sourceCaptures: 0 });
       expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload)).toEqual(state);
-      expect(await prisma.job.findMany({ orderBy: { id: "asc" } })).toEqual(jobs);
+      expect(await prisma.job.findMany({ where: { id: { in: jobs.map(j => j.id) } }, orderBy: { id: "asc" } })).toEqual(jobs);
+      expect(await prisma.job.findUniqueOrThrow({ where: { id: manualJob.id } })).toEqual(finishedManual);
+      expect(await prisma.job.count()).toBe(jobs.length + 1);
       expect(await prisma.collectionRun.findMany({ orderBy: { id: "asc" } })).toEqual(runs);
       expect(await prisma.auditEvent.count({ where: { eventType: { in: ["selected_members_replaced", "selected_members_replacement_rolled_back"] } } })).toBe(2);
     } finally { vi.unstubAllEnvs(); }

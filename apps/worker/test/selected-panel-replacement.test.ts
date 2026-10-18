@@ -57,8 +57,21 @@ describe("reviewed seat replacement preserves other collection history", () => {
     next.held.push({ memberId: "sample2", reason: "LATER_SOURCE_FAILURE" }); next.stoppedSources = ["trip"];
     const recovered = prepareSelectedReplacementRollback(next, state, next.manifestHash);
     expect(recovered.manifest).toEqual(state.manifest);
-    expect(recovered.held).toEqual([{ memberId: "sample2", reason: "LATER_SOURCE_FAILURE" }, ...state.held]);
+    expect(recovered.held).toEqual([...state.held, { memberId: "sample2", reason: "LATER_SOURCE_FAILURE" }]);
     expect(recovered.stoppedSources).toEqual(["trip"]);
     expect(() => prepareSelectedReplacementRollback(next, state, "f".repeat(64))).toThrow("REPLACEMENT_ROLLBACK_MANIFEST_CHANGED");
+  });
+  it("recovers the exact prior control fingerprint with several holds and bindings, while retaining later changes", () => {
+    const { state, request } = fixture();
+    state.held.push({ memberId: "sample1", reason: "UNRELATED_HOLD" });
+    state.bindings = [0, 1].map(i => ({ memberId: `sample${i}`, unitExternalId: `unit${i}`, sourceRunId: `run${i}`, verifiedAt: now.toISOString() }));
+    request.expectedStateHash = selectedHash(state);
+    const next = prepareSelectedReplacement(state, request).state;
+    expect(prepareSelectedReplacementRollback(next, state, next.manifestHash)).toEqual(state);
+    next.held[0].reason = "LATER_UNRELATED_REASON";
+    next.bindings[0].sourceRunId = "later-verified-run";
+    const recovered = prepareSelectedReplacementRollback(next, state, next.manifestHash);
+    expect(recovered.held).toEqual([state.held[0], { memberId: "sample1", reason: "LATER_UNRELATED_REASON" }]);
+    expect(recovered.bindings).toEqual([state.bindings[0], { ...state.bindings[1], sourceRunId: "later-verified-run" }]);
   });
 });

@@ -47,8 +47,17 @@ export function prepareSelectedReplacementRollback(currentState: unknown, before
     && selectedMemberExecutionHash(current, m) === selectedMemberExecutionHash(before, old)));
   const keep = new Set(unchanged.map(m => m.id));
   if (selectedHash(current.cadence ?? null) !== selectedHash(before.cadence ?? null)) throw Error("REPLACEMENT_ROLLBACK_CADENCE_CHANGED");
+  const restoreRows = <T extends { memberId: string }>(prior: T[], latest: T[]) => {
+    const retained = new Map(latest.filter(row => keep.has(row.memberId)).map(row => [row.memberId, row]));
+    const ordered = prior.flatMap(row => {
+      const value = keep.has(row.memberId) ? retained.get(row.memberId) : row;
+      retained.delete(row.memberId);
+      return value ? [value] : [];
+    });
+    return [...ordered, ...retained.values()];
+  };
   return selectedStateSchema.parse({ ...current, manifest: before.manifest, manifestHash: before.manifestHash,
-    held: [...current.held.filter(h => keep.has(h.memberId)), ...before.held.filter(h => !keep.has(h.memberId))],
-    bindings: [...current.bindings.filter(b => keep.has(b.memberId)), ...before.bindings.filter(b => !keep.has(b.memberId))],
+    held: restoreRows(before.held, current.held),
+    bindings: restoreRows(before.bindings, current.bindings),
   });
 }
