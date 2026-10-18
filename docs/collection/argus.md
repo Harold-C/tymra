@@ -1,5 +1,29 @@
 # Argus browser collection boundary
 
+2026-10-19 approved daily observation cadence (Tymra only): after shared-capacity review,
+`dual-window-daily-v1` opens each reviewed stay window once per NZ calendar date from its audited
+`dailyStartsOn`. The original `startsOn` still freezes the seven-day stay cohort and month anchors;
+observation frequency never changes a property's reviewed dates, room, nights or execution lineage.
+Existing same-day successful windows count; failed/used keys, held members and stopped sources are
+not rearmed. Jobs/captures retain maxAttempts=1, concurrency one, source pacing/circuit, prior-work
+priority and weekday 09–17 avoidance. Unsubmitted prior-day windows expire as recorded gaps,
+without pausing an otherwise valid member or submitting catch-up work. Already accepted external
+jobs are reconciled once, not resubmitted. Identity TTL and spare 21–28-day renewal remain.
+
+Daily activation changes only this plan's cadence, with expected-state fencing and a signed audit;
+restore the prior cadence at selected-plan idle before rolling back to a weekly-only worker image.
+Do not restore old database snapshots or remove new jobs/holds to roll back. The shared Argus image,
+other plans and source configuration remain unchanged. Progress queries project only required
+28-day metadata, never retained wire/HTML. Daily volume is 136 quote windows (952/week) plus
+identity renewals, not a new attempt quota or a guarantee of available prices.
+
+The v6 reference view defaults to adjacent NZ-date comparison, with no carry-forward over missing,
+failed or unavailable dates. Weekly summary uses the last completed window per original seven-day
+cycle and compares matched offers across adjacent cycles, not the average of daily percentages.
+Both retain actual observation dates and exact stay/room/offer separation; flexible arrival dates
+remain descriptive levels only. Safety-limited reads withhold changes. Daily coverage records due
+windows, completed windows, eligible positive prices and gaps separately from all-history coverage.
+
 2026-10-19 approved reviewed-window extension (Tymra only): ten same-property members can receive
 `reviewed-stay-windows-v1` labels containing two ordered day offsets from the cycle's frozen Tuesday,
 review date and source-evidence SHA. Offsets are explicit, not derived from each capture's availability.
