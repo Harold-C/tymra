@@ -11,6 +11,7 @@ export type SampleRefundGroup = "REFUNDABLE" | "NON_REFUNDABLE" | "UNDISCLOSED";
 export type SampleTrendMember = {
   id: string; name: string; source: string; sourceListingId: string; sourceUrl: string;
   accommodationType: string; locality: string | null; nights: 1 | 2 | 3; executionHash: string;
+  windowOffsets?: [number, number];
 };
 export type SampleTrendRun = {
   id: string; memberId: string; manifestHash: string; checkIn: string; unitExternalId: string | null;
@@ -74,6 +75,11 @@ const token = (v: string) => text(v).toUpperCase().replace(/[_–—-]+/gu, " ")
 export function daysBetween(from: string, to: string) { return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000); }
 export function sampleQuoteCycle(startsOn: string, observedOn: string) {
   return addNzCalendarDays(startsOn, Math.floor(daysBetween(startsOn, observedOn) / 7) * 7);
+}
+/** Shared by dispatch and coverage: November's Saturday may precede its Tuesday. */
+export function sampleStayAnchors(now: Date): [string, string] {
+  const base = addNzCalendarDays(`${nzDateKey(now).slice(0, 7)}-01`, 60);
+  return [2, 6].map(day => addNzCalendarDays(base, (day - nzDayOfWeek(base) + 7) % 7)) as [string, string];
 }
 function median(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b), half = Math.floor(sorted.length / 2);
@@ -279,8 +285,11 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
   if (filter.granularity === "DAY" && input.dailyStartsOn) {
     const first = [filter.from, input.dailyStartsOn].sort().at(-1)!;
     const last = [filter.to, nzDateKey(new Date(input.asOf))].sort()[0];
-    const expected = input.members.filter(matches).length * (filter.stay === "ALL" ? 2 : 1);
     for (let day = first; day <= last; day = addNzCalendarDays(day, 1)) {
+      const anchors = sampleStayAnchors(new Date(`${sampleQuoteCycle(input.startsOn, day)}T00:00:00Z`));
+      const expected = input.members.filter(matches).reduce((count, m) => count + (m.windowOffsets
+        ? m.windowOffsets.map(offset => addNzCalendarDays(anchors[0], offset)) : anchors)
+        .filter(stay => stay > day && (filter.stay === "ALL" || filter.stay === stay) && leadMatches(daysBetween(day, stay), filter.lead)).length, 0);
       const completed = [...latest.values()].filter(r => nzDateKey(new Date(observationTime(r))) === day);
       const positive = new Set(included.filter(r => r.observedOn === day).map(r => JSON.stringify([r.member.id, r.checkIn])));
       dailyCoverage.push({ date: day, expected, completed: completed.length, priced: positive.size,

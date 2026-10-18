@@ -22,8 +22,11 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
     const state = controlSchema.parse(control.payload);
     const members: SampleTrendMember[] = state.manifest.members.map(m => {
       const previous = lineage.safeParse(m.labels.selectedExecutionLineage);
+      const profile = m.labels.reviewedWindowProfile === undefined ? undefined
+        : z.object({ offsets: z.tuple([z.number().int(), z.number().int()]) }).parse(m.labels.reviewedWindowProfile);
       return { id: m.id, name: m.name, source: m.source, sourceListingId: m.sourceListingId, sourceUrl: m.sourceUrl,
         accommodationType: m.accommodationType, locality: m.locality, nights: m.nights,
+        windowOffsets: profile?.offsets,
         executionHash: previous.success ? previous.data.manifestHash : state.manifestHash };
     });
     if (!members.length) return { members, runs: [], startsOn: state.cadence?.startsOn ?? state.manifest.start, complete: true };

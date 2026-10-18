@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { addNzCalendarDays, nzDayOfWeek, nzDateKey as nzDate } from "@tymra/domain";
+import { addNzCalendarDays, nzDayOfWeek, sampleStayAnchors, nzDateKey as nzDate } from "@tymra/domain";
 export function selectedHash(value: unknown): string {
   const canonical = (v: unknown): unknown => v instanceof Date ? v.toISOString() : Array.isArray(v) ? v.map(canonical) : v && typeof v === "object"
     ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical((v as Record<string, unknown>)[k])])) : v;
@@ -80,9 +80,7 @@ export function selectedTaskKey(t: SelectedTask) { return `${SELECTED_PANEL_KEY}
 
 /** Month-locked cohorts stay distinct. Never substitute a date in response to missing inventory. */
 export function selectedAnchors(now: Date): [string, string] {
-  const monthStart = `${nzDate(now).slice(0, 7)}-01`;
-  const base = addNzCalendarDays(monthStart, 60);
-  return [2, 6].map(day => addNzCalendarDays(base, (day - nzDayOfWeek(base) + 7) % 7)) as [string, string];
+  return sampleStayAnchors(now);
 }
 export const selectedWindowProfileSchema = z.object({
   version: z.literal("reviewed-stay-windows-v1"), offsets: z.tuple([z.number().int().min(-35).max(21), z.number().int().min(-35).max(21)]),

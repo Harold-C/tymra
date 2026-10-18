@@ -42,6 +42,16 @@ describe("sample source-quote trends (separate from formal market comparability)
     expect(weekly.series[0].points[1]).toMatchObject({ observedFrom: "2026-10-24", observedTo: "2026-10-24" });
     expect(weekly.series[0].points[0].medianTotalMinor).toBe(12000);
   });
+  it("counts only due reviewed windows for stay, lead and passed-arrival coverage", () => {
+    const filter = { from: "2026-10-19", to: "2026-10-19", basis: "ALL", nights: "ALL", stay: "2026-12-08", category: "ALL", lead: "ALL", granularity: "DAY" };
+    const home = { ...member, id: "reviewed", windowOffsets: [7, 11] as [number, number] };
+    const result = build([], [member, home], { filter, dailyStartsOn: "2026-10-19" });
+    expect(result.dailyCoverage[0]).toMatchObject({ expected: 1, completed: 0, missing: 1 });
+    const cosy = { ...home, windowOffsets: [-28, -24] as [number, number] };
+    const past = build([], [cosy], { filter: { ...filter, from: "2026-11-03", to: "2026-11-03", stay: "ALL" }, dailyStartsOn: "2026-10-19" });
+    expect(past.dailyCoverage[0].expected).toBe(1);
+    expect(build([], [member, home], { filter: { ...filter, stay: "ALL", lead: "0-30" }, dailyStartsOn: "2026-10-19" }).dailyCoverage[0].expected).toBe(0);
+  });
   it("compares continuous refundable quotes despite payment dates and cancellation deadline changes", () => {
     const quoted = (id: string, day: string, amount: number, deadline: string, plan: string | null = "plan1") => {
       const changes = { cancellationPolicy: `Free cancellation before ${deadline}`, paymentTerms: `Pay nothing until ${deadline}` };
