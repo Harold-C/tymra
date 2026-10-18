@@ -24,7 +24,9 @@ export async function seedSampleQuoteTrendFixture(db: PrismaClient, now = new Da
     const amount = member.nights === 1 ? (index === 0 ? 10000 : 11000) : member.nights === 2 ? (index === 0 ? 30000 : 33000) : (index === 0 ? 48100 : 52910);
     const checkOut = addNzCalendarDays(checkIn, member.nights), reference = member.nights === 2 ? {
       kind: "MEMBER_ONLY", amountMinor: amount, ratePlanExternalId: "member-plan", sourceText: "Members-only price" } : null;
-    const conditions = { mealPlan: "breakfast included", cancellationPolicy: "Non-refundable", paymentTerms: "Pay online", rateFence: "PUBLIC" };
+    // The second cycle changes noncritical source text; the same refundable room still pairs.
+    const conditions = { mealPlan: "breakfast included", cancellationPolicy: `Free cancellation before November ${index === 0 ? 28 : 29}, 2026`,
+      paymentTerms: index === 0 ? "Pay online" : "Pay at property", rateFence: "PUBLIC" };
     const raw = { candidateId: member.id, sourceUnitKey: unit, evidenceRef: "synthetic", observedAt: at.toISOString(),
       checkIn, checkOut, nights: member.nights, adults: 2, children: 0, units: 1, currency: "NZD", collectionProfile: null, bookingMode: "UNKNOWN",
       outcome: reference ? "MEMBER_REFERENCE" : "QUOTED", totalMinor: amount, mandatoryFees: reference ? "UNKNOWN" : "COMPLETE", qualityFlags: [], ...conditions,

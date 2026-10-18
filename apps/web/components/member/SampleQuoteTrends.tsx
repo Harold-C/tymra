@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, ChartNoAxesCombined } from "lucide-react";
-import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, SampleTrendSeries, SampleMealGroup, SampleFeeGroup } from "@tymra/domain";
+import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, SampleTrendSeries, SampleMealGroup, SampleFeeGroup, SampleRefundGroup } from "@tymra/domain";
 
 type Locale = "en" | "zh";
 const copy = {
@@ -16,7 +16,8 @@ const copy = {
     memberNote: "Member references compare the same membership offer’s displayed amount only. Membership eligibility, availability, fees and purchase terms remain unverified; these are not all-in bookable totals. Public offer terms are never borrowed.",
     clockNote: "Fixed-arrival tracking includes the effect of getting closer to arrival. Lead-time filters do not make all days in a band equivalent. Different arrival months remain separate; seasonality and event effects are not removed.",
     period: "NZ collection cycle", median: "Sample median stay total", count: "Samples", advance: "Actual days before arrival", change: "Matched change from prior cycle", paired: "paired samples",
-    baseline: "Baseline · waiting for the next cycle", noPair: "No matching offers in the adjacent cycle", pointHint: "One vote per sample. The change uses the same offers in consecutive cycles, not the difference between two medians. Repeated acceptance checks count once per window and cycle.",
+    baseline: "Baseline · waiting for the next cycle", noPair: "No matching offers in the adjacent cycle", pointHint: "One vote per sample. Compare the same room and price basis in adjacent cycles. Payment dates and cancellation deadlines are notes, not matching keys. Refundability, meals, fees and membership remain separate. The change is not the difference between two medians.",
+    matching: "Matched / priced samples", unmatched: "unmatched", previous: "Compared with", notes: "Source terms and notes", mealNote: "Meals", cancelNote: "Cancellation", payNote: "Payment", unknown: "Not disclosed", continuity: "Same room · same price basis · adjacent cycles",
     empty: "No eligible reference series in this view", emptyBody: "Displayed prices and gaps remain below. No prices are replaced with zero. Try another price basis or observation range.",
     unavailable: "Completed windows without a price", failed: "Failed / unverified windows", gaps: "Why some quotes are outside the series", none: "No analysis gaps in this view.",
     available: "Latest displayed quotes in this view", quoteHint: "Up to 50 rows, including prices outside the reference series. Amounts cover the actual stay, not an interchangeable nightly rate.",
@@ -35,7 +36,8 @@ const copy = {
     memberNote: "会员参考仅比较同一会员套餐的显示金额；会员资格、可订库存、完整费用及购买条款仍未核实，不等于含完整费用的可订总价，也不借用公开套餐条款。",
     clockNote: "固定入住日的报价变化包含临近入住的影响。提前期筛选不代表区间内天数等价；不同入住月份分别展示，未剥离季节和活动影响。",
     period: "新西兰采集周期", median: "样本住宿总价中位数", count: "样本数", advance: "实际提前天数", change: "与上周期配对变化", paired: "个配对样本",
-    baseline: "本期基线 · 等待下一周期", noPair: "与相邻周期暂无匹配套餐", pointHint: "每个样本只占一份权重；涨跌使用相邻周期的同套餐，不是两期中位价相减。同周重复验收不会增加周次。",
+    baseline: "本期基线 · 等待下一周期", noPair: "与相邻周期暂无匹配套餐", pointHint: "每个样本只占一份权重，比较相邻周期的同房型、同价格口径。付款日期和取消截止时间仅保留说明，退款类型、餐食、费用及会员条件仍分开。涨跌不是两期中位价相减。",
+    matching: "配对／当前有价样本", unmatched: "个未配对", previous: "对比周期", notes: "来源条款与说明", mealNote: "餐食", cancelNote: "取消", payNote: "付款", unknown: "未披露", continuity: "同房型 · 同价格口径 · 相邻周期",
     empty: "此范围尚无可纳入的参考序列", emptyBody: "已有展示价格和缺口仍保留在下方，无房不会填成零元。可切换价格口径或观察日期。",
     unavailable: "已完成但没有价格的窗口", failed: "失败／交付未核实窗口", gaps: "部分报价为何未纳入走势", none: "本次范围暂无分析缺口。",
     available: "本次范围最新显示报价", quoteHint: "最多列出50条，包括暂未纳入参考序列的价格。金额为实际住宿总价，不能与其他晚数组互换。",
@@ -57,6 +59,7 @@ const gapCopy: Record<string, [string, string]> = {
 };
 const mealCopy: Record<SampleMealGroup, [string, string]> = { ROOM_ONLY: ["Room only", "不含餐"], BREAKFAST_INCLUDED: ["Breakfast included", "含早餐"], BREAKFAST_EXTRA: ["Breakfast costs extra", "早餐另付"], NOT_APPLICABLE: ["Meals not applicable", "餐食不适用"], UNDISCLOSED: ["Meals undisclosed", "餐食未披露"] };
 const feeCopy: Record<SampleFeeGroup, [string, string]> = { INCLUSIVE: ["Mandatory fees included", "已注明含必付费用"], UNDISCLOSED: ["Fees unverified · displayed amount only", "费用未核实 · 仅显示金额"], MEMBER_UNVERIFIED: ["Member fees unverified", "会员费用未核实"] };
+const refundCopy: Record<SampleRefundGroup, [string, string]> = { REFUNDABLE: ["Refundable", "可退款"], NON_REFUNDABLE: ["Non-refundable", "不可退款"], UNDISCLOSED: ["Refundability undisclosed", "退款类型未披露"] };
 function groupLabel(meal: SampleMealGroup, fees: SampleFeeGroup, locale: Locale) { const i = locale === "zh" ? 1 : 0; return `${mealCopy[meal][i]} · ${feeCopy[fees][i]}`; }
 function categoryLabel(value: string, locale: Locale) { return categories[value]?.[locale === "zh" ? 1 : 0] ?? value; }
 function basisLabel(basis: SampleQuoteBasis, locale: Locale) { return basis === "MEMBER_REFERENCE" ? copy[locale].member : copy[locale].public; }
@@ -91,7 +94,7 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
       {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} />)}
       <div className="sample-trend-caption">{c.unavailable}: {data.noPriceWindows} · {c.failed}: {data.failedWindows}</div>
       <details className="sample-trend-method"><summary>{c.gaps} ({data.gaps.length})</summary>{!data.gaps.length ? <p>{c.none}</p> : <ul className="sample-trend-gaps">{data.gaps.map(gap => <li key={gap.memberId}><strong>{gap.name}</strong><span>{gap.reasons.map(reason => gapCopy[reason]?.[locale === "zh" ? 1 : 0] ?? reason).join(" · ")}</span></li>)}</ul>}</details>
-      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : q.nights === 2 ? c.two : c.three}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)}</span>{q.disclosures.length ? <small>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</small> : null}<span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
+      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : q.nights === 2 ? c.two : c.three}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)} · {refundCopy[q.refundGroup][locale === "zh" ? 1 : 0]}</span><span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small><details className="sample-trend-method"><summary>{c.notes}</summary>{q.disclosures.length ? <p>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</p> : null}<p>{c.mealNote}: {q.notes.meal || c.unknown}</p><p>{c.cancelNote}: {q.notes.cancellation || c.unknown}</p><p>{c.payNote}: {q.notes.payment || c.unknown}</p></details></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
     </>}
   </section>;
 }
@@ -102,15 +105,14 @@ function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale 
     <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : series.nights === 2 ? c.two : c.three}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {series.arrivalKind ? `${series.arrivalKind === "WEEKEND" ? c.weekend : c.weekday} · ${c.lead}: ${series.leadBand}` : `${c.stay} ${date(series.checkIn, locale)} → ${c.end} ${date(series.checkOut, locale)}`}</p>
     {series.arrivalDates ? <p className="sample-trend-caption">{c.stay}: {series.arrivalDates.map(d => date(d, locale)).join(" · ")}</p> : null}
     <p><strong>{groupLabel(series.mealGroup, series.feeGroup, locale)}</strong></p>
-    {series.basis === "MEMBER_REFERENCE" ? <p className="sample-trend-member-note">{c.memberNote}</p> : null}
-    <p className="sample-trend-caption">{series.arrivalKind ? c.rollingNote : c.clockNote}</p>
+    <p className="sample-trend-caption">{refundCopy[series.refundGroup][locale === "zh" ? 1 : 0]} · {series.arrivalKind ? c.rollingNote : c.continuity}</p>
     {values.length ? <div className="sample-trend-change-chart" role="img" aria-label={c.change}>{values.map(p => <div key={p.cycle}><span>{date(p.cycle, locale)}</span><div className="sample-trend-change-track"><i style={{ width: `${Math.abs(p.changePct!) / span * 50}%`, left: `${p.changePct! < 0 ? 50 - Math.abs(p.changePct!) / span * 50 : 50}%` }} /><b /></div><strong>{p.changePct! > 0 ? "+" : ""}{p.changePct!.toFixed(1)}%</strong></div>)}</div> : null}
-    <div className="sample-trend-points">{series.points.map((p, index) => <dl className="sample-trend-point" key={p.cycle}>
+    <div className="sample-trend-points">{series.points.map(p => <dl className="sample-trend-point" key={p.cycle}>
       <div><dt>{c.period}</dt><dd><time dateTime={p.cycle}>{date(p.cycle, locale)}</time></dd></div>
+      {!series.arrivalKind ? <div className="sample-trend-primary"><dt>{c.change}</dt><dd>{p.changePct === null ? <span>{p.baseline ? c.baseline : c.noPair}</span> : <strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong>}{!p.baseline ? <small>{c.previous} {date(p.previousCycle, locale)}</small> : null}</dd></div> : null}
+      <div><dt>{series.arrivalKind ? c.count : c.matching}</dt><dd>{series.arrivalKind ? p.sampleCount : `${p.pairedSamples} / ${p.sampleCount}`}<small>{!series.arrivalKind ? `${p.unpairedSamples} ${c.unmatched}` : null}</small></dd></div>
       <div><dt>{c.median}</dt><dd>{money(p.medianTotalMinor, locale)}</dd></div>
-      <div><dt>{c.count}</dt><dd>{p.sampleCount}</dd></div>
       <div><dt>{c.advance}</dt><dd>{p.leadDaysMin === p.leadDaysMax ? p.leadDaysMin : `${p.leadDaysMin}–${p.leadDaysMax}`}</dd></div>
-      {!series.arrivalKind ? <div><dt>{c.change}</dt><dd>{p.changePct === null ? <span className="sample-trend-caption">{index === 0 ? c.baseline : c.noPair}</span> : <><strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong><small>{p.pairedSamples} {c.paired}</small></>}</dd></div> : null}
-    </dl>)}</div><p className="sample-trend-caption">{series.arrivalKind ? c.rollingNote : c.pointHint}</p>
+    </dl>)}</div><details className="sample-trend-method"><summary>{c.method}</summary><p>{series.arrivalKind ? c.rollingNote : c.pointHint}</p><p>{c.clockNote}</p>{series.basis === "MEMBER_REFERENCE" ? <p className="sample-trend-member-note">{c.memberNote}</p> : <p>{c.publicNote}</p>}</details>
   </article>;
 }

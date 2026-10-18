@@ -21,6 +21,14 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   await expect(page.locator('.sample-trend-section[data-meals="BREAKFAST_INCLUDED"][data-fees="INCLUSIVE"]')).toHaveCount(1);
   await expect(page.locator('.sample-trend-section[data-price-basis="PUBLIC_TOTAL"]')).toContainText(locale === "zh" ? "已注明含必付费用" : "Mandatory fees included");
   await expect(page.locator('.sample-trend-section[data-nights="1"]')).toContainText("+10.0%");
+  await expect(page.locator('.sample-trend-primary').last()).toContainText("+10.0%");
+  await expect(page.locator('.sample-trend-point').last()).toContainText("1 / 1");
+  const notes = page.locator('.sample-trend-quotes details').first();
+  await expect(notes).not.toHaveAttribute("open", "");
+  await notes.locator("summary").click();
+  await expect(notes).toHaveAttribute("open", "");
+  await expect(notes).toContainText("November 29, 2026");
+  await notes.locator("summary").click();
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath(`${locale}-public.png`), fullPage: true });
@@ -32,7 +40,9 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"][data-nights="2"]')).toHaveCount(1);
   await expect(page.locator('.sample-trend-section[data-meals="UNDISCLOSED"][data-fees="MEMBER_UNVERIFIED"]')).toHaveCount(1);
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"]')).toContainText("+10.0%");
-  await expect(page.locator(".sample-trend-member-note")).toContainText(locale === "zh" ? "不等于含完整费用的可订总价" : "not all-in bookable totals");
+  const method = page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"] details');
+  await method.locator("summary").click();
+  await expect(method.locator(".sample-trend-member-note")).toContainText(locale === "zh" ? "不等于含完整费用的可订总价" : "not all-in bookable totals");
   await page.screenshot({ path: testInfo.outputPath(`${locale}-member.png`), fullPage: true });
   const api = await page.request.get(`/api/v1/customer/market/sample-quotes?${query}`);
   expect(api.status()).toBe(200); expect(api.headers()["cache-control"]).toContain("no-store");

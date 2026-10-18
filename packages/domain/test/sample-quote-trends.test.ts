@@ -22,6 +22,38 @@ function alterRaw(r: SampleTrendRun, changes: object) { const e = r.evaluated as
 function alterRate(r: SampleTrendRun, changes: object) { return { ...r, rates: [{ ...(r.rates as object[])[0], ...changes }] }; }
 
 describe("sample source-quote trends (separate from formal market comparability)", () => {
+  it("compares continuous refundable quotes despite payment dates and cancellation deadline changes", () => {
+    const quoted = (id: string, day: string, amount: number, deadline: string, plan: string | null = "plan1") => {
+      const changes = { cancellationPolicy: `Free cancellation before ${deadline}`, paymentTerms: `Pay nothing until ${deadline}` };
+      return alterRate(alterRaw(run(id, day, amount), changes), { ...changes, ratePlanExternalId: plan });
+    };
+    for (const plan of ["plan1", null]) {
+      const result = build([quoted("a", "2026-10-16", 10000, "November 28, 2026", plan), quoted("b", "2026-10-23", 11000, "November 29, 2026", plan)]);
+      expect(result.series).toHaveLength(1);
+      expect(result.series[0].refundGroup).toBe("REFUNDABLE");
+      expect(result.series[0].points[1]).toMatchObject({ pairedSamples: 1, unpairedSamples: 0, previousCycle: "2026-10-16", baseline: false });
+      expect(result.series[0].points[1].changePct).toBeCloseTo(10);
+      expect(result.recentQuotes[0].notes.payment).toContain("November 29");
+    }
+    expect(sampleReferenceTerms({ cancellationPolicy: "Free cancellation before November 29, 2026 at 2:00 pm NZDT" }).refundGroup).toBe("REFUNDABLE");
+  });
+  it("never matches changed refundability, room or source plan, and does not call a later first appearance a baseline", () => {
+    const a = run("a", "2026-10-16"), changes = { cancellationPolicy: "Free cancellation before November 29, 2026" };
+    const b = alterRate(alterRaw(run("b", "2026-10-23", 11000), changes), changes);
+    const result = build([a, b]);
+    expect(result.series).toHaveLength(2); expect(result.series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
+    expect(result.series.find(s => s.refundGroup === "REFUNDABLE")!.points[0].baseline).toBe(false);
+    const unknown = { cancellationPolicy: "UNKNOWN" };
+    expect(build([a, alterRate(alterRaw(run("c", "2026-10-23"), unknown), unknown)]).series).toHaveLength(2);
+    expect(build([a, alterRate(run("d", "2026-10-23"), { ratePlanExternalId: "changed" })]).series[0].points[1].pairedSamples).toBe(0);
+    const room = alterRate(alterRaw(run("e", "2026-10-23", 11000, { unitExternalId: "room2" }), { sourceUnitKey: "room2" }), { unitExternalId: "room2" });
+    expect(build([a, room]).series[0].points[1].pairedSamples).toBe(0);
+  });
+  it("does not collapse two differently priced rows with the same coarse conditions and source plan", () => {
+    const r = run("a", "2026-10-16");
+    r.rates = [...r.rates as object[], { ...(r.rates as object[])[0], paymentTerms: "Pay at property", totalPriceMinor: 12000 }];
+    expect(build([r]).includedMembers).toBe(0);
+  });
   it("groups flexible dates by weekday and lead time without presenting composition changes as matched inflation", () => {
     const dated = (id: string, observed: string, checkIn: string, checkOut: string, amount: number) => {
       const r = run(id, observed, amount, { checkIn });
@@ -83,17 +115,17 @@ describe("sample source-quote trends (separate from formal market comparability)
       .toMatchObject({ mealGroup: "UNDISCLOSED", disclosures: ["MEAL_TERMS_MISSING"] });
     expect(sampleReferenceTerms({ mealPlan: "NO_MEAL_DISCLOSED", cancellationPolicy: "NON_REFUNDABLE", paymentTerms: "PAY_NOW" }).signature).toContain("NON_REFUNDABLE");
     expect(sampleReferenceTerms({ cancellationPolicy: "Fully refundable before Fri, 4 Dec. More about the cancellation policy." }).signature)
-      .toContain("FREE_CANCELLATION_BEFORE:FRI, 4 DEC");
+      .toContain("REFUNDABLE");
     const changes = { mealPlan: "NO_MEAL_DISCLOSED", cancellationPolicy: "NON_REFUNDABLE", paymentTerms: "PAY_NOW", rateFence: "PUBLIC_SIGNED_OUT" };
     const r = alterRate(alterRaw(run("a", "2026-10-16"), changes), changes);
     expect(build([r]).includedMembers).toBe(1);
   });
-  it("fee inclusion and unknown policy wording changes cannot create a pair", () => {
+  it("keeps fee inclusion separate but permits unknown policy wording changes on the same source plan", () => {
     const a = alterRaw(run("a", "2026-10-16"), { mandatoryFees: "UNKNOWN" });
     expect(build([a, run("b", "2026-10-23")]).series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
     const x = { cancellationPolicy: "Unknown package A" }, y = { cancellationPolicy: "Unknown package B" };
     const result = build([alterRate(alterRaw(run("a", "2026-10-16"), x), x), alterRate(alterRaw(run("b", "2026-10-23"), y), y)]);
-    expect(result.series[0].points[1].changePct).toBeNull();
+    expect(result.series[0].points[1].changePct).toBe(0);
     const conflict = build([alterRaw(run("a", "2026-10-16"), { mandatoryFees: "CONFLICT" })]);
     expect(conflict.includedMembers).toBe(0); expect(conflict.gaps[0].reasons).toContain("SOURCE_CONFLICT");
   });

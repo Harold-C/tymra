@@ -27,7 +27,9 @@
 .sample-trend-empty { padding: 32px 20px; text-align: center; color: var(--text-secondary); }
 .sample-trend-empty svg { margin: 0 auto; }
 .sample-trend-empty h2 { margin: 16px 0 8px; font-size: 1.25rem; color: var(--navy); }
-.sample-trend-point { display: grid; grid-template-columns: 1.15fr 1.1fr .55fr .8fr 1.4fr; gap: 16px; margin: 0; padding: 16px 0; border-top: 1px solid var(--border); }
+.sample-trend-point { display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr .8fr; gap: 16px; margin: 0; padding: 16px 0; border-top: 1px solid var(--border); }
+.sample-trend-primary strong { font-size: 1.5rem; color: var(--navy); }
+.sample-trend-primary dd > span { font-weight: 600; }
 .sample-trend-point > div { min-width: 0; }
 .sample-trend-point dt { font-size: .8rem; color: var(--text-secondary); margin-bottom: 8px; }
 .sample-trend-point dd { font-size: .95rem; margin: 0; font-variant-numeric: tabular-nums; }
@@ -63,7 +65,7 @@
   .sample-trend-metrics dd { font-size: 1.6rem; }
   .sample-trend-section { padding: 20px 16px; }
   .sample-trend-point { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
-  .sample-trend-point > div:last-child { grid-column: 1 / -1; }
+  .sample-trend-point > .sample-trend-primary { grid-column: 1 / -1; grid-row: 1; }
   .sample-trend-quotes li { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .sample-trend-quotes li > div + div { text-align: left; }
   .sample-trend-quotes a { justify-content: flex-start; }
