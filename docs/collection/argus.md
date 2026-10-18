@@ -2,6 +2,15 @@
 
 Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual acceptance remains separate)
 
+2026-10-18 sample quote trends are a read-only consumer of completed selected-plan facts and
+verified delivery. No new Argus workflow, source capture, execution retry, schedule, quota or roster
+change is introduced. `sample-quote-trends-v1` keeps displayed member references separate from
+inclusive public/partner totals and retains RAW_ONLY/unknown browser context and booking-mode facts.
+Its narrower descriptive reference contract is in `docs/product/data-core.md`; it does not turn these
+observations into certified comparable prices, RateObservation or a regional index. PostgreSQL projects
+only the required rate facts from retained verified wire after a bounded date/row selection; full wire,
+HTML, screenshots, credentials and other queues never enter the member response.
+
 Selected Booking identities carry the exact frozen dates, two adults, zero children, one room and
 NZD through optional `identity_stay`; physical capacity remains source-derived. Deploy this caller
 change only after shared Argus supports dated Booking identity. Anonymous partner offers retain

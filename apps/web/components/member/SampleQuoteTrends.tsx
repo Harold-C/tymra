@@ -1,0 +1,106 @@
+import Link from "next/link";
+import { ArrowLeft, ChartNoAxesCombined } from "lucide-react";
+import type { SampleQuoteBasis, SampleQuoteTrendSummary, SampleTrendFilter, SampleTrendSeries } from "@tymra/domain";
+
+type Locale = "en" | "zh";
+const copy = {
+  en: { title: "Christchurch sample quote trends", intro: "Follow the selected accommodation samples without mixing membership prices, stay lengths or arrival dates.",
+    back: "Account home", reference: "Sample quote reference · not a city price index", limits: "These are advertised sample quotes, not transaction prices or occupancy. Browser login, location and personalisation are not fully attested. Changes are source-quote references, not certified market-price changes.",
+    from: "Observed from", to: "Observed to", basis: "Price basis", public: "Public / partner stay totals", member: "Displayed member references", all: "All (separate series)",
+    nights: "Stay length", one: "One night", two: "Two nights", stay: "Arrival date", allDates: "All arrival dates (separate series)", category: "Accommodation type",
+    lead: "Days before arrival", anyLead: "Any lead time", apply: "Apply filters", dateHint: "Up to 90 New Zealand observation dates. Arrival and departure dates stay fixed within each series.",
+    members: "Selected samples", observed: "Observed in this view", priced: "With a displayed price", included: "In reference series", coverage: "Analysis gaps do not stop the existing collection plan.",
+    publicNote: "Public/partner totals enter a reference series only with an exact offer and explicit inclusive fees, meal, payment and cancellation wording. Public and partner offers never match each other.",
+    memberNote: "Member references compare the same membership offer’s displayed amount only. Membership eligibility, availability, fees and purchase terms remain unverified; these are not all-in bookable totals. Public offer terms are never borrowed.",
+    clockNote: "Fixed-arrival tracking includes the effect of getting closer to arrival. Lead-time filters do not make all days in a band equivalent. Different arrival months remain separate; seasonality and event effects are not removed.",
+    period: "NZ collection cycle", median: "Sample median stay total", count: "Samples", advance: "Actual days before arrival", change: "Matched change from prior cycle", paired: "paired samples",
+    baseline: "Baseline · waiting for the next cycle", noPair: "No matching offers in the adjacent cycle", pointHint: "One vote per sample. The change uses the same offers in consecutive cycles, not the difference between two medians. Repeated acceptance checks count once per window and cycle.",
+    empty: "No eligible reference series in this view", emptyBody: "Displayed prices and gaps remain below. No prices are replaced with zero. Try another price basis or observation range.",
+    unavailable: "Completed windows without a price", failed: "Failed / unverified windows", gaps: "Why some quotes are outside the series", none: "No analysis gaps in this view.",
+    available: "Latest displayed quotes in this view", quoteHint: "Up to 50 rows, including prices outside the reference series. Amounts cover the actual stay, not an interchangeable nightly rate.",
+    includedTag: "In reference series", excludedTag: "Display only", noQuotes: "No displayed quotes in this view.", source: "Source", observedOn: "Observed", updated: "Read at", method: "Method and limitations", end: "Departure",
+    incomplete: "The read reached its safety limit. Coverage is partial; changes are withheld. Narrow the observation dates.", missing: "The selected collection plan is not available yet.", error: "Sample quotes are temporarily unavailable. Please reload shortly.", invalid: "Choose valid dates within 90 NZ dates and supported filters.",
+    weekdays: "Workdays and weekends are distinct arrival dates; this view does not estimate a general weekend premium.", retry: "Reset filters" },
+  zh: { title: "基督城样本报价走势", intro: "持续观察已选住宿样本，会员价格、住宿晚数和入住日期分别展示。",
+    back: "会员首页", reference: "样本报价参考 · 非全市价格指数", limits: "这里是样本展示报价，不是成交价或入住率。浏览器登录状态、地区与个性化环境尚未完整证明；涨跌仅作来源报价参考，不代表已认证的市场价格变化。",
+    from: "观察开始日期", to: "观察结束日期", basis: "价格口径", public: "公开／合作方住宿总价", member: "会员显示参考价", all: "全部（分别展示）",
+    nights: "住宿晚数", one: "一晚", two: "两晚", stay: "入住日期", allDates: "全部入住日期（分别展示）", category: "住宿类型",
+    lead: "提前预订天数", anyLead: "不限提前期", apply: "查看走势", dateHint: "最多查看90个新西兰观察日期；每条序列保留精确入住及退房日期。",
+    members: "固定样本", observed: "本次范围已观察", priced: "有显示价格", included: "纳入参考序列", coverage: "分析字段不足不会暂停原有采集计划。",
+    publicNote: "公开／合作方总价须有明确套餐、含必付费用说明，以及明确餐食、付款和取消原文，才进入参考序列。公开价和合作方报价不交叉匹配。",
+    memberNote: "会员参考仅比较同一会员套餐的显示金额；会员资格、可订库存、完整费用及购买条款仍未核实，不等于含完整费用的可订总价，也不借用公开套餐条款。",
+    clockNote: "固定入住日的报价变化包含临近入住的影响。提前期筛选不代表区间内天数等价；不同入住月份分别展示，未剥离季节和活动影响。",
+    period: "新西兰采集周期", median: "样本住宿总价中位数", count: "样本数", advance: "实际提前天数", change: "与上周期配对变化", paired: "个配对样本",
+    baseline: "本期基线 · 等待下一周期", noPair: "与相邻周期暂无匹配套餐", pointHint: "每个样本只占一份权重；涨跌使用相邻周期的同套餐，不是两期中位价相减。同周重复验收不会增加周次。",
+    empty: "此范围尚无可纳入的参考序列", emptyBody: "已有展示价格和缺口仍保留在下方，无房不会填成零元。可切换价格口径或观察日期。",
+    unavailable: "已完成但没有价格的窗口", failed: "失败／交付未核实窗口", gaps: "部分报价为何未纳入走势", none: "本次范围暂无分析缺口。",
+    available: "本次范围最新显示报价", quoteHint: "最多列出50条，包括暂未纳入参考序列的价格。金额为实际住宿总价，不能与其他晚数组互换。",
+    includedTag: "纳入参考序列", excludedTag: "仅展示", noQuotes: "本次范围暂无显示报价。", source: "来源", observedOn: "观察于", updated: "读取时间", method: "口径与限制", end: "退房",
+    incomplete: "已达到安全读取上限，覆盖不完整，暂不计算涨跌。请缩小观察日期范围。", missing: "固定样本采集计划尚不可读取。", error: "暂时无法读取样本报价，请稍后刷新。", invalid: "请选择90个新西兰日期以内的有效观察范围及筛选条件。",
+    weekdays: "工作日与周末按不同入住日期保留；此页不推断普遍的周末溢价。", retry: "重置筛选" },
+};
+const categories: Record<string, [string, string]> = { HOTEL: ["Hotel", "酒店"], MOTEL: ["Motel", "汽车旅馆"], HOLIDAY_HOME: ["Holiday home", "民宿／度假屋"],
+  SERVICED_APARTMENT: ["Serviced apartment", "服务公寓"], BACKPACKER: ["Backpacker", "背包客住宿"], GUESTHOUSE: ["Guesthouse", "家庭旅馆"],
+  HOLIDAY_PARK: ["Holiday park", "假日公园"], LODGE: ["Lodge", "旅舍"] };
+const gapCopy: Record<string, [string, string]> = {
+  NO_COMPLETED_WINDOW: ["No completed observation in these filters", "筛选范围内暂无已完成观察"], NO_PRICE_FOR_WINDOW: ["No price for an observed window", "已观察窗口没有价格"],
+  DELIVERY_OR_CAPTURE_FAILED: ["Capture or delivery not verified", "采集或交付未核实"], QUOTE_EVIDENCE_MISSING: ["Quote evidence incomplete", "报价证据不完整"],
+  QUERY_OR_UNIT_CONFLICT: ["Stay query or unit mismatch", "日期／入住条件或单元不一致"], SOURCE_EXECUTION_CONTEXT_MISSING: ["Source execution context missing", "来源执行信息不足"],
+  SOURCE_CONFLICT: ["Source facts conflict", "来源事实冲突"], MEMBER_PLAN_MISSING: ["Exact member offer not linked", "未关联精确会员套餐"],
+  EXACT_RATE_PLAN_MISSING: ["Exact offer missing or ambiguous", "套餐编号缺失或不唯一"], TOTAL_FEES_UNVERIFIED: ["Inclusive mandatory fees not verified", "未核实是否含完整必付费用"],
+  PRICE_FENCE_UNSUPPORTED: ["Offer conditions not supported", "报价条件未支持"], MEAL_TERMS_MISSING: ["Meal terms unknown", "餐食条件未知"],
+  PAYMENT_TERMS_MISSING: ["Payment terms unknown", "付款条件未知"], CANCELLATION_TERMS_MISSING: ["Cancellation terms incomplete", "取消条款不完整"],
+};
+function categoryLabel(value: string, locale: Locale) { return categories[value]?.[locale === "zh" ? 1 : 0] ?? value; }
+function basisLabel(basis: SampleQuoteBasis, locale: Locale) { return basis === "MEMBER_REFERENCE" ? copy[locale].member : copy[locale].public; }
+function date(day: string, locale: Locale) { return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { year: "numeric", month: "short", day: "numeric", timeZone: "Pacific/Auckland" }).format(new Date(`${day.slice(0, 10)}T00:00:00Z`)); }
+function money(minor: number, locale: Locale) { return new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-NZ", { style: "currency", currency: "NZD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(minor / 100); }
+function safeSource(href: string) { try { const u = new URL(href); if (u.protocol !== "https:" || u.username || u.password || !["www.booking.com", "www.airbnb.com", "www.airbnb.co.nz", "www.expedia.co.nz", "www.bookabach.co.nz", "www.trip.com", "nz.trip.com"].includes(u.hostname)) return null; u.search = ""; u.hash = ""; return u.href; } catch { return null; } }
+
+export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Locale; filter: SampleTrendFilter; data: SampleQuoteTrendSummary | null; error?: "invalid" | "error" }) {
+  const c = copy[locale];
+  return <section className="rough-shell sample-quote-trends" lang={locale === "zh" ? "zh-CN" : "en-NZ"}>
+    <Link href={`/${locale}/account`} className="text-link"><ArrowLeft size={16} aria-hidden="true" />{c.back}</Link>
+    <header className="sample-trend-heading"><div><p>{c.reference}</p><h1>{c.title}</h1><p>{c.intro}</p></div><ChartNoAxesCombined size={32} aria-hidden="true" /></header>
+    <aside className="sample-trend-notice"><strong>{c.reference}</strong><p>{c.limits}</p></aside>
+    <form className="sample-trend-filters" method="get" aria-label={locale === "zh" ? "报价走势筛选" : "Quote trend filters"}>
+      <label>{c.basis}<select name="basis" defaultValue={filter.basis}><option value="PUBLIC_TOTAL">{c.public}</option><option value="MEMBER_REFERENCE">{c.member}</option><option value="ALL">{c.all}</option></select></label>
+      <label>{c.nights}<select name="nights" defaultValue={filter.nights}><option value="ALL">{c.all}</option><option value="1">{c.one}</option><option value="2">{c.two}</option></select></label>
+      <label>{c.stay}<select name="stay" defaultValue={filter.stay}><option value="ALL">{c.allDates}</option>{data?.stayDates.map(day => <option key={day} value={day}>{date(day, locale)}</option>)}</select></label>
+      <label>{c.category}<select name="category" defaultValue={filter.category}><option value="ALL">{c.all}</option>{data?.categories.map(value => <option key={value} value={value}>{categoryLabel(value, locale)}</option>)}</select></label>
+      <label>{c.lead}<select name="lead" defaultValue={filter.lead}><option value="ALL">{c.anyLead}</option>{["0-30", "31-60", "61-90", "91+"].map(value => <option key={value}>{value}</option>)}</select></label>
+      <label>{c.from}<input name="from" type="date" defaultValue={filter.from} required /></label>
+      <label>{c.to}<input name="to" type="date" defaultValue={filter.to} min={filter.from} required /></label>
+      <button className="button button-primary" type="submit">{c.apply}</button>
+      <p className="sample-trend-filter-hint">{c.dateHint}</p>
+    </form>
+    {error ? <p role="alert">{c[error]} <Link className="text-link" href={`/${locale}/account/market/sample-quotes`}>{c.retry}</Link></p> : !data ? <p role="status">{c.missing}</p> : <>
+      <p className="sample-trend-caption">{c.members} {data.configuredMembers} · {c.updated} {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(data.asOf))} (NZ)</p>
+      {!data.complete ? <p role="alert" className="sample-trend-notice">{c.incomplete}</p> : null}
+      <dl className="sample-trend-metrics">{[[c.observed, data.observedMembers], [c.priced, data.pricedMembers], [c.included, data.includedMembers]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      <p>{c.coverage}</p>
+      <details className="sample-trend-method"><summary>{c.method}</summary><p>{c.publicNote}</p><p>{c.memberNote}</p><p>{c.clockNote}</p><p>{c.weekdays}</p><p>{c.pointHint}</p></details>
+      {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} />)}
+      <div className="sample-trend-caption">{c.unavailable}: {data.noPriceWindows} · {c.failed}: {data.failedWindows}</div>
+      <details className="sample-trend-method"><summary>{c.gaps} ({data.gaps.length})</summary>{!data.gaps.length ? <p>{c.none}</p> : <ul className="sample-trend-gaps">{data.gaps.map(gap => <li key={gap.memberId}><strong>{gap.name}</strong><span>{gap.reasons.map(reason => gapCopy[reason]?.[locale === "zh" ? 1 : 0] ?? reason).join(" · ")}</span></li>)}</ul>}</details>
+      <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : c.two}</span><span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
+    </>}
+  </section>;
+}
+
+function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale }) {
+  const c = copy[locale], values = series.points.filter(p => p.changePct !== null), span = Math.max(1, ...values.map(p => Math.abs(p.changePct!)));
+  return <article className="sample-trend-section" data-price-basis={series.basis} data-nights={series.nights}>
+    <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : c.two}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {c.stay} {date(series.checkIn, locale)} → {c.end} {date(series.checkOut, locale)}</p>
+    {series.basis === "MEMBER_REFERENCE" ? <p className="sample-trend-member-note">{c.memberNote}</p> : null}
+    <p className="sample-trend-caption">{c.clockNote}</p>
+    {values.length ? <div className="sample-trend-change-chart" role="img" aria-label={c.change}>{values.map(p => <div key={p.cycle}><span>{date(p.cycle, locale)}</span><div className="sample-trend-change-track"><i style={{ width: `${Math.abs(p.changePct!) / span * 50}%`, left: `${p.changePct! < 0 ? 50 - Math.abs(p.changePct!) / span * 50 : 50}%` }} /><b /></div><strong>{p.changePct! > 0 ? "+" : ""}{p.changePct!.toFixed(1)}%</strong></div>)}</div> : null}
+    <div className="sample-trend-points">{series.points.map((p, index) => <dl className="sample-trend-point" key={p.cycle}>
+      <div><dt>{c.period}</dt><dd><time dateTime={p.cycle}>{date(p.cycle, locale)}</time></dd></div>
+      <div><dt>{c.median}</dt><dd>{money(p.medianTotalMinor, locale)}</dd></div>
+      <div><dt>{c.count}</dt><dd>{p.sampleCount}</dd></div>
+      <div><dt>{c.advance}</dt><dd>{p.leadDaysMin === p.leadDaysMax ? p.leadDaysMin : `${p.leadDaysMin}–${p.leadDaysMax}`}</dd></div>
+      <div><dt>{c.change}</dt><dd>{p.changePct === null ? <span className="sample-trend-caption">{index === 0 ? c.baseline : c.noPair}</span> : <><strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong><small>{p.pairedSamples} {c.paired}</small></>}</dd></div>
+    </dl>)}</div><p className="sample-trend-caption">{c.pointHint}</p>
+  </article>;
+}
