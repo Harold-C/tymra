@@ -1,17 +1,33 @@
 # Tymra 实现与验收追踪
 
-## 2026-10-18 Scenic套餐关联及10席无价核对（候选）
+## 2026-10-18 Scenic套餐关联及10席无价核对已发布并验收
 
-用户要求优先既有证据，修复Scenic套餐关联并查清10席无价；保留68席、其他任务及不自动重试。
-独立`sample-quote-trends-20261018`工作树／`feat/sample-quote-package-20261018`，不夹带main草稿。
-22份既有HTML逐份SHA通过，无新增OTA请求。Scenic12/1的2成人Executive Studio复用388633909，
-原生308.70早餐另付／366.30含早餐由各自policy-modal行选择器区分；一成人337.50及其他房型排除。
-候选v3在Tymra追加派生TransformationRun及原Artifact／wire哈希链路，保留原Run与RAW_ONLY，
-Web只读取有完整关联的窄投影；新自然采集交付及ACK后、Run完成前保留关联，历史回放单独验收，不改Argus。
-既有172运行回放58参考／32序列、10席无目标价，无虚构跨期变化。定向领域22项及独立数据库4项通过，
-覆盖篡改拒绝、重复幂等、原文TTL后仍可读派生证据与正式价格／历史运行不变。
-10席具体原文、两个冻结窗口及无法确认的底层库存原因见本批受保护目录
-`runtime/release-candidates/sample-quote-package-20261018`；此时生产仍b8eb57f／v2，候选不当已发布。
+用户要求优先既有证据，修复Scenic套餐关联并查清10席无价；保留68席、其他任务及不自动重试，沿用验证后发布授权。独立工作树／`feat/sample-quote-package-20261018`交付，未夹带main草稿。22份既有HTML逐份SHA及原文核对通过，本批新增OTA请求0。
+
+Scenic12/1至2日的2成人Executive Studio复用388633909，原生308.70早餐另付／366.30含早餐由各自来源policy-modal行选择器区分；一成人337.50、划线原价及其他房型排除。v3只追加一份派生TransformationRun及一条原Artifact／wire哈希LineageEdge，不改原Run、原报价、捕获版本和RAW_ONLY。新自然采集可靠交付及ACK后、Run完成前保留关联；Web只读有完整关联的窄投影，原HTML按TTL删除后仍可读取已核验派生事实，金额不充当跨期套餐身份。12/5至6日不可订不补零。
+
+现有172运行回放及生产API均为68已观察、58有显示价、58参考（公开／合作方47、会员11），32序列均首周期基线，无虚构涨跌。Booking42／Airbnb7／Expedia6／Bookabach2／Trip1进入参考。会员、餐食、费用、一／两晚及精确入住退房分组，完整费用和会员资格未知仍披露，不升级正式价格或地区指数。其余10席的20个冻结窗口原文如下：
+
+| 样本 | 12/1入住窗口 | 12/5入住窗口 |
+| --- | --- | --- |
+| French Bay House、Fino、Ramada Suites | 平台明确当日不可订 | 平台明确当日不可订 |
+| Pavilions（Deluxe Two-Bedroom Apartment） | 酒店当日不可订 | 仅其他房型可订，目标未列出 |
+| The George（Luxury Suite with Spa Bath） | 仅Junior Suite，目标未列出 | 酒店当日不可订 |
+| Southwark（Executive 1 Bedroom Apartment） | 目标公寓明确sold out | 目标公寓明确sold out |
+| Cosy cottage（两晚） | 明示最少3晚 | 指定日期不可订 |
+| Private modern、Michael一卧公寓、Maison du Soleil（两晚） | 指定日期不可订 | 指定日期不可订 |
+
+未从既有证据确认不可订的底层原因（已订、房东关房、未放库存等），也未确认永久下线；Maison原文是“for your dates”，不能按结构化publiclyListed=false推断房源下线。缺口保持未知，不借其他房型、替代日期From价或改变晚数。逐窗口Run、HTML SHA、原文与未知项在本批`no-price-causes.json`、`manual-file-verification.json`；这些无价观察不作为采集暂缓。
+
+定向领域／旧收据25项、独立数据库4项通过，覆盖精确套餐、金额变化仍配同一行、单套餐剩余、篡改拒绝、重复幂等及TTL后读取。最终[固定候选完整门禁](https://github.com/Harold-C/tymra/actions/runs/39105858827)的全量代码、数据库、离线OTA、构建、原有浏览器／会员矩阵及发布容量价格矩阵全部通过。
+
+当前生产`ca91a75f1b2b643870ff76656f827fa38b7b8c4b`／`sample-quote-package-20261018`／镜像`sha256:10c4a9d8e884b1a27784c0974430172490d4eb74a37b9ce39edaeb3d2a90f4c5`；完整20层包SHA`ef11a27af9fe8090685576a3b719de9751769018fb6e80a125d4fc9628951127`两端逐字节校验。回滚b8eb57f／镜像bf5edd2及完整包、配置保留。最新备份实际恢复90表、89业务模型和1,875份证据，隔离补录读取58后清除自有派生测试记录、原恢复状态一致；异机完整备份、生产回读、两端正式`complete-release.py`均通过，无migration。
+
+生产只补录上述两条派生记录，其余所有既有业务行、历史Job、原始证据、计划／来源控制及其他容器核对保持。附加旧版读取首次因检查进程选到ingress网络而未连接数据库，原补录已成功，未重复upsert；改用与PostgreSQL共有的internal网络只读续验，旧镜像实际读取新派生记录并保持原57参考行为，生产网络配置未改。原失败诊断、一次补录及只读续验收据分开保留，不重跑旧控制器。
+
+生产API、会话保护、非法筛选、private/no-store及中英文1440／390／320px浏览器模拟、套餐标签、手机菜单、无溢出、控制台错误／警告0、严重无障碍0通过。滚动截图初始把标题置于既有固定导航下，补做标题定位截图后核对；未修改产品代码或放宽断言。两次有界自有账户QA会话撤销、临时令牌删除；未称实机或外部Cloudflare浏览器验收，既有IP限制保持。
+
+最终68配置／68可执行／暂缓0、名单2710cba及54一晚／14两晚不变；不限次数、并发1、节奏熔断、既有任务优先、遇阻暂停、每次一次和不自动重试保持。Argus仍bc163e5／release20261018-1，本批未发布或重启共享Argus。受保护`runtime/release-candidates/sample-quote-package-20261018`保存全部证据、配对恢复、生产验收及两端收尾；既有08:00只读复核已同步v3／58参考及10席无价，不新增自动化或补采。本条优先于下方历史状态。
 
 ## 2026-10-18 报价参考v2已发布并验收：旧收据与披露分组
 
