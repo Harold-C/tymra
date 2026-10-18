@@ -6,9 +6,10 @@ import { projectLegacySampleQuoteWire } from "./sample-quote-wire";
 const manifestMember = z.object({ id: z.string(), name: z.string(), source: z.string(), sourceListingId: z.string(), sourceUrl: z.string().url(),
   accommodationType: z.string(), locality: z.string().nullable(), nights: z.union([z.literal(1), z.literal(2), z.literal(3)]), labels: z.record(z.unknown()) });
 const controlSchema = z.object({ manifestHash: z.string(), manifest: z.object({ start: z.string().date(), members: z.array(manifestMember).max(200) }),
-  cadence: z.object({ startsOn: z.string().date() }).optional() });
+  cadence: z.object({ startsOn: z.string().date(), dailyStartsOn: z.string().date().optional() }).optional() });
 const lineage = z.object({ manifestHash: z.string().regex(/^[a-f0-9]{64}$/u) });
-const LIMIT = 6000;
+// 68 × two windows × 90 days plus retained acceptance history, still bounded.
+const LIMIT = 16000;
 type RunRow = Omit<SampleTrendRun, "finishedAt"> & { finishedAt: Date; legacyProof: unknown; jobId: string };
 
 /** Only completed selected-plan facts are read. No enqueue, source request, job repair or normalization write. */
@@ -102,7 +103,7 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
       }
       projected.push({ ...r, finishedAt: r.finishedAt.toISOString() });
     }
-    return { members, startsOn: state.cadence?.startsOn ?? state.manifest.start, complete, runs: projected };
+    return { members, startsOn: state.cadence?.startsOn ?? state.manifest.start, dailyStartsOn: state.cadence?.dailyStartsOn, complete, runs: projected };
   }, { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   return data ? buildSampleQuoteTrends({ ...data, filter, asOf: now.toISOString() }) : null;
 }

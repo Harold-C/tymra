@@ -45,6 +45,30 @@ const copy = {
     incomplete: "已达到安全读取上限，覆盖不完整，暂不计算涨跌。请缩小观察日期范围。", missing: "固定样本采集计划尚不可读取。", error: "暂时无法读取样本报价，请稍后刷新。", invalid: "请选择90个新西兰日期以内的有效观察范围及筛选条件。",
     weekdays: "工作日与周末按不同入住日期保留；此页不推断普遍的周末溢价。", retry: "重置筛选" },
 };
+function trendCopy(locale: Locale, granularity?: "DAY" | "WEEK") {
+  const daily = granularity === "DAY";
+  return { ...copy[locale], ...(locale === "zh" ? {
+    frequency: "观察频率", daily: "日环比", weekly: "周度汇总", progress: "每日窗口覆盖", completed: "已完成", positive: "有效价格", missingCount: "未完成",
+    coverageNote: "覆盖按房型与入住窗口计数；价格数遵循当前价格筛选。当天仍可能采集中；历史未完成窗口不补发，无价不填零。",
+    period: daily ? "新西兰观察日期" : "新西兰周度周期",
+    change: daily ? "与前一日配对变化" : "与上周期配对变化",
+    baseline: daily ? "首日基线 · 等待前后日配对" : copy.zh.baseline,
+    noPair: daily ? "前一日暂无相同口径报价" : copy.zh.noPair,
+    continuity: daily ? "同房型 · 同价格口径 · 相邻新西兰日期" : copy.zh.continuity,
+    pointHint: daily ? "每天每个窗口取最后一次完成的观察；仅与前一新西兰日期的相同房型、入住退房日及套餐口径配对。缺日、无价或失败不沿用旧价；每个样本只占一份权重。" : "每周每个窗口取最后一次完成的观察，按样本配对上周期相同房型、入住退房日及套餐口径。当前周为截至目前的汇总；这不是每日涨跌的平均值。",
+    actualDates: "实际观察日期",
+  } : {
+    frequency: "Observation frequency", daily: "Day-on-day", weekly: "Weekly summary", progress: "Daily window coverage", completed: "Completed", positive: "Eligible prices", missingCount: "Not completed",
+    coverageNote: "Coverage counts unit/stay windows; eligible prices follow the selected price filters. Today's collection may still be in progress. Historic gaps are not resubmitted and unavailable prices are never zero.",
+    period: daily ? "NZ observation date" : "NZ weekly cycle",
+    change: daily ? "Matched change from previous day" : copy.en.change,
+    baseline: daily ? "First-day baseline · waiting for adjacent days" : copy.en.baseline,
+    noPair: daily ? "No matching offer on the previous NZ date" : copy.en.noPair,
+    continuity: daily ? "Same room · same price basis · adjacent NZ dates" : copy.en.continuity,
+    pointHint: daily ? "Use the last completed observation per window per NZ date. Match only the preceding NZ date's same room, arrival/departure and offer basis. Missing, unavailable and failed dates never carry prices forward. Each sample has one vote." : "Use the last completed observation per window per week and match the preceding cycle's same room, arrival/departure and offer basis. The current week is a summary to date, not an average of daily percentage changes.",
+    actualDates: "Actual observation dates",
+  }) };
+}
 const categories: Record<string, [string, string]> = { HOTEL: ["Hotel", "酒店"], MOTEL: ["Motel", "汽车旅馆"], HOLIDAY_HOME: ["Holiday home", "民宿／度假屋"],
   SERVICED_APARTMENT: ["Serviced apartment", "服务公寓"], BACKPACKER: ["Backpacker", "背包客住宿"], GUESTHOUSE: ["Guesthouse", "家庭旅馆"],
   HOLIDAY_PARK: ["Holiday park", "假日公园"], LODGE: ["Lodge", "旅舍"] };
@@ -68,7 +92,7 @@ function money(minor: number, locale: Locale) { return new Intl.NumberFormat(loc
 function safeSource(href: string) { try { const u = new URL(href); if (u.protocol !== "https:" || u.username || u.password || !["www.booking.com", "www.airbnb.com", "www.airbnb.co.nz", "www.expedia.co.nz", "www.bookabach.co.nz", "www.trip.com", "nz.trip.com"].includes(u.hostname)) return null; u.search = ""; u.hash = ""; return u.href; } catch { return null; } }
 
 export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Locale; filter: SampleTrendFilter; data: SampleQuoteTrendSummary | null; error?: "invalid" | "error" }) {
-  const c = copy[locale];
+  const c = trendCopy(locale, filter.granularity);
   return <section className="rough-shell sample-quote-trends" lang={locale === "zh" ? "zh-CN" : "en-NZ"}>
     <Link href={`/${locale}/account`} className="text-link"><ArrowLeft size={16} aria-hidden="true" />{c.back}</Link>
     <header className="sample-trend-heading"><div><p>{c.reference}</p><h1>{c.title}</h1><p>{c.intro}</p></div><ChartNoAxesCombined size={32} aria-hidden="true" /></header>
@@ -76,6 +100,7 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
     <form className="sample-trend-filters" method="get" aria-label={locale === "zh" ? "报价走势筛选" : "Quote trend filters"}>
       <label>{c.basis}<select name="basis" defaultValue={filter.basis}><option value="PUBLIC_TOTAL">{c.public}</option><option value="MEMBER_REFERENCE">{c.member}</option><option value="ALL">{c.all}</option></select></label>
       <label>{c.comparison}<select name="comparison" defaultValue={filter.comparison ?? "FIXED"}><option value="FIXED">{c.fixed}</option><option value="ROLLING">{c.rolling}</option></select></label>
+      <label>{c.frequency}<select name="granularity" defaultValue={filter.granularity ?? "WEEK"}><option value="DAY">{c.daily}</option><option value="WEEK">{c.weekly}</option></select></label>
       <label>{c.nights}<select name="nights" defaultValue={filter.nights}><option value="ALL">{c.all}</option><option value="1">{c.one}</option><option value="2">{c.two}</option><option value="3">{c.three}</option></select></label>
       <label>{c.stay}<select name="stay" defaultValue={filter.stay}><option value="ALL">{c.allDates}</option>{data?.stayDates.map(day => <option key={day} value={day}>{date(day, locale)}</option>)}</select></label>
       <label>{c.category}<select name="category" defaultValue={filter.category}><option value="ALL">{c.all}</option>{data?.categories.map(value => <option key={value} value={value}>{categoryLabel(value, locale)}</option>)}</select></label>
@@ -90,8 +115,12 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
       {!data.complete ? <p role="alert" className="sample-trend-notice">{c.incomplete}</p> : null}
       <dl className="sample-trend-metrics">{[[c.observed, data.observedMembers], [c.priced, data.pricedMembers], [c.included, data.includedMembers]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       <p>{c.coverage}</p>
+      {data.dailyCoverage?.length ? <section className="sample-trend-section"><h2>{c.progress}</h2><p>{c.coverageNote}</p><div className="sample-trend-points">{data.dailyCoverage.slice(-7).reverse().map(day => <dl className="sample-trend-point" key={day.date}>
+        <div><dt>{c.observedOn}</dt><dd>{date(day.date, locale)}</dd></div><div><dt>{c.completed}</dt><dd>{day.completed} / {day.expected}</dd></div>
+        <div><dt>{c.positive}</dt><dd>{day.priced}</dd></div><div><dt>{c.missingCount}</dt><dd>{day.missing}</dd></div><div><dt>{c.failed}</dt><dd>{day.failed}</dd></div>
+      </dl>)}</div></section> : null}
       <details className="sample-trend-method"><summary>{c.method}</summary><p>{c.publicNote}</p><p>{c.memberNote}</p><p>{filter.comparison === "ROLLING" ? c.rollingNote : c.clockNote}</p><p>{c.weekdays}</p><p>{c.pointHint}</p></details>
-      {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} />)}
+      {!data.series.length ? <div className="sample-trend-empty"><ChartNoAxesCombined size={28} aria-hidden="true" /><h2>{c.empty}</h2><p>{c.emptyBody}</p></div> : data.series.map(series => <Series key={series.key} series={series} locale={locale} granularity={filter.granularity} />)}
       <div className="sample-trend-caption">{c.unavailable}: {data.noPriceWindows} · {c.failed}: {data.failedWindows}</div>
       <details className="sample-trend-method"><summary>{c.gaps} ({data.gaps.length})</summary>{!data.gaps.length ? <p>{c.none}</p> : <ul className="sample-trend-gaps">{data.gaps.map(gap => <li key={gap.memberId}><strong>{gap.name}</strong><span>{gap.reasons.map(reason => gapCopy[reason]?.[locale === "zh" ? 1 : 0] ?? reason).join(" · ")}</span></li>)}</ul>}</details>
       <section className="sample-trend-section"><h2>{c.available}</h2><p>{c.quoteHint}</p>{!data.recentQuotes.length ? <p>{c.noQuotes}</p> : <ul className="sample-trend-quotes">{data.recentQuotes.slice(0, 50).map((q, i) => <li key={`${q.name}-${q.basis}-${q.checkIn}-${i}`}><div><strong>{q.name}</strong><span>{basisLabel(q.basis, locale)} · {q.nights === 1 ? c.one : q.nights === 2 ? c.two : c.three}</span><span>{groupLabel(q.mealGroup, q.feeGroup, locale)} · {refundCopy[q.refundGroup][locale === "zh" ? 1 : 0]}</span><span>{c.stay} {date(q.checkIn, locale)} → {date(q.checkOut, locale)}</span><small>{c.observedOn} {date(q.observedOn, locale)} · {q.leadDays} {locale === "zh" ? "天提前期" : "days before arrival"}</small><details className="sample-trend-method"><summary>{c.notes}</summary>{q.disclosures.length ? <p>{q.disclosures.map(d => gapCopy[d]?.[locale === "zh" ? 1 : 0] ?? d).join(" · ")}</p> : null}<p>{c.mealNote}: {q.notes.meal || c.unknown}</p><p>{c.cancelNote}: {q.notes.cancellation || c.unknown}</p><p>{c.payNote}: {q.notes.payment || c.unknown}</p></details></div><div><strong>{money(q.amountMinor, locale)}</strong><span>{q.included ? c.includedTag : c.excludedTag}</span>{safeSource(q.sourceUrl) ? <a href={safeSource(q.sourceUrl)!} target="_blank" rel="noreferrer">{q.source} ↗</a> : <span>{q.source}</span>}</div></li>)}</ul>}</section>
@@ -99,8 +128,8 @@ export function SampleQuoteTrends({ locale, filter, data, error }: { locale: Loc
   </section>;
 }
 
-function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale }) {
-  const c = copy[locale], values = series.points.filter(p => p.changePct !== null), span = Math.max(1, ...values.map(p => Math.abs(p.changePct!)));
+function Series({ series, locale, granularity }: { series: SampleTrendSeries; locale: Locale; granularity?: "DAY" | "WEEK" }) {
+  const c = trendCopy(locale, granularity), values = series.points.filter(p => p.changePct !== null), span = Math.max(1, ...values.map(p => Math.abs(p.changePct!)));
   return <article className="sample-trend-section" data-price-basis={series.basis} data-nights={series.nights} data-meals={series.mealGroup} data-fees={series.feeGroup}>
     <h2>{categoryLabel(series.category, locale)} · {series.nights === 1 ? c.one : series.nights === 2 ? c.two : c.three}</h2><p><strong>{basisLabel(series.basis, locale)}</strong> · {series.arrivalKind ? `${series.arrivalKind === "WEEKEND" ? c.weekend : c.weekday} · ${c.lead}: ${series.leadBand}` : `${c.stay} ${date(series.checkIn, locale)} → ${c.end} ${date(series.checkOut, locale)}`}</p>
     {series.arrivalDates ? <p className="sample-trend-caption">{c.stay}: {series.arrivalDates.map(d => date(d, locale)).join(" · ")}</p> : null}
@@ -109,6 +138,7 @@ function Series({ series, locale }: { series: SampleTrendSeries; locale: Locale 
     {values.length ? <div className="sample-trend-change-chart" role="img" aria-label={c.change}>{values.map(p => <div key={p.cycle}><span>{date(p.cycle, locale)}</span><div className="sample-trend-change-track"><i style={{ width: `${Math.abs(p.changePct!) / span * 50}%`, left: `${p.changePct! < 0 ? 50 - Math.abs(p.changePct!) / span * 50 : 50}%` }} /><b /></div><strong>{p.changePct! > 0 ? "+" : ""}{p.changePct!.toFixed(1)}%</strong></div>)}</div> : null}
     <div className="sample-trend-points">{series.points.map(p => <dl className="sample-trend-point" key={p.cycle}>
       <div><dt>{c.period}</dt><dd><time dateTime={p.cycle}>{date(p.cycle, locale)}</time></dd></div>
+      {granularity !== "DAY" ? <div><dt>{c.actualDates}</dt><dd>{date(p.observedFrom, locale)} → {date(p.observedTo, locale)}</dd></div> : null}
       {!series.arrivalKind ? <div className="sample-trend-primary"><dt>{c.change}</dt><dd>{p.changePct === null ? <span>{p.baseline ? c.baseline : c.noPair}</span> : <strong>{p.changePct > 0 ? "+" : ""}{p.changePct.toFixed(1)}%</strong>}{!p.baseline ? <small>{c.previous} {date(p.previousCycle, locale)}</small> : null}</dd></div> : null}
       <div><dt>{series.arrivalKind ? c.count : c.matching}</dt><dd>{series.arrivalKind ? p.sampleCount : `${p.pairedSamples} / ${p.sampleCount}`}<small>{!series.arrivalKind ? `${p.unpairedSamples} ${c.unmatched}` : null}</small></dd></div>
       <div><dt>{c.median}</dt><dd>{money(p.medianTotalMinor, locale)}</dd></div>

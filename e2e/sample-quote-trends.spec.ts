@@ -4,7 +4,7 @@ import { prisma } from "@tymra/db";
 import { seedSampleQuoteTrendFixture } from "../test/sample-quote-trend-fixtures";
 
 let range: Awaited<ReturnType<typeof seedSampleQuoteTrendFixture>>;
-test.beforeAll(async () => { range = await seedSampleQuoteTrendFixture(prisma, new Date(), true); });
+test.beforeAll(async () => { range = await seedSampleQuoteTrendFixture(prisma, new Date(), true, true); });
 test.afterAll(async () => { await prisma.$disconnect(); });
 
 for (const locale of ["en", "zh"] as const) test(`sample trends separate prices, stays and dates in ${locale}`, async ({ page }, testInfo) => {
@@ -13,7 +13,7 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   const signedIn = await page.request.post("/api/v1/customer/auth/password", { headers: { origin: process.env.PUBLIC_ORIGIN! },
     data: { email: "demo1@tymra.test", password: process.env.MEMBER_DEV_PASSWORD! } });
   expect(signedIn.status()).toBe(201);
-  const query = new URLSearchParams({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL", nights: "1" });
+  const query = new URLSearchParams({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL", nights: "1", granularity: "WEEK" });
   const path = `/${locale}/account/market/sample-quotes`;
   const response = await page.goto(`${path}?${query}`); expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(locale === "zh" ? "基督城样本报价走势" : "Christchurch sample quote trends");
@@ -32,6 +32,13 @@ for (const locale of ["en", "zh"] as const) test(`sample trends separate prices,
   await expect(page.locator('.sample-trend-section[data-price-basis="MEMBER_REFERENCE"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath(`${locale}-public.png`), fullPage: true });
+  await page.locator('select[name="granularity"]').selectOption("DAY");
+  await Promise.all([page.waitForURL(/granularity=DAY/u), page.locator('.sample-trend-filters button[type="submit"]').click()]);
+  await expect(page.locator('.sample-trend-section[data-nights="1"]')).toContainText("+1.0%");
+  await expect(page.locator('.sample-trend-section[data-nights="1"] .sample-trend-point')).toHaveCount(4);
+  await page.screenshot({ path: testInfo.outputPath(`${locale}-daily.png`), fullPage: true });
+  await page.locator('select[name="granularity"]').selectOption("WEEK");
+  await Promise.all([page.waitForURL(/granularity=WEEK/u), page.locator('.sample-trend-filters button[type="submit"]').click()]);
   const axe = await new AxeBuilder({ page }).include(".sample-quote-trends").analyze();
   expect(axe.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""))).toEqual([]);
   await page.locator('select[name="basis"]').selectOption("MEMBER_REFERENCE");

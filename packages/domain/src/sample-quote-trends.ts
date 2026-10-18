@@ -3,7 +3,7 @@ import { addNzCalendarDays, nzDateKey, nzDayOfWeek } from "./nz-time";
 import { observationQuoteSchema } from "./market-observation";
 import { sampleReferencePackageSchema } from "./sample-quote-packages";
 
-export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v5";
+export const SAMPLE_QUOTE_TRENDS_VERSION = "sample-quote-trends-v6";
 export type SampleQuoteBasis = "PUBLIC_TOTAL" | "MEMBER_REFERENCE";
 export type SampleMealGroup = "ROOM_ONLY" | "BREAKFAST_INCLUDED" | "BREAKFAST_EXTRA" | "NOT_APPLICABLE" | "UNDISCLOSED";
 export type SampleFeeGroup = "INCLUSIVE" | "UNDISCLOSED" | "MEMBER_UNVERIFIED";
@@ -23,6 +23,7 @@ export const sampleTrendFilterSchema = z.object({
   basis: z.enum(["ALL", "PUBLIC_TOTAL", "MEMBER_REFERENCE"]).default("PUBLIC_TOTAL"),
   nights: z.enum(["ALL", "1", "2", "3"]).default("ALL"),
   comparison: z.enum(["FIXED", "ROLLING"]).optional(),
+  granularity: z.enum(["DAY", "WEEK"]).optional(),
   stay: z.union([z.literal("ALL"), z.string().date()]).default("ALL"),
   category: z.string().max(80).default("ALL"),
   lead: z.enum(["ALL", "0-30", "31-60", "61-90", "91+"]).default("ALL"),
@@ -46,6 +47,7 @@ export type SampleTrendPoint = {
   cycle: string; observations: number; sampleCount: number; medianTotalMinor: number;
   leadDaysMin: number; leadDaysMax: number; pairedSamples: number; changePct: number | null;
   previousCycle: string; unpairedSamples: number; baseline: boolean;
+  observedFrom: string; observedTo: string;
 };
 export type SampleTrendSeries = {
   key: string; basis: SampleQuoteBasis; nights: number; category: string; checkIn: string; checkOut: string;
@@ -64,6 +66,7 @@ export type SampleQuoteTrendSummary = {
     mealGroup: SampleMealGroup; feeGroup: SampleFeeGroup; refundGroup: SampleRefundGroup; disclosures: string[];
     notes: { meal: string | null; cancellation: string | null; payment: string | null } }[];
   complete: boolean;
+  dailyCoverage: { date: string; expected: number; completed: number; priced: number; failed: number; missing: number }[];
 };
 
 const text = (v: string) => v.normalize("NFKC").replace(/\s+/gu, " ").trim();
@@ -116,8 +119,10 @@ function observationTime(run: SampleTrendRun) {
 
 /** A descriptive source-quote read model. Never upgrades raw observations or writes a price index. */
 export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; runs: SampleTrendRun[];
-  startsOn: string; asOf: string; filter: SampleTrendFilter; complete?: boolean }): SampleQuoteTrendSummary {
+  startsOn: string; dailyStartsOn?: string; asOf: string; filter: SampleTrendFilter; complete?: boolean }): SampleQuoteTrendSummary {
   const filter = sampleTrendFilterSchema.parse(input.filter), members = new Map(input.members.map(m => [m.id, m]));
+  const period = (day: string) => filter.granularity === "DAY" ? day : sampleQuoteCycle(input.startsOn, day);
+  const step = filter.granularity === "DAY" ? 1 : 7;
   const gaps = new Map<string, Set<string>>(), observed = new Set<string>(), priced = new Set<string>();
   const addGap = (id: string, reason: string) => { if (!gaps.has(id)) gaps.set(id, new Set()); gaps.get(id)!.add(reason); };
   const matches = (m: SampleTrendMember) => (filter.nights === "ALL" || String(m.nights) === filter.nights)
@@ -130,7 +135,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
     const day = nzDateKey(new Date(observationTime(run)));
     if (day < input.startsOn || day < filter.from || day > filter.to || (filter.stay !== "ALL" && run.checkIn !== filter.stay)) continue;
     if (!leadMatches(daysBetween(day, run.checkIn), filter.lead)) continue;
-    const key = JSON.stringify([m.id, run.checkIn, sampleQuoteCycle(input.startsOn, day)]), prior = latest.get(key);
+    const key = JSON.stringify([m.id, run.checkIn, period(day)]), prior = latest.get(key);
     // Latest completed window wins, including unavailable/error outcomes. No carry-forward of an earlier quote.
     if (!prior || Date.parse(observationTime(run)) > Date.parse(observationTime(prior)) || (Date.parse(observationTime(run)) === Date.parse(observationTime(prior)) && run.id > prior.id)) latest.set(key, run);
   }
@@ -142,7 +147,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
     if (!Array.isArray(run.evaluated)) { addGap(m.id, "QUOTE_EVIDENCE_MISSING"); continue; }
     const offers = Array.isArray(run.rates) ? run.rates.flatMap(r => { const parsed = offerSchema.safeParse(r); return parsed.success ? [parsed.data] : []; }) : [];
     const packages = z.array(sampleReferencePackageSchema).max(500).safeParse(run.referencePackages ?? []);
-    const observedOn = nzDateKey(new Date(observationTime(run))), cycle = sampleQuoteCycle(input.startsOn, observedOn);
+    const observedOn = nzDateKey(new Date(observationTime(run))), cycle = period(observedOn);
     const usableContext = run.executor === "self_hosted" && run.connectorId === `${m.source}-public` && !!run.connectorVersion;
     let windowHasPrice = false;
     for (const e of run.evaluated) {
@@ -245,7 +250,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
   for (const [key, rows] of groups) {
     const sample = rows[0], cycles = [...new Set(rows.map(r => r.cycle))].sort(), points: SampleTrendPoint[] = [];
     for (const cycle of cycles) {
-      const current = rows.filter(r => r.cycle === cycle), prior = rows.filter(r => r.cycle === addNzCalendarDays(cycle, -7));
+      const current = rows.filter(r => r.cycle === cycle), prior = rows.filter(r => r.cycle === addNzCalendarDays(cycle, -step));
       const prices = new Map<string, number[]>(), changes = new Map<string, number[]>();
       // Multiple duplicated offers/runs never make a listing count twice.
       const unique = new Map(current.map(r => [JSON.stringify([r.member.id, r.offerKey, r.sourceContext, r.checkIn, r.checkOut]), r]));
@@ -260,7 +265,8 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
       points.push({ cycle, observations: unique.size, sampleCount: prices.size,
         medianTotalMinor: median([...prices.values()].map(median)), leadDaysMin: Math.min(...current.map(r => r.leadDays)),
         leadDaysMax: Math.max(...current.map(r => r.leadDays)), pairedSamples: changes.size,
-        previousCycle: addNzCalendarDays(cycle, -7), unpairedSamples: prices.size - changes.size, baseline: cycle === input.startsOn,
+        previousCycle: addNzCalendarDays(cycle, -step), unpairedSamples: prices.size - changes.size, baseline: cycle === input.startsOn,
+        observedFrom: current.map(r => r.observedOn).sort()[0], observedTo: current.map(r => r.observedOn).sort().at(-1)!,
         changePct: input.complete === false || !changes.size ? null : median([...changes.values()].map(median)) });
     }
     series.push({ key, basis: sample.basis, nights: sample.member.nights, category: sample.member.accommodationType,
@@ -269,7 +275,19 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
         leadBand: sample.leadDays < 0 ? "PAST" : sample.leadDays <= 30 ? "0-30" : sample.leadDays <= 60 ? "31-60" : sample.leadDays <= 90 ? "61-90" : "91+",
         arrivalDates: [...new Set(rows.map(r => r.checkIn))].sort() } : {}) });
   }
-  return { version: SAMPLE_QUOTE_TRENDS_VERSION, asOf: input.asOf, filter, startsOn: input.startsOn,
+  const dailyCoverage: SampleQuoteTrendSummary["dailyCoverage"] = [];
+  if (filter.granularity === "DAY" && input.dailyStartsOn) {
+    const first = [filter.from, input.dailyStartsOn].sort().at(-1)!;
+    const last = [filter.to, nzDateKey(new Date(input.asOf))].sort()[0];
+    const expected = input.members.filter(matches).length * (filter.stay === "ALL" ? 2 : 1);
+    for (let day = first; day <= last; day = addNzCalendarDays(day, 1)) {
+      const completed = [...latest.values()].filter(r => nzDateKey(new Date(observationTime(r))) === day);
+      const positive = new Set(included.filter(r => r.observedOn === day).map(r => JSON.stringify([r.member.id, r.checkIn])));
+      dailyCoverage.push({ date: day, expected, completed: completed.length, priced: positive.size,
+        failed: completed.filter(r => r.status !== "SUCCEEDED" || !r.delivered).length, missing: Math.max(0, expected - completed.length) });
+    }
+  }
+  return { version: SAMPLE_QUOTE_TRENDS_VERSION, asOf: input.asOf, filter, startsOn: input.startsOn, dailyCoverage,
     configuredMembers: input.members.length, observedMembers: observed.size, pricedMembers: priced.size,
     includedMembers: new Set(included.map(r => r.member.id)).size, completedWindows: latest.size, noPriceWindows, failedWindows, rejectedOffers,
     series: series.sort((a, b) => a.key.localeCompare(b.key)),

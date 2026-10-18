@@ -22,6 +22,26 @@ function alterRaw(r: SampleTrendRun, changes: object) { const e = r.evaluated as
 function alterRate(r: SampleTrendRun, changes: object) { return { ...r, rates: [{ ...(r.rates as object[])[0], ...changes }] }; }
 
 describe("sample source-quote trends (separate from formal market comparability)", () => {
+  it("keeps daily observations, pairs only yesterday, and never carries a missing or failed day forward", () => {
+    const rows = [run("a", "2026-10-16", 10000), run("b", "2026-10-17", 11000), run("c", "2026-10-19", 12000)];
+    const daily = build(rows, [member], { filter: { from: "2026-10-16", to: "2026-10-20", basis: "ALL", nights: "ALL", stay: "ALL", category: "ALL", lead: "ALL", granularity: "DAY" }, dailyStartsOn: "2026-10-19" });
+    expect(daily.series[0].points.map(p => p.cycle)).toEqual(["2026-10-16", "2026-10-17", "2026-10-19"]);
+    expect(daily.series[0].points[1].changePct).toBeCloseTo(10);
+    expect(daily.series[0].points[2]).toMatchObject({ changePct: null, previousCycle: "2026-10-18", pairedSamples: 0 });
+    expect(daily.dailyCoverage[0]).toMatchObject({ date: "2026-10-19", expected: 2, completed: 1, priced: 1, missing: 1 });
+    const failed = { ...run("failed", "2026-10-17"), status: "FAILED", finishedAt: "2026-10-17T01:00:00Z", evaluated: [] };
+    const noCarry = build([...rows, failed, run("d", "2026-10-18", 12000)], [member], { filter: { ...daily.filter } });
+    expect(noCarry.failedWindows).toBe(1);
+    expect(noCarry.series[0].points.find(p => p.cycle === "2026-10-18")?.changePct).toBeNull();
+  });
+  it("summarizes weekly end observations without averaging daily percentage changes", () => {
+    const rows = [run("a", "2026-10-16", 10000), run("b", "2026-10-17", 12000), run("c", "2026-10-23", 15000), run("d", "2026-10-24", 18000)];
+    const weekly = build(rows);
+    expect(weekly.series[0].points).toHaveLength(2);
+    expect(weekly.series[0].points[1].changePct).toBeCloseTo(50);
+    expect(weekly.series[0].points[1]).toMatchObject({ observedFrom: "2026-10-24", observedTo: "2026-10-24" });
+    expect(weekly.series[0].points[0].medianTotalMinor).toBe(12000);
+  });
   it("compares continuous refundable quotes despite payment dates and cancellation deadline changes", () => {
     const quoted = (id: string, day: string, amount: number, deadline: string, plan: string | null = "plan1") => {
       const changes = { cancellationPolicy: `Free cancellation before ${deadline}`, paymentTerms: `Pay nothing until ${deadline}` };

@@ -31,9 +31,16 @@ beforeAll(async () => {
 afterAll(async () => { await prisma.$disconnect(); await adminPrisma.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`); await adminPrisma.$disconnect(); });
 
 describe("sample quote read chain", () => {
+  it("defaults to daily history without fabricating day-on-day changes across a seven-day gap", async () => {
+    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "ALL" }, now);
+    if (!filter.success) throw Error("Invalid test filter");
+    const result = await readSampleQuoteTrends(filter.data);
+    expect(result!.filter.granularity).toBe("DAY");
+    expect(result!.series.every(s => s.points.length === 2 && s.points.every(p => p.changePct === null))).toBe(true);
+  });
   it("reads retained verified wire with a narrow projection, separates member/two-night series and writes nothing", async () => {
     const before = await Promise.all([prisma.job.findMany(), prisma.collectionRun.findMany(), prisma.argusExecution.findMany(), prisma.scheduleDefinition.findMany(), prisma.dataSource.findMany()]);
-    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "ALL" }, now); if (!filter.success) throw Error("Invalid test filter");
+    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "ALL", granularity: "WEEK" }, now); if (!filter.success) throw Error("Invalid test filter");
     const result = await readSampleQuoteTrends(filter.data);
     expect(result).toMatchObject({ configuredMembers: 2, observedMembers: 2, includedMembers: 2, complete: true });
     expect(result!.series).toHaveLength(2);
@@ -55,7 +62,7 @@ describe("sample quote read chain", () => {
     const run = await prisma.collectionRun.findFirstOrThrow({ where: { scope: { path: ["memberId"], equals: "trend-fixture-1" } }, orderBy: { finishedAt: "asc" } });
     const scope = run.scope as { verifiedWire: { wireJson: string } } & Record<string, unknown>;
     const originalJob = await prisma.job.findUniqueOrThrow({ where: { id: run.jobId! } });
-    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL" }, now); if (!filter.success) throw Error("Invalid test filter");
+    const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL", granularity: "WEEK" }, now); if (!filter.success) throw Error("Invalid test filter");
     // Completed receipts remain immutable even in fixtures; create later observations instead of editing them.
     async function observation(index: number, tampered = false, delivered = true, oversized = false) {
       const at = new Date(run.finishedAt!.getTime() + index * 1000), argusId = `synthetic-legacy-${index}`;
