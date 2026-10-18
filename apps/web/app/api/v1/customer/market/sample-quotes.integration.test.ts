@@ -52,9 +52,9 @@ describe("sample quote read chain", () => {
     const originalJob = await prisma.job.findUniqueOrThrow({ where: { id: run.jobId! } });
     const filter = parseSampleTrendFilter({ from: range.from, to: range.to, basis: "PUBLIC_TOTAL" }, now); if (!filter.success) throw Error("Invalid test filter");
     // Completed receipts remain immutable even in fixtures; create later observations instead of editing them.
-    async function observation(index: number, tampered = false, delivered = true) {
+    async function observation(index: number, tampered = false, delivered = true, oversized = false) {
       const at = new Date(run.finishedAt!.getTime() + index * 1000), argusId = `synthetic-legacy-${index}`;
-      const payload = { job_id: argusId, ...JSON.parse(scope.verifiedWire.wireJson) };
+      const payload = { job_id: argusId, ...JSON.parse(scope.verifiedWire.wireJson), ...(oversized ? { fixturePadding: "x".repeat(16777217) } : {}) };
       const wire = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
       const proof = { argusJobId: wire.job_id, resultSha256: wire.result_sha256, canonicalSha256: observationCanonicalHash(wire) };
       const copied = JSON.parse(JSON.stringify(scope)); copied.verifiedWire = proof;
@@ -79,5 +79,9 @@ describe("sample quote read chain", () => {
     expect(rejected!.gaps[0].reasons).toContain("DELIVERY_OR_CAPTURE_FAILED");
     await observation(3, false, false);
     expect((await readSampleQuoteTrends(filter.data))!.failedWindows).toBe(1);
+    await observation(4, false, true, true);
+    const limited = await readSampleQuoteTrends(filter.data);
+    expect(limited!.complete).toBe(false);
+    expect(limited!.series.every(s => s.points.every(p => p.changePct === null))).toBe(true);
   });
 });

@@ -75,10 +75,13 @@ export async function readSampleQuoteTrends(filter: SampleTrendFilter) {
           const proof = z.object({ argusJobId: z.string() }).safeParse(legacyProof);
           if (!proof.success) r.delivered = false;
           else {
-            const rows = await transaction.$queryRaw<{ result: unknown }[]>(Prisma.sql`
-              SELECT e.result FROM "ArgusExecution" e WHERE e."collectionRunId" = ${r.id} AND e."parentJobId" = ${jobId}
+            const rows = await transaction.$queryRaw<{ result: unknown; oversized: boolean }[]>(Prisma.sql`
+              SELECT CASE WHEN octet_length(e.result::text) <= 16777216 THEN e.result ELSE NULL END AS result,
+                octet_length(e.result::text) > 16777216 AS oversized
+              FROM "ArgusExecution" e WHERE e."collectionRunId" = ${r.id} AND e."parentJobId" = ${jobId}
                 AND e."argusJobId" = ${proof.data.argusJobId} AND e."deliveryVerifiedAt" IS NOT NULL
-                AND octet_length(e.result::text) <= 16777216 LIMIT 2`);
+              LIMIT 2`);
+            if (rows.some(row => row.oversized)) complete = false;
             try {
               if (rows.length !== 1) throw Error("LEGACY_EXECUTION_NOT_UNIQUE_OR_UNVERIFIED");
               Object.assign(r, projectLegacySampleQuoteWire(rows[0].result, legacyProof));

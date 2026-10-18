@@ -73,6 +73,8 @@ describe("sample source-quote trends (separate from formal market comparability)
     const x = { cancellationPolicy: "Unknown package A" }, y = { cancellationPolicy: "Unknown package B" };
     const result = build([alterRate(alterRaw(run("a", "2026-10-16"), x), x), alterRate(alterRaw(run("b", "2026-10-23"), y), y)]);
     expect(result.series[0].points[1].changePct).toBeNull();
+    const conflict = build([alterRaw(run("a", "2026-10-16"), { mandatoryFees: "CONFLICT" })]);
+    expect(conflict.includedMembers).toBe(0); expect(conflict.gaps[0].reasons).toContain("SOURCE_CONFLICT");
   });
   it("members-only amounts form independent displayed-reference series without borrowed terms", () => {
     function ref(r: SampleTrendRun) {

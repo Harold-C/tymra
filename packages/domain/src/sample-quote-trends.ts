@@ -147,6 +147,7 @@ export function buildSampleQuoteTrends(input: { members: SampleTrendMember[]; ru
       windowHasPrice = true; priced.add(m.id);
       const reasons: string[] = [];
       if (!usableContext) reasons.push("SOURCE_EXECUTION_CONTEXT_MISSING");
+      if (raw.mandatoryFees === "CONFLICT") reasons.push("SOURCE_CONFLICT");
       if (raw.qualityFlags.some(f => /(?:IDENTITY|QUERY|OCCUPANCY|CURRENCY|PRICE|FEE|TERMS|POLICY).*CONFLICT|CONTEXT_DRIFT|AMOUNT_MISMATCH/iu.test(f))) reasons.push("SOURCE_CONFLICT");
       const matching = offers.filter(r => r.unitExternalId === raw.sourceUnitKey && r.checkIn === raw.checkIn && r.checkOut === raw.checkOut
         && r.adults === 2 && r.children === 0 && r.units === 1);
