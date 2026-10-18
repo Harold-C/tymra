@@ -377,13 +377,17 @@ MKCERT_ROOT_CA_PATH=<the rootCA.pem below `mkcert -CAROOT`>
 
 The token must contain at least 32 characters and include the Argus Job and `evidence:read` scopes.
 Do not reuse `CRON_SECRET` or another application secret.
-`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. For Eventfinda, Ticketmaster and
-Sporty School Sport durable Jobs, `ARGUS_PUBLIC_QUEUE_TIMEOUT_MS` bounds queue waiting separately
+`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. For Eventfinda, Ticketmaster,
+Sporty School Sport and production `christchurch-selected-samples` durable Jobs whose source
+matches the OTA connector, `ARGUS_PUBLIC_QUEUE_TIMEOUT_MS` bounds queue waiting separately
 (default one hour, configurable from ten minutes to six hours). Queued status checks are thirty
 seconds apart. Once Argus reports its persisted `started_at`, `ARGUS_JOB_POLL_TIMEOUT_MS` bounds
 execution from that immutable time and must exceed the capture deadline. Repeated polling and
-Worker restarts do not extend execution time. Other connectors, including OTA, retain their existing
-submission-to-result deadline. Shared Argus concurrency and private sessions are unchanged.
+Worker restarts do not extend execution time. This polls the same remote Job; it does not submit
+another capture or retry a failed visit. Queue expiry, execution expiry and parent cancellation
+still cancel only that Job and confirm its release. Other connectors and OTA plans, including the
+disabled three-object pilot, retain their existing submission-to-result deadline. Shared Argus
+concurrency, source pacing, private sessions and per-capture maxAttempts=1 are unchanged.
 
 ## Durable execution state
 

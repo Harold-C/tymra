@@ -200,6 +200,54 @@ describe("durable Argus orchestration", () => {
     expect(mocks.executionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "SUBMITTED", deadlineAt: new Date(submittedAt.getTime() + 3_600_000) }) }));
   });
 
+  const selectedPayload = (sourceId = "booking") => ({ selectedPanel: "christchurch-selected-samples", manifestHash: "manifest", memberId: "member", sourceId,
+    phase: "identity", checkIn: "2026-12-08", unitExternalId: null, round: "2026-10-19" });
+
+  it.each(["booking", "airbnb", "expedia", "bookabach", "trip"])("keeps the same selected %s job queued without cancelling or resubmitting it", async sourceId => {
+    const submittedAt = new Date(Date.now() - 240_000);
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: `${sourceId}-public`, submittedAt, deadlineAt: new Date(submittedAt.getTime() + 180_000) });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING", payload: selectedPayload(sourceId) });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "QUEUED", started_at: null } });
+    await expect(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.cancel).not.toHaveBeenCalled(); expect(mocks.submit).not.toHaveBeenCalled();
+    expect(mocks.executionUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "SUBMITTED", deadlineAt: new Date(submittedAt.getTime() + 3_600_000) }) }));
+  });
+
+  it("starts a selected execution timeout at the original remote start, without resetting it on polls", async () => {
+    const started = new Date(Date.now() - 60_000);
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "booking-public", submittedAt: new Date(Date.now() - 300_000), deadlineAt: new Date(Date.now() - 1_000) });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING", payload: selectedPayload() });
+    mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "RUNNING", started_at: started.toISOString() } });
+    for (let i = 0; i < 2; i++) await expect(pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1")).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.cancel).not.toHaveBeenCalled(); expect(mocks.submit).not.toHaveBeenCalled();
+    expect(mocks.executionUpdate.mock.calls.map(([value]) => value.data.deadlineAt)).toEqual([new Date(started.getTime() + 180_000), new Date(started.getTime() + 180_000)]);
+  });
+
+  it.each(["queue", "execution", "late-start"])("still cancels only a selected job that expires in %s, without a retry", async phase => {
+    const submittedAt = new Date(Date.now() - (phase === "execution" ? 500_000 : 3_700_000));
+    const started_at = phase === "queue" ? null : new Date(Date.now() - (phase === "execution" ? 240_000 : 1_000)).toISOString();
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "booking-public", submittedAt });
+    mocks.parentFind.mockResolvedValue({ status: "PENDING", payload: selectedPayload() });
+    mocks.getJob.mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: phase === "queue" ? "QUEUED" : "RUNNING", started_at } }).mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: "CANCELLED" } });
+    await pollArgusExecution({ ...environment, NODE_ENV: "production" }, "execution-1");
+    expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith({ ...environment, NODE_ENV: "production" }, "argus-1", true);
+    expect(mocks.executionUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({ status: "FAILED", errorCategory: "TIMEOUT" });
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("gives a newly submitted selected job a queue deadline while retaining one submission", async () => {
+    mocks.executionFind.mockResolvedValue(null); mocks.executionCount.mockResolvedValue(0);
+    mocks.parentFind.mockResolvedValue({ status: "RUNNING", payload: selectedPayload() });
+    mocks.sourceFind.mockResolvedValue({ id: "source-1", key: "booking" });
+    mocks.observationRunFind.mockResolvedValue({ id: "run-1", scope: {} });
+    mocks.submit.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "QUEUED" } });
+    mocks.executionUpsert.mockImplementation(async ({ create }) => ({ id: "execution-1", ...create }));
+    await expect(captureBrowserTaskWithDurableArgus({ ...environment, NODE_ENV: "production" }, { ...input, connectorId: "booking-public", workflowId: "resolve_listing" }, context)).rejects.toBeInstanceOf(DeferredJobError);
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    const deadline = mocks.executionUpsert.mock.calls[0][0].create.deadlineAt.getTime();
+    expect(deadline).toBeGreaterThan(Date.now() + 3_599_000); expect(deadline).toBeLessThanOrEqual(Date.now() + 3_600_000);
+  });
+
   it("derives the execution deadline from Argus start time without extending it on each poll", async () => {
     const started = new Date(Date.now() - 60_000);
     mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "eventfinda-public", submittedAt: new Date(Date.now() - 300_000) });

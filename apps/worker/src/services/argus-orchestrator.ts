@@ -27,11 +27,17 @@ import { withRedisLockWait } from "@tymra/queue";
 import { isObservationJob } from "../operations/observation-pilot";
 import { observationWireProof } from "../operations/observation-wire";
 import { observationCapturePermission } from "../operations/observation-production";
-import { isSelectedPanelJob } from "../operations/selected-panel-plan";
+import { isSelectedPanelJob, selectedJobSchema } from "../operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../operations/selected-panel-budget";
 
 const pollDelayMs = 1_000;
 const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"]);
+
+function queueAwareCapture(environment: Environment, connectorId: string, payload: unknown) {
+  const selected = selectedJobSchema.safeParse(payload);
+  return queueAwarePublicConnectors.has(connectorId) || environment.NODE_ENV === "production"
+    && selected.success && connectorId === `${selected.data.sourceId}-public`;
+}
 
 function publicQueueDeadline(environment: Environment, submittedAt: Date) {
   return new Date(submittedAt.getTime() + (environment.ARGUS_PUBLIC_QUEUE_TIMEOUT_MS ?? 3_600_000));
@@ -67,6 +73,7 @@ export async function captureBrowserTaskWithDurableArgus(
 async function captureDurableArgus(environment: Environment, input: ArgusCaptureInput, context: DurableCaptureContext): Promise<CaptureResponse> {
   const orchestrationKey = `${context.parentJobId}:${input.traceId}`;
   let execution = await prisma.argusExecution.findUnique({ where: { orchestrationKey } });
+  let queueAware = queueAwarePublicConnectors.has(input.connectorId);
   if (await settleCancelledCollectionRun(context.parentJobId)) {
     throw new DeferredJobError(`Parent Job ${context.parentJobId} was cancelled`, new Date());
   }
@@ -74,6 +81,7 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
   if (!execution) {
     if (environment.NODE_ENV === "production" && ACTIVE_OTA_SOURCE_KEYS.some((key) => input.connectorId === `${key}-public`)) {
       const parent = await prisma.job.findUniqueOrThrow({ where: { id: context.parentJobId } });
+      queueAware = queueAwareCapture(environment, input.connectorId, parent.payload);
       const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: context.dataSourceId } });
       const observation = isObservationJob(parent.payload);
       if (observation) await observationCapturePermission(parent, input, source.id);
@@ -110,7 +118,7 @@ async function captureDurableArgus(environment: Environment, input: ArgusCapture
         workflowId: input.workflowId,
         requestedUrl: input.url,
         status: submission.job.status === "RUNNING" ? "RUNNING" : "SUBMITTED",
-        deadlineAt: queueAwarePublicConnectors.has(input.connectorId)
+        deadlineAt: queueAware
           ? publicQueueDeadline(environment, new Date())
           : new Date(Date.now() + environment.ARGUS_JOB_POLL_TIMEOUT_MS),
       },
@@ -184,7 +192,7 @@ export async function pollArgusExecution(environment: Environment, executionId: 
   }
 
   const parent = await prisma.job.findUnique({ where: { id: execution.parentJobId }, select: { status: true, payload: true } });
-  const queueAware = queueAwarePublicConnectors.has(execution.connectorId);
+  const queueAware = queueAwareCapture(environment, execution.connectorId, parent?.payload);
   if ((!parent || parent.status === "CANCELLED") && !queueAware) {
     await cancelArgusJob(environment, execution.argusJobId);
     await settleCancelledCollectionRun(execution.parentJobId);
@@ -194,7 +202,7 @@ export async function pollArgusExecution(environment: Environment, executionId: 
     });
   }
 
-  if (execution.deadlineAt <= new Date() && environment.NODE_ENV === "production" && (isProductionOtaPayload(parent?.payload) || isObservationJob(parent?.payload))) {
+  if (execution.deadlineAt <= new Date() && !queueAware && environment.NODE_ENV === "production" && (isProductionOtaPayload(parent?.payload) || isObservationJob(parent?.payload))) {
     try { await cancelArgusJob(environment, execution.argusJobId, true); }
     catch { throw new DeferredJobError("Bounded OTA cancellation is not yet confirmed", new Date(Date.now() + 30_000)); }
     const released = await getArgusJob(environment, execution.argusJobId);
