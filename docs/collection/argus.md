@@ -380,10 +380,23 @@ and SHA-256 and syncs it again. Missing, corrupt or unsynced files block ACK, ev
 already holds a local reference. These guards require a release-time check on the target evidence
 volume; local tests do not prove the production filesystem's durability after power loss.
 
-Copy-before-ACK does not extend raw-data retention. Current `retentionCleanup` soft-deletes expired
-`RawArtifact` payloads and references, but does not yet remove copied evidence files or trim retained
-`ArgusExecution.result` data. Physical cleanup needs a separate bounded implementation and recovery
-plan; do not treat a soft-deleted row as proof that raw bytes have expired.
+Copy-before-ACK does not extend raw-data retention. The general `retentionCleanup` implementation
+can remove copied evidence after verifying its hash, but its presence does not prove a production
+schedule exists. On 19 October the production database had no retention schedule or execution audit;
+the host's website-release timer did not cover Tymra evidence.
+
+The daily selected-plan release adds its own bounded hourly maintenance within the existing
+`christchurch-selected-samples` scheduler branch, without enabling global membership cleanup or
+adding a schedule. Only delivered, non-sensitive HTML/PNG belonging to this plan can expire, after
+both their stored deadline and a minimum 72 hours for success / 168 hours for failures. Active jobs,
+unverified deliveries, open incidents/repairs, backfills and shared references remain protected and
+are filtered before the 100-file bound. Each deletion verifies the physical hash and retains the
+artifact identity/hash, quote facts, derived packages, execution/run history and lineage. It does
+not trim `ArgusExecution.result`. Existing work takes priority; integrity failure or less than 2 GiB
+remaining space stops only this plan and requires explicit operator review, without automatic
+capture or cleanup retries. A forced, audited sweep can validate this scope before daily activation.
+Weekly cadence has no new automatic cleanup. Production activation/readback is tracked in the
+traceability log; code and configured TTL alone are not evidence of effective physical retention.
 
 ## Local configuration
 
