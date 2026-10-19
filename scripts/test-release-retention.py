@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import os
 import pathlib
 import tempfile
 import unittest
@@ -47,6 +48,37 @@ class RetentionTests(unittest.TestCase):
         self.write('old/database.dump', b'keep database')
         self.write('old/source.tar.gz', b'keep source')
         self.write('new/image.tar.gz', b'new unaccepted candidate')
+        self.backup_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.backup_temp.cleanup)
+        self.backups = pathlib.Path(self.backup_temp.name).resolve()
+        keep = self.backups / 'accepted-cutover'
+        keep.mkdir()
+        files = {}
+        for name, data in [('database.dump', b'actual database backup'), ('evidence.tar', b'actual evidence'),
+                           ('production.env', b'protected configuration')]:
+            (keep / name).write_bytes(data)
+            files[name] = {'sha256': f.sha(keep / name), 'size': len(data)}
+        manifest = {'path': str(keep), 'oldImage': 'rollback', 'files': files,
+                    'evidence': {'files': 1, 'manifestSha256': 'evidence-manifest'}}
+        (keep / 'manifest.json').write_text(json.dumps(manifest))
+        snapshot = self.write('backup-cutover.json', json.dumps(manifest).encode())
+        proof = {'status': 'passed', 'kind': 'paired-data-restore', 'backup': str(keep),
+                 'revision': 'current', 'candidateImage': 'current', 'rollbackImage': 'rollback',
+                 'databaseActuallyRestored': True, 'evidenceActuallyRestored': True,
+                 'evidence': manifest['evidence']}
+        self.paired = self.write('paired-restore.json', json.dumps(proof).encode())
+        for role in ('current', 'rollback'):
+            path = pathlib.Path(self.config[role]['verification']['path'])
+            value = json.loads(path.read_text()); value['evidence'].append(self.paired)
+            self.config[role]['verification'] = self.write(role + '/proof.json', json.dumps(value).encode())
+        offhost = self.write('offhost.json', json.dumps({'status': 'passed', 'source': str(keep),
+                            'allFileHashesVerified': True, 'completeFreshArchiveCopied': True}).encode())
+        old = self.backups / 'obsolete-cutover'; old.mkdir()
+        (old / 'evidence.tar').write_bytes(b'old evidence')
+        (old / 'production.env').write_bytes(b'preserved old configuration')
+        self.config['backup_retention'] = {'root': str(self.backups), 'keep': str(keep),
+            'snapshot': snapshot, 'paired_restore': self.paired, 'offhost': offhost,
+            'retire': [{'path': str(old / 'evidence.tar'), 'sha256': f.sha(old / 'evidence.tar')}]}
 
     def write(self, name, data):
         path = self.root / name
@@ -163,6 +195,78 @@ class RetentionTests(unittest.TestCase):
         for name in ['evidence.tar.gz', 'database.tar.gz', 'source.tar.gz', 'runtime-private.json']:
             self.assertFalse(f.PAYLOAD.fullmatch(name))
 
+    def test_complete_backup_retention_is_mandatory_and_preserves_configuration(self):
+        legacy = copy.deepcopy(self.config); del legacy['backup_retention']
+        with self.assertRaises(ValueError): f.plan(legacy)
+        prepared = f.plan(self.config)
+        self.assertEqual(len(prepared['backups']['remove']), 1)
+        self.apply(prepared)
+        self.assertFalse((self.backups / 'obsolete-cutover/evidence.tar').exists())
+        self.assertTrue((self.backups / 'obsolete-cutover/production.env').exists())
+        self.assertTrue((self.backups / 'accepted-cutover/database.dump').exists())
+
+    def test_backup_restore_mismatch_corruption_and_missing_offhost_copy_block_cleanup(self):
+        for field in ['backup', 'candidateImage', 'rollbackImage', 'databaseActuallyRestored', 'evidenceActuallyRestored']:
+            config = copy.deepcopy(self.config)
+            value = json.loads(pathlib.Path(self.paired['path']).read_text()); value[field] = 'invalid'
+            config['backup_retention']['paired_restore'] = self.write('bad-paired.json', json.dumps(value).encode())
+            with self.subTest(field=field), self.assertRaises(ValueError): f.plan(config)
+        for field in ['status', 'source', 'allFileHashesVerified', 'completeFreshArchiveCopied']:
+            config = copy.deepcopy(self.config)
+            value = json.loads(pathlib.Path(config['backup_retention']['offhost']['path']).read_text())
+            value[field] = False
+            config['backup_retention']['offhost'] = self.write('bad-offhost.json', json.dumps(value).encode())
+            with self.subTest(field=field), self.assertRaises(ValueError): f.plan(config)
+        (self.backups / 'accepted-cutover/database.dump').write_bytes(b'corrupt backup')
+        with self.assertRaises(ValueError): f.plan(self.config)
+
+    def test_unlisted_backup_and_secret_or_retained_targets_are_rejected(self):
+        policy = self.config['backup_retention']
+        for name in ['accepted-cutover/evidence.tar', 'obsolete-cutover/production.env']:
+            config = copy.deepcopy(self.config)
+            path = self.backups / name
+            config['backup_retention']['retire'].append({'path': str(path), 'sha256': f.sha(path)})
+            with self.subTest(name=name), self.assertRaises(ValueError): f.plan(config)
+        (self.backups / 'obsolete-cutover/tymra.dump').write_bytes(b'unreviewed')
+        with self.assertRaises(ValueError): f.plan(self.config)
+
+    def test_hardlinks_to_retained_backup_release_no_blocks_and_keep_recovery_intact(self):
+        keep = self.backups / 'accepted-cutover/evidence.tar'
+        old = self.backups / 'obsolete-cutover/evidence.tar'; old.unlink(); os.link(keep, old)
+        self.config['backup_retention']['retire'] = [{'path': str(old), 'sha256': f.sha(old)}]
+        prepared = f.plan(self.config)
+        self.assertEqual(prepared['backups']['expected_released_bytes'], 0)
+        self.apply(prepared)
+        self.assertEqual(keep.read_bytes(), b'actual evidence')
+        self.assertEqual(keep.stat().st_nlink, 1)
+
+    def test_all_retired_links_release_blocks_once_and_symlinks_fail(self):
+        first = self.backups / 'obsolete-cutover/evidence.tar'
+        second = self.backups / 'obsolete-cutover/argus-evidence.tar'; os.link(first, second)
+        self.config['backup_retention']['retire'].append({'path': str(second), 'sha256': f.sha(second)})
+        prepared = f.plan(self.config)
+        self.assertEqual(prepared['backups']['expected_released_bytes'], first.stat().st_blocks * 512)
+        self.apply(prepared)
+        first.symlink_to(self.backups / 'accepted-cutover/evidence.tar')
+        with self.assertRaises(ValueError): f.plan(self.config)
+
+    def test_backup_open_file_blocks_all_deletion(self):
+        prepared = f.plan(self.config)
+        def reject(_, paths):
+            self.assertIn(str(self.backups / 'obsolete-cutover/evidence.tar'), paths)
+            raise ValueError('open backup file')
+        with self.assertRaises(ValueError): f.apply(self.config, prepared, lambda _: [], reject)
+        self.assertTrue((self.backups / 'obsolete-cutover/evidence.tar').exists())
+        self.assertTrue((self.root / 'old/image.tar.gz').exists())
+
+    def test_hash_cache_never_accepts_same_size_replacement_with_restored_mtime(self):
+        path = self.backups / 'accepted-cutover/database.dump'
+        first = f.sha(path); before = path.stat()
+        path.write_bytes(b'x' * before.st_size)
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.assertNotEqual(f.sha(path), first)
+        with self.assertRaises(ValueError): f.plan(self.config)
+
     def test_completion_never_runs_cleanup_when_acceptance_failed(self):
         completion = load('completion', 'complete-release.py')
         self.acceptance['checks']['business'] = False
@@ -196,6 +300,45 @@ class RetentionTests(unittest.TestCase):
         with patch.object(installer, 'BIN', self.root / 'bin'), patch.object(installer, 'RELEASES', release.parent):
             with self.assertRaises(ValueError): installer.install(helper)
         self.assertFalse((self.root / 'bin').exists())
+
+    def test_installer_connects_the_current_dictionary_dispatcher(self):
+        installer = load('installer_dict', 'install-release-finalization.py')
+        release = self.root / 'releases' / 'dictionary'; release.mkdir(parents=True)
+        helper = release / 'release.py'
+        original = "if __name__=='__main__':\n    operations={'verify':verify}\n" + installer.DICT_ANCHOR + "\n    operations[sys.argv[1]]()\n"
+        helper.write_text(original)
+        with patch.object(installer, 'BIN', self.root / 'bin'), patch.object(installer, 'RELEASES', release.parent):
+            installer.install(helper); installer.install(helper)
+        self.assertEqual(helper.read_text().count(installer.DICT_HOOK), 1)
+        self.assertEqual((release / 'release.py.before-retention').read_text(), original)
+
+    def test_installer_replaces_obsolete_hardcoded_evidence_reuse_path(self):
+        installer = load('installer_reuse', 'install-release-finalization.py')
+        release = self.root / 'releases' / 'reuse'; release.mkdir(parents=True)
+        helper = release / 'release.py'
+        original = "APPS=[]\nBACKUPS=None\ndef env(c):return {}\ndef inspect(c):return []\ndef backup():\n    if True:\n        prior=BACKUPS/'superseded-attempt'\n"
+        original += "if __name__=='__main__':\n    operations={'backup':backup}\n" + installer.DICT_ANCHOR + "\n    operations[sys.argv[1]]()\n"
+        helper.write_text(original)
+        with patch.object(installer, 'BIN', self.root / 'bin'), patch.object(installer, 'RELEASES', release.parent):
+            installer.install(helper); installer.install(helper)
+        self.assertIn("accepted_policy['backup_retention']['keep']", helper.read_text())
+        self.assertNotIn("prior=BACKUPS/'superseded-attempt'", helper.read_text())
+
+    def test_installing_a_protected_helper_requires_reviewed_old_and_new_bindings(self):
+        installer = load('installer_binding', 'install-release-finalization.py')
+        release = self.root / 'releases' / 'binding'; release.mkdir(parents=True)
+        helper = release / 'release.py'
+        original = "if mode=='verify':verify()\n" + installer.ANCHOR + '\n'
+        old = self.write('releases/binding/release.py', original.encode())
+        self.config['protected_files'].append(old)
+        f.plan(self.config)
+        with patch.object(installer, 'BIN', self.root / 'bin'), patch.object(installer, 'RELEASES', release.parent):
+            installer.install(helper)
+        with self.assertRaises(ValueError): f.plan(self.config)
+        old['path'] = str(helper.with_name('release.py.before-retention'))
+        self.assertEqual(f.sha(pathlib.Path(old['path'])), old['sha256'])
+        self.config['protected_files'].append({'path': str(helper), 'sha256': f.sha(helper)})
+        f.plan(self.config)
 
     def test_upload_cleanup_requires_independent_matching_download(self):
         for corrupt in (False, True):

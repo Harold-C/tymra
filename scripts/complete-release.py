@@ -14,9 +14,14 @@ def complete(config_path, output):
     finalizer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(finalizer)
     config = json.loads(finalizer.real(config_path).read_text())
-    # Validate immutable reviewed evidence before invoking the destructive entry.
-    # It independently repeats these checks under its lock, including runtime identity.
-    finalizer.plan(config)
+    # Cheap early rejection; the destructive entry performs ALL recovery, inventory,
+    # file-handle and runtime checks under its exclusive lock. Do not hash tens of GB
+    # in a parent process only to discard its verification cache and hash them again.
+    acceptance = finalizer.read_checked(config['acceptance'])
+    if (acceptance.get('status') != 'passed'
+            or any(acceptance.get('checks', {}).get(k) is not True for k in finalizer.CHECKS)
+            or not config.get('backup_retention')):
+        raise ValueError('Accepted deployment and complete backup-retention configuration are required')
     subprocess.run([sys.executable, str(helper), '--config', str(config_path),
                     '--output', str(output), '--apply'], check=True)
 
