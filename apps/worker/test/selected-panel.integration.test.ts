@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 import { assertIsolatedTestEnvironment } from "../../../test/isolation";
 import { selectedFixture, selectedMember } from "./selected-panel-fixtures";
 import { acquireSelectedActivationLock } from "../src/operations/selected-panel-lock";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { getEnvironment } from "@tymra/config";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash } from "../src/operations/selected-panel-plan";
 import { legacyOtaDailyWhere } from "../src/operations/selected-panel-budget";
 const now = new Date("2026-10-16T06:00:00Z");
@@ -18,6 +23,7 @@ const { authorizeSelectedManualReview, closeSelectedManualReview } = await impor
 const { applySelectedReplacement, rollbackSelectedReplacement } = await import("../src/operations/selected-panel-replacement-production");
 const { applySelectedWindowUpgrade, rollbackSelectedWindowUpgrade } = await import("../src/operations/selected-panel-window-upgrade-production");
 const { applySelectedDaily, rollbackSelectedDaily } = await import("../src/operations/selected-panel-daily");
+const { maintainSelectedEvidence } = await import("../src/operations/selected-panel-retention");
 const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
 async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
@@ -50,6 +56,95 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("physically expires only this plan's delivered 72h/168h files and preserves prices, histories and protected evidence", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "tymra-selected-ttl-"));
+    const environment = { ...getEnvironment(), NODE_ENV: "production" as const, ARGUS_API_BASE_URL: "https://api.argus.nz", ARGUS_EVIDENCE_ROOT: root };
+    const at = new Date("2026-10-25T06:00:00Z"), source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    const artifacts: Record<string, Awaited<ReturnType<typeof prisma.rawArtifact.create>>> = {};
+    async function record(name: string, ageHours: number, options: { other?: boolean; failed?: boolean; parserFailure?: boolean; undelivered?: boolean; active?: boolean; sensitive?: boolean } = {}) {
+      const createdAt = new Date(at.getTime() - ageHours * 3600_000), bytes = Buffer.from("retained fixture " + name);
+      await fs.writeFile(path.join(root, name), bytes);
+      const job = await prisma.job.create({ data: { queueName: options.other ? "other-plan" : SELECTED_PANEL_QUEUE, type: "RATE_COLLECTION", status: options.active ? "RUNNING" : "SUCCEEDED", payload: {}, maxAttempts: 1, idempotencyKey: "ttl-fixture:" + name } });
+      const run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: options.failed ? "FAILED" : "SUCCEEDED", createdAt, finishedAt: createdAt, scope: { selectedPanel: SELECTED_PANEL_KEY, retainedPrice: 12345 } } });
+      await prisma.argusExecution.create({ data: { parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id, orchestrationKey: name, argusJobId: name,
+        traceId: name, connectorId: "booking-public", workflowId: "collect_rates", requestedUrl: "https://www.booking.com/hotel/nz/fixture.html", status: "COMPLETED", deadlineAt: createdAt,
+        deliveryVerifiedAt: options.undelivered ? null : createdAt, result: { retainedQuote: 12345 } } });
+      artifacts[name] = await prisma.rawArtifact.create({ data: { collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML", storageRef: "tymra-evidence:" + name,
+        contentHash: createHash("sha256").update(bytes).digest("hex"), payload: { original: name }, createdAt, expiresAt: createdAt, parserFailure: !!options.parserFailure, containsSensitiveData: !!options.sensitive } });
+      return run;
+    }
+    try {
+      await record("success", 73); await record("failure", 169, { failed: true });
+      await record("young-success", 71); await record("young-failure", 167, { failed: true });
+      await record("young-parser-failure", 80, { parserFailure: true });
+      await record("unrelated", 200, { other: true }); await record("undelivered", 200, { undelivered: true });
+      await record("active", 200, { active: true }); await record("sensitive", 200, { sensitive: true });
+      const incidentRun = await record("incident", 200);
+      await prisma.collectionIncident.create({ data: { collectionRunId: incidentRun.id, status: "OPEN", severity: "P1", category: "TEST", title: "Protect fixture", summary: "Active diagnosis", evidence: {} } });
+      const backfillRun = await record("backfill", 200);
+      const admin = await prisma.adminUser.create({ data: { email: "ttl-fixture@tymra.test", passwordHash: "synthetic-unusable-test-hash" } });
+      await prisma.serviceBackfill.create({ data: { commandId: "ttl-backfill", actorAdminId: admin.id, dataSourceId: source.id, reason: "Keep diagnosis", evidenceReference: "fixture", checksum: "a", rangeFrom: at, rangeTo: at, status: "FAILED", totalRows: 1, collectionRunId: backfillRun.id } });
+      await record("shared", 200);
+      await prisma.rawArtifact.create({ data: { id: "other-shared-reference", collectionRunId: artifacts.unrelated.collectionRunId, dataSourceId: source.id,
+        artifactType: "HTML", storageRef: artifacts.shared.storageRef, contentHash: artifacts.shared.contentHash, expiresAt: at } });
+      const sources = await prisma.dataSource.findMany(), controls = await prisma.scheduleDefinition.findMany();
+      const runs = await prisma.collectionRun.findMany({ orderBy: { id: "asc" } }), executions = await prisma.argusExecution.findMany({ orderBy: { id: "asc" } });
+      // Existing work always wins, including a source outside this plan.
+      expect(await maintainSelectedEvidence(at, environment, true)).toMatchObject({ ready: false, reason: "EXISTING_WORK_PRIORITY" });
+      await prisma.job.updateMany({ where: { status: "RUNNING" }, data: { status: "SUCCEEDED" } });
+      // Preserve the intended active diagnostic via its run, without changing completed history.
+      await prisma.collectionIncident.create({ data: { collectionRunId: artifacts.active.collectionRunId, severity: "P1", category: "TEST", title: "Active fixture", summary: "Keep", evidence: {} } });
+      const jobs = await prisma.job.findMany({ orderBy: { id: "asc" } });
+      expect(await maintainSelectedEvidence(at, environment)).toMatchObject({ ready: true, reason: "WEEKLY_UNCHANGED" });
+      const result = await maintainSelectedEvidence(at, environment, true);
+      expect(result).toMatchObject({ ready: true, physicalFilesDeleted: 2, rawArtifactsDeleted: 2, sourceCaptures: 0 });
+      for (const [name, artifact] of Object.entries(artifacts)) {
+        const after = await prisma.rawArtifact.findUniqueOrThrow({ where: { id: artifact.id } });
+        if (["success", "failure"].includes(name)) { expect(after.deletedAt).toEqual(at); await expect(fs.stat(path.join(root, name))).rejects.toMatchObject({ code: "ENOENT" }); }
+        else { expect(after).toEqual(artifact); expect((await fs.stat(path.join(root, name))).isFile()).toBe(true); }
+      }
+      expect(await prisma.collectionRun.findMany({ orderBy: { id: "asc" } })).toEqual(runs);
+      expect(await prisma.argusExecution.findMany({ orderBy: { id: "asc" } })).toEqual(executions);
+      expect(await prisma.job.findMany({ orderBy: { id: "asc" } })).toEqual(jobs);
+      expect(await prisma.dataSource.findMany()).toEqual(sources); expect(await prisma.scheduleDefinition.findMany()).toEqual(controls);
+      expect(await maintainSelectedEvidence(new Date(at.getTime() + 1000), environment, true)).toMatchObject({ ready: true, physicalFilesDeleted: 0 });
+      const daily = selectedStateSchema.parse({ ...selectedFixture(), cadence: { version: "dual-window-daily-v1", startsOn: "2026-10-16", dailyStartsOn: "2026-10-19", bookingBootstrapDaily: 24, bookingSteadyDaily: 20 } });
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: daily } });
+      expect(await maintainSelectedEvidence(new Date(at.getTime() + 2000), environment)).toMatchObject({ ready: true, reason: "RECENT_SWEEP" });
+      expect(await prisma.auditEvent.count({ where: { eventType: "selected_evidence_retention_executed" } })).toBe(2);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("blocks only the selected plan on an evidence hash mismatch and never automatically retries cleanup", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "tymra-selected-ttl-fault-"));
+    try {
+      const at = new Date("2026-10-25T06:00:00Z"), createdAt = new Date("2026-10-20T06:00:00Z"), source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      const state = selectedStateSchema.parse({ ...selectedFixture(), cadence: { version: "dual-window-daily-v1", startsOn: "2026-10-16", dailyStartsOn: "2026-10-19", bookingBootstrapDaily: 24, bookingSteadyDaily: 20 } });
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      const job = await prisma.job.create({ data: { queueName: SELECTED_PANEL_QUEUE, type: "RATE_COLLECTION", status: "SUCCEEDED", payload: {}, maxAttempts: 1, idempotencyKey: "ttl-fixture:fault" } });
+      const run = await prisma.collectionRun.create({ data: { jobId: job.id, dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", createdAt, finishedAt: createdAt, scope: { selectedPanel: SELECTED_PANEL_KEY } } });
+      await prisma.argusExecution.create({ data: { parentJobId: job.id, collectionRunId: run.id, dataSourceId: source.id, orchestrationKey: "ttl-fault", argusJobId: "ttl-fault", traceId: "ttl-fault", connectorId: "booking-public", workflowId: "collect_rates", requestedUrl: "https://www.booking.com/hotel/nz/fixture.html", status: "COMPLETED", deadlineAt: createdAt, deliveryVerifiedAt: createdAt } });
+      const artifact = await prisma.rawArtifact.create({ data: { collectionRunId: run.id, dataSourceId: source.id, artifactType: "HTML", storageRef: "tymra-evidence:fault.html", contentHash: "a".repeat(64), createdAt, expiresAt: createdAt } });
+      await fs.writeFile(path.join(root, "fault.html"), "Different original");
+      const environment = { ...getEnvironment(), NODE_ENV: "production" as const, ARGUS_API_BASE_URL: "https://api.argus.nz", ARGUS_EVIDENCE_ROOT: root };
+      expect(await maintainSelectedEvidence(at, environment)).toMatchObject({ ready: false, reason: "EVIDENCE_INTEGRITY_FAILURE", physicalFilesDeleted: 0 });
+      expect(await maintainSelectedEvidence(new Date(at.getTime() + 2 * 3600_000), environment)).toMatchObject({ ready: false, reason: "MANUAL_STORAGE_REVIEW_REQUIRED" });
+      expect(await prisma.rawArtifact.findUniqueOrThrow({ where: { id: artifact.id } })).toEqual(artifact);
+      expect(await fs.readFile(path.join(root, "fault.html"), "utf8")).toBe("Different original");
+      expect(await prisma.auditEvent.count({ where: { eventType: "selected_evidence_retention_executed" } })).toBe(1);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("reserves shared disk space and requires manual review after a low-space stop", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "tymra-selected-ttl-space-"));
+    const disk = await fs.statfs(root), statfs = vi.spyOn(fs, "statfs").mockResolvedValue({ ...disk, bavail: 1 } as never);
+    try {
+      const at = new Date("2026-10-25T06:00:00Z"), environment = { ...getEnvironment(), NODE_ENV: "production" as const, ARGUS_API_BASE_URL: "https://api.argus.nz", ARGUS_EVIDENCE_ROOT: root };
+      expect(await maintainSelectedEvidence(at, environment, true)).toMatchObject({ ready: false, reason: "STORAGE_RESERVE_LOW", physicalFilesDeleted: 0 });
+      statfs.mockRestore();
+      expect(await maintainSelectedEvidence(new Date(at.getTime() + 2 * 3600_000), environment, true)).toMatchObject({ ready: false, reason: "MANUAL_STORAGE_REVIEW_REQUIRED" });
+      expect(await prisma.auditEvent.count({ where: { eventType: "selected_evidence_retention_executed" } })).toBe(1);
+      expect(await prisma.job.count()).toBe(0); expect(await prisma.argusExecution.count()).toBe(0);
+    } finally { statfs.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("audits a daily activation and rollback while preserving later holds, sources and all other schedules", async () => {
     vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-daily-signing-secret"); vi.stubEnv("ARGUS_API_BASE_URL", "https://api.argus.nz");
     try {
