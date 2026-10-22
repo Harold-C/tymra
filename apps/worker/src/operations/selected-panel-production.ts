@@ -7,6 +7,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import { persistObservationEvidence } from "./observation-production";
 import { evaluateCapturedObservation } from "./observation-evaluation";
 import { assertSelectedManualReview, selectedManualBatch } from "./selected-panel-review";
+import { selectedFailureScope } from "./selected-panel-failure";
 import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selectedJobSchema, selectedTaskKey, selectedHash, selectedListingId, selectedCycle, selectedMemberAnchors, selectedDailyLimit, nextSelectedTasks, selectedTaskMatchesState, selectedMemberExecutionHash, selectedWindowTime, type SelectedMember, type SelectedTask, type MemberProgress } from "./selected-panel-plan";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -206,12 +207,13 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
     if (error instanceof DeferredJobError) throw error;
     const execution = await prisma.argusExecution.findFirst({ where: { parentJobId: job.id } });
     const reason = execution?.errorCategory ?? (error instanceof Error ? error.message : "SELECTED_CAPTURE_FAILED");
+    const failureScope = selectedFailureScope(reason, execution?.retryable);
     await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE key = ${SELECTED_PANEL_KEY} FOR UPDATE`;
       const c = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } }), s = selectedStateSchema.parse(c.payload);
-      // An unstarted prior-day window is a recorded gap, not a source failure or a retry.
-      if (reason !== "SELECTED_DAILY_WINDOW_EXPIRED" && !s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
-      if (/CHALLENGE|CAPTCHA|LOGIN|RATE_LIMIT|BLOCKED|ACCESS_DENIED|SOURCE_DAILY_BUDGET_EXHAUSTED|SOURCE_CIRCUIT_OPEN/.test(reason)) s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
+      // Keep the failed window/history, without retrying it or erasing prior holds.
+      if (failureScope !== "window" && !s.held.some(h => h.memberId === member.id)) s.held.push({ memberId: member.id, reason });
+      if (failureScope === "source") s.stoppedSources = [...new Set([...s.stoppedSources, member.source])];
       await tx.scheduleDefinition.update({ where: { id: c.id }, data: { payload: json(s) } });
     });
     await prisma.collectionRun.update({ where: { id: run.id }, data: { status: "FAILED", failureCount: 1, errorCode: reason.slice(0, 200), finishedAt: new Date() } });
