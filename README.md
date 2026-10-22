@@ -156,6 +156,15 @@ sets. A changed-layer tar, download ZIP, registry tag or a checksum alone is not
 restorable rollback. Until authenticated re-download is demonstrated, retain the current full
 image package too. Do not select rollback by modification time.
 
+Also keep **one complete, actually restored release-backup set** under the reviewed backup
+root: database, captured evidence and paired runtime configuration. It must be verified with
+both the current and explicit rollback images and have an independently verified copy.
+Image-package cleanup alone is not release completion. After replacement recovery and business
+acceptance pass, explicitly inventory and retire superseded release-backup payloads. Preserve
+small configuration files, manifests, audit and recovery receipts in their original protected
+directories; a retained receipt directory is not another complete backup. This is the release
+rollback policy, not deletion of live business data or original live evidence.
+
 Successful deployment ends with this command **on each package host**, after preparing the
 matching acceptance and complete-image restore receipts:
 
@@ -219,14 +228,37 @@ paths and hashes, never credential values:
   `private-ci-image-package.zip`, `private-ci-package.zip`, `private-ci-image.tar.gz`,
   `image-changed-layers-<40-character-revision>.tar.gz`,
   `tymra-booking-reference-continue.tar.gz`, and `tymra-release.tar[.gz|.zst][.part-NN]`.
+- Mandatory `backup_retention`: `root` (separate from image-package roots), `keep` (one direct
+  backup directory), hashed `snapshot`, `paired_restore`, and `offhost` receipts, plus an explicit
+  `retire: [{path, sha256}, ...]`. The kept `manifest.json` must equal the original snapshot
+  receipt; every database, evidence and configuration file is rehashed. Both image recovery
+  receipts must reference the same successful paired restore. Retired files are limited to
+  recognized database dumps and evidence archives in other direct backup directories. Unknown
+  files, source archives, secrets and receipt/configuration files remain protected. An omitted
+  historical backup payload blocks completion instead of silently accumulating. Recognized
+  backup names are `database.dump`, `postgres.dump`, `tymra.dump`, `before.dump`,
+  `initialized.dump`, `tymra.before.dump`, `tymra.after-failed-acceptance.dump`, `evidence.tar`,
+  `evidence.tar.gz`, `argus-evidence.tar`, `argus-evidence.tar.gz`, and `evidence.tgz`.
 
 The finalizer rechecks all recovery files/evidence, live image identities/configuration hashes,
 target file identities/hashes and active mounts/file handles before unlinking. A per-root lock
 serializes completion; repeats skip already-deleted payloads while rechecking all remaining
 material. Any failed gate blocks deletion. Never delete whole release directories: active Web
-Compose files and ingress settings may still live there. Source, credentials, original evidence,
-database backups, user uploads, login state, Docker images/volumes and other products are outside
-this payload cleanup policy. This does not change database-backup retention.
+Compose files and ingress settings may still live there. Source, credentials, original live
+evidence, user uploads, login state, Docker images/volumes, other products, and backups outside
+the explicit release-backup root remain outside this cleanup policy. Hardlinked backup copies
+are unlinked individually; released-byte estimates count an inode only when its last reviewed
+link is retired. Current/rollback packages and the single paired backup are checked again after
+cleanup. An absent `backup_retention` block now fails closed.
+
+The installer supports both reviewed legacy `if/elif` and current dictionary dispatchers;
+unknown dispatchers fail before mutation. Run it for the selected new release helper, then
+bind the installed helper's reviewed bytes in `protected_files` and invoke its `complete` stage.
+If an earlier helper was already protected, retain its original bytes and checksum at
+`release.py.before-retention` and protect both versions; do not manufacture a new acceptance or
+weaken a checksum to bypass an installation change. When reusing evidence during the next backup, select the
+explicit retained set from the **previous accepted** finalization configuration, never a failed
+attempt's hardcoded backup path. Do not remove the old recovery set until the new set passes.
 
 Existing actual isolated restore evidence may be reused only after checking the exact image
 identities, both execution configurations, compatibility results and preserved snapshot bytes.

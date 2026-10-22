@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Finalize an accepted Tymra release. Default: checked plan; --apply: bounded deletion.
 
-Deletes only explicitly inventoried transfer payloads. No image/container/volume prune,
+Deletes explicitly inventoried transfer and obsolete release-backup payloads. No image/container/volume prune,
 database writes, service restart or whole-directory deletion is implemented here.
 """
 import argparse
@@ -19,6 +19,8 @@ import tempfile
 PAYLOAD = re.compile(r'(?:image(?:-final|-changed-layers(?:-[0-9a-f]{40})?)?\.tar(?:\.gz|\.zst)?|private-ci-image\.tar\.gz|private-ci-(?:image-package|package)\.zip|tymra-booking-reference-continue\.tar\.gz|tymra-release\.tar(?:\.gz|\.zst)?(?:\.part-\d{2})?)$')
 FULL_IMAGE = {'image.tar.gz', 'image-final.tar.gz', 'image.tar.zst', 'image-final.tar.zst', 'tymra-release.tar.gz', 'tymra-release.tar.zst', 'private-ci-image.tar.gz'}
 CHECKS = ('deployment', 'runtime_config', 'health', 'business', 'rollback_compatibility')
+BACKUP_PAYLOAD = re.compile(r'(?:database|postgres|tymra|before|initialized|tymra\.before|tymra\.after-failed-acceptance)\.dump$|(?:argus-)?evidence\.tar(?:\.gz)?$|evidence\.tgz$')
+HASH_CACHE = {}
 
 
 def real(value):
@@ -29,11 +31,21 @@ def real(value):
 
 
 def sha(path):
+    path = pathlib.Path(path)
+    def identity():
+        s = path.stat()
+        return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    before = identity()
+    if before in HASH_CACHE:
+        return HASH_CACHE[before]
     digest = hashlib.sha256()
     with open(path, 'rb') as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
-    return digest.hexdigest()
+    if identity() != before:
+        raise ValueError('File changed while hashing')
+    HASH_CACHE[before] = digest.hexdigest()
+    return HASH_CACHE[before]
 
 
 def guard(path):
@@ -60,6 +72,93 @@ def evidence(items):
     if not items:
         raise ValueError('Hashed validation evidence is required')
     return [str(checked(item)[0]) for item in items]
+
+
+def backup_guard(path):
+    # Unlinking one hardlink must not invalidate another reviewed link's stamp.
+    info = real(path).lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError('Backup payload must be a regular file without symlinks')
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns]
+
+
+def backup_checked(item):
+    path = real(item['path'])
+    before = backup_guard(path)
+    if sha(path) != item['sha256'] or backup_guard(path) != before:
+        raise ValueError('Backup payload changed or failed its checksum')
+    return path, before
+
+
+def backup_plan(config):
+    policy = config.get('backup_retention')
+    if not policy:
+        raise ValueError('Complete release-backup retention is required, not image-only cleanup')
+    root, keep = real(policy['root']), real(policy['keep'])
+    if keep.parent != root or not keep.is_dir():
+        raise ValueError('Keep exactly one explicit direct release-backup directory')
+    if any(root == real(p) or root in real(p).parents or real(p) in root.parents for p in config['roots']):
+        raise ValueError('Backup and image-package roots must be separate')
+    manifest_path = keep / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    snapshot = read_checked(policy['snapshot'])
+    proof = read_checked(policy['paired_restore'])
+    offhost = read_checked(policy['offhost'])
+    if (manifest != snapshot or manifest.get('path') != str(keep)
+            or manifest.get('oldImage') != config['rollback']['image']
+            or proof.get('status') != 'passed' or proof.get('kind') != 'paired-data-restore'
+            or proof.get('backup') != str(keep) or proof.get('revision') != config['current']['revision']
+            or proof.get('candidateImage') != config['current']['image']
+            or proof.get('rollbackImage') != config['rollback']['image']
+            or proof.get('databaseActuallyRestored') is not True
+            or proof.get('evidenceActuallyRestored') is not True
+            or proof.get('evidence') != manifest.get('evidence')
+            or offhost.get('status') != 'passed' or offhost.get('source') != str(keep)
+            or offhost.get('allFileHashesVerified') is not True
+            or offhost.get('completeFreshArchiveCopied') is not True):
+        raise ValueError('Retained backup must match the actual paired restore and independent copy')
+    # Both image restores must reference this exact database/evidence restore receipt.
+    for role in ('current', 'rollback'):
+        image_proof = read_checked(config[role]['verification'])
+        if policy['paired_restore'] not in image_proof['evidence']:
+            raise ValueError('Image recovery proof is not paired with the retained backup')
+    files = manifest['files']
+    if 'database.dump' not in files or not {'evidence.tar', 'evidence.tar.gz'} & files.keys():
+        raise ValueError('A complete database and evidence backup is required')
+    protected = [str(manifest_path)] + [policy[k]['path'] for k in ('snapshot', 'paired_restore', 'offhost')]
+    for name, item in files.items():
+        if pathlib.Path(name).name != name:
+            raise ValueError('Backup manifest must contain direct filenames only')
+        path, _ = backup_checked({'path': str(keep / name), 'sha256': item['sha256']})
+        if path.stat().st_size != item['size']:
+            raise ValueError('Retained backup size does not match its verified manifest')
+        protected.append(str(path))
+    targets, seen = [], set()
+    for item in policy['retire']:
+        path = real(item['path'])
+        if (path.parent.parent != root or path.parent == keep
+                or not BACKUP_PAYLOAD.fullmatch(path.name) or str(path) in seen):
+            raise ValueError('Retire only explicit obsolete release-backup payloads')
+        seen.add(str(path))
+        if not path.exists():
+            continue
+        _, stamp = backup_checked(item)
+        targets.append({'path': str(path), 'sha256': item['sha256'], 'guard': stamp})
+    # Do not silently pass a partial inventory while other historical payloads accumulate.
+    for directory in root.iterdir():
+        real(directory)
+        if directory == keep or not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if BACKUP_PAYLOAD.fullmatch(path.name) and str(path) not in seen:
+                raise ValueError('Unreviewed historical backup payload remains: ' + str(path))
+    inode_targets = {}
+    for item in targets:
+        s = pathlib.Path(item['path']).stat()
+        value = inode_targets.setdefault((s.st_dev, s.st_ino), [0, s.st_nlink, s.st_blocks * 512])
+        value[0] += 1
+    return {'root': str(root), 'keep': str(keep), 'protected': protected, 'remove': targets,
+            'expected_released_bytes': sum(v[2] for v in inode_targets.values() if v[0] == v[1])}
 
 
 def plan(config):
@@ -106,9 +205,10 @@ def plan(config):
             continue  # Repeat completion is safe, but remaining targets are still hash checked.
         _, stamp = checked(item)
         targets.append({'path': str(path), 'sha256': item['sha256'], 'guard': stamp})
-    return {'policy': 'tymra-release-payload-retention-v1', 'current': config['current']['release'],
+    backups = backup_plan(config)
+    return {'policy': 'tymra-complete-release-retention-v2', 'current': config['current']['release'],
             'rollback': config['rollback']['release'], 'protected': sorted(protected),
-            'remove': targets, 'remove_bytes': sum(x['guard'][2] for x in targets)}
+            'remove': targets, 'remove_bytes': sum(x['guard'][2] for x in targets), 'backups': backups}
 
 
 def run(command):
@@ -183,19 +283,27 @@ def apply(config, prepared, runtime_check=verify_runtime, unused_check=ensure_un
     if plan(config) != prepared:
         raise ValueError('Cleanup inventory changed')
     before = runtime_check(config)
-    unused_check(config, [x['path'] for x in prepared['remove']])
+    unused_check(config, [x['path'] for x in prepared['remove'] + prepared['backups']['remove']])
     for item in prepared['remove']:
         if guard(real(item['path'])) != item['guard']:
             raise ValueError('Payload changed before deletion')
+    for item in prepared['backups']['remove']:
+        if backup_guard(real(item['path'])) != item['guard']:
+            raise ValueError('Backup changed before deletion')
     for item in prepared['remove']:
         path, stamp = checked(item)
         if stamp != item['guard']:
             raise ValueError('Payload changed immediately before deletion')
         path.unlink()
+    for item in prepared['backups']['remove']:
+        path, stamp = backup_checked(item)
+        if stamp != item['guard']:
+            raise ValueError('Backup changed immediately before deletion')
+        path.unlink()
     # Recheck recovery material/evidence and all production container identities afterward.
     remaining = plan(config)
     after = runtime_check(config)
-    if remaining['remove'] or before != after:
+    if remaining['remove'] or remaining['backups']['remove'] or before != after:
         raise ValueError('Post-cleanup verification changed; inspect preserved recovery material')
     return {**prepared, 'status': 'passed', 'runtime_unchanged': True,
             'completed_at': datetime.datetime.now(datetime.timezone.utc).isoformat()}
@@ -214,12 +322,14 @@ def main():
     try:
         os.close(fd)
         prepared = plan(config)
-        if output in {real(args.config), lock} or str(output) in prepared['protected'] or any(str(output) == x['path'] for x in config['retire']):
+        protected = prepared['protected'] + prepared['backups']['protected']
+        retired = config['retire'] + config['backup_retention']['retire']
+        if output in {real(args.config), lock} or str(output) in protected or any(str(output) == x['path'] for x in retired):
             raise ValueError('Receipt must not overwrite recovery or cleanup material')
         result = apply(config, prepared) if args.apply else prepared
         if not args.apply:
             verify_runtime(config)
-            ensure_unused(config, [x['path'] for x in prepared['remove']])
+            ensure_unused(config, [x['path'] for x in prepared['remove'] + prepared['backups']['remove']])
         fd, name = tempfile.mkstemp(prefix='.tymra-receipt-', dir=output.parent)
         with os.fdopen(fd, 'w') as stream:
             json.dump(result, stream, indent=2)
