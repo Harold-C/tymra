@@ -1,6 +1,6 @@
 import { getEnvironment, type Environment } from "@tymra/config";
 import { enqueueJob, hashOpaqueToken, prisma, type Prisma } from "@tymra/db";
-import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence } from "@tymra/domain";
+import { calculateEffectiveNightlyTotalMinor, decidePublication, determineConfidence, readLocationScope } from "@tymra/domain";
 import { DemoProvider } from "@tymra/providers/demo";
 import { WorkerService } from "../../services/worker-service";
 import { acknowledgePersistedArgusResults } from "../../services/argus-orchestrator";
@@ -15,7 +15,12 @@ export async function collectRates(priceCheckId: string, jobId: string, environm
   });
   if (!check.property || !check.unit || !check.stayQuery) throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
   const isDemo = usesFixtureRateCollection(environment);
-  if (!isDemo) {
+  const locationScope = readLocationScope(check.stayQuery.unitConstraints);
+  if (locationScope && environment.PUBLIC_COLLECTION_MODE !== "live") {
+    await setCheckStatus(priceCheckId, "SOURCE_UNAVAILABLE", "location_requires_real_price_source");
+    return;
+  }
+  if (!isDemo || locationScope) {
     await setCheckStatus(priceCheckId, "COLLECTING", check.analysisType === "LOCATION_BENCHMARK" ? "location_benchmark_collection_started" : "ota_collection_started");
     if (check.analysisType === "LOCATION_BENCHMARK") {
       await enqueueNext(priceCheckId, "CATALOG_DISCOVERY", "location-catalog", jobId);
@@ -376,7 +381,7 @@ export async function generateResult(priceCheckId: string, payload: JsonObject, 
       observedSourceCount: observedSources.length,
       priceEvidenceStatus: observedSources.length === 1 ? "OBSERVED_SINGLE_SOURCE" : "OBSERVED_MULTI_SOURCE",
       recommendationReasonCode: recommendationAvailable ? null : "NOT_ENOUGH_COMPARABLE_EVIDENCE",
-      payload: { analysisType: check.analysisType, comparatorCount: comparableObservations.length, decision: recommendationAvailable ? requiredString(payload, "decision") : null, generationJobId: sourceJobId, isDemo: check.isDemo, observedPrices },
+      payload: { analysisType: check.analysisType, sampleCount: new Set(publishableObservations.map(item => item.propertyId)).size, comparatorCount: comparableObservations.length, decision: recommendationAvailable ? requiredString(payload, "decision") : null, generationJobId: sourceJobId, isDemo: check.isDemo, observedPrices },
       isDemo: check.isDemo,
     },
   });

@@ -24,10 +24,20 @@ export class InvalidMagicLinkError extends Error {
   }
 }
 
+export class VerificationEmailDeliveryError extends Error {
+  constructor() {
+    super("The verification email could not be sent. Please try again later.");
+    this.name = "VerificationEmailDeliveryError";
+  }
+}
+
 export async function issueCustomerEmailVerification(customerUserId: string, localeValue?: "en" | "zh") {
   const environment = getEnvironment();
   const customer = await prisma.customerUser.findUniqueOrThrow({ where: { id: customerUserId } });
   if (customer.emailVerifiedAt) return { alreadyVerified: true as const };
+  if (environment.NODE_ENV === "production" && environment.EMAIL_PROVIDER !== "smtp") {
+    throw new VerificationEmailDeliveryError();
+  }
   const locale = localeValue ?? (customer.locale === "zh" ? "zh" : "en");
   const issued = issueOpaqueToken(environment.SESSION_SECRET);
   const now = new Date();
@@ -54,18 +64,18 @@ export async function issueCustomerEmailVerification(customerUserId: string, loc
   });
   const recipient = decryptPersonalData(customer.encryptedEmail, environment.DATA_ENCRYPTION_KEY);
   const provider: EmailProvider = environment.EMAIL_PROVIDER === "smtp" && environment.SMTP_URL ? new SmtpEmailProvider(environment.SMTP_URL) : new LogEmailProvider();
-  const message = buildServiceEmail({ type: "VERIFY_AND_SIGN_IN", locale, recipient, recipientHash: customer.emailHash, from: environment.EMAIL_FROM, safeActionUrl: `${environment.PUBLIC_ORIGIN}/${locale}/auth/verify?token=${encodeURIComponent(issued.token)}`, referenceId: magicLink.id });
+  const message = buildServiceEmail({ type: "VERIFY_AND_SIGN_IN", verificationPurpose: "VERIFY_CUSTOMER_EMAIL", locale, recipient, recipientHash: customer.emailHash, from: environment.EMAIL_FROM, safeActionUrl: `${environment.PUBLIC_ORIGIN}/${locale}/auth/verify?token=${encodeURIComponent(issued.token)}`, referenceId: magicLink.id });
   await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENDING", attemptCount: { increment: 1 } } });
   try {
     const result = await provider.send(message);
     if (!result.accepted) throw new Error("The email provider did not accept the verification message.");
     await prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "SENT", provider: environment.EMAIL_PROVIDER, sentAt: new Date() } });
-  } catch (error) {
+  } catch {
     await prisma.$transaction([
-      prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: error instanceof Error ? error.message.slice(0, 1_000) : "Email delivery failed" } }),
+      prisma.emailDelivery.update({ where: { id: delivery.id }, data: { status: "FAILED", lastError: "Verification email delivery failed" } }),
       prisma.magicLink.update({ where: { id: magicLink.id }, data: { status: "REVOKED", revokedAt: new Date() } }),
     ]);
-    throw error;
+    throw new VerificationEmailDeliveryError();
   }
   return { alreadyVerified: false as const, expiresInMinutes: environment.MAGIC_LINK_TTL_MINUTES };
 }

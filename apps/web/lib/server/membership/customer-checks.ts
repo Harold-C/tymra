@@ -1,4 +1,5 @@
 import { prisma, recordFunnelEvent } from "@tymra/db";
+import { readLocationScope } from "@tymra/domain";
 import { membershipHistoryCutoff } from "./membership";
 import { nextAction } from "../price-checks";
 
@@ -34,6 +35,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
   });
   if (!check) return null;
   const result = check.resultVersions[0] ?? null;
+  const scope = readLocationScope(check.stayQuery?.unitConstraints);
   if (result) {
     await recordFunnelEvent({
       name: "formal_result_viewed",
@@ -43,6 +45,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
   return {
     id: check.id,
     analysisType: check.analysisType,
+    locationScope: scope ? { kind: scope.kind, label: scope.label } : null,
     status: check.status,
     confirmationStep: check.status === "NEEDS_CONFIRMATION" ? ({ CONFIRM_PROPERTY: "property", CONFIRM_UNIT: "unit", CONFIRM_LISTING: "listing", CONFIRM_QUERY: "query", WAIT: null } as Record<string, string | null>)[nextAction(check)] ?? null : null,
     terminal: terminalStatuses.has(check.status),
@@ -65,6 +68,7 @@ export async function getCustomerCheck(customerUserId: string, checkId: string) 
           priceEvidenceStatus: result.priceEvidenceStatus,
           recommendationReasonCode: result.recommendationReasonCode,
           observedPrices: observedPricesFromPayload(result.payload),
+          sampleCount: typeof recordValue(result.payload).sampleCount === "number" ? recordValue(result.payload).sampleCount : null,
           isDemo: result.isDemo,
           addressCoverage: addressCoverageFromPayload(result.payload),
           insights: result.insights.map((insight) => ({

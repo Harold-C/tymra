@@ -15,7 +15,7 @@ export default async function MemberSignInPage({
   params: { locale: "en" | "zh" };
   searchParams: { returnTo?: string };
 }) {
-  const safeReturnTo = typeof searchParams.returnTo === "string" && /^\/(en|zh)\/account(?:[/?]|$)/.test(searchParams.returnTo)
+  const safeReturnTo = typeof searchParams.returnTo === "string" && /^\/(en|zh)\/(?:account(?:[/?]|$)|address-check$)/.test(searchParams.returnTo)
     ? searchParams.returnTo
     : undefined;
   if (await getCustomerSessionForPage()) redirect(safeReturnTo ?? `/${params.locale}/account`);

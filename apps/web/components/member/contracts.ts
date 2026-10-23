@@ -5,6 +5,7 @@ export type Locale = "en" | "zh";
 export type CustomerCheck = {
   id: string;
   analysisType: "LISTING_PRICING" | "LOCATION_BENCHMARK";
+  locationScope?: { kind: "ADDRESS_RADIUS" | "SUBURB_BOUNDARY"; label: string } | null;
   status: string;
   terminal: boolean;
   confirmationStep?: string | null;
@@ -23,6 +24,7 @@ export type CustomerCheck = {
     recommendationStatus: string;
     observedSourceCount: number;
     priceEvidenceStatus: string | null;
+    sampleCount?: number | null;
     recommendationReasonCode: string | null;
     observedPrices: Array<{ source: string; amountMinor: number; currency: string; basis: string; feeCompleteness: string; sourceUrl: string | null; asOf: string | null }>;
     addressCoverage: null | { level: "FULL" | "REGIONAL" | "NATIONAL_ONLY"; marketName: string };
@@ -47,6 +49,10 @@ export type CheckListItem = Pick<CustomerCheck, "id" | "analysisType" | "status"
 export type MembershipPlan = "FREE" | "HOST" | "PRO" | "PORTFOLIO";
 
 export type MembershipSummary = {
+  asOf?: string;
+  coverage?: { dailyStart: string; dailyEnd: string; monitoringStart: string | null; monitoringEnd: string };
+  emailVerified?: boolean;
+  collectionBlockReason?: string | null;
   plan: MembershipPlan;
   status: string;
   serviceable: boolean;
@@ -65,8 +71,8 @@ export type MembershipSummary = {
     monthlyExportLimit: number;
     dailyApiRequestLimit: number;
   };
-  usage: { initialReportConsumed: boolean; rollingSpotChecks: number; remainingSpotChecks: number; nextSpotCheckAt: string | null };
-  pricingUnits: Array<{ id: string; active: boolean; occupiesSlot: boolean; sellableUnitId: string; unitName: string; propertyName: string; city: string; activatedAt: string; deactivatedAt: string | null; slotRetainedUntil: string | null }>;
+  usage: { initialReportConsumed: boolean; rollingSpotChecks: number; remainingSpotChecks: number; nextSpotCheckAt: string | null; windowStart?: string; windowEnd?: string };
+  pricingUnits: Array<{ id: string; active: boolean; occupiesSlot: boolean; sellableUnitId: string; unitName: string; propertyName: string; city: string; activatedAt: string; deactivatedAt: string | null; slotRetainedUntil: string | null; verificationStatus?: string; listings?: Array<{ platform: string; canonicalUrl: string }>; lastObservedAt?: string | null; lastCompletedAt?: string | null; schedule?: { enabled: boolean; lastQueuedAt: string | null; nextEligibleAt: string | null } }>;
   launchAvailability: Record<MembershipPlan, boolean>;
   featureAvailability: { alerts: boolean; portfolio: boolean; exports: boolean; integrations: boolean };
 };

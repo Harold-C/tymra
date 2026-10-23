@@ -83,6 +83,7 @@ const emailCopy: Record<Locale, Record<EmailType, { subject: string; heading: st
 
 export function buildServiceEmail(input: {
   type: EmailType;
+  verificationPurpose?: "UNLOCK_FORMAL_CHECK" | "VERIFY_CUSTOMER_EMAIL";
   locale: Locale;
   recipient: string;
   recipientHash: string;
@@ -90,7 +91,11 @@ export function buildServiceEmail(input: {
   safeActionUrl?: string;
   referenceId: string;
 }): EmailMessage {
-  const copy = emailCopy[input.locale][input.type];
+  const copy = input.type === "VERIFY_AND_SIGN_IN" && input.verificationPurpose === "VERIFY_CUSTOMER_EMAIL"
+    ? input.locale === "zh"
+      ? { subject: "验证你的 Tymra 账户邮箱", heading: "验证邮箱以完成 Tymra 账户设置" }
+      : { subject: "Verify your Tymra account email", heading: "Verify your email to complete your Tymra account setup" }
+    : emailCopy[input.locale][input.type];
   const action = input.safeActionUrl
     ? input.locale === "zh"
       ? `\n查看安全页面：${input.safeActionUrl}`

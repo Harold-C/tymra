@@ -76,6 +76,7 @@
     "signingIn": "Signing in",
     "error": "Email or password is incorrect.",
     "serviceError": "The sign-in service is temporarily unavailable. Please try again.",
+    "rateLimited": "Too many sign-in attempts. Please wait before trying again.",
     "noAccount": "New to Tymra?",
     "createAccount": "Create an account",
     "privacy": "Privacy",
@@ -94,6 +95,10 @@
     "creating": "Creating account",
     "passwordMismatch": "The passwords do not match.",
     "error": "The account could not be created.",
+    "rateLimited": "Too many registration attempts. Please wait before trying again.",
+    "accountUnavailable": "We could not register with these details. Try signing in or use another email.",
+    "terms": "Terms",
+    "privacy": "Privacy",
     "hasAccount": "Already have an account?",
     "signIn": "Sign in"
   },

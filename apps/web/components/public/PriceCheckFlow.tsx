@@ -171,6 +171,7 @@ export function CheckStartForm({ locale, initialInput = "", memberEmail }: { loc
   return (
     <FlowPage title={t("startTitle")} intro={t("startIntro")} currentStep={0}>
       <form className="flow-form" onSubmit={submit} noValidate>
+        {memberEmail ? <div className="flow-actions"><Link className="button button-secondary" href={`/${locale}/account`}><ArrowLeft size={16} aria-hidden="true" />{locale === "zh" ? "返回会员首页" : "Back to account home"}</Link></div> : null}
         <fieldset className="flow-choice-group">
           <legend>{t("analysisTypeLabel")}</legend>
           <label className="check-control"><input name="analysisType" type="radio" value="LISTING_PRICING" defaultChecked /><span><strong>{t("analysisType.listing.title")}</strong><small>{t("analysisType.listing.body")}</small></span></label>
@@ -378,7 +379,7 @@ export function QueryConfirmation({ locale, checkId }: { locale: Locale; checkId
   const initialCheckOut = check?.stayQuery?.checkOut?.slice(0, 10) ?? dates.checkOut;
 
   return (
-    <FlowPage title={t("queryTitle")} intro={check?.analysisType === "LOCATION_BENCHMARK" ? t("queryIntroLocation") : check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={3}>
+    <FlowPage title={t("queryTitle")} intro={check?.analysisType === "LOCATION_BENCHMARK" ? t("queryIntroLocation") : check?.unit ? t("queryIntro", { unit: check.unit.officialName }) : t("queryIntroFallback")} currentStep={3} location={check?.analysisType === "LOCATION_BENCHMARK"}>
       {loading ? <LoadingState label={t("loading")} /> : (
         <form className="flow-form" onSubmit={submit}>
           {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
@@ -419,7 +420,7 @@ export function CheckStatus({ locale, checkId, memberAccount = false }: { locale
 
   const confirmationPath = check?.nextAction === "CONFIRM_PROPERTY" ? "property" : check?.nextAction === "CONFIRM_LISTING" ? "listing" : check?.nextAction === "CONFIRM_UNIT" ? "unit" : check?.nextAction === "CONFIRM_QUERY" ? "query" : null;
   return (
-    <FlowPage title={terminal ? t("statusFinishedTitle") : t("statusTitle")} intro={t("statusReference", { checkId })} currentStep={terminal ? 5 : 4}>
+    <FlowPage title={terminal ? t("statusFinishedTitle") : t("statusTitle")} intro={t("statusReference", { checkId })} currentStep={terminal ? 5 : 4} location={check?.analysisType === "LOCATION_BENCHMARK"}>
       {!check && !error ? <LoadingState label={t("loadingStatus")} /> : null}
       {check?.isDemo ? <FlowNotice tone="warning" title={t("demoNoticeTitle")} body={t("demoNoticeBody")} /> : null}
       {check && presentation ? <div className={`status-panel status-tone-${presentation.tone}`} role="status" aria-live="polite">
@@ -457,15 +458,16 @@ function usePublicCheck(checkId: string, fallbackMessage: string) {
   return { check, loading, error, setError, reload };
 }
 
-function FlowPage({ title, intro, currentStep, children }: { title: string; intro: string; currentStep: number; children: React.ReactNode }) {
-  return <section className="flow-page"><div className="flow-container"><FlowStepper currentStep={currentStep} /><div className="flow-heading"><h1>{title}</h1><p>{intro}</p></div><div className="flow-surface">{children}</div></div></section>;
+function FlowPage({ title, intro, currentStep, children, location = false }: { title: string; intro: string; currentStep: number; children: React.ReactNode; location?: boolean }) {
+  return <section className={`flow-page${location ? " location-page" : ""}`}><div className="flow-container"><FlowStepper currentStep={currentStep} location={location} /><div className="flow-heading"><h1>{title}</h1><p>{intro}</p></div><div className="flow-surface">{children}</div></div></section>;
 }
 
-function FlowStepper({ currentStep }: { currentStep: number }) {
+function FlowStepper({ currentStep, location = false }: { currentStep: number; location?: boolean }) {
   const t = useTranslations("Check");
-  const steps = ["property", "listing", "unit", "query", "processing", "result"];
+  const steps = location ? ["property", "query", "processing", "result"] : ["property", "listing", "unit", "query", "processing", "result"];
+  if (location) currentStep = currentStep >= 3 ? currentStep - 2 : 0;
 
-  return <ol className="flow-stepper" aria-label={t("steps.label")}>{steps.map((step, index) => <li className={index < currentStep ? "is-complete" : index === currentStep ? "is-current" : ""} key={step} aria-current={index === currentStep ? "step" : undefined}><span>{index < currentStep ? <CheckCircle2 size={16} /> : index + 1}</span><strong>{t(`steps.${step}`)}</strong></li>)}</ol>;
+  return <ol className={`flow-stepper${location ? " location-stepper" : ""}`} aria-label={t("steps.label")}>{steps.map((step, index) => <li className={index < currentStep ? "is-complete" : index === currentStep ? "is-current" : ""} key={step} aria-current={index === currentStep ? "step" : undefined}><span>{index < currentStep ? <CheckCircle2 size={16} /> : index + 1}</span><strong>{t(`steps.${step}`)}</strong></li>)}</ol>;
 }
 
 function Field({ label, hint, error, htmlFor, children }: { label: string; hint?: string; error?: string; htmlFor: string; children: React.ReactNode }) {

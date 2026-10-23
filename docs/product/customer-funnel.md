@@ -253,6 +253,13 @@ Independent password registration creates an unverified Free account/session wit
 Job, pricing unit or quota entry. Email verification is still required before provider collection.
 It is not subject to the anonymous-unlock account-creation timing above.
 
+If verification email delivery is unavailable, the committed account/session remains usable for
+password sign-in. Show the unverified state and a resend action; do not report account creation as
+failed or pretend that an email was sent. Registration emails describe account verification and
+do not promise an existing report. On 2026-10-11 Harold requested the first online customer account
+while explicitly deferring real email setup; this permits unverified account entry, without
+waiving the verification requirement for collection or the remaining full-product launch gates.
+
 ### 6.3 Property relationship
 
 - A customer owns their Price Check records and reports, not the public property identity.

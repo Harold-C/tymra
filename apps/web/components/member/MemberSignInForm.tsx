@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
-type ApiPayload = { data?: { returnTo: string }; error?: { message?: string } };
+type ApiPayload = { data?: { returnTo: string }; error?: { code?: string } };
 
 export function MemberSignInForm({
   locale,
@@ -40,7 +40,10 @@ export function MemberSignInForm({
       });
       const payload = await response.json().catch(() => null) as ApiPayload | null;
       if (!payload) throw new Error(copy("serviceError"));
-      if (!response.ok || !payload.data?.returnTo) throw new Error(payload.error?.message ?? copy("error"));
+      if (!response.ok || !payload.data?.returnTo) {
+        const code = payload.error?.code;
+        throw new Error(copy(code === "INVALID_CREDENTIALS" || code === "VALIDATION_ERROR" ? "error" : code === "RATE_LIMITED" ? "rateLimited" : "serviceError"));
+      }
       router.push(payload.data.returnTo);
       router.refresh();
     } catch (caught) {

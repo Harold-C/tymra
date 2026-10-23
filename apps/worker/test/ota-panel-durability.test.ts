@@ -44,6 +44,10 @@ describe("durable physical-unit panel prices", () => {
     expect(mock.runCreate).not.toHaveBeenCalled(); expect(mock.stay).not.toHaveBeenCalled();
     const first = mock.observation.mock.calls[0][0];
     expect(first.create.idempotencyKey).toBe(first.where.idempotencyKey);
+    expect(first.create.unitConstraints.normalizedRateTerms).toMatchObject({
+      version: "public-rate-terms-v1", raw: { cancellationPolicy: rate.cancellationPolicy, mealPlan: rate.mealPlan, paymentTerms: rate.paymentTerms },
+    });
+    expect(first.create.cancellationPolicy).toBe(rate.cancellationPolicy);
     mock.runFind.mockResolvedValue({ ...run, id: "run-2" }); rate.totalPriceMinor = 25000; rate.basePriceMinor = 21000;
     await service.collectPanelMemberRate("member", "job-2", "source");
     expect(mock.observation.mock.calls[1][0].where.idempotencyKey).not.toBe(first.where.idempotencyKey);

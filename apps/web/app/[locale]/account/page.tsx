@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 
 export function generateMetadata({ params }: { params: { locale: "en" | "zh" } }) { return getAccountMetadata(params.locale, "overview"); }
 
-export default async function AccountPage({ params, searchParams }: { params: { locale: "en" | "zh" }; searchParams: { quota?: string; blocked?: string; verify?: string } }) {
-  if (!(await getCustomerSessionForPage())) redirect(`/${params.locale}/sign-in?returnTo=${encodeURIComponent(`/${params.locale}/account`)}`);
-  return <CustomerAccount locale={params.locale} blockedReason={searchParams.blocked ?? (searchParams.verify === "email" ? "EMAIL_VERIFICATION_REQUIRED" : searchParams.quota === "reached" ? "SPOT_CHECK_QUOTA_REACHED" : null)} />;
+export default async function AccountPage({ params, searchParams }: { params: { locale: "en" | "zh" }; searchParams: { quota?: string; blocked?: string; verify?: string; verified?: string } }) {
+  const session = await getCustomerSessionForPage();
+  if (!session) redirect(`/${params.locale}/sign-in?returnTo=${encodeURIComponent(`/${params.locale}/account`)}`);
+  return <CustomerAccount locale={params.locale} emailVerified={Boolean(session.customerUser.emailVerifiedAt)} verificationDelivery={searchParams.verify === "email" ? "sent" : searchParams.verify === "email-unavailable" ? "unavailable" : undefined} showVerificationSuccess={searchParams.verified === "email"} blockedReason={searchParams.blocked ?? (searchParams.quota === "reached" ? "SPOT_CHECK_QUOTA_REACHED" : null)} />;
 }

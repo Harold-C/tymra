@@ -108,10 +108,154 @@ surfaces closed. PostgreSQL, Redis, Worker and Scheduler are internal; productio
 Backend-only email uses log delivery. Customer access, Stripe, real mail and paid capabilities
 require their own acceptance and authorized ingress/configuration changes.
 `DEPLOYED_HIDDEN` only hides navigation and is a distinct product discovery mode.
+On 2026-10-11, the user narrowed the task to the customer login domain: `tymra.nz` and the
+existing sign-in page were connected using the unchanged production image. Only Web access
+mode and its public router changed. See traceability for the saved runtime and rollback configuration.
+The customer website was subsequently restricted to Harold's exact current public IPv4/IPv6
+addresses at Cloudflare and the origin; both allowlists must be updated if those addresses change.
+The registration changes described below remain local and have not been deployed.
+
+The optional `docker-compose.customer.yml` overlay prepares direct Free-account registration,
+password sign-in and account access at `https://tymra.nz/{en,zh}/sign-up` and `/sign-in`.
+It retains hidden discovery and keeps new Price Checks, the anonymous funnel, paid plans,
+export and member API disabled. Existing Admin routing remains separate. It does not configure
+DNS, send mail or deploy by itself: merge it into a reviewed fixed production configuration
+after the applicable release checks, preserving the actual runtime secrets, networks and mounts.
+The 2026-10-11 request defers real email setup. Registration can create an unverified Free account
+and session while mail is unavailable; the UI reports that state and supports later resend.
+Production log delivery never counts as a sent account-verification email. Verification still
+gates collection, and this limited account entry does not establish full customer-product acceptance.
 
 Deploy a fixed candidate, verify recovery material and read back the actual image, configuration,
 health and affected business result. Do not infer production acceptance from a build or local
 test. Bootstrap only the selected administrator in a fresh production database, without demo seed.
+
+### Release package retention and required finalization
+
+After production deployment and affected-business acceptance pass, keep only the **current
+release and one explicitly verified compatible rollback release** as long-term image-package
+versions on each recovery host. Keep one complete compressed image for each, together with
+its exact Compose/configuration references, manifest and validation evidence. A configuration-only
+release can share the same image archive with its rollback while retaining both configuration
+sets. A changed-layer tar, download ZIP, registry tag or a checksum alone is not an independently
+restorable rollback. Until authenticated re-download is demonstrated, retain the current full
+image package too. Do not select rollback by modification time.
+
+Also keep **one complete, actually restored release-backup set** under the reviewed backup
+root: database, captured evidence and paired runtime configuration. It must be verified with
+both the current and explicit rollback images and have an independently verified copy.
+Image-package cleanup alone is not release completion. After replacement recovery and business
+acceptance pass, explicitly inventory and retire superseded release-backup payloads. Preserve
+small configuration files, manifests, audit and recovery receipts in their original protected
+directories; a retained receipt directory is not another complete backup. This is the release
+rollback policy, not deletion of live business data or original live evidence.
+
+Successful deployment ends with this command **on each package host**, after preparing the
+matching acceptance and complete-image restore receipts:
+
+```sh
+# Read-only review (apart from the plan receipt and temporary completion lock):
+python3 scripts/finalize-release.py --config /absolute/tymra/finalization.json --output /absolute/tymra/plan.json
+# Required successful-release completion step:
+pnpm release:complete --config /absolute/tymra/finalization.json --output /absolute/tymra/completion.json
+# On a server without pnpm, use python3 /srv/apps/tymra/bin/complete-release.py.
+```
+
+`scripts/finalize-release.py` is the canonical post-deployment cleanup implementation;
+`complete-release.py` is the mandatory accepted-release completion entry. Install both alongside
+`install-release-finalization.py`, then run the installer with `--release-helper
+/srv/apps/tymra/releases/<release>/release.py`. It installs the two helpers in
+`/srv/apps/tymra/bin`, preserves the original release helper, and connects its `complete` stage.
+After the release's actual business acceptance and recovery checks, prepare the reviewed
+`retention-finalization.json` in that release directory and run `python3 release.py complete`.
+This stage must succeed before reporting release completion. It requires real evidence; it
+does not generate acceptance flags or deploy anything. Missing or mismatched evidence fails closed.
+For other release orchestrators, invoke `/srv/apps/tymra/bin/complete-release.py` with the same
+configuration and receipt arguments as the final mandatory step. Image export is not deployment:
+the GitHub runner must never delete host recovery packages based only on an upload succeeding.
+The checked-in export workflow downloads its exact uploaded artifact, checks image and manifest
+bytes, then removes only its own runner staging copies. The existing seven-day GitHub artifact
+expiry remains transfer staging, not the production recovery policy.
+
+The protected, host-local JSON configuration has the following fields. It contains identities,
+paths and hashes, never credential values:
+
+- `project: "tymra"`; nonoverlapping absolute `roots` limited to reviewed release-package
+  locations (for example the local `runtime/release-candidates` or server `/srv/apps/tymra/releases`).
+- `docker`: local argv such as `["docker"]`; `runtime`: the production `docker` argv, optional
+  `ssh` destination, all existing application `containers` by name, and `config_sha256` mapping
+  each application name to `config_sha256(container)` from the helper. This hashes the full
+  Docker `Config`, `HostConfig` and `Mounts` with sorted compact JSON (mounts sorted by destination
+  and source); environment values are
+  never emitted. Web/API require healthy checks; Worker/Scheduler must be running on the
+  accepted image, and their functional acceptance is separately covered by the receipt.
+- `current` and `rollback`: each has `release`, full `revision`, immutable `image`, and
+  `archive: {path, sha256}` plus `verification: {path, sha256}`. The archive must be a full
+  compressed image; a delta or ZIP is refused. Each verification receipt contains `status:
+  "passed"`, `kind: "full-image-restore"`, matching `image`, `revision`, `archive_sha256`,
+  exact `rootfs_layers`, all `checks` (`all_layers`, `execution_config`, `isolated_restore`)
+  true, and nonempty `evidence: [{path, sha256}, ...]` from actual verification/restore work.
+- `acceptance: {path, sha256}`: receipt with `status: "passed"`, exact `current` and `rollback`
+  `{release, revision, image}`, matching `runtime_config_sha256`, all five `checks`
+  (`deployment`, `runtime_config`, `health`, `business`, `rollback_compatibility`) true, and
+  nonempty hashed `evidence`. These are reviewed outcomes, not flags to set to bypass a gate.
+  A new release/configuration requires fresh matching acceptance; retain the old usable
+  recovery set if the candidate fails. Never manufacture a restore receipt from export hashes.
+- `protected_files: [{path, sha256}, ...]`: nonempty list including the current/rollback
+  Compose files, necessary protected environment/configuration references, manifests and
+  restore instructions. Preserve their existing permissions and storage boundaries.
+- `retire: [{path, sha256}, ...]`: the reviewed inventory of obsolete or duplicate **payload
+  files**, including their exact hashes; `lsof` may override the file-handle checker executable.
+  Populate this list from completed older releases and redundant transfer copies during release
+  preparation. Failed/in-progress/unaccepted candidates are not automatically retirement targets.
+  An unlisted file is always preserved. The legacy filenames currently recognized are
+  `image.tar[.gz|.zst]`, `image-final.tar[.gz|.zst]`, `image-changed-layers.tar[.gz|.zst]`,
+  `private-ci-image-package.zip`, `private-ci-package.zip`, `private-ci-image.tar.gz`,
+  `image-changed-layers-<40-character-revision>.tar.gz`,
+  `tymra-booking-reference-continue.tar.gz`, and `tymra-release.tar[.gz|.zst][.part-NN]`.
+- Mandatory `backup_retention`: `root` (separate from image-package roots), `keep` (one direct
+  backup directory), hashed `snapshot`, `paired_restore`, and `offhost` receipts, plus an explicit
+  `retire: [{path, sha256}, ...]`. The kept `manifest.json` must equal the original snapshot
+  receipt; every database, evidence and configuration file is rehashed. Both image recovery
+  receipts must reference the same successful paired restore. Retired files are limited to
+  recognized database dumps and evidence archives in other direct backup directories. Unknown
+  files, source archives, secrets and receipt/configuration files remain protected. An omitted
+  historical backup payload blocks completion instead of silently accumulating. Recognized
+  backup names are `database.dump`, `postgres.dump`, `tymra.dump`, `before.dump`,
+  `initialized.dump`, `tymra.before.dump`, `tymra.after-failed-acceptance.dump`, `evidence.tar`,
+  `evidence.tar.gz`, `argus-evidence.tar`, `argus-evidence.tar.gz`, and `evidence.tgz`.
+
+The finalizer rechecks all recovery files/evidence, live image identities/configuration hashes,
+target file identities/hashes and active mounts/file handles before unlinking. A per-root lock
+serializes completion; repeats skip already-deleted payloads while rechecking all remaining
+material. Any failed gate blocks deletion. Never delete whole release directories: active Web
+Compose files and ingress settings may still live there. Source, credentials, original live
+evidence, user uploads, login state, Docker images/volumes, other products, and backups outside
+the explicit release-backup root remain outside this cleanup policy. Hardlinked backup copies
+are unlinked individually; released-byte estimates count an inode only when its last reviewed
+link is retired. Current/rollback packages and the single paired backup are checked again after
+cleanup. An absent `backup_retention` block now fails closed.
+
+The installer supports both reviewed legacy `if/elif` and current dictionary dispatchers;
+unknown dispatchers fail before mutation. Run it for the selected new release helper, then
+bind the installed helper's reviewed bytes in `protected_files` and invoke its `complete` stage.
+If an earlier helper was already protected, retain its original bytes and checksum at
+`release.py.before-retention` and protect both versions; do not manufacture a new acceptance or
+weaken a checksum to bypass an installation change. When reusing evidence during the next backup, select the
+explicit retained set from the **previous accepted** finalization configuration, never a failed
+attempt's hardcoded backup path. Do not remove the old recovery set until the new set passes.
+
+Existing actual isolated restore evidence may be reused only after checking the exact image
+identities, both execution configurations, compatibility results and preserved snapshot bytes.
+Verify every archive layer against the image configuration's `rootfs.diff_ids`; this establishes
+archive completeness but does not replace the actual database/evidence restore. Preserve dated
+evidence and explain reuse explicitly. Repeated finalization should use a separate receipt name
+when retaining the first run's released-byte accounting.
+
+Both host completion receipts are required before calling release cleanup complete. Missing
+recovery proof or uncertain ownership means preserve the affected package, record the gap in
+`docs/traceability.md`, and finish the verification before retrying. Run
+`pnpm test:release-retention` after changing this behavior; CI includes these boundary tests.
 
 ## Collection and import
 

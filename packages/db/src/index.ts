@@ -19,3 +19,4 @@ export * from "./jobs";
 export * from "./security";
 export * from "./service-backfill";
 export * from "./service-mapping";
+export * from "./market-read-model";

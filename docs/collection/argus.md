@@ -4,6 +4,234 @@ Last updated: 2026-10-06 (bounded public queue wait and execution deadlines)
 
 ## Bounded OTA production pilots
 
+### Christchurch staged observation pilot (local only, 2026-10-15)
+
+This is the current small-pilot preparation contract. The larger historical panel plan below remains
+a separate example, not the budget or entry gate for these seven objects. No collection is authorized.
+
+`market-observation.ts` separates source-scoped observation eligibility, per-quote comparability,
+formal `christchurch-fixed-panel-v2` admission and execution permission. A reviewed source listing
+and repeatable unit plus attributable two-adult support permit observation. Exact residential address,
+24-month history, all six dates being available and approved reserves are not required at this stage.
+An attributable selected two-adult quote does not establish maximum occupancy. Unknown fees or
+conflicting cancellation amounts retain raw evidence but cannot produce a comparison key/amount.
+Comparison keys isolate unit, stay dates, nights, adults, units, currency, immutable public profile,
+terms and instant/request booking mode. Two-night totals are actual package totals; nightly equivalents
+are descriptive only and never spliced into single-night series. Formal panel gates remain unchanged.
+
+Current local source: `runtime/market-data/christchurch-supply-20261014/sources/staged-observation-review.json`.
+Its seven objects are Aalton and Carnmore (one night, 3 checks/week), Cosy and Lincoln (two nights,
+3/week), Michael (two nights, 1/week), Karen and William (one night, 1/week). All check two fixed stays.
+Cosy/Lincoln retain their common building concentration; they are not independent reserves. Airbnb
+source-scoped objects do not add verified locality coverage. Existing quantity/fee evidence is dated
+2026-10-14, not a fresh quote. Carnmore's reviewed room signature still requires exact-selection preflight.
+
+Example observation dates: 2026-10-19 through 2026-11-15; stays: 2026-11-17 and 2026-11-21, both
+after the observation period. November 21 is a proposed anchor without saved inventory verification.
+Rebase the whole plan before activation if start changes, and lock anchors after initial preflight;
+never substitute dates/units in response to unavailable inventory. The pure planner generates 28 days:
+120 quote captures + 14 initial detail/capability captures + 28 weekly identity captures + 33 shared
+retry captures = **195 proposed maximum executions**, **0 authorized**. Source base allocations:
+Expedia 48 quotes + 4 initial + 8 weekly; Booking the same; Airbnb 24 + 6 + 12. Retries share one pool,
+max 2 attempts/query, concurrency 1, daily ceiling 42. Extra captures count toward these limits.
+Cost/capture and monetary cap stay null until measured; current live limits are not changed.
+
+Week 1 checks identity/context/field quality; week 2 matched quotes and fee conflicts; week 3 missingness
+and concentration; week 4 per-object review of cost, actual observation days and comparability. Classified
+unavailability is not price success. Regional publication requires separate coverage/representation review.
+Challenge/login/rate limits stop the source; identity changes stop that object; budgets never expand
+automatically. Unknown terms block comparison, not future observation. No booking/request submission.
+
+Offline generation, without environment loader, DB, queue or provider calls:
+
+```sh
+node node_modules/tsx/dist/cli.mjs apps/worker/src/operations/plan-christchurch-observations.ts \
+  --roster /absolute/path/staged-observation-review.json --out /absolute/path/new-plan.json
+```
+
+The existing local preparation generator embeds this evaluated plan in
+`holiday-home-preparation.json → scopedPilotPreparation.stagedObservation` and updates the existing
+Chinese sample report. Old `qualified=false` values and v12 holds remain historical formal-panel
+preparation facts; they are not observation-eligibility results. The current output reports observation
+eligibility, unassessed historical quotes, unsubmitted formal panel and unauthorized execution separately.
+Both planners support explicit one/two-night checkouts locally; no real Argus two-night capture,
+worker persistence, source-capability acceptance or scheduler wiring was performed for this cohort.
+
+### Christchurch four-week regional-price plan (local only, 2026-10-14)
+
+This is an offline planning contract, not permission or a scheduler/executor activation.
+Harold authorized local term standardization, fixed-sample mechanics and a four-week plan;
+production collection, source budgets, Argus limits and schedules remain unchanged.
+
+`public-rate-terms-v1` keeps original meal/cancellation/payment/fence strings and derives a separate
+canonical comparison key. Only explicit aliases are equivalent. Unknown meals, generic `STANDARD`
+cancellation, partial identity, undisclosed payment and promotional conditions block trend comparison.
+Free-cancellation comparisons require an explicit offset-bearing deadline; the key uses hours before
+NZ midnight of the stay date, not the literal calendar date. Date-only or truncated prose stays unknown.
+Raw observations are not rewritten. New panel/address captures save this versioned object in
+`unitConstraints.normalizedRateTerms`. New captures also store an immutable anonymous profile key in
+`unitConstraints.marketCollectionProfileKey`; historical context is not reconstructed from today's
+mutable CollectionProfile row. Region trends also require a known collection-profile identity;
+old snapshots lacking payment/profile fields remain usable as quote evidence, not comparable trends.
+
+Anchor refresh revisits existing active anchor IDs and does not automatically remove an unavailable
+anchor or replace it with a higher-ranked newcomer. Rotating selection cannot take over an anchor.
+The Christchurch manifest additionally pins Property, Unit, Listing, source, category, market,
+collection profile and canonical terms. Coverage retains every frozen member in its denominator;
+a change in identity/source/context/terms is a gap. Additions/replacements require a reviewed new
+manifest revision, never a daily rebalance. The offline manifest is not consumed by live jobs yet.
+
+The original 40-property capacity is a historical example. D-058 permits an evidence-led size,
+allocated by reviewed suburb × accommodation-type targets, superseding the fixed 40 and earlier
+16/12/12 split. The initial public-research roster selected 52 properties in 25 localities,
+plus 15 reserves (expanded to 23 in D-059 below) and 5 separate exploratory properties; these are property candidates, not executable
+OTA members. True market supply weights remain unknown. Within each stratum, diversify comparable price bands, capacity, physical unit
+kind and spatial spread. Within the original one-night cohort, entire-place candidates must support
+the same two-adult, one-unit, one-night query. The user subsequently approved a separate two-night
+holiday-home research cohort (2026-10-14): two adults, one entire unit, NZD, anonymous public rate.
+Its two-night total and per-night equivalent must never be spliced into the one-night series;
+cleaning fees remain per-stay. This is local preparation only. Since 2026-10-15 the offline planner
+accepts `--nights 1|2` (default 1); real two-night source execution still needs capability acceptance,
+reviewed identities/terms and a rebased budget. No research dossier is an executable manifest.
+Missing strata cannot be filled by another area's hotels. Supply expansion factors require sourced,
+dated unique-property counts and are not proof of statistical representativeness. See DATA-CORE-003A.
+Up to 10 weekly discovery candidates stay outside the price-index denominator.
+
+The example start is **2026-10-19**, end **2026-11-15** (28 NZ calendar days); these are tentative,
+not booked execution dates. Rebase the entire reviewed plan before activation if start changes.
+Each day queries D+7/14/30/60/90, next Tuesday and next Saturday, plus locked stays on start+21
+and start+27 until the day before check-in. Coincident dates are merged with all reasons retained.
+Locked dates are observation examples, not asserted event dates; a real event must have confirmed
+source/date evidence before substituting a locked date and regenerating the budget.
+This historical budget example uses 1 night, 2 adults, no children, 1 unit, NZD, the pinned anonymous profile and exact unit.
+
+| Historical 40-property example budget | Capture/query units |
+| --- | ---: |
+| Normal exact-unit/date price queries | 9,280 |
+| Retry reserve, at most 20% of daily normal queries | 1,856 |
+| Weekly discovery, 10 candidates × at most 2 captures × 4 weeks | 80 |
+| Four-week maximum capture executions | 11,216 |
+| Separate preflight identity/capability reserve | 96 |
+| Combined proposed ceiling, including preflight | 11,312 |
+
+One exact quote query budgets one `collect_rates` capture; this is **not** one HTTP request or a
+guaranteed usable rate. Detail refreshes and other extra captures must fit a separately reviewed
+reserve, not be hidden in price-query counts. Maximum one retry/query, all attempts counted even on
+failure; unused quota is not an instruction to run more work. Daily absolute ceiling 500, concurrency 1,
+no source-limit bypass and no automatic escalation. Per-source allocations follow the pinned manifest
+and require review against both Tymra and Argus limits; current bounded limits cannot execute this plan.
+Target window is 02:00–04:00 NZ, to be proven by measured p95 capture duration and pacing before use.
+An overrun is reported as missing coverage, not collected later under a false common snapshot time.
+Monetary cap and cost/capture remain unset until measured; proposed cost is at most
+`11,312 × measured NZD/capture + storage/proxy incremental charges`. No spend is authorized here.
+
+Preflight: review city/coordinates, physical unit, source capability, exact public terms/profile and
+the reviewed target number of unique properties; measure time, success and cost on separately authorized bounded captures.
+Week 1 establishes baseline and field/identity quality. Week 2 checks matched daily/weekly coverage.
+Week 3 follows the first locked stay; week 4 follows the second and evaluates cost/coverage before any
+expansion. Daily source challenges halt that source; missing prices, sold out and minimum-stay
+restrictions remain distinct from collection failure. Never substitute a different property/date/rate.
+Proposed pilot quality goals: >=80% valid fixed-member coverage per published stratum/comparison,
+no identity drift, no unclassified collection-context changes; under-covered comparisons stay blank.
+The existing page's 3-property technical gate is not representative-market acceptance. A reviewed
+cohort-aware, coverage-gated index and source execution wiring remain activation deliverables.
+
+Offline generation (no environment loader, database, network or queue):
+
+```sh
+node node_modules/tsx/dist/cli.mjs apps/worker/src/operations/plan-christchurch-pilot.ts \
+  --snapshot /absolute/path/market-snapshot.json --start 2026-10-19 \
+  --out /absolute/path/new-plan.json
+```
+
+Optional `--candidates /absolute/path/reviewed-candidates.json` and `--targets /absolute/path/targets.json`
+accept arrays matching `sampleCandidateSchema` and `sampleStratumTargetSchema`. The output includes
+versioned labels, flat quantitative tags, a deterministic selection proposal, exclusions and quota gaps.
+Absent evidence stays null; no LINZ, OTA or production call is made to fill missing labels.
+An optional `--panel /absolute/path/reviewed-manifest.json` preserves an already frozen v2 manifest.
+`--target-size N` changes draft capacity (default 40 for the historical example); an existing frozen
+manifest cannot be resized by this argument. The planner recomputes quotes/retries/preflight reserve,
+and explicitly blocks activation when any proposed day exceeds 500. Preflight reserves two captures
+per property plus 20% contingency. A larger roster never changes live source limits.
+Version `christchurch-fixed-panel-v2` requires reviewed suburb/city/region, unit kind, capacity and
+source-backed labels. Earlier v1 drafts are retained as historical files and require explicit review
+before conversion; the planner does not silently migrate or freeze its selection proposal.
+The planner refuses unknown options and existing output files. Even a full manifest produces
+`DRAFT_NOT_ENABLED`, with `executionEnabled=false` and explicit activation blockers.
+Without a reviewed manifest it reports candidates and the target-size shortfall; it never invents
+properties or treats the snapshot as identity/representativeness approval. The present snapshot
+offers 3 Christchurch candidate properties but omits profile/payment fields, so frozen membership
+was **0/40** in the original draft. D-058 research now supplies 52 labelled property candidates but
+still zero exact OTA members. The budgets are capacity planning, not ready-to-execute job counts.
+
+Current local research artifacts are under
+`/Users/haroldchen/Development/tymra/runtime/market-data/christchurch-supply-20261014/`:
+`Christchurch-供给与固定样本清单.md`, `christchurch-supply-and-samples.json`, `pilot-candidates.json`,
+`pilot-targets.json` and `four-week-plan-52.json`. The 52-property plan has 12,064 normal queries,
+2,429 retry reserve and 80 discovery captures (14,573 total), plus 125 preflight reserve.
+Peak 582/day exceeds the unchanged 500 draft limit on 14 days: revise cadence or explicitly review
+budget before activation. 30/90/180-day live inventory checks and longitudinal continuity remain unverified.
+
+#### Primary/reserve preparation follow-up (D-059, local only)
+
+`panel-preparation.json` and `Christchurch-主样本替补与采集准备.md` in the same local research
+directory supersede the original 15-reserve selection for preparation purposes, while preserving
+the original supply inventory and its SHA-256. They contain 52 primary and 23 reserve dossiers,
+not accepted Argus requests. All bindings are unresolved/null and `dispatchable=false`.
+26 primaries have a same-suburb/type candidate: 18 non-overlapping first choices and 8 shared-only
+positions. Another 26 have no same-cell reserve; matching room/terms/price remains unverified for all.
+These gaps are not filled by cross-suburb properties. Addington Stadium is held for address conflict.
+
+The same-day local desk follow-up is `ota-readiness-review.json` and
+`Christchurch-OTA核验与替补缺口.md`. It preserves the 75-property preparation snapshot and adds
+two provisional same-cell leads (Airport Birches / Russley, Belle Bonne / Sockburn), for 77 research
+properties. Of the original 26 gaps, 24 have no qualified new candidate and two have comparability
+holds; none of those 26 has an accepted replacement. Area, amenities, payment and exact-unit
+availability must be matched before accepting these leads. No new binding is dispatchable.
+The 75 properties received six dated property-level searches (450 combinations); 71 returned an
+offer at least once and 42 at all six dates. Browser checks, including alternate returned dates,
+read room offers for 71 properties. These checks do not pass the six-date exact-unit gate.
+The saved connector responses and manual DOM/policy fact transcriptions are desk evidence, not
+Argus raw captures or source-adapter acceptance. Do not bind UI rate-block IDs as ratePlanId,
+use `bbasic` partner placeholders, mix member prices or substitute another room when the fixed
+unit is unavailable. Resolve the four remaining unverified offer cases and all physical-room,
+fee and precise cancellation-time gaps before freeze. No recurring collection was started.
+If the two provisional leads enter preflight, the original formula adds 16 base captures plus
+four retry-reserve captures (740 total ceiling); stop rejected leads early. Recompute the recurring
+budget only after the accepted roster is fixed. This is a planning adjustment, not authorization.
+
+The local offline preparation generator proposes a lower cadence that includes reserves:
+daily D+7, D+30, next Saturday and the two locked stays; Monday D+14, Wednesday D+60, Friday D+90;
+Thursday two forward dates per reserve, Sunday at most 20 discovery captures. It deduplicates dates.
+For the tentative original start, this is 7,124 main queries + 184 standby queries + 80 discovery
++ 1,472 retry reserve = **8,860** four-week captures; peak **375/day**. Farther lead-time series now
+have weekly observations and cannot be labelled daily. The earlier 14,573 plan remains historical.
+This proposal does not alter the production per-source limits or prove the 02:00–04:00 window feasible.
+
+Preflight covers all 75 properties: at most two identity captures and six exact-unit forward queries
+per property (D+30/90/180 weekday and weekend), plus 20% retries, **720 captures**. At a proposed
+120/day it needs at least six days, so rebase the start after acceptance rather than promising
+October 19. These counts are planning ceilings, not authorization or wire payloads; stop rejected
+candidates early. Extra details, alternate sources and overlap capture need explicit reallocation.
+One retry maximum, source pacing/concurrency and actual costs require review; no additional capture
+allowance is hidden. Standby captures never enter the current primary denominator.
+
+Review triggers: explicit closure evidence or identity drift immediately; otherwise seven distinct
+NZ days, at least three successful site checks across three future windows can trigger pause review.
+Neither threshold retires a member automatically. Sold-out, minimum stay, unopened horizon, timeout,
+challenge and parse failures remain separate. Before promotion recheck identity/terms within 72 hours.
+Prefer seven observation days with at least three matched stay-date quotes covering weekday/weekend;
+weekly standby checks alone do not meet that daily overlap. An abrupt exit without overlap starts a
+labelled new cohort. Preserve original denominators, withdrawals and effective version history.
+These are local pilot rules, not empirically validated survival guarantees or a live recovery engine.
+
+Tymra owns the dossier-to-request gate, sampling decisions, schedules, budgets, canonical identity,
+normalization, replacement review and analytical coverage. Argus owns browser execution and raw
+evidence. Resolve source capabilities/identity through existing `discover_listings`/`resolve_listing`
+and `collect_rates` contracts; store/check evidence before ACK. No Argus changes or submissions
+were made. Exact OTA bindings, future inventory, price baseline, execution wiring and source/cost
+acceptance remain required before freezing and enabling a panel.
+
 The six approved sources are `booking`, `airbnb`, `expedia`, `bookabach`, `agoda`, and `trip`.
 `ota:production:prepare --source <key> --confirm BOUNDED_PRODUCTION_OTA` creates only the named
 non-demo source, four public capabilities and one disabled daily plan. It never overwrites existing

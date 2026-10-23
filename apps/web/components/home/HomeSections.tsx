@@ -11,26 +11,28 @@ export function SectionIntro({
   eyebrow,
   title,
   body,
+  wide = false,
 }: {
   eyebrow: string;
   title: string;
   body: string;
+  wide?: boolean;
 }) {
   return (
-    <div className="max-w-[760px]">
+    <div className={clsx("max-w-[760px]", wide && "lg:max-w-none")}>
       <p className="text-[0.76rem] font-extrabold uppercase tracking-[0.08em] text-[#0969FF]">{eyebrow}</p>
       <h2 className="mt-3 text-[clamp(1.8rem,2.7vw,2.5rem)] font-extrabold leading-[1.12] tracking-[-0.025em] text-[#071A3D]">{title}</h2>
-      <p className="mt-4 max-w-[680px] text-[1rem] font-medium leading-[1.65] text-[#41506B] max-md:text-[0.94rem]">{body}</p>
+      <p className={clsx("mt-4 max-w-[680px] text-[1rem] font-medium leading-[1.65] text-[#41506B] max-md:text-[0.94rem]", wide && "lg:max-w-none")}>{body}</p>
     </div>
   );
 }
 
 export function PendingInsightSection({ copy: t }: { copy: HomeCopy }) {
   return (
-    <section id="what-you-get" className="relative z-10 mx-auto mt-14 w-full max-w-[1240px] scroll-mt-28 px-5 xl:px-0 2xl:max-w-[1320px]">
-      <SectionIntro {...t.sections.insights} />
+    <section id="what-you-get" className="relative z-10 mx-auto mt-14 w-full max-w-[1240px] scroll-mt-28 px-5 lg:mt-6 xl:px-0 2xl:max-w-[1320px]">
+      <SectionIntro {...t.sections.insights} wide />
 
-      <div className="mt-8 hidden grid-cols-2 gap-6 lg:grid xl:grid-cols-4 xl:gap-9">
+      <div className="mt-4 hidden grid-cols-2 gap-6 lg:grid xl:grid-cols-4 xl:gap-9">
         {t.insights.map((insight, index) => (
           <PendingInsightCard key={insight.title} insight={insight} index={index} />
         ))}

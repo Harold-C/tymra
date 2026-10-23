@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -60,6 +59,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:release-retention
       - run: pnpm db:generate
       - run: pnpm --filter @tymra/db db:deploy
       - run: pnpm db:seed

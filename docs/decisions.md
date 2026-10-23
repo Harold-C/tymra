@@ -737,6 +737,93 @@ filters, retry/lease behavior and evidence-before-ACK guarantees.
 - Status: approved target; implementation and verification are tracked separately. This decision
   does not deploy code, change production schedules or open customer ingress.
 
+## D-054 Separate Address And Suburb Selection From Analysis Submission
+
+- Date: 2026-10-14
+- Decision: Harold confirmed separate address and area search on `/address-check`. Area means a LINZ Suburb / Locality, selectable by city or name. Address search uses an explicit LINZ mode and a disclosed 5 km radius; area search persists and enforces the resolved polygon. Neither expands its scope silently.
+- Flow: choose location → stay details → review and start → results. Lookup and selection do not reserve checks or start price collection. Final member confirmation uses the existing quota transaction and idempotency; suburb anchors do not consume physical-property slots. OTA listing analysis remains a separate entry.
+- Integrity: resolve identifiers and boundaries server-side; reject missing coordinates and out-of-scope candidates. Never substitute fixture prices. Show observed-property count, source and observation time, and label insufficient samples. Existing collection budgets remain bounded; this UI change is not acceptance of area-wide market coverage.
+- Delivery boundary: implemented and checked locally; production release and real OTA end-to-end acceptance remain separate.
+
+## D-055 Member Regional Market From Existing Evidence
+
+- Date: 2026-10-14
+- Decision: Harold approved a member Regional Market surface with Price trends and Events & demand signals, without selecting a property or room. Region / city / suburb is optional-depth geography; price history and future stay-date observations remain distinct.
+- Evidence: reuse public market records and source lineage. Do not treat event counts as demand growth or sparse prices as regional market movements. Comparable series require fixed properties, unit/listing identity, stay semantics, accommodation category and price terms; insufficient evidence remains explicit.
+- Delivery: local implementation only. Harold authorized copying necessary production data to local where local evidence is insufficient. Use a read-only public-field projection and an isolated local snapshot, preserving local customer and development records; no production mutations, jobs, schedules or deployment.
+- Viewing existing evidence does not start a price check or consume its quota. This does not change paid plan prices or authorize new collection budgets. Route and evidence gates are maintained in the page contract.
+
+## D-060 Separate Observation Admission From Comparable Quotes And Formal Panels
+
+2026-10-15: User approved local implementation of staged admission and separate two-night planning,
+with seven existing objects and a four-week draft. No collection, scheduling or production change.
+
+- Source-scoped listing/unit evidence and two-adult query support suffice for observation review;
+  exact hidden addresses, 24-month history, all six windows and a reserve for every object do not.
+  A selected two-adult quote is query-support evidence, not an assertion of maximum occupancy.
+- Per-quote comparison still requires exact matched identity/query, public immutable context,
+  all mandatory fees and consistent cancellation/payment terms. Raw unresolved observations remain;
+  one/two nights and instant/request quotes have different series keys. No invented fee values.
+- Formal frozen-panel identity/geography/label requirements and regional publication requirements
+  stay strict. Observation approval is not formal membership or authorization to dispatch jobs.
+- D-058/D-059 continuity/reserve goals remain subsequent research and replacement gates, not a
+  circular requirement to prove future continuous observation before the first observation.
+  Cosy/Lincoln are different units with common-building concentration, not independent reserves.
+- Current offline plan uses seven objects, two future stays and 120 quote captures over four weeks;
+  14 initial + 28 weekly identity captures + 33 retries gives a proposed cap of 195, zero authorized.
+  Real source/Argus capability, cost, persistence and bounded local acceptance remain separate work.
+- Historical preparation `qualified=false` flags must not be described as zero observable objects.
+  Current stage results live in `scopedPilotPreparation.stagedObservation`, with source evidence
+  timestamps distinct from the preparation date. Earlier raw research and five fee/two alias holds remain.
+
+## D-059 Prepared Reserves And Argus Execution Ownership
+
+Date: 2026-10-14. Harold requested local primary/reserve selection and complete preparation,
+leaving future recurring browser collection to Argus. Build an explicit property-to-reserve map;
+distinguish non-overlapping first choices, shared pools, unresolved comparability and missing cells.
+Keep the initial research inventory immutable and reference its content hash from the preparation
+artifact; unresolved OTA identities remain null and non-dispatchable. Static preparation is not
+live preflight acceptance. Source failure, sold-out inventory and horizon restrictions do not retire
+members. Replacements require reviewed revisions, evidence and overlap or a labelled cohort break.
+Include standby maintenance and preflight in budgets; no collection, source limit or schedule is enabled.
+Tymra retains sampling, business schedules, budgets and analysis; Argus performs browser execution
+and evidence delivery through the existing contracts. Current counts and gates are in traceability.
+
+## D-058 Evidence-Led Christchurch Roster Size And Continuity
+
+Date: 2026-10-14. Harold authorized local public-browser research to complete the Christchurch
+locality supply inventory, select useful diverse fixed properties, and label them. The earlier
+40-property size is no longer a constraint; choose more or fewer from actual evidence. Production
+collection, deployment and scheduling remain unauthorized.
+Separate a selected physical-property research roster from an executable exact-OTA-unit manifest.
+Record current public operator evidence, longitudinal/history evidence and forward availability
+separately. Prefer dedicated accommodation operations for the stable core; keep single-home and
+specialty coverage visible in a separate observational cohort rather than claiming a complete market.
+Keep reserves outside the denominator and retain withdrawals; no silent replacement or survival guarantee.
+Current research and remaining gaps are in traceability; DATA-CORE-003A holds the stable contract.
+
+## D-057 Suburb-Based Sample Coverage And Evidenced Quantitative Labels
+
+Date: 2026-10-14. Harold confirmed locality → city/territorial authority → region and requested
+representative, diverse, broadly distributed fixed properties with quantitative analytical labels.
+Use suburb × accommodation type as the base quota, then diversify evidenced price bands, capacity,
+unit kind and spatial spread. Do not favour high review scores, duplicate a property across OTAs,
+or silently fill a missing stratum with another. Keep the Christchurch pilot at 40 properties total.
+Labels retain units, sources, observation dates, method/boundary versions and explicit unknowns;
+official stars, platform reviews, price tiers and capture quality remain separate concepts.
+Supply-weighted rollups require an audited supply frame and coverage; quota selection alone does
+not establish statistical representativeness. Product detail is DATA-CORE-003A.
+The local offline planner produces proposals and v2 manifest validation only. No production,
+new collection, execution, push or deployment is authorized by this decision.
+
+## D-056 Comparable Terms And Frozen Christchurch Pilot Planning
+
+- Date: 2026-10-14
+- Decision: Harold approved local implementation of conservative rate-term normalization, fixed-sample mechanics and a Christchurch four-week collection plan/budget. This does not authorize real collection or production activation.
+- Preserve raw terms and immutable observation context alongside versioned derived comparison keys. Unknown or incomplete conditions stay excluded; do not reinterpret historical unknowns as standard public products.
+- Fixed samples pin property/unit/listing/source/context/terms. Outages create coverage gaps, never automatic replacement. Existing Anchor refresh retains members; new pilot membership requires a reviewed manifest. Pilot selection and national statistical representativeness remain distinct.
+- The offline plan remains disabled and separates capacity estimates from verified members, normal quotes from retry/discovery/preflight reserves, and capture counts from monetary costs. Actual start, source allocation, funding and execution readiness remain explicit activation conditions. Contract and proposed budget: [Argus collection boundary](collection/argus.md#christchurch-four-week-regional-price-plan-local-only-2026-10-14).
+
 ## 文档与运行阶段变迁
 
 本节只记录影响后续判断的变迁。删除仓库文件的完整旧内容可在 Git 提交

@@ -660,6 +660,57 @@
   list-style: none;
 }
 
+.location-page .location-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 24px; min-height: 44px; color: var(--text-secondary); }
+.location-page .location-stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.location-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.location-modes button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: var(--text-secondary); font-weight: 600; }
+.location-modes .is-selected { color: #1d4ed8; border-color: #2563eb; background: #eff6ff; }
+.location-hint { margin: 8px 0 0; font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+.location-loading { display: inline-flex; gap: 8px; align-items: center; }
+.location-candidates { list-style: none; padding: 0; margin: 0; border: 1px solid #cbd5e1; border-radius: 10px; max-height: 360px; overflow-y: auto; }
+.location-candidates li + li { border-top: 1px solid #e2e8f0; }
+.location-candidates button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 14px; text-align: left; background: white; border: 0; }
+.location-candidates button:hover { background: #eff6ff; }
+.location-candidates button span { flex: 1; min-width: 0; }
+.location-candidates small { display: block; color: var(--text-secondary); margin-top: 4px; }
+.location-selected { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; }
+.location-selected > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.location-selected > svg { flex-shrink: 0; color: #2563eb; }
+.location-selected p { margin: 4px 0 8px; }
+.location-selected .text-link { min-height: 44px; flex-shrink: 0; }
+.location-page label { display: grid; gap: 8px; font-weight: 600; }
+.location-page input, .location-page select { width: 100%; min-width: 0; min-height: 48px; }
+.location-page select { padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; font: inherit; }
+.location-page select:disabled { background: #f1f5f9; color: #64748b; cursor: not-allowed; }
+.location-hierarchy-hint { margin: 0 0 16px; font-size: 14px; color: var(--text-secondary); }
+.location-hierarchy { gap: 16px; }
+.location-page .input-with-icon input { padding: 12px 10px; outline: none; }
+.location-search-row { display: flex; gap: 8px; align-items: stretch; }
+.location-search-row .input-with-icon { flex: 1; min-width: 0; grid-template-columns: 22px minmax(0, 1fr) auto; }
+.location-search-row input { min-width: 0; }
+.location-search-row > button { flex-shrink: 0; min-height: 48px; padding: 10px 14px; }
+.location-clear { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--text-secondary); }
+.location-clear:hover { color: #1d4ed8; background: #eff6ff; }
+.location-market-link { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 24px; padding:20px 24px; border:1px solid #c7d8f6; border-radius:14px; background:#eff6ff; color:var(--text-primary); }
+.location-market-link p { margin:6px 0 0; color:var(--text-secondary); font-size:14px; }
+.location-market-link > span { display:flex; align-items:center; gap:8px; flex-shrink:0; color:#1d4ed8; font-weight:650; }
+@media(max-width:600px) { .location-market-link { align-items:flex-start; flex-direction:column; gap:14px; padding:18px; } }
+.location-candidates button:focus-visible, .location-clear:focus-visible { outline: 2px solid #2563eb; outline-offset: -3px; }
+.location-summary { margin: 0; }
+.location-summary > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; }
+.location-summary dt { color: var(--text-secondary); }
+.location-summary dd { margin: 0; font-weight: 600; }
+.location-ota { margin-top: 8px; font-size: 14px; }
+@media (max-width: 600px) {
+  .location-page .flow-surface { padding: 20px; }
+  .location-page .flow-stepper strong { overflow-wrap: anywhere; }
+  .location-page .flow-primary { width: 100%; }
+  .location-summary > div { grid-template-columns: 1fr; gap: 4px; }
+  .location-selected { flex-wrap: wrap; padding: 14px; }
+  .location-selected > div { flex: 1 1 calc(100% - 34px); }
+  .location-selected .text-link { margin-left: 34px; }
+}
+
 .flow-stepper li {
   position: relative;
   display: grid;
