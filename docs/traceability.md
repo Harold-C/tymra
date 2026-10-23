@@ -1,5 +1,65 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-23 两端main合并候选（本地完整门禁通过，生产最终回读暂缓）
+
+整理分支62bf1e6已合入Tymra main，合并提交e6cab5f；Argus f9735e2已合入main，合并提交46570548。
+两端合并树与已审阅整理分支一致；Tymra随后仅提交一次性验证链接的浏览器测试修正2027f2e。
+本次交付推送两端main；不会自动部署，未创建发布tag、推送镜像或触发手动发布流程。
+主仓库仍停在原保全分支，源码字节不变，不切换或重启其挂载服务；工作在隔离的local-reconciliation-20261023完成。
+下列镜像绑定代码提交，后续纯Markdown交付记录不改变非文档内容指纹。
+
+| 最终本地候选 | Tymra | Argus |
+| --- | --- | --- |
+| 代码提交 | 2027f2e413b0298fab7a24d7241d113aae0994c2 | 46570548bae4a1454536dc5521b59b8cfce59222 |
+| 镜像 | sha256:32986afa15ba5651515f23adc039c0c7f4fab90748d651f703c7b8b91a7ee58b | sha256:e96e63c07b00bb3d8fbf511ee9db89d8fff5b779a20b3104047c2fc21186a6da |
+| 非文档指纹 | 3f07bc8fb60aa2130d7c99a4bd6dcbfe6a24036e42ee3225fdb7f147faaecbe0（744文件） | c88ff76a55d92bd51a1d57588c3414085c8d35becdc5f5b5fdd62a6705f8f5ec（566文件） |
+| 完整镜像归档SHA | d33ff52e8127e6d434a318165f776a62ea558a91126fe44e77df0ae4920b7e1e | 3de482ec177695e7213d108839ed4526300783dcd1fbaa3906214cfaec483651 |
+
+固定Git归档覆盖已核对依赖的生产基础层，清除旧编译输出后完整重编译；镜像内全部744/566份源码与清单逐份一致。
+归档24/18层及全部OCI blob的SHA校验、重新载入通过，无.git/.env/.DS_Store。
+这是本机linux/amd64模拟验证，不能替代新的原生Linux正式发布门禁；本地manifest ID与目标经典引擎config ID可能不同，须核对OCI config及RootFS。
+
+| 本轮验证 | 结果与边界 |
+| --- | --- |
+| Tymra源码 | lint、类型、Web/Worker生产构建通过；406领域/Web、591 Worker、249数据库/API/Worker集成通过；5项真实来源未执行，6项条件集成在独立仅migration空库补跑全部通过 |
+| 源码复用 | 2027f2e仅改e2e/release1.spec.ts；应用、依赖和原单元/集成测试逐字节相同，复用未受影响的整套verify，重新执行根类型、完整候选构建和全部浏览器套件；有source-reuse-verification.json证明 |
+| Tymra浏览器 | 五套原始冷启动：37通过/1定义内跳过、8通过、4通过、26通过、8通过；合计83次通过/1跳过，包含8次重复矩阵执行，即75个独立通过场景/1跳过 |
+| 页面与生产构建 | EN/ZH桌面1440×900及手机390×844；位置/区域行情8流程无页面错误、console warning或溢出，人工查看截图；固定生产镜像另4次首页→地址页通过，页面与console错误/warning均0 |
+| Argus源码 | 1426项中1126通过、0失败、300条件跳过；覆盖率lines/branches/functions为75.75/83.29/85.87%；类型、构建、发布工具及OpenAPI通过 |
+| Argus固定镜像 | 654项中653通过、0失败、1保存实页条件跳过；相同镜像另用既有受保护HTML断网重放原2项通过；300个源码条件项逐名对应299项镜像执行和1项保存实页重放，无剩余遗漏 |
+| Argus恢复与运行 | 私有文件、PostgreSQL/Profile/证据配对恢复及生产模式运行三门禁退出0；新镜像产生合成备份，再由当前生产回滚镜像实际恢复和原投影验证通过 |
+| 两端组合 | 四种新旧API组合通过，停止测试Argus后Tymra503、恢复后200；新Argus两条受控无房及8个错误wire夹具由新旧Tymra各验证10项，无房仍UNAVAILABLE/RAW_ONLY/null正式价格 |
+| Tymra配对恢复 | 新旧镜像均读取实际恢复的合成DB/证据：1次已验证交付、2份证据SHA、1个保留held、计划关闭、零正式价格；2份地址半径/城区边界DRAFT保留；schema及45份migration相同，仅证明读取，不证明旧版本可执行新位置对象 |
+
+浏览器真实地理/市场响应为受控夹具；地理归属、额度和只读数据库投影另由集成覆盖。
+未发起真实OTA/LINZ、邮件或Stripe操作；未启动本轮测试Scheduler，Worker在合成夹具前自然Job为0。
+本轮自有配对容器、卷、网络和临时HTTPS代理已清理，不修改系统信任或永久电源设置。
+
+本轮保留的失败及处理：
+
+- 初始e6cab5f/915镜像浏览器34通过/1失败/1跳过。验证链接首跳已成功307，但目标页冷编译17.6秒超过原10秒导航预算，测试助手再次请求已消费链接。2027f2e仅让助手在确认同源目标后重试目标，未获目标时抛错；增加受控回归，断言验证链接仅请求一次。未放宽断言、时限、重试或修改认证运行逻辑；不声称消除了冷编译延迟。
+- 首次配对生产页面检查因本地PUBLIC_ORIGIN占位HTTPS与浏览器HTTP不一致，预取重定向产生DNS错误。仅修正隔离QA入口为相同的本地HTTPS代理，生产HTTPS约束和镜像内容未改，后续4流程通过；原失败保留paired-origin-mismatch-initial。
+- 首轮同一Argus e96镜像643通过/10失败/1跳过，期间Mac合盖睡眠及多次DarkWake，不能作为通过或断言每项失败仅由睡眠造成。原日志留在host-suspend-initial；未改代码、断言或预算，改为任务绑定防空闲睡眠后完整复验653/0/1，并重做配对恢复/跨版本恢复/保存实页重放。NZ19:57:51至20:44:05无Sleep事件，完成后释放断言。
+
+回滚结论是有条件兼容，不允许直接恢复旧Worker/Scheduler全部流量：
+
+1. 旧Tymra e45不理解新位置范围的执行与确认，虽能保存/读取JSON，旧确认API及Worker可能覆盖约束或忽略边界。必须先保护相关mutation入口，并等待不兼容的在途/待执行任务和continuation结束；仅ACCEPT_NEW_CHECKS=false不足以保护已有对象确认。不能隔离时保持维护或采用另行审阅的前向修复，不取消或删除任务。
+2. 旧anchor/rotating refresh会重新排名并停用集合外成员、覆盖membershipType/weight，可能替换固定锚点。回退旧Worker/Scheduler前必须核实并隔离计划及手工刷新路径；当前生产这些通用panel计划是否启用未完成回读，不能假定已关闭。新固定锚点行为及3项回归已包含在591项Worker通过中，本轮不改生产计划。
+
+普通代码回退目标仍是Tymra e45/f4及原Scheduler可写证据卷overlay，然后按需Argus feac7cc8/21ea4ad4。
+保留当时数据库、Profile、证据、交付/ACK和全部held，不以旧数据库快照覆盖、不补采或重试；旧UI缺少新增位置/区域页面，混合版本仍有旧暂停/错误策略。
+当次生产切换须另有授权、正式tag/workflow/digest、新鲜配对备份及独立副本和新旧版本实际恢复、共享Argus安全空档、helper绑定核对。
+保留oldImage=a96f7a5的旧备份证明不能替代本次oldImage=f4的切换证明；本轮合成备份也不替代生产备份。
+
+生产最后成功只读快照为NZ2026-10-23 13:57:18：Tymra e45/f4、68成员/12个held、计划启用、stoppedSources=[]、心跳及维护正常；Argus feac7cc8/21镜像健康。
+最后阶段直连及既有中转超时，用户确认外出IP不在现有入口范围，要求先完成本地；因此最终生产回读明确暂缓，不把早期快照当作结束时实时状态，也不据此报告生产故障。
+未修改白名单、生产、采集结果或暂停；旧heartbeat保持暂停。本节完成本地门禁，不宣布生产可立即切换。
+
+原始证据集中于Tymra既有runtime/release-candidates/booking-unavailable-20261021/main-reconciled-20261023-final及
+Argus既有runtime/production-releases/booking-unavailable-20261021/main-reconciled-20261023；重点收据为paired-preflight-summary.json、
+reviewed-rollback-plan.json、location-downgrade-compatibility.json、candidate-archive-verification.json和production-final-scope.json。
+下方同日条目保留前阶段事实与旧候选身份，不能代替本节最终候选。
+
 ## 2026-10-23 主仓库未提交现场整理（独立功能整合及验证完成，未发布）
 
 主仓库原main停在4955649d，51个已跟踪改动和41个未跟踪文件已全部保全为
