@@ -5,6 +5,7 @@ export type Locale = "en" | "zh";
 export type CustomerCheck = {
   id: string;
   analysisType: "LISTING_PRICING" | "LOCATION_BENCHMARK";
+  locationScope?: { kind: "ADDRESS_RADIUS" | "SUBURB_BOUNDARY"; label: string } | null;
   status: string;
   terminal: boolean;
   confirmationStep?: string | null;
@@ -24,6 +25,7 @@ export type CustomerCheck = {
     recommendationStatus: string;
     observedSourceCount: number;
     priceEvidenceStatus: string | null;
+    sampleCount?: number | null;
     recommendationReasonCode: string | null;
     memberReview?: Array<{ insightId: string; range: { lowMinor: number; highMinor: number } | null }> | null;
     observedPrices: Array<{ source: string; amountMinor: number; currency: string; basis: string; feeCompleteness: string; sourceUrl: string | null; asOf: string | null }>;

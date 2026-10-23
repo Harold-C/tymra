@@ -1,5 +1,5 @@
 import { decryptPersonalData } from "@tymra/db";
-import { CheckStartForm } from "@/components/public/PriceCheckFlow";
+import { LocationCheckStart } from "@/components/public/LocationCheckStart";
 import { PublicShell } from "@/components/public/PublicShell";
 import { getCustomerSessionForPage } from "@/lib/server/membership/customer-auth";
 
@@ -8,7 +8,7 @@ export default async function AddressCheckPage({ params, searchParams }: { param
   const memberEmail = session ? decryptPersonalData(session.customerUser.encryptedEmail, process.env.DATA_ENCRYPTION_KEY!) : undefined;
   return (
     <PublicShell locale={params.locale}>
-      <CheckStartForm locale={params.locale} initialInput={searchParams.input ?? ""} memberEmail={memberEmail} />
+      <LocationCheckStart locale={params.locale} initialInput={searchParams.input ?? ""} memberEmail={memberEmail} />
     </PublicShell>
   );
 }

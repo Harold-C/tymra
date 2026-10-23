@@ -7,6 +7,24 @@ This file records durable choices and their rationale. Product details remain au
 [traceability](traceability.md). Historical choices do not create compatibility requirements or
 authorize new operations. Decision IDs remain stable references to the choices, including superseded ones.
 
+本次2026-10-23整理时将本地旧草稿重复使用的D-054/D-055标识改为D-061/D-062；原会员决策编号及业务含义保持。以下两项仍为原2026-10-14本地决定，未发布生产。
+
+## D-061 Separate Address And Suburb Selection From Analysis Submission
+
+- Date: 2026-10-14
+- Decision: Harold confirmed separate address and area search on `/address-check`. Area means a LINZ Suburb / Locality, selectable by city or name. Address search uses an explicit LINZ mode and a disclosed 5 km radius; area search persists and enforces the resolved polygon. Neither expands its scope silently.
+- Flow: choose location → stay details → review and start → results. Lookup and selection do not reserve checks or start price collection. Final member confirmation uses the existing quota transaction and idempotency; suburb anchors do not consume physical-property slots. OTA listing analysis remains a separate entry.
+- Integrity: resolve identifiers and boundaries server-side; reject missing coordinates and out-of-scope candidates. Never substitute fixture prices. Show observed-property count, source and observation time, and label insufficient samples. Existing collection budgets remain bounded; this UI change is not acceptance of area-wide market coverage.
+- Delivery boundary: implemented and checked locally; production release and real OTA end-to-end acceptance remain separate.
+
+## D-062 Member Regional Market From Existing Evidence
+
+- Date: 2026-10-14
+- Decision: Harold approved a member Regional Market surface with Price trends and Events & demand signals, without selecting a property or room. Region / city / suburb is optional-depth geography; price history and future stay-date observations remain distinct.
+- Evidence: reuse public market records and source lineage. Do not treat event counts as demand growth or sparse prices as regional market movements. Comparable series require fixed properties, unit/listing identity, stay semantics, accommodation category and price terms; insufficient evidence remains explicit.
+- Delivery: local implementation only. Harold authorized copying necessary production data to local where local evidence is insufficient. Use a read-only public-field projection and an isolated local snapshot, preserving local customer and development records; no production mutations, jobs, schedules or deployment.
+- Viewing existing evidence does not start a price check or consume its quota. This does not change paid plan prices or authorize new collection budgets. Route and evidence gates are maintained in the page contract.
+
 ## D-060 Separate Observation Admission From Comparable Quotes And Formal Panels
 
 2026-10-15: User approved local implementation of staged admission and separate two-night planning,

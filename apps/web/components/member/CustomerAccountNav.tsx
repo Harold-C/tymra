@@ -37,7 +37,7 @@ export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | 
     ...(features.exports && planOrder[plan] >= planOrder.PRO ? [{ path: "/exports", icon: Download, en: "Exports", zh: "数据导出" } as const] : []),
     ...(features.integrations && planOrder[plan] >= planOrder.PORTFOLIO ? [{ path: "/integrations", icon: Settings2, en: "Integrations", zh: "系统集成" } as const] : []),
   ];
-  const visibleEntries = [...entries.slice(0, 4), { path: "/market/sample-quotes", icon: ChartNoAxesCombined, en: "Sample quote trends", zh: "样本报价走势" }, ...advancedEntries, ...entries.slice(5)];
+  const visibleEntries = [...entries.slice(0, 4), { path: "/market", icon: CalendarDays, en: "Regional market", zh: "区域行情" }, { path: "/market/sample-quotes", icon: ChartNoAxesCombined, en: "Sample quote trends", zh: "样本报价走势" }, ...advancedEntries, ...entries.slice(5)];
   const currentEntry = [...visibleEntries].reverse().find((entry) => entry.path === "" ? pathname === root : pathname.startsWith(`${root}${entry.path}`));
   useEffect(() => {
     if (!mobileOpen) return;
@@ -95,7 +95,7 @@ export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | 
         <div className="rough-shell">
           {visibleEntries.map((entry) => {
             const href = `${root}${entry.path}`;
-            const active = entry.path === "" ? pathname === root : pathname.startsWith(href);
+            const active = entry === currentEntry;
             const Icon = entry.icon;
             return (
               <Link

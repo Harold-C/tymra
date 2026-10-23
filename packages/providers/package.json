@@ -20,6 +20,7 @@
     "./direct-event-page-extractors": "./src/direct-event-page-extractors.ts",
     "./mbie-tourism-adapters": "./src/mbie-tourism-adapters.ts",
     "./nz-market-coverage": "./src/nz-market-coverage.ts",
+    "./nz-localities": "./src/nz-localities.ts",
     "./official-nz-adapters": "./src/official-nz-adapters.ts",
     "./ota-adapters": "./src/ota-adapters.ts",
     "./ota-address-match": "./src/ota-address-match.ts",

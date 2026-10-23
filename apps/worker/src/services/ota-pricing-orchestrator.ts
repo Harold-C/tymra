@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { Environment } from "@tymra/config";
 import { prisma, Prisma, recordIdentityEntityVersion, recordListingVersion, serviceMappedUnitId, sourceHasCapability } from "@tymra/db";
-import { nzDateKey } from "@tymra/domain";
+import { marketCollectionProfileKey, normalizeRateTerms, nzDateKey, readLocationScope, locationContains } from "@tymra/domain";
 import { locateOtaDiscoveryCandidate } from "@tymra/providers/ota-address-match";
 import { otaArgusConnectorForSource, otaCollectRatesExtractionSchema, otaDiscoverListingsExtractionSchema, otaDiscoveryUrlForSource, otaProviderDetails, otaResolveListingExtractionSchema } from "@tymra/providers/ota-argus-contracts";
 import type { ArgusBrowserTaskResult } from "../clients/argus-client";
@@ -35,8 +35,10 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
   if (!check.property || !check.unit || !check.stayQuery) {
     throw new Error("Price Check is missing a confirmed Property, Unit or Stay Query");
   }
+  const locationScope = readLocationScope(check.stayQuery.unitConstraints);
+  const accommodationType = (check.stayQuery.unitConstraints as Record<string, unknown>)?.accommodationType ?? "ANY";
 
-  const cachedComparable = input.reuseCachedComparable ? await prisma.listing.findFirst({
+  const cachedComparable = input.reuseCachedComparable && !locationScope ? await prisma.listing.findFirst({
     where: {
       listingStatus: "ACTIVE",
       operationalStatus: "HEALTHY",
@@ -202,7 +204,10 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
         latitude: candidateLatitude,
         longitude: candidateLongitude,
       }, 5_000);
-      if (location.status !== "COMPARABLE" || !location.city) continue;
+      if (locationScope) {
+        if (candidate.countryCode !== "NZ" || !locationContains(locationScope, candidateLatitude, candidateLongitude)) continue;
+      } else if (location.status !== "COMPARABLE" || !location.city) continue;
+      const comparableCity = candidateCity || location.city || check.property.city;
 
       const propertyIdentity = candidateAddress
         ? normaliseComparableUnitName(candidateAddress)
@@ -215,7 +220,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           canonicalName: candidateName,
           legalOrBrandName: candidateName,
           address: candidateAddress ?? "",
-          city: location.city,
+          city: comparableCity,
           countryCode: "NZ",
           latitude: candidateLatitude,
           longitude: candidateLongitude,
@@ -232,7 +237,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
         update: {
           canonicalName: candidateName,
           ...(candidateAddress ? { address: candidateAddress } : {}),
-          city: location.city,
+          city: comparableCity,
           latitude: candidateLatitude,
           longitude: candidateLongitude,
           region: candidateRegion,
@@ -244,6 +249,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
       await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { discoveredFor: check.propertyId, sourceListingId: candidate.sourceListingId } });
       const comparableUnits = candidateUnits
         .filter((unit): unit is typeof unit & { capacity: number; entireOrShared: "ENTIRE" | "PRIVATE" | "SHARED" } => unit.capacity !== null && unit.entireOrShared !== null)
+        .filter(unit => !locationScope || unit.capacity >= check.stayQuery!.adults + check.stayQuery!.children && (accommodationType === "ANY" || accommodationType === "ENTIRE" && unit.entireOrShared === "ENTIRE" || accommodationType === "PRIVATE" && unit.entireOrShared === "PRIVATE"))
         .sort((left, right) => {
           const leftTypePenalty = left.unitType === check.unit!.unitType ? 0 : 10;
           const rightTypePenalty = right.unitType === check.unit!.unitType ? 0 : 10;
@@ -391,7 +397,7 @@ async function collectComparableOtaRate(input: AddressOtaPricingInput, listingId
   await prisma.$transaction([
     prisma.rateObservation.upsert({
       where: { idempotencyKey: `${input.parentJobId}:${listing.id}:${check.stayQuery.id}` },
-      create: { propertyId: listing.propertyId, sellableUnitId: listing.unitId, listingId: listing.id, sourceListingId: listing.sourceListingId, stayQueryId: check.stayQuery.id, collectionProfileId: profile.id, dataSourceId: listing.dataSourceId, collectionRunId: run.id, requestedAt: new Date(), currency: "NZD", baseAmountMinor, mandatoryFeesMinor, taxesMinor, platformFeesMinor: 0, optionalFeesMinor: rate.optionalFeesMinor ?? 0, totalAmountMinor, displayedAmountMinor: observedPrice?.amountMinor, priceBasis: observedPrice?.basis ?? "UNAVAILABLE", sourcePriceStatus: rate.priceStatus, exchangeRate: 1, nzdTotalMinor: totalAmountMinor, effectiveNightlyTotalMinor: observedPrice?.effectiveNightlyMinor ?? 0, observedAt: new Date(rate.collectedAt), checkIn: check.stayQuery.checkIn, checkOut: check.stayQuery.checkOut, nights: check.stayQuery.nights, adults: check.stayQuery.adults, childrenAges: check.stayQuery.childrenAges as Prisma.InputJsonValue, units: check.stayQuery.units, localTimezone: check.stayQuery.timezone, roomTypeRaw: listing.platformUnitName, roomTypeNormalized: listing.unit.canonicalName, unitConstraints: check.stayQuery.unitConstraints as Prisma.InputJsonValue, occupancyCapacity: listing.unit.capacity, bedType: null, unitAttributesVersion: listing.unit.version, mealPlan: rate.mealPlan, cancellationCategory: rate.cancellationPolicy, cancellationPolicy: rate.cancellationPolicy, paymentTerms: rate.paymentTerms, rateFence: rate.rateFence, minimumStay: rate.minimumStay, availabilityStatus: mapOtaAvailability(rate.availabilityStatus), restrictionReason: rate.restrictionReason, feeCompleteness: available ? observedPrice?.feeCompleteness ?? "UNKNOWN" : "UNKNOWN", sourceUrl: rate.sourceUrl, evidenceRef: `tymra-evidence:${traceId}`, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.collect_rates@1.0.0", qualityFlags: [...rate.qualityFlags, ...(observedPrice && observedPrice.feeCompleteness !== "COMPLETE" ? ["OBSERVED_PRICE_FEE_INCOMPLETE"] : [])], operationalStatus: listing.dataSource.operationalStatus, collectedAt: new Date(rate.collectedAt), rawDataStored: true, idempotencyKey: `${input.parentJobId}:${listing.id}:${check.stayQuery.id}`, isDemo: false },
+      create: { propertyId: listing.propertyId, sellableUnitId: listing.unitId, listingId: listing.id, sourceListingId: listing.sourceListingId, stayQueryId: check.stayQuery.id, collectionProfileId: profile.id, dataSourceId: listing.dataSourceId, collectionRunId: run.id, requestedAt: new Date(), currency: "NZD", baseAmountMinor, mandatoryFeesMinor, taxesMinor, platformFeesMinor: 0, optionalFeesMinor: rate.optionalFeesMinor ?? 0, totalAmountMinor, displayedAmountMinor: observedPrice?.amountMinor, priceBasis: observedPrice?.basis ?? "UNAVAILABLE", sourcePriceStatus: rate.priceStatus, exchangeRate: 1, nzdTotalMinor: totalAmountMinor, effectiveNightlyTotalMinor: observedPrice?.effectiveNightlyMinor ?? 0, observedAt: new Date(rate.collectedAt), checkIn: check.stayQuery.checkIn, checkOut: check.stayQuery.checkOut, nights: check.stayQuery.nights, adults: check.stayQuery.adults, childrenAges: check.stayQuery.childrenAges as Prisma.InputJsonValue, units: check.stayQuery.units, localTimezone: check.stayQuery.timezone, roomTypeRaw: listing.platformUnitName, roomTypeNormalized: listing.unit.canonicalName, unitConstraints: { ...(check.stayQuery.unitConstraints as Prisma.JsonObject), marketCollectionProfileKey: marketCollectionProfileKey(profile), normalizedRateTerms: normalizeRateTerms({ ...rate, checkIn: nzDateKey(check.stayQuery.checkIn) }) }, occupancyCapacity: listing.unit.capacity, bedType: null, unitAttributesVersion: listing.unit.version, mealPlan: rate.mealPlan, cancellationCategory: rate.cancellationPolicy, cancellationPolicy: rate.cancellationPolicy, paymentTerms: rate.paymentTerms, rateFence: rate.rateFence, minimumStay: rate.minimumStay, availabilityStatus: mapOtaAvailability(rate.availabilityStatus), restrictionReason: rate.restrictionReason, feeCompleteness: available ? observedPrice?.feeCompleteness ?? "UNKNOWN" : "UNKNOWN", sourceUrl: rate.sourceUrl, evidenceRef: `tymra-evidence:${traceId}`, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.collect_rates@1.0.0", qualityFlags: [...rate.qualityFlags, ...(observedPrice && observedPrice.feeCompleteness !== "COMPLETE" ? ["OBSERVED_PRICE_FEE_INCOMPLETE"] : [])], operationalStatus: listing.dataSource.operationalStatus, collectedAt: new Date(rate.collectedAt), rawDataStored: true, idempotencyKey: `${input.parentJobId}:${listing.id}:${check.stayQuery.id}`, isDemo: false },
       update: {},
     }),
     prisma.collectionRun.update({ where: { id: run.id }, data: { successCount: { increment: 1 } } }),

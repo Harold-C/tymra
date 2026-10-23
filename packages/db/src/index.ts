@@ -22,3 +22,4 @@ export * from "./security";
 export * from "./service-backfill";
 export * from "./service-mapping";
 export * from "./sample-reference-packages";
+export * from "./market-read-model";

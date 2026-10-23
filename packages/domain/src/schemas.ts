@@ -13,6 +13,7 @@ export const stayQuerySchema = z
     currency: z.literal("NZD").default("NZD"),
     cancellationCategory: z.string().min(1).max(80).default("STANDARD"),
     timezone: z.literal(NEW_ZEALAND_TIME_ZONE),
+    accommodationType: z.enum(["ANY", "ENTIRE", "PRIVATE"]).optional(),
   })
   .superRefine((value, context) => {
     if (value.checkOut <= value.checkIn) {
@@ -29,6 +30,7 @@ export type StayQueryInput = z.infer<typeof stayQuerySchema>;
 export const propertySearchSchema = z.object({
   input: z.string().trim().min(3).max(500),
   locale: localeSchema,
+  mode: z.enum(["ADDRESS", "PROPERTY"]).optional(),
 });
 
 export const createAnonymousCheckSchema = z.object({
@@ -52,6 +54,8 @@ export const createPriceCheckSchema = z.object({
   input: z.string().trim().min(3).max(500),
   propertyId: z.string().min(1).optional(),
   addressExternalId: z.string().min(1).optional(),
+  localityId: z.string().regex(/^\d{1,10}$/).optional(),
+  locationSearch: z.boolean().optional(),
   unitId: z.string().min(1).optional(),
   stayQuery: stayQuerySchema,
   serviceConsent: z.literal(true),

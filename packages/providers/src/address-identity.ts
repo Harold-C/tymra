@@ -10,7 +10,7 @@ const MULTIPLE_TTL_MS = 24 * 60 * 60 * 1_000;
 const NONE_TTL_MS = 60 * 60 * 1_000;
 const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export const ADDRESS_IDENTITY_RESOLVER_VERSION = "linz-arcgis-v2";
+export const ADDRESS_IDENTITY_RESOLVER_VERSION = "linz-arcgis-v3";
 
 export type AddressIdentity = {
   provider: "linz-nz-addresses";
@@ -162,8 +162,11 @@ export class LinzAddressIdentityProvider implements AddressIdentityProvider {
       let features: ArcGisFeature[] = [];
       for (const searchTerm of linzSearchTerms(query)) {
         const url = new URL(this.options.endpoint ?? DEFAULT_ENDPOINT);
-        url.searchParams.set("where", "1=1");
-        url.searchParams.set("fullText", JSON.stringify([{ onFields: ["full_address"], searchTerm, searchType: "simple" }]));
+        // This hosted layer silently ignores fullText. The numeric predicate also
+        // avoids scanning the nationwide address table for numbered addresses.
+        const number = query.match(/^\s*(?:[\da-z-]+\s*\/\s*)?(\d+)/i)?.[1];
+        const pattern = searchTerm.toUpperCase().split(" ").join("%");
+        url.searchParams.set("where", `${number ? `address_number = ${Number(number)} AND ` : ""}UPPER(full_address_ascii) LIKE '%${pattern}%'`);
         url.searchParams.set("outFields", "address_id,full_address,suburb_locality,town_city,territorial_authority,address_lifecycle");
         url.searchParams.set("returnGeometry", "true");
         url.searchParams.set("outSR", "4326");
@@ -176,7 +179,7 @@ export class LinzAddressIdentityProvider implements AddressIdentityProvider {
         features = payload.features ?? [];
         if (features.length) break;
       }
-      const postcode = query.match(/\b\d{4}\b/)?.[0] ?? null;
+      const postcode = query.match(/\s+(\d{4})\s*$/)?.[1] ?? null;
       const ranked = features
         .map((feature) => addressIdentityFromFeature(feature, normalizedQuery, postcode))
         .filter((candidate): candidate is AddressIdentity => candidate !== null)
@@ -304,7 +307,7 @@ function regionsMentionedByQuery(query: string) {
 }
 
 function linzSearchTerms(query: string) {
-  const withoutPostcode = normalizeAddressText(query).replace(/\b\d{4}\b/g, "").replace(/\s+/g, " ").trim();
+  const withoutPostcode = normalizeAddressText(query.replace(/\s+\d{4}\s*$/, ""));
   const terms = [withoutPostcode];
   const withoutRegion = regionsMentionedByQuery(query).reduce(
     (value, region) => value.replace(new RegExp(`\\b${escapeRegExp(normalizeAddressText(region))}\\b`, "g"), " "),

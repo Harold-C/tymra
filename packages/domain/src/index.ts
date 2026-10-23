@@ -11,6 +11,7 @@ export * from "./pricing";
 export * from "./query";
 export * from "./quality-gates";
 export * from "./schemas";
+export * from "./location-scope";
 export * from "./rate-terms";
 export * from "./fixed-market-panel";
 export * from "./market-observation";

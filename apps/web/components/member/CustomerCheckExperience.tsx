@@ -80,7 +80,8 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
             <span>{copy.formalCheck}</span>
             <h1>{statusCopy}</h1>
             <p>{copy.processingBody}</p>
-            <div className="customer-context"><strong>{check.property?.canonicalName}</strong><span>{check.unit?.officialName}</span></div>
+            <div className="customer-context"><strong>{check.property?.canonicalName}</strong>{!check.locationScope ? <span>{check.unit?.officialName}</span> : null}</div>
+            {check.locationScope ? <LocationSummary locale={locale} check={check} /> : null}
           </div>
         </section>
         <RealProgress locale={locale} status={check.status} />
@@ -90,12 +91,13 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
 
   if (check.status !== "PUBLISHED" || !check.result) {
     if (check.availability?.length) return <section className="rough-shell customer-check-page"><h1>{locale === "zh" ? "来源显示所选日期已售罄" : "Sources show no availability for these dates"}</h1><p>{locale === "zh" ? "这是来源返回的有效可售状态，已计入本次查询额度；当前没有可展示的房价或调价建议。其他渠道仍可能有房，以下状态以检查时间为准。" : "This confirmed availability result counts as a query. There is no observed price or rate recommendation. Other channels may still have availability; each observation is accurate as of the time shown."}</p><div className="observed-price-list">{check.availability.map(item => <article key={item.id}><strong>{item.dataSource.name}</strong><p>{item.checkIn.slice(0, 10)}–{item.checkOut.slice(0, 10)}</p><p>{copy.checkedAt}: {new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(item.collectedAt))}</p><a href={item.sourceUrl} target="_blank" rel="noreferrer">{copy.viewSource}</a></article>)}</div><Link className="button button-secondary" href={`/${locale}/account`}>{copy.allChecks}</Link></section>;
-    return <AccountState locale={locale} title={statusCopy} body={copy.terminalBody} />;
+    return <>{check.locationScope ? <div className="rough-shell"><LocationSummary locale={locale} check={check} /><Link className="text-link" href={`/${locale}/address-check`}>{locale === "zh" ? "修改位置或入住条件后重新查询" : "Change your location or stay details"}</Link></div> : null}<AccountState locale={locale} title={statusCopy} body={copy.terminalBody} /></>;
   }
 
   const money = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-NZ", { style: "currency", currency: "NZD", maximumFractionDigits: 0 });
   return (
     <section className="customer-check-page">
+      {check.locationScope ? <div className="rough-shell"><LocationSummary locale={locale} check={check} /></div> : null}
       <section className="formal-result-header">
         <div className="rough-shell formal-result-heading">
           <span className="rough-eyebrow"><ShieldCheck aria-hidden="true" />{copy.secureReport}</span>
@@ -111,7 +113,7 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
         <div><strong>{copy.coverage[check.result.addressCoverage.level].title}</strong><p>{copy.coverage[check.result.addressCoverage.level].body.replace("{market}", check.result.addressCoverage.marketName)}</p></div>
       </div> : null}
       {check.result.observedPrices.length ? <section className="rough-shell observed-price-panel" aria-labelledby="observed-price-heading">
-        <div className="formal-section-heading"><span>{copy.observedEyebrow}</span><h2 id="observed-price-heading">{check.analysisType === "LOCATION_BENCHMARK" ? (locale === "zh" ? "周边公开价格" : "Observed nearby prices") : copy.observedTitle}</h2><p>{check.analysisType === "LOCATION_BENCHMARK" ? (locale === "zh" ? "展示指定地址附近实际采集到的公开 OTA 价格；不同价格口径不会被静默合并。" : "Public OTA prices actually observed near the address are shown separately; different price bases are not silently combined.") : copy.observedBody}</p></div>
+        <div className="formal-section-heading"><span>{copy.observedEyebrow}</span><h2 id="observed-price-heading">{check.analysisType === "LOCATION_BENCHMARK" ? (locale === "zh" ? "区域公开价格" : "Observed local prices") : copy.observedTitle}</h2><p>{check.analysisType === "LOCATION_BENCHMARK" ? (locale === "zh" ? "展示查询范围内实际采集到的公开 OTA 价格；不同价格口径分别展示。" : "Public OTA prices observed within the search area are shown separately for each price basis.") : copy.observedBody}</p></div>
         <div className="observed-price-list">{check.result.observedPrices.map((price, index) => <article key={`${price.source}:${price.basis}:${price.asOf ?? index}`}>
           <div><strong>{price.source}</strong><span>{price.feeCompleteness}</span></div>
           <b>{new Intl.NumberFormat(locale === "zh" ? "zh-CN" : "en-NZ", { style: "currency", currency: price.currency, maximumFractionDigits: 2 }).format(price.amountMinor / 100)}</b>
@@ -137,6 +139,11 @@ export function CustomerCheckExperience({ locale, checkId }: { locale: Locale; c
       </section>
     </section>
   );
+}
+
+function LocationSummary({ locale, check }: { locale: Locale; check: CustomerCheck }) {
+  const zh = locale === "zh";
+  return <div className="location-selected"><div><strong>{check.locationScope?.label}</strong><p>{check.locationScope?.kind === "SUBURB_BOUNDARY" ? (zh ? "查询范围：所选区的 LINZ 边界内，未扩大范围。" : "Search area: the selected LINZ suburb boundary, without expansion.") : (zh ? "查询范围：该地址周边 5 公里。" : "Search area: within 5 km of this address.")}</p>{check.result?.sampleCount != null ? <p>{zh ? `已观测房源：${check.result.sampleCount} 个。` : `Properties observed: ${check.result.sampleCount}.`}</p> : null}{check.result?.sampleCount != null && check.result.sampleCount < 3 ? <p>{zh ? "样本不足，以下个别报价不能代表区域行情。可返回更换区域或入住日期。" : "Too few samples to represent the local market. Try another area or stay dates."}</p> : null}<Link className="text-link" href={`/${locale}/account`}>{zh ? "返回会员首页" : "Back to account home"}</Link></div></div>;
 }
 
 export function RealProgress({ locale, status }: { locale: Locale; status: string }) {

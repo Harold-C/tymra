@@ -12,7 +12,7 @@ import { memberRequestIdentity, setMemberDeviceCookie } from "@/lib/server/membe
 const schema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(12).max(200),
-  returnTo: z.string().max(500).regex(/^\/(en|zh)\/account(?:[/?]|$)/).optional(),
+  returnTo: z.string().max(500).regex(/^\/(en|zh)\/(?:account(?:[/?]|$)|address-check$)/).optional(),
 });
 
 const dummyPasswordHash = "$2b$12$C6UzMDM.H6dfI/f/IKcEe.5LMLx/uGLA4wcja6rNmmyn28/MK5n9e";
