@@ -26,17 +26,40 @@ function isMobileProject(testInfo: import("playwright/test").TestInfo) {
 
 async function goto(page: import("playwright/test").Page, url: string) {
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 60; attempt += 1) {
-    try {
-      const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10_000 });
-      if (response && (response.status() === 404 || response.status() >= 500)) throw new Error(`Navigation returned ${response.status()}`);
-      return response;
-    } catch (error) {
-      lastError = error;
-      if (attempt < 60) await page.waitForTimeout(500);
+  const initial = new URL(url, publicOrigin);
+  const oneTimeLink = initial.pathname.endsWith("/auth/verify");
+  let destination: string | undefined;
+  let navigationUrl = url;
+  const rememberRedirect = (response: import("playwright/test").Response) => {
+    if (response.url() !== initial.href || !response.request().isNavigationRequest()
+      || response.status() < 300 || response.status() >= 400) return;
+    const location = response.headers().location;
+    if (!location) return;
+    const next = new URL(location, initial);
+    if (next.origin === initial.origin && !next.pathname.endsWith("/auth/verify")) destination = next.href;
+  };
+  if (oneTimeLink) page.on("response", rememberRedirect);
+  try {
+    for (let attempt = 1; attempt <= 60; attempt += 1) {
+      try {
+        const response = await page.goto(navigationUrl, { waitUntil: "domcontentloaded", timeout: 10_000 });
+        if (response && (response.status() === 404 || response.status() >= 500)) throw new Error(`Navigation returned ${response.status()}`);
+        return response;
+      } catch (error) {
+        lastError = error;
+        // The link may already be consumed while its cold destination is loading.
+        // Retry only its observed same-origin destination, never the token URL.
+        if (oneTimeLink) {
+          if (!destination) throw error;
+          navigationUrl = destination;
+        }
+        if (attempt < 60) await page.waitForTimeout(500);
+      }
     }
+    throw lastError;
+  } finally {
+    if (oneTimeLink) page.off("response", rememberRedirect);
   }
-  throw lastError;
 }
 
 async function gotoAdmin(page: import("playwright/test").Page, pathname: string) {
@@ -76,6 +99,27 @@ async function postJsonFromPage<T>(page: import("playwright/test").Page, url: st
 }
 
 test.describe("public Release 1", () => {
+  test("interrupted verification navigation retries its destination without replaying the one-time link", async ({ page }) => {
+    let verificationRequests = 0;
+    let destinationRequests = 0;
+    const destination = "/__e2e-verification-target";
+    await page.route("**/en/auth/verify?token=synthetic-navigation-fixture", async route => {
+      verificationRequests++;
+      await route.fulfill(verificationRequests === 1
+        ? { status: 307, headers: { location: destination }, body: "" }
+        : { status: 410, contentType: "text/html", body: "<h1>Consumed link</h1>" });
+    });
+    await page.route(`**${destination}`, async route => {
+      destinationRequests++;
+      if (destinationRequests === 1) await route.abort("timedout");
+      else await route.fulfill({ contentType: "text/html", body: "<h1>Verified destination</h1>" });
+    });
+    await goto(page, `${publicOrigin}/en/auth/verify?token=synthetic-navigation-fixture`);
+    await expect(page.getByRole("heading", { name: "Verified destination", exact: true })).toBeVisible();
+    expect(verificationRequests).toBe(1);
+    expect(destinationRequests).toBe(2);
+  });
+
   test("member registration keeps credentials out of the URL without JavaScript", async ({ browser }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, ignoreHTTPSErrors: true });
     const page = await context.newPage();
@@ -373,8 +417,11 @@ test.describe("public Release 1", () => {
       }
       await route.continue();
     });
+    let verificationRequests = 0;
+    page.on("request", request => { if (request.url() === secureUrl.toString()) verificationRequests++; });
     await goto(page, secureUrl.toString());
     await expect(page).toHaveURL(/\/en\/account\/checks\/[^/]+/);
+    expect(verificationRequests).toBe(1);
     await expect(page.getByText("AUTHENTICATED FORMAL REPORT")).toBeVisible({ timeout: 90_000 });
     expect(transientCheckResponses).toBe(3);
     await expect(page.getByRole("heading", { name: "Dates that may deserve attention" })).toBeVisible({ timeout: 90_000 });
