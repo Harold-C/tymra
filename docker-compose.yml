@@ -230,6 +230,7 @@ services:
       - *dev-queue-dependencies
       - *dev-web-cache
       - argus_evidence:/argus-evidence:ro
+      - ${LOCAL_MARKET_DATA_DIR:-../runtime/market-data}:/local-market:ro
     networks:
       - default
       - ingress
@@ -351,6 +352,19 @@ services:
     <<: *app-dev-image
     environment: *app-environment
     working_dir: /app/apps/worker
+    volumes:
+      - *dev-source
+      - *dev-package-cache
+      - *dev-root-dependencies
+      - *dev-web-dependencies
+      - *dev-worker-dependencies
+      - *dev-config-dependencies
+      - *dev-db-dependencies
+      - *dev-domain-dependencies
+      - *dev-provider-dependencies
+      - *dev-queue-dependencies
+      - *dev-web-cache
+      - argus_evidence:/argus-evidence
     command: ["./node_modules/.bin/tsx", "watch", "--include", "../../packages/**/*.ts", "src/scheduler.ts"]
     profiles: ["scheduler"]
     init: true

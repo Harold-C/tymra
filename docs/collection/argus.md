@@ -1,6 +1,86 @@
 # Argus browser collection boundary
 
-Last updated: 2026-10-16 (full selected-sample formal schedule enabled; no automatic retries)
+2026-10-19 approved daily observation cadence (Tymra only): after shared-capacity review,
+`dual-window-daily-v1` opens each reviewed stay window once per NZ calendar date from its audited
+`dailyStartsOn`. The original `startsOn` still freezes the seven-day stay cohort and month anchors;
+observation frequency never changes a property's reviewed dates, room, nights or execution lineage.
+Existing same-day successful windows count; failed/used keys, held members and stopped sources are
+not rearmed. Jobs/captures retain maxAttempts=1, concurrency one, source pacing/circuit, prior-work
+priority and weekday 09–17 avoidance. Unsubmitted prior-day windows expire as recorded gaps,
+without pausing an otherwise valid member or submitting catch-up work. Already accepted external
+jobs are reconciled once, not resubmitted. Identity TTL and spare 21–28-day renewal remain.
+
+Daily activation changes only this plan's cadence, with expected-state fencing and a signed audit;
+restore the prior cadence at selected-plan idle before rolling back to a weekly-only worker image.
+Do not restore old database snapshots or remove new jobs/holds to roll back. The shared Argus image,
+other plans and source configuration remain unchanged. Progress queries project only required
+28-day metadata, never retained wire/HTML. Daily volume is 136 quote windows (952/week) plus
+identity renewals, not a new attempt quota or a guarantee of available prices.
+
+The v6 reference view defaults to adjacent NZ-date comparison, with no carry-forward over missing,
+failed or unavailable dates. Weekly summary uses the last completed window per original seven-day
+cycle and compares matched offers across adjacent cycles, not the average of daily percentages.
+Both retain actual observation dates and exact stay/room/offer separation; flexible arrival dates
+remain descriptive levels only. Safety-limited reads withhold changes. Daily coverage records due
+windows, completed windows, eligible positive prices and gaps separately from all-history coverage.
+
+2026-10-19 approved reviewed-window extension (Tymra only): ten same-property members can receive
+`reviewed-stay-windows-v1` labels containing two ordered day offsets from the cycle's frozen Tuesday,
+review date and source-evidence SHA. Offsets are explicit, not derived from each capture's availability.
+They stay fixed throughout the seven-day cycle and shift with its starting-month anchors; past arrivals
+are not dispatched. The other 58 members retain original task keys, identities and completion history.
+French Bay's reviewed group is two nights, Cosy is a separate three-night group, and Southwark's
+reviewed alternate Deluxe Apartment starts a new unit baseline. All 68 property seats remain.
+Applying the bounded operator upgrade requires idle selected work and a fresh state hash, writes a
+signed audit, clears only the ten changed bindings and holds them pending individual identity and both
+new windows' original-source review. Old jobs/runs remain immutable. Source blocks/no retry and shared
+work priority remain; rollback restores compatible controls before the old image, retaining later
+unrelated holds and every job. No new schedule, source count quota, automatic fallback or shared Argus
+release is introduced. Actual release and source acceptance are tracked separately in traceability.
+
+Last updated: 2026-10-17 (selected roster has no count ceiling; explicit manual acceptance remains separate)
+
+2026-10-18 sample quote trends are a read-only consumer of completed selected-plan facts and
+verified delivery. No new Argus workflow, source capture, execution retry, schedule, quota or roster
+change is introduced. `sample-quote-trends-v3` keeps displayed member references separate from
+public/partner displayed totals, groups inclusive/undisclosed fees and disclosed/undisclosed meals,
+and retains RAW_ONLY/unknown browser context and booking-mode facts. Missing fine purchase terms
+are labelled rather than blocking a uniquely verified displayed-price reference. Ambiguous offers,
+amount/identity conflicts and unverified delivery remain excluded. Legacy receipts use the same
+canonical verifier as Worker, tied to the original delivered execution, without rewriting history.
+Its narrower descriptive reference contract is in `docs/product/data-core.md`; it does not turn these
+observations into certified comparable prices, RateObservation or a regional index. PostgreSQL projects
+only the required rate facts from retained verified wire after a bounded date/row selection; legacy
+wire is verified and projected one at a time within explicit bounds. Full wire,
+HTML, screenshots, credentials and other queues never enter the member response.
+Repeated Booking member plan IDs may be disambiguated using exact row selectors and native
+amounts from the same retained, SHA-verified snapshot. Tymra appends a versioned TransformationRun
+and artifact lineage after reliable delivery/ACK and before completing the run; completed raw runs and original wire remain immutable. Historical
+evidence replay is a separate bounded operation with no source capture. The member read joins the
+derived receipt to its run, member/manifest/unit/date, wire SHA and artifact hash, including after
+the original artifact's normal TTL. Breakfast included and breakfast extra remain separate. This
+does not require a shared Argus release or change public-price, fee or membership eligibility facts.
+
+Selected Booking identities carry the exact frozen dates, two adults, zero children, one room and
+NZD through optional `identity_stay`; physical capacity remains source-derived. Deploy this caller
+change only after shared Argus supports dated Booking identity. Anonymous partner offers retain
+`PARTNER_OFFER` and `BOOKING_PARTNER_OFFER`; they remain RAW_ONLY with null comparison keys and
+unknown fee components preserved, never merged with direct PUBLIC products.
+
+The latest user authorization removes Argus daily/lifetime count ceilings and this selected roster's
+Tymra daily count gate on every OTA channel. Other plans' DataSource settings remain unchanged;
+selected-roster executions do not spend their legacy counters. The 24/20/6 and 195/143 numbers below
+are historical descriptions, not current limits. Concurrency one, pacing, cooldown/circuit protection,
+stop on block and no automatic retry remain.
+
+Selected Booking identity explicitly opts into partial 1.1.0 units with unknown sharing; other callers
+keep their existing response. Unknown sharing does not establish canonical units or comparable prices.
+Verified original wire JSON is retained as text beside independent database-representation hashes and
+committed atomically with terminal execution state; no numeric rounding bypasses integrity checks.
+An operator may authorize an exact held-member identity and its two unchanged stay windows using
+expiring, HMAC-audited one-attempt jobs. The marker is in the idempotency key, leaving rollback task/state
+schemas unchanged. The scheduler never creates these jobs; failed members remain held. Only successful
+identity/window deliveries plus original-source review release that member, preserving other members.
 
 ## Bounded OTA production pilots
 
@@ -37,15 +117,26 @@ reserves, all six available dates or normalized terms do not block capture of at
 
 Each member resolves its unique source unit once, reuses verified delivered identities for up to 28 days,
 and is priced independently; no all-members preflight barrier. Where names/signatures are used, ambiguous
-or absent matches hold only that member. Each source retains at most six captures per NZ day (or its lower
-configured allowance), concurrency one, and existing Argus policies. The scheduler yields to existing work.
-The oldest unpriced members get priority; two weekly quote opportunities per member are a maximum,
-not a promise above source capacity. There is no automatic replay, retry, quota waiver or fallback unit.
+or absent matches hold only that member. Explicit `dual-window-weekly-v2` cadence gives this plan alone
+a dedicated Booking allowance of 24 captures per NZ day for its first seven NZ dates, then 20/day.
+Other sources retain six/day or their lower configured allowance. DataSource rows and other schedules
+keep their settings; dedicated Booking traffic does not consume legacy plans' six-call counter.
+Concurrency stays one and existing work takes priority under the shared submission lock. Without the
+explicit cadence the legacy six/day rule remains. No automatic replay, retry or fallback unit is added.
 Blocked/login/challenge/rate-limit outcomes stop this schedule's source; other errors hold the member.
 
+Upgraded cycles last seven NZ dates from activation. Exact member/stay windows already observed in the
+cycle are not dispatched again; missing windows precede repeats. Both anchors freeze from the cycle's
+starting month, including across a month boundary, so a Monday reset cannot starve Saturday windows.
+Successful raw unavailable outcomes count as observations, never as fabricated prices. In spare capacity
+after cycle quotes, identities renew oldest first between day21 and day28 to avoid a synchronized expiry
+backlog; the maximum validity is still 28 days. Failed renewals hold the member with no automatic retry.
+This is capacity for weekly pairs when sources remain available, not a guarantee of prices for blocked
+or unavailable listings. Show held members and actual raw outcomes independently.
+
 Stay anchors are versioned by observation month: start from the first of that month +60 days, then the
-next Tuesday and Saturday (including that base date). October anchors remain Dec 1/5; November opens
-a distinct Jan 5/2 cohort. Both stay length and exact stay dates remain in each observation and comparison key;
+next Tuesday and Saturday (including that base date). October anchors remain Dec 1/5; a cycle starting
+in November opens a distinct Jan 5/2 cohort. Both stay length and exact stay dates remain in each observation and comparison key;
 never splice cohorts into a seasonal or city-wide index. Calendar boundaries use Pacific/Auckland.
 Normal collection remains outside NZ weekday 09:00–17:00 office hours. Every capture and parent job has
 maxAttempts=1; delivery polling/confirmation is not a new source capture. Persist hash-verified evidence
@@ -187,10 +278,40 @@ replaying the same run is idempotent.
 Booking's additive optional `referencePrices` field in `ota-public.collect_rates@1.0.0` preserves
 explicit original comparison and member-only amounts separately from public price fields. The
 receiving schema bounds each amount/label and rejects an available/priced `REFERENCE_ONLY` rate.
+For the Christchurch selected-sample observation plan, Harold approved visible member prices as
+valid conditional references on 2026-10-17. The observation evaluator retains explicitly labelled
+`MEMBER_ONLY` entries as `MEMBER_REFERENCE` outcomes after the existing exact provider, listing,
+unit, stay, NZD and query-count checks. `raw.totalMinor` is the displayed member reference amount,
+not an attested anonymously bookable all-in total; `referencePrice` retains its source label and
+rate-plan ID. Original/struck-through amounts do not become valid member observations. The
+membership tier/eligibility, offer-level occupancy and availability, mandatory fees and terms
+remain explicitly unverified when the wire does not attest them. Public-row cancellation,
+payment, meals and fee declarations are never copied onto a member reference. References stay
+RAW_ONLY with null normalized/comparison amounts, and are counted separately from public quotes.
+This permits a valid reference capture to complete without pausing the selected member merely
+because an anonymous public total is absent. It does not change source challenge/timeout or
+identity failures, automatically reopen held members, or change general public-price acceptance.
+New manual acceptance still verifies identity and both original stay windows, preserves old
+terminal failures, and closes only the individually reviewed member. Exact duplicate reference
+metadata repeated across public rows is shown once; original wire evidence remains intact.
+
+Trip resolution can add optional `sourceRoomGroupExternalId=trip:<hotel>:room-group:<card>`
+without replacing the legacy supplier `externalId`. In the selected roster, an expected-name
+target without a pinned supplier/signature may resolve to this explicit own-property visible
+physical card when all matching variants identify the same group and room name/type/sharing.
+Equal names alone, missing/conflicting groups, another property and room upgrades remain errors.
+The resolved identity retains the observed supplier IDs; conflicting or missing capacity, area
+and bed metadata stays unknown rather than being selected from one offer. Group quotes retain
+each supplier's own meal/payment/cancellation package and require visible offer-level adult
+counts, excluding one-adult recommendations. Other rooms' prices never fill an absent target:
+a verified dated table with another exact-adult public group may instead yield NOT_LISTED/null.
+The executor must support this optional group identity before this caller is released. Older
+executors fail closed for group-only requests; no automatic retry or alternate room is permitted.
+
 Validated same-provider references are saved in `RawArtifact.payload.otaReferenceRates`, with
 listing/unit identity, NZD, dates and guest/unit counts, before the public acceptance gate. The
 wire result and original evidence retain their normal integrity and ACK rules. Booking reference-only
-captures complete with `rateOutcome=REFERENCE_ONLY`, zero public-price successes and a retained
+captures in the separate general panel pipeline complete with `rateOutcome=REFERENCE_ONLY`, zero public-price successes and a retained
 `REFERENCE_PRICES_ONLY` coverage gap. They create no public price observation, do not increase
 price coverage or last-success time, and allow the source to continue collecting other units.
 Replaying that completed capture neither fetches nor charges again. Invalid or mismatched evidence
@@ -259,10 +380,23 @@ and SHA-256 and syncs it again. Missing, corrupt or unsynced files block ACK, ev
 already holds a local reference. These guards require a release-time check on the target evidence
 volume; local tests do not prove the production filesystem's durability after power loss.
 
-Copy-before-ACK does not extend raw-data retention. Current `retentionCleanup` soft-deletes expired
-`RawArtifact` payloads and references, but does not yet remove copied evidence files or trim retained
-`ArgusExecution.result` data. Physical cleanup needs a separate bounded implementation and recovery
-plan; do not treat a soft-deleted row as proof that raw bytes have expired.
+Copy-before-ACK does not extend raw-data retention. The general `retentionCleanup` implementation
+can remove copied evidence after verifying its hash, but its presence does not prove a production
+schedule exists. On 19 October the production database had no retention schedule or execution audit;
+the host's website-release timer did not cover Tymra evidence.
+
+The daily selected-plan release adds its own bounded hourly maintenance within the existing
+`christchurch-selected-samples` scheduler branch, without enabling global membership cleanup or
+adding a schedule. Only delivered, non-sensitive HTML/PNG belonging to this plan can expire, after
+both their stored deadline and a minimum 72 hours for success / 168 hours for failures. Active jobs,
+unverified deliveries, open incidents/repairs, backfills and shared references remain protected and
+are filtered before the 100-file bound. Each deletion verifies the physical hash and retains the
+artifact identity/hash, quote facts, derived packages, execution/run history and lineage. It does
+not trim `ArgusExecution.result`. Existing work takes priority; integrity failure or less than 2 GiB
+remaining space stops only this plan and requires explicit operator review, without automatic
+capture or cleanup retries. A forced, audited sweep can validate this scope before daily activation.
+Weekly cadence has no new automatic cleanup. Production activation/readback is tracked in the
+traceability log; code and configured TTL alone are not evidence of effective physical retention.
 
 ## Local configuration
 
@@ -280,13 +414,17 @@ MKCERT_ROOT_CA_PATH=<the rootCA.pem below `mkcert -CAROOT`>
 
 The token must contain at least 32 characters and include the Argus Job and `evidence:read` scopes.
 Do not reuse `CRON_SECRET` or another application secret.
-`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. For Eventfinda, Ticketmaster and
-Sporty School Sport durable Jobs, `ARGUS_PUBLIC_QUEUE_TIMEOUT_MS` bounds queue waiting separately
+`ARGUS_TIMEOUT_MS` is the deadline for one browser capture. For Eventfinda, Ticketmaster,
+Sporty School Sport and production `christchurch-selected-samples` durable Jobs whose source
+matches the OTA connector, `ARGUS_PUBLIC_QUEUE_TIMEOUT_MS` bounds queue waiting separately
 (default one hour, configurable from ten minutes to six hours). Queued status checks are thirty
 seconds apart. Once Argus reports its persisted `started_at`, `ARGUS_JOB_POLL_TIMEOUT_MS` bounds
 execution from that immutable time and must exceed the capture deadline. Repeated polling and
-Worker restarts do not extend execution time. Other connectors, including OTA, retain their existing
-submission-to-result deadline. Shared Argus concurrency and private sessions are unchanged.
+Worker restarts do not extend execution time. This polls the same remote Job; it does not submit
+another capture or retry a failed visit. Queue expiry, execution expiry and parent cancellation
+still cancel only that Job and confirm its release. Other connectors and OTA plans, including the
+disabled three-object pilot, retain their existing submission-to-result deadline. Shared Argus
+concurrency, source pacing, private sessions and per-capture maxAttempts=1 are unchanged.
 
 ## Durable execution state
 

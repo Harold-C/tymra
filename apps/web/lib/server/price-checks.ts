@@ -14,10 +14,13 @@ import {
   nzCalendarDayDifference,
   propertySearchSchema,
   stayQuerySchema,
+  readLocationScope,
+  type LocationScope,
   type PriceCheckStatus,
 } from "@tymra/domain";
 import { linzAddressIdentityProvider, normalizeAddressQuery, stableAddressIdentityId, type AddressIdentity } from "@tymra/providers/address-identity";
 import { otaArgusConnectorForSource } from "@tymra/providers/ota-argus-contracts";
+import { linzLocalitiesProvider } from "@tymra/providers/nz-localities";
 import { parseOtaListingReference } from "@tymra/providers/ota-adapters";
 import { resolveNzAddressSignalCoverage } from "@tymra/providers/nz-market-coverage";
 import { withRedisLockWait } from "@tymra/queue";
@@ -38,6 +41,9 @@ export async function searchProperties(inputValue: unknown) {
     return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
   }
 
+  if (input.mode === "ADDRESS" && /^https?:\/\//i.test(input.input.trim())) {
+    return { supportStatus: "UNSUPPORTED" as const, matchStatus: "NONE" as const, candidates: [] };
+  }
   if (/^https?:\/\//i.test(input.input.trim())) {
     try {
       const reference = parseOtaListingReference(input.input);
@@ -76,7 +82,7 @@ export async function searchProperties(inputValue: unknown) {
     }
   }
 
-  if (looksLikeNzStreetAddress(input.input)) {
+  if (input.mode === "ADDRESS" || looksLikeNzStreetAddress(input.input)) {
     try {
       const result = await linzAddressIdentityProvider.search(input.input, {
         correlationId: `property-search:${Date.now().toString(36)}`,
@@ -191,9 +197,14 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
   const customer = options.customerUserId
     ? await prisma.customerUser.findFirst({ where: { id: options.customerUserId, status: "ACTIVE" }, select: { id: true, emailHash: true, encryptedEmail: true } })
     : null;
+  if (input.locationSearch && (!customer || input.analysisType !== "LOCATION_BENCHMARK" || Boolean(input.localityId) === Boolean(input.addressExternalId) || input.propertyId || input.unitId)) {
+    throw new Error("A member and one confirmed location are required");
+  }
+  if (input.localityId && !input.locationSearch) throw new Error("A locality requires the location search flow");
 
   const existing = await prisma.priceCheck.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
   if (existing) {
+    if (input.locationSearch && existing.customerUserId !== customer?.id) throw new Error("This draft belongs to a different session");
     return {
       accepted: true as const,
       check: existing,
@@ -225,11 +236,31 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
   let property = input.propertyId
     ? await prisma.property.findUnique({ where: { id: input.propertyId }, include: { units: { where: { status: "ACTIVE" } } } })
     : existingListing?.property ?? null;
+  let locationScope: LocationScope | null = null;
+  if (input.locationSearch && input.localityId) {
+    const resolved = await linzLocalitiesProvider.resolve(input.localityId);
+    locationScope = resolved.scope;
+    const propertyId = `location_linz_${input.localityId}`;
+    const unitId = `${propertyId}_anchor`;
+    property = await prisma.property.upsert({
+      where: { id: propertyId },
+      create: { id: propertyId, canonicalName: resolved.scope.label, address: resolved.scope.label, city: resolved.locality.city, territorialAuthority: resolved.locality.territorialAuthority, countryCode: "NZ", latitude: resolved.latitude, longitude: resolved.longitude, accommodationType: "SPATIAL_ANCHOR", supportStatus: "PARTIAL_COVERAGE", status: "ACTIVE", isDemo: false },
+      update: { canonicalName: resolved.scope.label, latitude: resolved.latitude, longitude: resolved.longitude },
+      include: { units: { where: { status: "ACTIVE" } } },
+    });
+    const anchor = await prisma.sellableUnit.upsert({ where: { id: unitId }, create: { id: unitId, propertyId, canonicalName: "Area search anchor", officialName: "Area search anchor", capacity: 16, bedTypes: [], amenities: [], unitType: "SPATIAL_ANCHOR", status: "ACTIVE", isDemo: false }, update: {} });
+    property.units = [anchor];
+  }
   if (!property && input.addressExternalId) {
     const promotedPropertyId = await promoteAddressIdentity(input.addressExternalId, input.input);
     property = await prisma.property.findUnique({ where: { id: promotedPropertyId }, include: { units: { where: { status: "ACTIVE" } } } });
   }
+  if (input.locationSearch && !input.localityId && property?.latitude != null && property.longitude != null) {
+    locationScope = { kind: "ADDRESS_RADIUS", label: property.address, latitude: property.latitude, longitude: property.longitude, radiusMetres: 5000 };
+  }
+  if (input.locationSearch && !locationScope) throw new Error("The selected location could not be confirmed");
   let unitId = input.unitId;
+  if (input.locationSearch && input.addressExternalId) unitId = `unit_${stableAddressIdentityId(`${input.addressExternalId}:entire-property`)}`;
   if (!unitId && existingListing) unitId = existingListing.unitId;
   if (!unitId && property?.units.length === 1) unitId = property.units[0].id;
 
@@ -237,7 +268,7 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
   // Collection starts only after confirmQuery has persisted the user's final dates.
   const status: PriceCheckStatus = directListingReference ? "VALIDATING" : "NEEDS_CONFIRMATION";
   const accessKey = deriveCheckAccessKey(input.idempotencyKey);
-  const stay = stayQuerySchema.parse(input.stayQuery);
+  const { accommodationType, ...stay } = stayQuerySchema.parse(input.stayQuery);
   const nights = Math.max(1, nzCalendarDayDifference(stay.checkOut, stay.checkIn));
 
   const check = await prisma.$transaction(async (transaction) => {
@@ -258,12 +289,12 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
       });
       unitId = undefined;
     }
-    const stayQuery = await transaction.stayQuery.create({ data: { ...stay, nights } });
+    const stayQuery = await transaction.stayQuery.create({ data: { ...stay, nights, ...(locationScope ? { unitConstraints: { locationScope, accommodationType: accommodationType ?? "ANY" } as Prisma.InputJsonObject } : {}) } });
     return transaction.priceCheck.create({
       data: {
         analysisType: input.analysisType,
         requestOrigin: options.requestOrigin ?? "CUSTOMER",
-        rawInput: input.input,
+        rawInput: input.localityId && locationScope ? locationScope.label : input.input,
         locale: input.locale,
         emailHash: customer?.emailHash ?? hashPersonalIdentifier(input.email, environment.ACCESS_KEY_SECRET),
         encryptedEmail: customer?.encryptedEmail ?? encryptPersonalData(input.email, environment.DATA_ENCRYPTION_KEY),
@@ -278,7 +309,7 @@ export async function createPriceCheck(inputValue: unknown, options: { customerU
         status,
         accessKeyHash: checkAccessHash(accessKey),
         idempotencyKey: input.idempotencyKey,
-        isDemo: !directListingReference || environment.PUBLIC_COLLECTION_MODE !== "live"
+        isDemo: input.locationSearch ? false : !directListingReference || environment.PUBLIC_COLLECTION_MODE !== "live"
           ? ["demo", "fixture"].includes(environment.PROVIDER_MODE)
           : false,
         customerUserId: customer?.id,
@@ -437,16 +468,20 @@ async function recordCustomerIdentityConfirmation(tx: Prisma.TransactionClient, 
 }
 
 export async function confirmQuery(checkId: string, inputValue: unknown, risk?: { identity: MemberRequestIdentity; challengeVerified: boolean }) {
-  const input = stayQuerySchema.parse(inputValue);
+  const { accommodationType, ...input } = stayQuerySchema.parse(inputValue);
   const nights = Math.max(1, nzCalendarDayDifference(input.checkOut, input.checkIn));
   const reserved = await runMembershipTransaction(async (transaction) => {
     await transaction.$queryRaw`SELECT id FROM "PriceCheck" WHERE id = ${checkId} FOR UPDATE`;
-    const check = await transaction.priceCheck.findUniqueOrThrow({ where: { id: checkId } });
+    const check = await transaction.priceCheck.findUniqueOrThrow({ where: { id: checkId }, include: { stayQuery: true } });
     if (check.status === "QUEUED" || check.status === "PUBLISHED") return { updated: check, plan: null };
+    // Preserve the location flow's idempotency after a lost confirmation response.
+    if (check.status !== "NEEDS_CONFIRMATION" && readLocationScope(check.stayQuery?.unitConstraints) && await transaction.actionRecord.findFirst({ where: { priceCheckId: check.id, action: "CONFIRM_QUERY" }, select: { id: true } })) return { updated: check, plan: null };
     if (check.status !== "NEEDS_CONFIRMATION") throw new Error("CONFIRMATION_NOT_AVAILABLE");
     if (!check.propertyId || !check.unitId) throw new Error("Property and Unit confirmation are required");
     if (check.analysisType === "LISTING_PRICING" && ["REQUIRED", "PENDING", "CONFLICT", "SOURCE_UNAVAILABLE"].includes(check.listingValidationStatus)) throw new Error("A matching OTA listing must be verified before collection starts");
-    const query = await transaction.stayQuery.create({ data: { ...input, nights } });
+    const locationScope = readLocationScope(check.stayQuery?.unitConstraints);
+    const previousConstraints = (check.stayQuery?.unitConstraints ?? {}) as Prisma.InputJsonObject;
+    const query = await transaction.stayQuery.create({ data: { ...input, nights, ...(locationScope ? { unitConstraints: { ...previousConstraints, accommodationType: accommodationType ?? previousConstraints.accommodationType ?? "ANY" } } : {}) } });
     const querySignature = memberQuerySignature({ checkIn: input.checkIn.toISOString(), checkOut: input.checkOut.toISOString(), adults: input.adults, children: input.children, units: input.units, currency: input.currency, propertyId: check.propertyId });
     const membership = check.customerUserId ? await ensureEffectiveMembership(transaction, check.customerUserId) : null;
     const conversionId = typeof inputValue === "object" && inputValue !== null && "convertBenchmarkSlotId" in inputValue ? inputValue.convertBenchmarkSlotId : undefined;
@@ -464,7 +499,7 @@ export async function confirmQuery(checkId: string, inputValue: unknown, risk?: 
     const reservation = check.customerUserId
       ? await reserveSpotCheck(transaction, {
           customerUserId: check.customerUserId,
-          sellableUnitId: check.unitId,
+          sellableUnitId: locationScope?.kind === "SUBURB_BOUNDARY" ? null : check.unitId,
           idempotencyKey: `price-check:${check.id}`,
           exactFreshCache: Boolean(cached),
           stayDates: { checkIn: input.checkIn, checkOut: input.checkOut },

@@ -22,7 +22,7 @@ export function LocaleSwitchLink({
   const localizedPath = pathname.replace(/^\/(en|zh)(?=\/|$)/, `/${targetLocale}`);
   const localizedQuery = new URLSearchParams(searchParams.toString());
   const returnTo = localizedQuery.get("returnTo");
-  if (returnTo && /^\/(en|zh)\/account(?:[/?]|$)/u.test(returnTo)) {
+  if (returnTo && /^\/(en|zh)\/(?:account(?:[/?]|$)|address-check$)/u.test(returnTo)) {
     localizedQuery.set("returnTo", returnTo.replace(/^\/(en|zh)(?=\/|$)/u, `/${targetLocale}`));
   }
   const query = localizedQuery.toString();

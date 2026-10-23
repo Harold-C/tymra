@@ -10,6 +10,19 @@ const authorityByRegion: Record<string, string> = {
 };
 
 describe("LINZ address identity", () => {
+  it("sends a bounded SQL filter for unit addresses and preserves four-digit street numbers", async () => {
+    const fetchMock = vi.fn(async (_request: RequestInfo | URL) => response([]));
+    const provider = new LinzAddressIdentityProvider({ fetch: fetchMock as typeof fetch });
+    await provider.search("1/100 Queen Street Auckland", { correlationId: "unit" });
+    const unitUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(unitUrl.searchParams.get("where")).toBe("address_number = 100 AND UPPER(full_address_ascii) LIKE '%1%100%QUEEN%STREET%AUCKLAND%'");
+    expect(unitUrl.searchParams.has("fullText")).toBe(false);
+    await provider.search("1773 Whangārei Heads Road 0174", { correlationId: "rural" });
+    const ruralUrl = new URL(String(fetchMock.mock.calls.at(-1)![0]));
+    expect(ruralUrl.searchParams.get("where")).toBe("address_number = 1773 AND UPPER(full_address_ascii) LIKE '%1773%WHANGAREI%HEADS%ROAD%'");
+    expect(ruralUrl.searchParams.get("resultRecordCount")).toBe("8");
+  });
+
   it("maps a 17-region acceptance corpus to structured nationwide identities", async () => {
     for (const [index, item] of NZ_ADDRESS_ACCEPTANCE_CORPUS.entries()) {
       const provider = providerReturning([feature(index + 1, item.input, cityFrom(item.input), authorityByRegion[item.region])]);

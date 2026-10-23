@@ -226,11 +226,13 @@ test.describe("public Release 1", () => {
     await expect(addressEntry).toBeVisible();
     await addressEntry.click();
     await expect(page).toHaveURL(new RegExp(`/${locale}/address-check$`));
-    const addressMode = page.getByRole("radio", { name: locale === "en" ? /Benchmark a real address/ : /查询真实地址周边行情/ });
+    const addressMode = page.getByRole("button", { name: locale === "en" ? "By address" : "按地址", exact: true });
     await expect(async () => {
       if (!await addressMode.isVisible().catch(() => false)) await goto(page, `/${locale}/address-check`);
       await expect(addressMode).toBeVisible();
     }).toPass({ timeout: 30_000 });
+    await expect(addressMode).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#location-query")).toBeVisible();
   });
 
   test("public membership pricing and member access are discoverable", async ({ page }, testInfo) => {

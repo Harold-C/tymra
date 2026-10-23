@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Building2, CalendarDays, ChevronDown, CreditCard, Download, FileClock, LayoutDashboard, Settings2 } from "lucide-react";
+import { Bell, Building2, CalendarDays, ChartNoAxesCombined, ChevronDown, CreditCard, Download, FileClock, LayoutDashboard, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -37,7 +37,7 @@ export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | 
     ...(features.exports && planOrder[plan] >= planOrder.PRO ? [{ path: "/exports", icon: Download, en: "Exports", zh: "数据导出" } as const] : []),
     ...(features.integrations && planOrder[plan] >= planOrder.PORTFOLIO ? [{ path: "/integrations", icon: Settings2, en: "Integrations", zh: "系统集成" } as const] : []),
   ];
-  const visibleEntries = [...entries.slice(0, 4), ...advancedEntries, ...entries.slice(5)];
+  const visibleEntries = [...entries.slice(0, 4), { path: "/market", icon: CalendarDays, en: "Regional market", zh: "区域行情" }, { path: "/market/sample-quotes", icon: ChartNoAxesCombined, en: "Sample quote trends", zh: "样本报价走势" }, ...advancedEntries, ...entries.slice(5)];
   const currentEntry = [...visibleEntries].reverse().find((entry) => entry.path === "" ? pathname === root : pathname.startsWith(`${root}${entry.path}`));
   useEffect(() => {
     if (!mobileOpen) return;
@@ -85,7 +85,9 @@ export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | 
       data-can-scroll-back={Boolean(scrollEdges & 1)}
       data-can-scroll-forward={Boolean(scrollEdges & 2)}
     >
-      <details className="customer-account-mobile" ref={mobileRef} onToggle={(event) => setMobileOpen(event.currentTarget.open)}>
+      <details className="customer-account-mobile" ref={mobileRef} onToggle={(event) => setMobileOpen(event.currentTarget.open)} onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); }
+      }}>
         <summary aria-label={locale === "zh" ? "账户导航" : "Account navigation"} aria-expanded={mobileOpen}><span>{currentEntry?.[locale] ?? (locale === "zh" ? "我的账户" : "My account")}</span><span>{locale === "zh" ? "账户菜单" : "Account menu"}<ChevronDown aria-hidden="true" /></span></summary>
         <div className="customer-account-mobile-links">{visibleEntries.map((entry) => <Link key={entry.path} href={`${root}${entry.path}`} aria-current={entry === currentEntry ? "page" : undefined} onClick={() => { if (mobileRef.current) mobileRef.current.open = false; }}><entry.icon aria-hidden="true" />{entry[locale]}</Link>)}<LocaleSwitchLink locale={locale} label={locale === "zh" ? "English" : "中文"} onClick={() => { if (mobileRef.current) mobileRef.current.open = false; }} /><CustomerSignOut locale={locale} label={locale === "zh" ? "退出账户" : "Sign out"} /></div>
       </details>
@@ -93,7 +95,7 @@ export function CustomerAccountNav({ locale, plan, features }: { locale: "en" | 
         <div className="rough-shell">
           {visibleEntries.map((entry) => {
             const href = `${root}${entry.path}`;
-            const active = entry.path === "" ? pathname === root : pathname.startsWith(href);
+            const active = entry === currentEntry;
             const Icon = entry.icon;
             return (
               <Link

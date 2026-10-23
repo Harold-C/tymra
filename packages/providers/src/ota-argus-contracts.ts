@@ -32,6 +32,7 @@ export type OtaArgusConnectorId = `${OtaProvider}-public`;
 
 export const otaUnitExtractionSchema = z.object({
   externalId: z.string().min(1),
+  sourceRoomGroupExternalId: z.string().regex(/^trip:[1-9]\d*:room-group:[1-9]\d*$/).optional(),
   identityQuality: z.enum(["complete", "partial"]).optional(),
   officialName: z.string().min(1),
   unitType: z.string().min(1),
@@ -41,7 +42,7 @@ export const otaUnitExtractionSchema = z.object({
   areaSquareMetres: z.number().finite().positive().nullable().optional(),
   bedTypes: z.array(z.string().min(1)),
   amenities: z.array(z.string().min(1)),
-  entireOrShared: z.enum(["ENTIRE", "PRIVATE", "SHARED"]),
+  entireOrShared: z.enum(["ENTIRE", "PRIVATE", "SHARED"]).nullable(),
 });
 
 export const otaApproximateLocationSchema = z.object({
@@ -85,8 +86,18 @@ export const otaListingIdentitySchema = z.object({
 
 export const otaResolveListingExtractionSchema = otaListingIdentitySchema.extend({
   data_schema: z.literal("ota-public.resolve_listing"),
-  schema_version: z.literal("1.0.0"),
+  schema_version: z.enum(["1.0.0", "1.1.0"]),
 }).superRefine((value, context) => {
+  value.units.forEach((unit, index) => {
+    if (unit.sourceRoomGroupExternalId && (value.provider !== "trip"
+      || !unit.sourceRoomGroupExternalId.startsWith(`${value.sourceListingId}:room-group:`))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["units", index, "sourceRoomGroupExternalId"], message: "Room group must belong to this Trip property" });
+    }
+  });
+  if (value.units.some(unit => unit.entireOrShared === null)
+    && (value.schema_version !== "1.1.0" || value.provider !== "booking" || value.quality !== "partial")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["units"], message: "Unknown sharing requires partial Booking resolve_listing 1.1.0" });
+  }
   if (value.units.length === 0 && value.unitIdentityStatus !== "not_public") {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["unitIdentityStatus"], message: "Empty resolved units require not_public identity status" });
   }
@@ -106,6 +117,9 @@ export const otaDiscoverListingsExtractionSchema = z.object({
   quality: qualitySchema,
 }).superRefine((value, context) => {
   value.listings.forEach((listing, index) => {
+    if (listing.units.some(unit => unit.entireOrShared === null)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Discovery 1.0.0 requires known unit sharing" });
+    }
     if (listing.units.length === 0) context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Discovery listings require a summary unit" });
   });
 });
