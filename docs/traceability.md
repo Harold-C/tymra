@@ -1,5 +1,50 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-23 原生Linux门禁补验（Tymra通过，Argus待可达执行环境）
+
+本轮只补原生Linux发布验证，生产最终回读按用户要求等待原网络恢复；不部署、不解除样本暂停。
+两端应用代码及锁定依赖未变：Tymra f1da82b4d9b878a718b3412f26e6b9a3983cb599只增加正式CI遗漏的位置/区域8项入口与原生架构检查，
+Argus 8e151697d61426319bb66ca7fbf25abd3b0374bd只增加正式发布runner的Linux/x86_64检查。
+Tymra新增playwright.location-market.config.ts继承原45秒时限、单worker及零重试；测试正文、业务实现和保护保持。
+这些门禁修改已推送main，固定标签tymra-release-20261023-1及argus-release-20261023-1，不把标签创建当作发布生产。
+
+[Tymra正式固定提交流程](https://github.com/Harold-C/tymra/actions/runs/39921999680)已成功：
+
+- 原生Ubuntu x64完整源码：406领域/Web、591 Worker、249数据库/API/Worker集成及另6来源离线交付通过；5项真实来源未执行，整套中的6项离线条件跳过已在新建空库独立补验。
+- 五套原始冷启动浏览器37通过/1定义内跳过、8通过、4通过、26通过、8通过；83次通过包含8次重复矩阵执行，不称83个独立场景。
+- 构建机显式验证Linux/x86_64及Docker宿主x86_64，源码/页面runner的Node24.21.0/x64有日志；固定Dockerfile完整生产镜像构建、上传制品、下载原制品并逐字节/哈希回验全部通过。
+- 非文档指纹231aba9a755be07150570019c125ac75f1fdf385cdfddfcd46b4c90cf43526ab（745文件）；新增门禁文件导致指纹不同，不沿用旧744文件指纹冒充。
+
+原生构建制品已完整保存在既有native-linux/artifact目录；完整镜像归档SHA
+ca05a96545337d3b4d0150cd04ad88c2df5ec1de960668bab6580ef86b7e464f，Git归档SHA
+da9d3342da8eb6ccfcbe1274cb71156acaf3dc28a10afc83d1ae1cef1471ebdb与固定f1da82b4一致。
+原生saved image/config ID为sha256:e7a2aa73a4c9f82ccc555332a8a1bb396d393d53a6907e0581a301973bb69290；
+在本机containerd载入后的manifest ID为sha256:a5e39702a52b1fff8edbec6faac13317b24b0a486084009ddc326a1162328d91，
+两者config/RootFS映射已核对，不能仅按两个ID不同判为错误镜像。
+完整20层及42个OCI blob哈希、归档重新载入与镜像内745份源码SHA均通过；镜像Node24.14.1，无.git/.env/.DS_Store。
+源/页面CI使用宿主Node24.21.0，镜像按Dockerfile使用24.14.1，分别记录，不把宿主版本当成镜像版本。
+
+对这份实际原生制品另在本机隔离环境重做配对：新旧四种API组合、Argus失联503/恢复200、
+新旧Tymra各10项无房/错误wire消费及生产构建中英桌面/手机4流程均通过，页面与console错误/warning为0，已人工查看英文桌面和中文手机截图。
+新旧Tymra均通过合成配对DB/证据实际恢复：1次交付、2份证据SHA、1个held、计划关闭、2份位置DRAFT保留、零正式价格，45份migration及schema相同。
+这部分是同一原生构建制品在本机amd64模拟运行的补充兼容/恢复验证，不是Argus原生门禁，也不证明旧版本可直接执行位置对象或刷新固定锚点。
+14项自有容器/卷清理成功，临时HTTPS代理、测试私钥和任务电源断言已收尾；保留完整镜像归档/manifest，仅移除校验后的下载ZIP包装。
+最新制品绑定、配对收据与有条件回滚计划见native-linux/native-gates-summary.json及reviewed-rollback-plan.json，原下节329/E96收据保持原版本范围。
+
+用户随后要求跳过GitHub Actions；核对停止状态时Tymra已完成success，无需取消，保留其已完成结果，不再dispatch或rerun其他Actions。
+Argus对应[正式流程](https://github.com/Harold-C/argus/actions/runs/39921989940)此前被账户付款/支出限制挡在runner启动前，
+未执行源码或浏览器测试、未发布镜像；该失败不是代码回归。用户当前选择是不再使用Actions，不继续以恢复账单作为任务前提。
+
+已核对既有非Actions原生路径：148.135.55.92的/srv/argus-isolated-validation，历史用途可从Argus原发布收据恢复；
+它同时是共享生产主机，不能把旧通过或隔离目录名当作本次可用/授权/安全证明。
+本次只读架构/容量探测直连及经既有ml-mini中转均超时，未创建测试资源、改防火墙或触及生产业务数据；不能据此断言服务故障。
+Argus现行main的非文档指纹9a40133d75ff3271895d2e542d7f346042b6535bd06caae9cf946b6ad9fb9bfc（566文件），
+与已验E96候选的差异仅正式workflow诊断，应用/依赖/测试字节相同；不因此把本机amd64模拟通过升级为原生通过。
+完整固定镜像归档、源码清单和既有测试/恢复入口已整理为native-linux/manual-native-gate-plan.json，须有可达且适用的原生x86_64 Linux入口后实际执行。
+
+本轮证据保存在下节两端既有runtime目录的native-linux子目录：完整日志、源码绑定、Actions停止时状态、原生主机只读连接结果及未执行说明分开保留。
+生产最终回读、新鲜生产配对备份/恢复、共享安全空档及位置范围/固定锚点回滚保护仍未由本轮替代；整体不宣布可立即发布。
+
 ## 2026-10-23 两端main合并候选（本地完整门禁通过，生产最终回读暂缓）
 
 整理分支62bf1e6已合入Tymra main，合并提交e6cab5f；Argus f9735e2已合入main，合并提交46570548。
