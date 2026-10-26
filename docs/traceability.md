@@ -1,5 +1,65 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-27 当前生产：两端 main 修复已发布，暂停与来源保护保持
+
+Harold明确授权“push所有改动并发布到生产环境”，覆盖此前暂缓的两端生产切换；不解除样本暂停，不重跑历史任务。
+既有原生x86_64 Linux验证机本轮已恢复可达，现场核对架构、容量和共享服务后仅使用自有隔离资源；按用户要求没有再启动GitHub Actions。
+下方10-23条目保留当时未部署/原生受阻的历史范围，已由本节当前生产状态取代。
+
+| 生产身份 | Tymra | Argus |
+| --- | --- | --- |
+| 固定版本 | tymra-release-20261023-1 | argus-release-20261026-1 |
+| 镜像内源码 | f1da82b4d9b878a718b3412f26e6b9a3983cb599 | bc2b87db4b77297e3b5c402d5dd1eb07deaa345a |
+| 实际运行镜像 | sha256:e7a2aa73a4c9f82ccc555332a8a1bb396d393d53a6907e0581a301973bb69290 | sha256:b741dd29b5ef5bdf26d13a2d022268ad3ea372bb336f6515e5a2c488d67e78ef |
+| 完整归档SHA | ca05a96545337d3b4d0150cd04ad88c2df5ec1de960668bab6580ef86b7e464f | d42270d34e7db1920cf1fb97cca8cb0945b3c515772f9ef7b639d79355ce9bb7 |
+| 明确回滚镜像 | e45a95bd / sha256:f4b2598e5915d0b703877d4c537aff0db7192a980a0c24ae1d2b873245ada77f | feac7cc8 / sha256:21ea4ad4c97269e727708c4cafe902a08b956f51d3a8198976572bab3a3530dd |
+
+两端main及已有修复均已推送。Argus另外整合已保存但尚未合入main的登录准入公平性/持久DNS修复和有界失败诊断，
+合并提交ad4de67、bc2b87d；保留Booking认证、账号隔离、租约和来源重试规则。生产DNS fallback及选项同时写入候选和回滚Compose，Docker服务发现保持。
+Tymra沿用已完成正式原生流程的同一制品，后续文档提交不改变745文件非文档指纹；没有无关依赖升级或migration。
+两端主仓库仍保留10-23现场分支及原挂载源码，工程与发布操作在隔离整理worktree中完成。
+
+完整门禁：Tymra复用本页10-23原生证据，406领域/Web、591 Worker、249集成及另6来源离线链路通过，
+五套原始冷启动页面83次通过/1定义内跳过（75个独立通过场景，含8次重复执行）；5项真实来源未执行。
+Argus对新bc2b87d在原生Linux重做类型、构建、完整源码/PostgreSQL覆盖率：1445项，1145通过、0失败、300条件跳过；
+覆盖率76.16/83.20/85.77%（lines/branches/functions）。固定镜像两容器按完整测试文件分片326+346=672通过、0失败、0跳过，
+300个源码条件项逐名对应全部覆盖。保存的历史Airbnb实页仅断网重放，不当作当前站点或价格验收。
+私有文件、DB/Profile/证据恢复和生产模式失联/恢复门禁通过。
+
+首次Argus打包继承构建容器的sh入口/构建命令，原生默认启动门禁失败；该8e974966镜像未切入生产，失败日志保留。
+修正打包执行配置后得到b741dd29，完整/app字节、权限、链接、所有者及依赖与已跑源码/显式浏览器门禁输入一致；
+默认生产入口、私有文件和DB/Profile恢复均在最终b741重新通过，568文件SHA逐份一致。未放宽断言、期限或重试来消除失败。
+最终Tymra/Argus实际制品另通过四种新旧API组合、依赖503/恢复200、中英桌面/手机4流程及各10项无房/错误wire消费；
+合成配对恢复保留两份位置DRAFT、交付与证据、held，正式价格仍为零。该配对补验在本机amd64模拟环境，原生门禁单独记录。
+
+切换前先等待共享Argus真实任务/租约空档，再取两端新鲜配对备份并实际恢复，异机副本均独立校验。
+Argus加密备份argus-prod-20261026-release1.sparseimage（SHA 4130ec6e19dc368dce9b736d05d651ccf57bb815fa0a8426e6682cadc016e845）
+已实际恢复数据库及Booking/Airbnb Profile；本机副本以只读方式重新打开，8份文件及3份受保护配置哈希通过。
+Tymra新备份tymra-release-20261023-1-cutover-final由新e7及回滚f4实际读取全部业务模型，数据库/约束与1,980份证据恢复一致；
+完整异机数据库、证据及配置逐文件SHA通过。普通回滚保留当前DB/Profile/证据/交付/ACK/held，不用旧数据库覆盖。
+
+先Argus、后Tymra切换，Tymra四服务均为e7且restart=0；Web/API健康，Worker/Scheduler为新版本心跳，Argus依赖readiness=200，
+Worker与Scheduler继续共享可写证据卷。发布前后68成员、21个held、stoppedSources=[bookabach]、每日cadence及全部来源/计划控制逐值一致。
+Bookabach在发布前已因10-24 UTC的RATE_LIMITED受保护，最新失败交付已校验；不是本次发布新增暂停，不解除或重试。
+Scheduler启动后的自然维护成功清理20份已过期证据；对比实际恢复副本及审计cmvpbruf80001po077uxoqpep，
+仅这些RawArtifact的payload/deletedAt变化，其余业务表及剩余1,960份证据字节/权限/路径一致；被清理文件仍完整保留在新备份。
+首次严格“不变”回读因此失败，保留原日志，补做精确审计增量核对后通过，没有把RawArtifact整表排除或重置生产数据。
+
+实际生产EN/ZH首页及登录页内部读取通过；Argus既有Booking/Airbnb账号owner=200、匿名=401、Tymra跨账号=403，DNS及内部health/readiness通过。
+当前客户端及ml-mini经公网HTTPS仍返回发布前已有的403；TLS验证正常，未改白名单，不能声称本网络的公网登录流程已验收。
+未触发新的站点登录、短信、人工抓取或历史重跑；真实来源修复效果、下一轮自然采集与RAW_ONLY价格质量须分别验收，未升级为正式可比价格。
+
+Tymra生产及本机必需complete-release.py均passed/runtime_unchanged，安装器绑定本版helper；Argus两端正式finalize亦passed，
+只按校验清单退役旧完整镜像/传输副本、无引用Argus镜像和被新配对备份取代的完整备份负载。
+当前及指定回滚完整包、各一套最新已恢复备份的独立双份副本、配置/密钥引用及审计均保留，未清理生产业务卷或Profile。
+Tymra本机独立备份现位于runtime/backups/tymra-release-20261023-1-cutover-final，原远程manifest及路径映射收据保留。
+回滚前仍须阻止新增位置对象的mutation并排空不兼容工作，核实/隔离旧anchor/rotating刷新；仅关闭新建入口或可读schema不足。
+先回Tymra f4及原Scheduler RW覆层，再按需回Argus21；不能因通讯兼容而恢复旧版本全部业务流量。
+
+本轮受保护证据入口为runtime/release-candidates/tymra-release-20261023-1及Argus runtime/production-releases/argus-release-20261026-1，
+含原生门禁、packaging-correction、paired-final、实际生产回读、fresh paired restore、异机校验和两端retention-completion收据。
+既有跨日heartbeat保持暂停，本轮没有恢复监测自动化或解除任何暂停。
+
 ## 2026-10-23 原生Linux门禁补验（Tymra通过，Argus待可达执行环境）
 
 本轮只补原生Linux发布验证，生产最终回读按用户要求等待原网络恢复；不部署、不解除样本暂停。
