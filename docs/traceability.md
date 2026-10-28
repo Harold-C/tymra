@@ -1,5 +1,194 @@
 # Tymra 实现与验收追踪
 
+## 2026-10-29 全量采集修复与恢复：补充两端已发布，来源验收继续
+
+NZ11:43当前实际状态：Argus b3a2ec74/2aa42333已于NZ10:08完成一次协调切换（392.33秒），Tymra8ab0dcab/52e2236a第三次维护556.97秒完成，均有新鲜生产备份、实际隔离恢复及独立副本全哈希证明。Tymra恢复覆盖89模型、2299证据文件/4552目录项；8份异机备份文件SHA全部通过。有效收据分别位于Argus既有argus-release-20261029-4及Tymra既有tymra-release-20261029-2/attempt-3。原两次Tymra失败完整保留：第一次传输过慢耗尽900秒并恢复旧应用；第二次发布证明文件非原子写入导致JSON读取竞争，未切换。新增atomic-release-proof.py拒绝覆盖、同目录原子发布；7项回归已在本机/原生Linux/生产临时目录通过，另10次隔离CLI并发读取无半文件。第三次未放宽900秒或备份门槛。
+
+Synix原绑定发布后真实认证、24房源及3预订详情入库/交付已由其负责聊天完成；本聊天独立核对原收据及哈希，17旧hold和5通知设置保持，原1440/10080分钟同步配置已恢复。不得再用切换前整行会话指纹判断这次合法认证为发布漂移，也不重跑已冻结的切换验证。
+
+雪季原周计划已启用，审计cmvsous6w0000jv1sxc7b0stf，使用原两成功Run、12份证据SHA及6交付，不重新抓六官网；下次UTC11-05 04:00/NZ17:00。Booking3120833已按固定原页复核收据关闭单项hold，3次交付/6份SHA/正式价格0，剩余held仅Trip3598691、stoppedSources=[trip]。新版本MoT首轮cmvsp2i3w0000jv59ijbuc4jd和Booking全国首轮cmvsp8duk0000jv9wyny11qsd均原payload、maxAttempts1排NZ10-29 17:00；Booking新验收窗口冻结为8ab/b3，旧窗口/失败保留。目前仅排队，不能声称实采通过。
+
+Eventbrite浏览器连接器及Tymra消费端已本地实现，47项定向、4项隔离真实Chrome、160项Worker相关及75项provider（另5旧实站条件跳过）通过，未发布/未恢复计划。新增连接器任务记录会使旧Argus PostgreSQL全量读取失败（文件仓库则忽略无法解码记录），故后续候选必须准备可读新历史、但不注册新执行器的兼容回滚镜像；不能只暂停计划就声称旧镜像可回滚。当前继续完整兼容/原生验证。
+
+后续固定代码：Tymra181670f保存原子证明发布修复，ec36db6485636271089d06b20eb1662328da51e7保存Eventbrite消费与数据库/证据/ACK回归；原生候选tymra-release-20261029-3正在构建，生产仍8ab/52。本机lint/全类型、407根及612Worker通过，5旧条件跳过；provider75/5已包含根测试。随后误指定不存在的provider独立配置仅导致额外命令启动失败，不是上述套件失败，也没有把该命令记为通过。Argus回滚读者fb797d3/功能候选fb74af1均固定，旧生产2aa镜像已实际复现未来AVAILABLE及PURGED Job拒绝；新候选需额外通过新历史实际PG恢复及两端回滚验收后才可发布。
+
+以下最初候选段落是历史过程；“尚未切换/待关闭”等已由上述实际读回取代。
+
+最终合并候选补充：Harold明确授权跨聊天协调并合并一次Argus发布；另一聊天停止独立维护、负责发布后的Synix业务验收及原同步恢复。Argus main b3a2ec74 / argus-release-20261029-4 / 2aa42333的原生源码1487项中1179通过、308条件跳过，浏览器679通过/0失败/1保存原页条件跳过；该整文件同镜像断网补验2/2通过、0跳过，日志SHA260f2172ba50ea552c5041b7cbfc05627c88b1e070cba93afb39cbf2b96f305d。行/分支/函数覆盖率76.26/83.27/85.94，恢复及运行门禁通过。Tymra8ab与新旧Argus四组合、失联503/恢复200、Worker实际心跳、PG/evidence实际合成恢复、空价保留和英中桌面/手机四页面通过，四截图已检查。完整18层归档SHA217a9b88cfa14c7d6c726463d896a839d52c4d09ae166aa5235627c85b798db7，独立副本转存及生产新鲜备份/恢复/切换仍待完成；旧e58候选未部署，前序收据保留。
+
+Eventbrite已获明确排查解决授权。NZ10-29生产Worker同一官方入口GET响应405、CloudFront、x-amzn-waf-action=captcha、Human Verification，保存2543字节SHA125925a4d1623046ce344668a78ba3ca46f28a355b49c73043efe80117e7de03；符合AWS WAF CAPTCHA响应，不能当作GET方法错误或全站不可用。全新匿名本机Chrome同一入口200，无验证码交互/私有Profile/代理变更，保存949633字节SHA dbbd210cd1d4fbb278ad011ec9172cbf77041a5238884cabc1e2424d7a953380，既有解析器离线得到59活动（51有city）。尚未验证Argus生产采集，不据此启用原计划或清除保护；浏览器连接器后续单独实现/完整验证，不扩入本次冻结发布。原Job/Run失败历史保持。
+
+Harold在全面只读检查后明确要求“检查修复全部问题，我要启用所有抓取计划”。本批authorizationId=all-collection-recovery-20261029，旧ota-national-restore-20261027限时操作器保持原样，不通过改deadline或旧门槛续行。
+两端使用fix/collection-recovery-20261029分支，canonical源码挂载不变；此前未提交运维记录保留。首轮两端代码已FF合入main；Argus运行源码4a2e9d7/6ec9a877于NZ10-29 05:37切换通过，Tymra b4f590b6/实际经典Docker配置镜像7963de1b于NZ06:33切换通过。原生Tymra候选c8d5d245与7963为同一22层和配置内容的不同镜像标识，已逐项校验，不当作不同代码。
+
+NZ08:04当前：两端运行正常，Tymra新鲜生产备份实际恢复到隔离PG/evidence，新旧镜像89模型及2252份文件/4481条目录项完全核对；完整异机副本8份SHA通过。首次900秒维护实际814.99秒完成，原控制/预算/三个hold及其他服务保持；后续Airbnb单项复核关闭见下。补充候选Tymra8ab0dcab/20635259（经典配置52e2236a）、Arguse58e2ed/819a76a1尚未切换应用；前者原生lint/全类型、407根+605Worker、251数据库/API/Worker和6项独立空库OTA通过，5项原条件跳过，八周3755ms，构建/归档22层通过；后者完整原生门禁正在执行，不能以准备/加载镜像称发布完成。
+
+交通部原失败cmvpnt3tp001vqo061svm2gdj的原2份证据已保存/fsync/SHA并ACK/410，deliveryVerifiedAt=2026-10-28T17:34:20.896Z，原FAILED/TIMEOUT及Run逐字保持，审计cmvse98go0000s60xyxbkmjk0。新试采下载已正常，但官方8月XLSX实际是单表关联的EMF Unicode矢量表格，旧解析无数据单元格而报PARSING_ERROR；原失败cmvseoefu00b4s607xqbxaz5l保留且已交付。补充Argus解析限定原工作簿关联、ZIP/EMF边界、明确列和逐行月份，不用OCR/猜数字；最终候选离线重放156航线/240行、16408计划航班/352取消，与独立逐项核算完全一致，未新请求来源。该失败批已blocked，不重试；新修复版本实采须单独两轮且沿用原预算4。
+
+滑雪原两个单次真实Job `cmvseqv6r0000s6ffhv0p8yyj` / `cmvseurdz0000s6gxxx4uqvt9` 成功，每轮三个官网分别Remarkables2027、MtHutt2027、Whakapapa2026；旧2026历史继续保留。8ab补充门禁只以两次合格Run对应的三个当前信号判断，旧年记录不冒充新成功也不阻止升级；原既有周计划仅可在完整业务/SHA/ACK门槛后按原ID启用，不删建、不再抓六页。当前周计划仍暂停。
+
+Airbnb样本AIRBNB:599452653212788682按原Dec1/Dec5窗口完成身份+两次报价：三单次Job成功、三交付/ACK、六份本地文件SHA及保存HTML/截图复核通过；Dec1–3原始QUOTED44850NZD、Dec5–7明确UNAVAILABLE/null，均RAW_ONLY，正式价格零。仅该INTERNAL_ERROR hold通过closeSelectedManualReview关闭，复核SHA c109e38068b374a5e21deb8263a16a06a932b4969154206ba897ac2faf439125；控制读回仅删除此hold，Booking3120833及Trip3598691仍held、stoppedSources=[trip]。没有改旧结果、日期、房型、费用或提升质量。
+
+Booking3120833原身份/两报价均成功并交付六份SHA；原Dec1保存页有可见NZD122匿名Limited-time Deal及隐藏122.20精确细项，不能声称122.20可见。Argus原误标PROMOTION已补公开自动促销判断，仍保留code/member/mobile限制；补充反例先复现原价204被错误当当前价，再修复为原价/隐藏当前价/rounded属性不能单独证明公开价。最终相关54项单元及7项本机浏览器通过；完整本机浏览器21通过/10项因无容器/data目录失败，保留日志并交原生容器全量验证，未改断言。会员Dec5仍MEMBER_REFERENCE18749/RAW_ONLY，不是匿名正价。该hold待最终版本部署、原页复核收据后单项关闭；不改历史Run。
+
+Expedia新两轮分别首轮全国发现+正式完整费用公开正价成功，第二轮对象expedia:38081259为Vrbo伙伴度假屋、原页未公开地址及具体unit，UNIT_IDENTITY_NOT_PUBLIC；两轮各原证据均交付核验，保持全国计划暂停，blocked审计cmvsejll70000s6alhv7appzl，不再第三次试跑或换对象凑通过。Trip原页Sign in to Trip.com仍真实访问限制。Eventbrite405/官方入口未配置仍待确认；其余公开零值按来源合同处理，不造业务数据。
+
+以下为本轮初始处理和构建过程，阶段性“待发布/正在执行”由上述当前读回取代；旧失败与候选收据保留。
+
+Agoda原两轮cmvr2evny0000qo5xvev6f1fr、cmvr4r86p0000qo994vjhia7l均单次成功，分别全国发现及精确报价成功1/失败0、各1条完整费用公开正价。
+新有界操作先逐文件核对两轮12份持久化证据SHA，再调用未放宽的enableProductionOtaScheduleTransaction；审计cmvs3281v0000qoi95he0vnwk。
+实际回读来源HEALTHY、来源/日计划均启用，预算6/并发1保持，nextRunAt=2026-10-29T14:20:58.034Z（NZ10-30 03:20）。操作源码、哈希、before/proofs及收据在既有受保护release目录all-collection-recovery-20261029-enable-agoda*，未改其他来源或样本保护。
+
+已确认并本地修复：Airbnb失败HTML明确为Chrome ERR_QUIC_PROTOCOL_ERROR，原被映射INTERNAL_ERROR而整样本暂停；新增严格主框架网络错误页识别及脱敏NAVIGATION_ERROR分类。
+Expedia失败HTML与原结构化快照证实3张卡片中2张广告、1张正常房源；正常卡片“Lower price than similar properties on our site”被全卡片正则误当推荐而过滤。
+修复改为推荐容器/标题判断，广告保护保留；真实页面断网重放恢复原expedia:5666932且广告仍排除。初次重放脚本误把iframe也作为主文档计数而失败，改为只拦截主框架后原断言通过，未改变产品断言。
+Argus分类16项、DNS/QUIC跨3来源浏览器6项、Expedia浏览器5项及两份保存实页重放通过；全源码1449项中1133通过、0失败、316条件跳过，仍须补固定候选原生门禁。
+
+交通部旧失败执行cmvpnt3tp001vqo061svm2gdj仍保留2份Argus证据，但Tymra无RawArtifact记录，原ACK路径正确报未登记哈希而拒绝，未清除远端结果。
+本地新增persistFailedArgusEvidence：只处理已失败/未交付执行，重取并核对原wire、trace/source/parent及hash后登记失败证据与wire收据，再调用既有保存/fsync/ACK/410路径，保留原FAILED/TIMEOUT。
+75项定向、Worker 601项、根406项测试通过，根另5项条件跳过、Worker类型检查通过。新增业务指针/交付故障负向测试，不豁免源站挑战或哈希错误；旧结果恢复待发布后执行。
+
+新Trip样本research:chch:3598691（Sudima Christchurch Airport）NZ10-29 01:18 ACCESS_CHALLENGE，Job cmvs2yg22009bpo07j6yynn82，触发第三个held及stoppedSources=[trip]；保护保留。
+Booking research:chch:3120833原wire仅划线ORIGINAL=NZD204、REFERENCE_ONLY/UNKNOWN、公开总价null，不是无房或会员报价；Harold已明确批准继续采集并保留窗口缺口。本地新增PUBLIC_PRICE_UNVERIFIED、金额为空，仍不生成可比价格或会员参考，不自动清空旧held。滑雪季也已获明确确认按各官网最新完整日期、分别保留年份；新旧选择、混合年份三家准入及年标注回归通过。
+Tymra最新89662da：lint/全类型、407根+603Worker单测通过（5原有外部条件跳过）；251数据库/API/Worker通过，6项空库OTA交付单独在新空库全过；本机生产bundle构建通过。首次seeded库误入空库套件被门槛正确拒绝，不作为产品失败；改正环境后验证。真实PostgreSQL证据测试发现终态Run不可修改，已将证明写在新增RawArtifact.payload.verifiedWire，未修改或禁用历史保护。2项真实HTTP/DB测试确认正常保存、原hash ACK/410和损坏文件拒绝ACK，原失败Run全字段不变。
+Argus最新4a2e9d7包含显式latest_complete选择，旧season_year精确请求兼容、结果schema仍1.0.0；先Argus后Tymra切换，回退保留新增结果。原生候选sha256:6ec9a877be3d664419ecc0236fdbc211ca82d3f821f642a70706973b40165e3d已构建，源码归档47d2e390绑定该提交。两端修复分支已push（Tymra89662da/Argus4a2e9d7）；尚未main合入/发布，成对Tymra兼容及生产业务验收未完成。
+Argus原生最终：浏览器675中674通过/0失败/1指定保存原页条件跳过；源码1451中1148通过/0失败/303条件跳过（浏览器已独立执行），覆盖率行76.26/分支83.28/函数85.80均达原门槛。配对PG/Profile/证据实际恢复通过（153保留文件，23缓存排除，0Profile删除）；生产配置、鉴权、PG失联503/恢复200、API子进程崩溃后容器重启门禁通过。最初宿主无Node导致运行门禁127，复用固定候选Node、只挂载本次合成secret输出临时目录后补跑通过，不安装全局runtime或改原断言。
+Tymra原生首构建1280MiB时V8堆约640MiB不足，保留原源码/依赖并以2GiB容器、1536MiB V8重跑后成功；实际固定候选sha256:f1448dc6d9385f16bf708117555490493c0e97869a2db567e0105648dea67a7e（Linux/amd64、源码89662da、Git归档e0df1c77），未宣称可发布。原生源码/数据库门禁正在执行；首次PG初始化临时Unix socket就绪竞争导致测试环境CREATE DATABASE连接被正常重启终止，已等最终TCP服务后重跑，未放宽断言或关闭历史保护。依赖底图a5/e7是已知manifest/config标识差异：20层及配置指纹7f106498de5237197ca5db1c3827cca55d3ba2bc2a1e7d685269012a42302801均匹配，初始守卫停下后仅修正构建验证脚本。所有应用必要检查与生产实际回读仍分别判断。
+Trip原失败页实际SHA=fadf7eff488f3c87930f6708d6c2b4b47df27aba743e59c57780152bf05b9050，title=Sign in to Trip.com，非只含登录入口的普通酒店页，不以错误分类修复绕过登录门槛。新Bookabach任务cmvs3o2wn00a3po078m9xxmz6为导航TIMEOUT/retryable=true、零声明证据，deliveryVerifiedAt已回读，不新增整样本hold或全国计划停用。
+LINZ零事件/信号符合其地名参考合同；Canterbury校际体育本轮Labour Day/No Volleyball无地点，现有保守映射不生成体育事件；学校假期保留原窗口过滤，不为消除零值造记录。
+Tymra原生f144候选的完整测试发现既有68样本八周模拟超过原5秒门槛，未放宽期限。定位为同次调度重复NZ日期换算和线性进度查找；a94e7fb在一次调用内复用日期、首个成员进度和窗口时间，不跨调用缓存，不改变任务键/预算/时段。新增回归覆盖重复进度优先级、下一次调用的新进度、已用任务和新增hold立即生效。
+该a94e7fb分支已push，Git归档5a57e38e，原生镜像sha256:a246cab0ddfb7256beb5969050a7ee1c1daeb8bde79d701d1cb8c078f494a8f2；原f144失败记录保留在previous-f1448dc6，未部署。新候选lint/全类型、407根+604Worker通过，5项原有外部条件跳过；八周原断言实跑3801ms。
+随后数据库门禁248通过/3失败：两个30秒超时、正式报告缺少成功的public_holidays_nz运行。PG由0.25CPU调为1CPU仍复现同三项，排除仅靠资源调整解决；实际失败Run均为真实公共HTTP的fetch failed。集成配置虽为fixture，假期/GeoNet适配器仍访问官网，原内部网络将其阻断。修复只在测试配置显式提供三个官方端点的合成HTTP响应，继续真实解析器和数据库；其他非loopback、未mock外部HTTP使套件失败，不放宽期限、断言或生产适配器。
+诊断候选挂载测试修正后251数据库/API/Worker及6项空库OTA全部通过；正式报告5547ms，缓存刷新4010ms。最新b4f590b已push并以原生产底图完整重建，Git归档4fea5869、原生镜像sha256:c8d5d2451f7a199bfae4e1fedd33779d51fbb0affa4445cc83f1e8792862e0f0；621项应用/依赖树与a94完全相同，测试/文档变化单独记录。最终固定镜像原生lint/全类型、407根+604Worker、251数据库/API/Worker及6项独立空库OTA全部通过，5项原有外部条件跳过；八周原断言3888ms。全22层归档校验通过，SHA=5e1c494cc9a767f3dccd19153c07a556ff12e72fa808e096328e7853d7881413，两代中间候选和失败日志保留。
+成对门禁全部通过：四新旧API组合readiness200、Argus失联503/恢复200、Worker实际b4心跳/零Job，英中1440/390四组首页到地址页导航/输入及截图、控制台错误/警告零、无横向溢出。初次首心跳查询早于Worker启动已改为有界等待真实首心跳；旧验证脚本radio与当前LocationCheckStart契约不符，按既有E2E改验地址按钮/输入；匿名地区链接预取原跳转到未配置PUBLIC_ORIGIN，已在隔离网络提供同源HTTPS测试网关，不修改应用/原10秒导航期限。前序失败与最终收据分开保留。
+新鲜合成PG/evidence实际备份恢复后，新旧镜像均读回1交付/2份SHA证据/原hold和关闭计划、正式价格零；schema及45份migration相同。PUBLIC_PRICE_UNVERIFIED在新旧实际读模型均为空价/价格序列零，旧版拒绝该raw枚举但不生成价格。所有测试无Scheduler/来源请求；生产新鲜备份与实际来源验收另行执行。
+NZ05:37 Argus生产6ec9a877/4a2e9d7已healthy/restart0，真实PG/Profile/证据恢复和异机加密副本只读重开通过，现有ENV/挂载/DNS/私有账户/SMS及其他服务保持。Tymra固定tag tymra-release-20261029-1指向b4，已在main；当前只做新release准备，未解除三个held或trip来源保护。生产release父目录0700拒绝普通SFTP直传，改用本批0700临时目录传输并由root核验归位，未放宽原目录权限。
+雪季新选择依赖Argus连接器1.1.0；旧Argus会忽略可选字段，同页有两年完整范围时可能返回请求的旧年。故先Argus后Tymra、回滚先Tymra后Argus；四种版本配对的health/readiness不能替代该功能顺序。生产Tymra凭证无runtime:read，保留权限，通过发布固定镜像核对能力，不增加权限。
+原生验证机148.135.55.92现可达、Linux/x86_64；本批构建最终限2CPU/2GiB、V8 1536MiB，源码测试同限额并保持原期限/单Worker，PG256MiB、Redis64MiB且网络隔离。构建另校验至少3.5GiB可用内存及10GiB磁盘；未修改共享服务或其他任务资源。跳过Actions；完整修复/发布/其余计划恢复尚未完成。
+
+## 2026-10-27 全国六 OTA：恢复已授权，17 点开始有界验证
+
+NZ 2026-10-28 19:16截止收尾：本次heartbeat携带UTC00:17:54（NZ13:17）的旧触发时间，但现场时钟已为UTC06:14:41（NZ19:14），超过18点截止。
+本轮未执行任何生产写入/采集/启用/暂停来源动作，已用automation_update将tymra heartbeat实际设PAUSED并回读确认，不归档聊天，不延长截止。
+Tymra直连两次连接超时，经既有ml-mini中转亦banner超时；无法取得截止时或当前生产DB/镜像/控制/心跳最终回读，不将失去SSH监测等同确认服务停机。
+Argus首次SSH报Host is down，后续只读重连成功，容器仍b741dd29/running/healthy/restart=0；初次短暂失联已恢复。
+最后成功Tymra回读为NZ12:28：Airbnb/Bookabach来源与全国日计划已启用，Booking/Expedia为本批blocked并保持计划关闭；
+Agoda仅首轮验收通过，第二轮cmvr4r86p0000qo994vjhia7l已排17点，当时PENDING，当前执行/交付/证据结果无法确认，未执行enable或block；Trip尚无本批验证Job或终态审计。
+因此六来源完成条件未达成，Agoda/Trip明确为未完成而非已blocked；两项已启用来源后续自然轮次亦未验证，不能声称本轮全部恢复。
+最后有效快照预算6/并发1、原1个Booking样本held/stoppedSources=[]及维护PASSED；不能将该旧快照视为截止时当前状态。
+下一步先恢复Tymra只读SSH并核对Agoda第二轮和最新控制/证据；继续生产恢复须重新明确截止与推进范围，不重发已排第二轮、不擅自取消共享工作或解除样本暂停。
+
+NZ 2026-10-28 09:21续查：Agoda首轮cmvr2evny0000qo5xvev6f1fr已单次成功，全国发现及精确报价均成功1/失败0，
+取得1条非隔离AVAILABLE/完整必收费用/正价正式观察，3次Argus交付确认、6份持久化HTML/截图SHA通过。
+固定操作器通过首轮硬校验后仅提交第二轮cmvr4r86p0000qo994vjhia7l；按原工作日09–17避让排NZ10-28 17:00（UTC04:00），回读PENDING/attemptCount=0/maxAttempts=1，未在办公室时段触发抓取。
+Agoda来源仍仅PILOT/DEGRADED受控验证，每日计划关闭；Trip尚未开始，不抢占已有共享队列或越序推进。
+本轮仅第二轮trial一项，收据、ota-national-restore-20261028-agoda-first-review.json与agoda-second-queued-readback.json在既有受保护release目录。
+两端固定版本、心跳与共享可写证据卷正常；最新维护cmvr4b7o1005zpo0777r5217j为ready=true/PASSED、空闲67,775,541,248字节；
+Airbnb/Bookabach启用、Booking/Expedia暂停及68样本原1个held/stoppedSources=[]保持。下一步等17点第二轮实际结果，再enable或block，并继续Trip；预算、截止NZ18点及每次最多三项不变。
+
+NZ 2026-10-28 08:16续查：Bookabach第二轮cmvr0guad0000qo1nttl2xtrr亦单次成功，全国发现/精确报价均成功1/失败0，
+本轮1条非隔离AVAILABLE/完整费用公开正价、3次已确认交付。固定操作器重新校验两轮共12份本地证据SHA并通过原D-039等门槛，
+enabled审计cmvr2ekmp0000qo4hzsnupx2c；回读来源PILOT/HEALTHY、来源及日计划启用，日预算6/并发1保持，nextRunAt=2026-10-29T04:00:00Z（NZ10-29 17:00）。
+受保护enable收据及ota-national-restore-20261028-bookabach-enabled-readback.json包含两轮完整证明；后续自然轮次尚未验证。
+随后仅创建Agoda首轮cmvr2evny0000qo5xvev6f1fr（NZ08:15:02）并追加本版窗口，保留cmuvlkn5f0000nznlsryt66pm旧边界；
+当前全国发现RUNNING、父Job WAITING_EXTERNAL为正常在途，每日计划仍关闭。本轮enable Bookabach/trial Agoda/window Agoda三项已用完，下轮先核对Agoda首轮再决定第二轮或block，Trip尚未开始。
+两端固定版本、心跳及共享可写证据卷正常，最新维护cmvr25xma005xpo07wfrw4v8c为ready=true/PASSED、空闲67,795,222,528字节；
+68样本原1个held及stoppedSources=[]保持，未部署、重启、重试失败或解除其他保护；Booking/Expedia继续暂停，Airbnb启用状态不变。
+
+NZ 2026-10-28 07:21续查：Bookabach首轮cmvr0dg9l0000qoyoj8m67ljw单次成功，全国发现与精确报价Run均成功1/失败0，
+取得1条非隔离AVAILABLE/完整必收费用/正价正式观察；3次Argus执行完成且交付确认，6份持久化HTML/截图存在、SHA全部匹配。
+本版窗口已追加并保留cmuwcg6q90000mq6nbwbn5fwm旧边界；固定操作器验证首轮后仅创建第二轮cmvr0guad0000qo1nttl2xtrr（NZ07:20:35），
+当前PENDING/WAITING_EXTERNAL为正常等待，未计失败。Bookabach仅受控试验准入PILOT/DEGRADED，每日计划仍关闭；下一轮先核对第二轮、再enable或block。
+本轮trial/window/第二次trial三项已用完，未推进Agoda/Trip。Airbnb启用及Booking/Expedia暂停不变；两端固定版本、心跳、共享可写证据卷正常，
+最新维护cmvr009sa005wpo070owskqmj为ready=true/PASSED、空闲67,807,825,920字节，68样本原1个held及stoppedSources=[]保持。
+受保护ota-national-restore-20261028-bookabach-first-review.json与trial/window收据保存本轮证据，未修改应用、预算、旧结果或其他来源控制。
+
+NZ 2026-10-28 06:21续查：已按顺序完成Expedia首轮入队、追加本版验收窗口、失败后block三项操作。
+首轮Job cmvqyaipm0000qote3kxia7vm单次尝试/maxAttempts=1，于NZ06:19:56以PARSING_ERROR结束；
+全国发现Run cmvqyaj27021mqo06cvg9cneq失败（成功0/失败1），说明为“The public source did not match the Connector schema”，尚未进入精确房型报价，零正式正价。
+失败Argus执行cmvqyajdq021nqo06hmg1fpf5已有deliveryVerifiedAt，2份本地HTML/截图均存在且SHA匹配；这不是成功发现或有效价格，具体页面变化原因尚未查明。
+blocked审计cmvqybihr0000qowftk8moggt，来源及全国日计划回读关闭/SUSPENDED/DEGRADED、nextRunAt=null；预算6/并发1保持，不提交第二轮，不修改对象、房型或日期。
+窗口保留原startingJobId=cmuur4kcd0000phm32h2jyhpb及历史失败。现有Airbnb启用、Booking暂停状态不变；下一轮从Bookabach首轮及窗口继续，Agoda/Trip尚未开始。
+两端固定镜像/修订、心跳及共享可写证据卷正常；最新维护cmvqxuzoj005vpo0763cuottv为ready=true/PASSED，空闲67,810,856,960字节。
+68样本仍仅Booking research:chch:3120833原已报告的1个held，stoppedSources=[]，未解除或重复告警。
+本轮trial/window/block收据及ota-national-restore-20261028-expedia-review.json存既有受保护release目录，无应用代码、部署、重启或其他来源控制变更。
+
+NZ 2026-10-28 05:20续查：Airbnb首轮cmvqu0p8y0000qojv0pkkb3jw及第二轮cmvqvx6qf0000qoonqpdliwk2均单次成功，
+各完成全国发现和精确房型报价、取得1条非隔离的AVAILABLE/完整必收费用/正价正式观察；合计6次Argus交付确认、12份本地证据SHA通过。
+固定操作器未放宽D-039或其他门槛，已于NZ05:17记enabled审计cmvqw23yb0000qoq6rk403832；生产回读Airbnb来源PILOT/HEALTHY、来源及日计划均启用，
+日预算仍6、并发仍1，nextRunAt=2026-10-28T16:47:09.239Z（NZ10-29 05:47）。这是两轮受控验收通过，后续自然日轮次尚未验证。
+Booking维持上一轮blocked，其余Expedia/Bookabach/Agoda/Trip尚未开始；本轮仅推进Airbnb第二轮与enable两项，下一轮从Expedia首轮及窗口继续。
+两端固定镜像/心跳正常，最新证据维护cmvqvprh9005upo07f67vnimg为ready=true/PASSED。收据和启用后只读回读存既有受保护release目录，
+包括ota-national-restore-20261028-airbnb-first-review.json、enable-latest及ota-national-restore-20261028-airbnb-enabled-readback.json。
+只读观察另发现68样本计划仍启用，但新增1个held：Booking research:chch:3120833，Run cmvqlcjev01a7qo06ac3yzj8k于NZ10-28 00:18:02
+因AVAILABILITY_OUTCOME_UNCLASSIFIED暂停；Argus完成且交付确认，不据此断言无房。stoppedSources=[]，保留该暂停，未重跑或修改样本控制。
+
+NZ 2026-10-28 04:21复核并续行：Booking首轮cmvpp37bl0000qo5qxrsomf64实际于10-27 17点运行，
+发现阶段成功1条，但精确房型报价失败NO_AVAILABLE_PUBLIC_RATE，未取得有效公开全价；这不等同确认无房或浏览器抓取失败。
+3次Argus执行完成且deliveryVerifiedAt齐全，6份本地HTML/截图存在及SHA全部通过；原Job保持DEAD_LETTER/单次尝试，未提交第二轮。
+有界操作器已记blocked审计cmvqu0cnz0000qoie85y5pc6d，Booking来源及全国日计划保持关闭，不更换对象/房型/日期来凑正价。
+随后仅推进Airbnb首轮cmvqu0p8y0000qojv0pkkb3jw（NZ04:20创建，当前运行中），并追加本版验收边界、保留原窗口；
+其每日计划仍关闭，其余四来源尚未开始。两端固定版本、容器/心跳及最新证据维护PASSED，未修改68样本或其他来源控制。
+本次共三项授权推进（Booking记阻断、Airbnb首轮入队、冻结Airbnb窗口），后续继续原小时续查与截止时间。
+受保护ota-national-restore-20261028-booking-review.json及本批block/trial/window收据记录实际证据；下一步先等Airbnb真实结果，禁止盲目补发。
+
+Harold随后明确回复“也恢复6个全国OTA计划”，范围现包含Booking、Airbnb、Expedia、Bookabach、Agoda、Trip的既有
+pilot-ota-<source>-daily全国发现/报价计划。此授权不同于上轮仅恢复68样本；不豁免原日预算6、并发1、NZ工作日09–17避让、
+完整匿名公开报价/必收费用、D-039、真实交付/ACK或证据门槛，不使用RAW_ONLY观察替代正式价格验收。
+
+现场六计划均关闭，最新全国父Job均为旧失败/过期结果，不能直接宣称恢复验收通过。已保存来源/计划前态，
+登记恢复审计cmvpp2br80000qo49q7bst8gr（authorizationId=ota-national-restore-20261027）。
+使用现行enqueueProductionOtaTrialTransaction创建Booking首轮Job cmvpp37bl0000qo5qxrsomf64，
+runAt=2026-10-27T04:00:00Z，即NZ 10-27 17:00／Sydney 15:00，maxAttempts=1；尚未执行抓取。
+按beginProductionOtaRepairAcceptance追加本版f1da82b4/bc2b87d验收边界，前序cmv3febw20000o90xr23czdd5及全部旧窗口/失败保留。
+Booking目前仅重开受控验证准入（PILOT/DEGRADED），每日计划仍关闭；其余五来源按同一顺序后续串行推进，未伪造HEALTHY。
+
+既有受保护release目录内ota-national-restore-20261027.{py,ts}为有界操作入口，manifest绑定实际哈希；
+仅允许六个原有来源/原payload，每来源最多两轮新Job，不取消共享工作。第一轮须实际发现及精确房型公开正价、完整费用、交付和证据SHA通过，
+才准入第二轮；两轮后调用未放宽的enableProductionOtaScheduleTransaction。任何失败留存并暂停该来源，不重试来凑数。
+这只是运维操作器，未修改应用源码、部署镜像或全局策略；前态、注册/排队/验收边界及日志均在既有运行目录保存。
+
+复用本聊天原已暂停的tymra heartbeat，改为“全国OTA计划恢复”，从Sydney 10-27 15:15（NZ17:15）起每小时续查；
+状态不变时静默，有新异常/需人工动作及时在本聊天报告。每个来源最终为实际启用或有证据的保护暂停；
+全部处理后暂停heartbeat，最迟NZ 10-28 18:00报告剩余缺口并停止，未授权修改其余公开来源、68样本新暂停、账号或预算。
+本节完成恢复授权、首轮排队与后续安排，六计划仍待真实验证，不写成已全部启用或首个自然周期已通过。
+
+## 2026-10-27 采集恢复：76 个现行计划启用，3 个公开来源受阻
+
+Harold在两端发布完成后另行授权“现在开启所有生产环境的抓取，并看下抓取的情况”，
+本次授权取代下节发布期间“不解除暂停”的限制；不改变采集身份、固定对象、日期、来源预算、并发1、办公室时段及遇阻自动暂停规则。
+生产仍为下节Tymra e7/Argus b741，未重启或重新部署服务，未触发账号登录、短信、付费功能或其他调用方工作。
+
+先保存完整来源/计划控制快照，再在行锁及当前状态校验下清除现行68样本的21个held和Bookabach来源暂停；
+审计cmvpnngrl0000qo3nizqbweja，authorizationId=collection-resume-20261027。manifestHash、68对象、身份绑定和每日cadence不变，
+历史失败/任务键及报价不重写，不为失败的同日任务自动补发。新窗口由原Scheduler自然派发；遇到新异常仍执行现行保护。
+
+截至NZ 2026-10-27 08:50，本次恢复后的住宿报价任务16次成功、1次在途；观察到12条有价报价及5条不可订，
+一项任务可含多个独立方案，观察条数不等同任务数。Booking/Expedia/Trip/Airbnb均有新成功；所有报价仍为RAW_ONLY，
+正式RateObservation仍63条，不能将本轮观察升格为正式可比价格。当前held=[]、stoppedSources=[]，Bookabach允许后续自然任务执行，尚未据此声称本轮已采成功。
+
+公开来源仅恢复原有计划及原payload，先通过实际采集和交付，不批量设置HEALTHY：
+
+| 来源 | 本次实际结果 | 恢复状态 |
+| --- | --- | --- |
+| Christchurch大学日期 | 原3请求/周计划有界采集处理23条，2次Argus交付通过 | 已恢复原周计划 |
+| Palmerston North机场 | 原有界计划处理2条，证据及交付通过 | 已恢复原周计划 |
+| Eventfinda | 原完整payload两轮62/99条成功、0失败；8次Argus交付完成 | 通过现行recovery-enable门禁，恢复每日计划 |
+| 交通部航空准点率 | 一次真实有界采集TIMEOUT，Job cmvpnt3fy0000qoouamgeaadu / Run cmvpnt3n4001uqo06lacg5k22 | 自动保护暂停；失败回执保存，deliveryVerifiedAt为空，不算有效采集 |
+| 滑雪季 | 正常健康探测返回HTTP 403 | 未强行恢复或绕过访问限制 |
+| Eventbrite | 正常健康探测返回HTTP 405 | 未强行恢复，需排查来源入口/访问方式 |
+
+Eventfinda的两轮是逐轮成功后再进入下一轮；共享队列先前有工作时等待，不取消任务。
+机场/交通部浏览器健康探测是临时性状态，实际探针沿用已批准的productionCanary及注册适配器，保持DEGRADED直到真实结果，未伪造健康。
+所有原周期/来源预算保留，恢复后不立即重复刚完成的公开来源整轮；NZ工作日09–17自动采集延后至17点，属于正常等待。
+
+本轮27次成功Argus执行全部deliveryVerifiedAt已填；54份新本地证据文件SHA通过，另25份PostgreSQL证据按当前canonical hash核验通过，
+未发现成功任务缺证据/哈希错误。交通部失败与在途任务单独记录，不将尚待交付的引用误报为丢失。
+现行计划76启用，3个上述公开来源保护暂停；此阶段另6个全国OTA独立发现/报价计划尚未纳入，后续明确授权与恢复安排见上节，
+被现行68计划取代的旧三对象试运行继续关闭。旧跨日heartbeat未恢复，本次不建立长期监控。
+受保护收据位于既有tymra-release-20261023-1运行目录，前缀collection-resume-20261027，包含前态快照、审计、逐来源操作、实际观察和证据校验；
+本文仅记操作快照，后续自然任务仍可能更新进度或按规则重新暂停。
+
 ## 2026-10-27 当前生产：两端 main 修复已发布，暂停与来源保护保持
 
 Harold明确授权“push所有改动并发布到生产环境”，覆盖此前暂缓的两端生产切换；不解除样本暂停，不重跑历史任务。
