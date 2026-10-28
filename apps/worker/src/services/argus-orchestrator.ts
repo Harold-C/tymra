@@ -31,7 +31,7 @@ import { isSelectedPanelJob, selectedJobSchema } from "../operations/selected-pa
 import { legacyOtaDailyWhere } from "../operations/selected-panel-budget";
 
 const pollDelayMs = 1_000;
-const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"]);
+const queueAwarePublicConnectors = new Set(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public", "eventbrite-public"]);
 
 function queueAwareCapture(environment: Environment, connectorId: string, payload: unknown) {
   const selected = selectedJobSchema.safeParse(payload);

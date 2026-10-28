@@ -190,7 +190,7 @@ describe("durable Argus orchestration", () => {
     expect(mocks.cancel).toHaveBeenCalledWith({...environment,NODE_ENV:"production"},"argus-1",true);
     expect(mocks.executionUpdate).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:"CANCEL_REQUESTED",errorCategory:"ACCESS_CHALLENGE"})}));
   });
-  it.each(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public"])("allows %s to wait in the shared queue beyond its execution timeout", async (connectorId) => {
+  it.each(["eventfinda-public", "ticketmaster-public", "sporty-school-sport-public", "eventbrite-public"])("allows %s to wait in the shared queue beyond its execution timeout", async (connectorId) => {
     const submittedAt = new Date(Date.now() - 240_000);
     mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId, submittedAt, deadlineAt: new Date(submittedAt.getTime() + 180_000) });
     mocks.parentFind.mockResolvedValue({ status: "PENDING" });
@@ -248,9 +248,9 @@ describe("durable Argus orchestration", () => {
     expect(deadline).toBeGreaterThan(Date.now() + 3_599_000); expect(deadline).toBeLessThanOrEqual(Date.now() + 3_600_000);
   });
 
-  it("derives the execution deadline from Argus start time without extending it on each poll", async () => {
+  it.each(["eventfinda-public", "eventbrite-public"])("derives the %s execution deadline from Argus start time without extending it on each poll", async connectorId => {
     const started = new Date(Date.now() - 60_000);
-    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "eventfinda-public", submittedAt: new Date(Date.now() - 300_000) });
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId, submittedAt: new Date(Date.now() - 300_000) });
     mocks.parentFind.mockResolvedValue({ status: "PENDING" });
     mocks.getJob.mockResolvedValue({ ok: true, job: { job_id: "argus-1", status: "RUNNING", started_at: started.toISOString() } });
     for (let i = 0; i < 2; i++) await expect(pollArgusExecution(environment, "execution-1")).rejects.toBeInstanceOf(DeferredJobError);
@@ -258,10 +258,10 @@ describe("durable Argus orchestration", () => {
     expect(mocks.executionUpdate.mock.calls.map(([value]) => value.data.deadlineAt)).toEqual([new Date(started.getTime() + 180_000), new Date(started.getTime() + 180_000)]);
   });
 
-  it.each(["queue", "execution", "late-start"])("cancels only the expired public capture and confirms release: %s", async (phase) => {
+  it.each(["ticketmaster-public", "eventbrite-public"].flatMap(connectorId => ["queue", "execution", "late-start"].map(phase => ({ connectorId, phase }))))("cancels only the expired $connectorId capture and confirms release: $phase", async ({ connectorId, phase }) => {
     const submittedAt = new Date(Date.now() - (phase === "execution" ? 500_000 : 3_700_000));
     const started_at = phase === "queue" ? null : new Date(Date.now() - (phase === "execution" ? 240_000 : 1_000)).toISOString();
-    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId: "ticketmaster-public", submittedAt });
+    mocks.executionFind.mockResolvedValue({ ...activeExecution(), connectorId, submittedAt });
     mocks.parentFind.mockResolvedValue({ status: "PENDING" });
     mocks.getJob.mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: phase === "queue" ? "QUEUED" : "RUNNING", started_at } }).mockResolvedValueOnce({ ok: true, job: { job_id: "argus-1", status: "CANCELLED" } });
     await pollArgusExecution(environment, "execution-1");
