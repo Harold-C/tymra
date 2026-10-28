@@ -181,7 +181,7 @@ export function nextArgusMarketPilotPass(runsNewestFirst: readonly {
   return passed + 1;
 }
 
-export async function enableProductionArgusMarketPilot(sourceKey: string, environment: Environment) {
+export async function enableProductionArgusMarketPilot(sourceKey: string, environment: Environment, recovery?: { existingScheduleId: string }) {
   if (environment.NODE_ENV !== "production" || !browserKeys.has(sourceKey)) throw new Error("Argus market pilot requires one approved production source");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: sourceKey } });
   const acceptanceStart = argusPilotAcceptanceStart(source.metadata);
@@ -226,7 +226,7 @@ export async function enableProductionArgusMarketPilot(sourceKey: string, enviro
     const result = await getArgusJobResult(environment, execution.argusJobId);
     if (result.ok || result.httpStatus !== 410) throw new Error("Argus market pilot result has not been purged after ACK");
   }
-  const enabled = await enableProductionPublicPilot(sourceKey, environment.NODE_ENV);
+  const enabled = await enableProductionPublicPilot(sourceKey, environment.NODE_ENV, recovery);
   return { ...enabled, argusJobsPurged: executions.length, verifiedEvidence, mutationPerformed: true };
 }
 

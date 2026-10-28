@@ -228,6 +228,18 @@ export function verifiedThreeResortSkiRun(
     && SKI_SEASON_SOURCES.every((source) => valid.some((record) => record.resortId === source.resortId && record.sourceUrl === source.url));
 }
 
+export function verifiedThreeResortSkiSignals(
+  runs: readonly { id: string }[],
+  signals: readonly { externalId: string; lastCollectionRunId: string }[],
+) {
+  const accepted = new Set(runs.map((run) => run.id));
+  if (runs.length !== 2 || accepted.size !== 2) return false;
+  const current = signals.filter((signal) => accepted.has(signal.lastCollectionRunId));
+  const ids = new Set(current.map((signal) => signal.externalId));
+  return current.length === 3 && ids.size === 3 && SKI_SEASON_SOURCES.every((resort) =>
+    current.filter((signal) => new RegExp(`^ski-season:${resort.resortId}:\\d{4}$`, "u").test(signal.externalId)).length === 1);
+}
+
 export function publicPilotSchedulePayload(sourceId: string) {
   if (!pilotKeys.has(sourceId)) throw new Error(`Source is outside the approved public pilot: ${sourceId}`);
   const marketScope = sourceId === "dunedinnz_events" ? "dunedin"
@@ -256,8 +268,8 @@ export function isProductionPublicPilotSchedule(schedule: {
     && Object.entries(expected).every(([key, value]) => (payload as Record<string, unknown>)[key] === value);
 }
 
-export async function enableProductionPublicPilot(sourceId: string, nodeEnv: string) {
-  return prisma.$transaction((transaction) => enableProductionPublicPilotTransaction(transaction, sourceId, nodeEnv));
+export async function enableProductionPublicPilot(sourceId: string, nodeEnv: string, recovery?: { existingScheduleId: string }) {
+  return prisma.$transaction((transaction) => enableProductionPublicPilotTransaction(transaction, sourceId, nodeEnv, recovery));
 }
 
 export function argusPilotAcceptanceStart(metadata: unknown): Date | null {
@@ -268,8 +280,9 @@ export function argusPilotAcceptanceStart(metadata: unknown): Date | null {
   return Number.isNaN(date.getTime()) || date.toISOString() !== value ? null : date;
 }
 
-export async function enableProductionPublicPilotTransaction(transaction: Prisma.TransactionClient, sourceId: string, nodeEnv: string) {
+export async function enableProductionPublicPilotTransaction(transaction: Prisma.TransactionClient, sourceId: string, nodeEnv: string, recovery?: { existingScheduleId: string }) {
   if (nodeEnv !== "production" || !pilotKeys.has(sourceId)) throw new Error("Public pilot requires an approved production source");
+  if (recovery) await transaction.$queryRaw`SELECT id FROM "ScheduleDefinition" WHERE id = ${recovery.existingScheduleId} FOR UPDATE`;
   const source = await transaction.dataSource.findUnique({ where: { key: sourceId } });
   const metadata = source?.metadata;
   if (!source || !source.enabled || source.operationalStatus !== "HEALTHY" || source.isDemo
@@ -317,11 +330,10 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
       || values.requests < 2 || values.requests > publicPilotRequestLimit(sourceId);
   })) throw new Error("Canterbury annual-event pilot did not visit both official event pages within budget");
   if (sourceId === "ski_seasons_nz") {
-    const currentYear = await transaction.sourceMarketSignal.findMany({
-      where: { dataSourceId: source.id }, select: { externalId: true },
+    const seasons = await transaction.sourceMarketSignal.findMany({
+      where: { dataSourceId: source.id }, select: { externalId: true, lastCollectionRunId: true },
     });
-    const seasonIds = new Set(currentYear.map((signal) => signal.externalId));
-    if (seasonIds.size !== 3 || !SKI_SEASON_SOURCES.every((resort) => [...seasonIds].some((id) => id.startsWith(`ski-season:${resort.resortId}:`)))) {
+    if (!verifiedThreeResortSkiSignals(runs, seasons)) {
       throw new Error("Ski pilot has not persisted all three official resorts");
     }
     for (const run of runs) {
@@ -409,11 +421,20 @@ export async function enableProductionPublicPilotTransaction(transaction: Prisma
     }
   }
   const key = `pilot-public-${sourceId}-weekly`;
-  if (await transaction.scheduleDefinition.findUnique({ where: { key } })) throw new Error("Pilot schedule already exists");
-  const schedule = await transaction.scheduleDefinition.create({ data: {
-    key, jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection",
-    cronExpression: "weekly", payload: publicPilotSchedulePayload(sourceId),
-    enabled: true, nextRunAt: nextCollectionOutsideOfficeHours(new Date(Date.now() + 7 * 86_400_000)),
-  } });
+  const existing = await transaction.scheduleDefinition.findUnique({ where: { key } });
+  if (existing && !recovery) throw new Error("Pilot schedule already exists");
+  if (recovery && (!existing || existing.id !== recovery.existingScheduleId || existing.enabled
+    || !isProductionPublicPilotSchedule(existing) || !acceptanceStart
+    || acceptanceStart.getTime() > Date.now() || Date.now() - acceptanceStart.getTime() > 7 * 86_400_000)) {
+    throw new Error("Pilot recovery requires the exact paused schedule and a fresh browser acceptance window");
+  }
+  const nextRunAt = nextCollectionOutsideOfficeHours(new Date(Date.now() + 7 * 86_400_000));
+  const schedule = existing
+    ? await transaction.scheduleDefinition.update({ where: { id: existing.id }, data: { enabled: true, nextRunAt } })
+    : await transaction.scheduleDefinition.create({ data: {
+      key, jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection",
+      cronExpression: "weekly", payload: publicPilotSchedulePayload(sourceId),
+      enabled: true, nextRunAt,
+    } });
   return { sourceId, schedule: { key: schedule.key, enabled: schedule.enabled, nextRunAt: schedule.nextRunAt }, acceptedRuns: runs.map((run) => run.id), mutationPerformed: true };
 }

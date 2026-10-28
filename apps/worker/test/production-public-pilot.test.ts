@@ -4,11 +4,32 @@ import { SKI_SEASON_SOURCES } from "@tymra/providers/ski-season-adapter";
 import { parseMetServiceCapAlert, parseMetServiceCapFeed } from "@tymra/providers/public/metservice-cap";
 import { isOurAucklandDetailUrl } from "../src/collection/ourauckland-detail-url";
 
-import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
+import { ARGUS_MARKET_PILOT_SOURCE_KEYS, argusPilotAcceptanceStart, isProductionPublicPilotSchedule, PUBLIC_PILOT_SOURCE_KEYS, publicPilotRange, publicPilotRequestLimit, publicPilotSchedulePayload, publicPilotWindowDays, verifiedMetServiceIncrementalPasses, verifiedSchoolSportCanterburyZeroPass, verifiedThreeResortSkiRun, verifiedThreeResortSkiSignals, zeroBusinessPublicPilotPassAccepted } from "../src/operations/production-public-pilot";
 import { isArgusPilotEvidencePath, isLegacyChristchurchCouncilDirectPilot, isLegacyCouncilDirectPilot, isLegacyEventWebPilot, isLegacySkiDirectPilot, nextArgusMarketPilotPass } from "../src/operations/production-argus-market-pilot";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../src/collection/ski-season-argus";
 
 describe("direct-public production pilot", () => {
+  it("accepts the three freshly verified ski seasons while retaining previous years", () => {
+    const runs = [{ id: "second" }, { id: "first" }];
+    const old = ["mt-hutt", "the-remarkables"].map((resort) => ({
+      externalId: `ski-season:${resort}:2026`, lastCollectionRunId: "historical",
+    }));
+    const current = SKI_SEASON_SOURCES.map((resort) => ({
+      externalId: `ski-season:${resort.resortId}:${resort.resortId === "whakapapa" ? 2026 : 2027}`,
+      lastCollectionRunId: "second",
+    }));
+    const all = [...old, ...current], before = structuredClone(all);
+    expect(verifiedThreeResortSkiSignals(runs, all)).toBe(true);
+    expect(all).toEqual(before);
+    expect(verifiedThreeResortSkiSignals(runs, [...old, ...current.slice(0, 2)])).toBe(false);
+    expect(verifiedThreeResortSkiSignals(runs, [...old, ...current.map((signal) => ({
+      ...signal, lastCollectionRunId: signal.externalId.includes("whakapapa") ? "historical" : "second",
+    }))])).toBe(false);
+    expect(verifiedThreeResortSkiSignals(runs, [...all, { ...old[0]!, lastCollectionRunId: "first" }])).toBe(false);
+    expect(verifiedThreeResortSkiSignals(runs, current.map((signal, index) => index === 0
+      ? { ...signal, externalId: "ski-season:mt-hutt:2027:unverified" } : signal))).toBe(false);
+    expect(verifiedThreeResortSkiSignals([{ id: "second" }, { id: "second" }], all)).toBe(false);
+  });
   it("bounds multi-step native collectors by the requests they actually require", () => {
     for (const source of ["queenstownnz_events", "southlandnz_events", "wellington_airport_monthly"]) expect(publicPilotRequestLimit(source)).toBe(2);
     expect(publicPilotRequestLimit("queenstown_airport_monthly")).toBe(6);

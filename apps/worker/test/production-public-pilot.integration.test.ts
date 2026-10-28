@@ -261,7 +261,35 @@ it("requires two queued Eventfinda passes with locally retained Argus evidence",
     for (const artifactId of artifacts) {
       await transaction.rawArtifact.update({ where: { id: artifactId }, data: { storageRef: `tymra-evidence:${artifactId}/page.html` } });
     }
-    expect((await enableProductionPublicPilotTransaction(transaction, sourceKey, "production")).schedule.enabled).toBe(true);
+    const activated = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production");
+    expect(activated.schedule.enabled).toBe(true);
+    const original = await transaction.scheduleDefinition.findUniqueOrThrow({ where: { key: activated.schedule.key } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production"))
+      .rejects.toThrow("Pilot schedule already exists");
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: original.id }))
+      .rejects.toThrow("exact paused schedule");
+    await transaction.scheduleDefinition.update({ where: { id: original.id }, data: { enabled: false, nextRunAt: null } });
+    await transaction.rawArtifact.update({ where: { id: artifacts[0]! }, data: { storageRef: `argus-evidence:${artifacts[0]}/page.html` } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: original.id }))
+      .rejects.toThrow("retained locally");
+    await transaction.rawArtifact.update({ where: { id: artifacts[0]! }, data: { storageRef: `tymra-evidence:${artifacts[0]}/page.html` } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: "different-plan" }))
+      .rejects.toThrow("exact paused schedule");
+    await transaction.scheduleDefinition.update({ where: { id: original.id }, data: { payload: { sourceId: sourceKey, limit: 99 } } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: original.id }))
+      .rejects.toThrow("exact paused schedule");
+    await transaction.scheduleDefinition.update({ where: { id: original.id }, data: { payload: original.payload! } });
+    const freshMetadata = (await transaction.dataSource.findUniqueOrThrow({ where: { id: source.id } })).metadata!;
+    await transaction.dataSource.update({ where: { id: source.id }, data: { metadata: {
+      boundedProductionCanary: true, browserPilot: true,
+      pilotAcceptanceStartedAt: new Date(Date.now() - 8 * 86_400_000).toISOString(), marker,
+    } } });
+    await expect(enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: original.id }))
+      .rejects.toThrow("fresh browser acceptance window");
+    await transaction.dataSource.update({ where: { id: source.id }, data: { metadata: freshMetadata } });
+    const recovered = await enableProductionPublicPilotTransaction(transaction, sourceKey, "production", { existingScheduleId: original.id });
+    expect(recovered.schedule.enabled).toBe(true);
+    expect((await transaction.scheduleDefinition.findUniqueOrThrow({ where: { key: original.key } })).id).toBe(original.id);
     throw new Error("ROLLBACK_TEST_TRANSACTION");
   })).rejects.toThrow("ROLLBACK_TEST_TRANSACTION");
   expect(await prisma.scheduleDefinition.findUnique({ where: { key: `pilot-public-${sourceKey}-weekly` } })).toBeNull();
