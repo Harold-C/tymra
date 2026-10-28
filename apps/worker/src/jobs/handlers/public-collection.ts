@@ -2,6 +2,7 @@ import { type Environment } from "@tymra/config";
 import { prisma, type Job } from "@tymra/db";
 import { WorkerService } from "../../services/worker-service";
 import { acknowledgePersistedArgusResults } from "../../services/argus-orchestrator";
+import { persistFailedArgusEvidence } from "../../services/failed-argus-evidence";
 import { DeferredJobError } from "../deferred-job";
 import { publicScheduleFailureKeys } from "../../operations/schedule-policy";
 import { syncIncidentSafely } from "./state";
@@ -27,6 +28,7 @@ export async function handlePublicCollection(
     const run = await prisma.collectionRun.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
     if (run) await syncIncidentSafely(run.id);
     try {
+      await persistFailedArgusEvidence(environment, job.id);
       await acknowledgePersistedArgusResults(environment, job.id);
     } catch (retentionError) {
       process.stderr.write(`${JSON.stringify({ service: "tymra-worker", event: "argus_failure_evidence_retention_failed", jobId: job.id, message: retentionError instanceof Error ? retentionError.message : "Unknown evidence retention failure" })}\n`);
