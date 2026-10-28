@@ -174,7 +174,8 @@ describe("public data adapter contract", () => {
     const request = { marketScope: "christchurch", from: new Date("2026-08-01"), to: new Date("2026-09-01") };
     await expect(publicDataAdapters.eventbrite_events.discover(request, fixtureContext)).resolves.toEqual(["https://www.eventbrite.co.nz/d/new-zealand--christchurch/events/"]);
     await expect(publicDataAdapters.humanitix_events.discover(request, fixtureContext)).resolves.toEqual(["https://humanitix.com/nz/events/nz--canterbury-region--christchurch"]);
-    expect(publicDataAdapters.eventbrite_events.metadata).toMatchObject({ adapterKey: "public:eventbrite:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED" });
+    expect(publicDataAdapters.eventbrite_events.metadata).toMatchObject({ adapterKey: "public:eventbrite:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", dailyBudget: 24, concurrencyLimit: 1 });
+    await expect(publicDataAdapters.eventbrite_events.fetch("https://www.eventbrite.co.nz/d/new-zealand/events/", fixtureContext)).rejects.toMatchObject({ code: "CONFIGURATION_ERROR" });
   });
 
   it("discovers the current Manawatū official event listing path", async () => {
@@ -982,11 +983,11 @@ describe.skipIf(process.env.LIVE_SOURCE_PROBE !== "1")("Christchurch live source
     expect(signals.every((signal) => signal.marketKey === "christchurch" && signal.type === "TOURISM_DEMAND")).toBe(true);
   }, 30_000);
 
-  it("collects bounded Eventbrite, Humanitix and Christchurch Airport data without browser execution", async () => {
+  it("collects bounded Humanitix and Christchurch Airport data without browser execution", async () => {
     const from = new Date();
     const to = new Date(from.getTime() + 180 * 86_400_000);
     const context = { ...liveContext, collectionRange: { from, to }, collectionLimits: { maxRequests: 4, maxRecords: 5, timeoutMs: 30_000, maxBytes: 2_000_000 } };
-    for (const sourceId of ["eventbrite_events", "humanitix_events"]) {
+    for (const sourceId of ["humanitix_events"]) {
       const adapter = publicDataAdapters[sourceId];
       const references = await adapter.discover({ marketScope: "new-zealand", from, to }, context);
       const records = await adapter.fetch(references[0], context);

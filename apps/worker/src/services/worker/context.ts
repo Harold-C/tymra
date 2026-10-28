@@ -58,6 +58,7 @@ export type WorkerContext = {
   executePublicMarketArgusTask: typeof collection_browser_connectors.executePublicMarketArgusTask;
   executeLincolnKeyDatesBrowserTask: typeof collection_browser_connectors.executeLincolnKeyDatesBrowserTask;
   executeCouncilArgusTask: typeof collection_browser_connectors.executeCouncilArgusTask;
+  executeEventbriteArgusTask: typeof collection_browser_connectors.executeEventbriteArgusTask;
   executePriorityArgusEventTask: typeof collection_browser_connectors.executePriorityArgusEventTask;
   persistArgusConnectorPayload: typeof collection_persistence.persistArgusConnectorPayload;
   persistArgusEvidence: typeof collection_persistence.persistArgusEvidence;

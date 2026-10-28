@@ -13,6 +13,7 @@ import { RBNZ_FX_URL } from "../../../collection/rbnz-fx";
 import { lincolnKeyDatesExtractionSchema, normaliseLincolnKeyDateSignals } from "../../../collection/lincoln-university-key-dates";
 import { type ArgusEventSourceId } from "../../../collection/school-sport-ticketek";
 import { christchurchCouncilExtractionSchema, councilArgusRawRecords } from "../../../collection/christchurch-council-argus";
+import { eventbriteExtractionSchema, eventbriteArgusRawRecords, eventbriteListingUrls } from "../../../collection/eventbrite-argus";
 import { aucklandAirportExtractionRecords, aucklandAirportMonthlyExtractionSchema, motAirlinePerformanceExtractionRecords, motAirlinePerformanceExtractionSchema } from "../../../collection/aviation-argus-signals";
 import { publicSkiSeasonExtractionSchema, skiSeasonArgusRawRecord } from "../../../collection/ski-season-argus";
 import { normaliseArgusPublicMarketRecords, officialVenueEventsExtractionSchema, officialVenueResolveExtractionSchema, publicAirportFlightBoardExtractionSchema, publicCruiseScheduleExtractionSchema, publicUniversityKeyDatesExtractionSchema } from "../../../collection/public-market-argus";
@@ -432,11 +433,30 @@ export async function executeCouncilArgusTask(this: WorkerContext, dataSourceId:
   }
 }
 
+export async function executeEventbriteArgusTask(this: WorkerContext, dataSourceId: string, collectionRunId: string, reference: string, context: AdapterContext, dryRun: boolean, parentJobId?: string): Promise<PublicRawRecord[]> {
+  if (!context.collectionRange || !eventbriteListingUrls.some(url => url === reference)) {
+    throw new AdapterError("PARSING_ERROR", "Eventbrite browser task requires the original approved market and bounded date range", false);
+  }
+  const capture = await this.executePriorityArgusEventTask({
+    sourceId: "eventbrite_events", dataSourceId, collectionRunId,
+    connectorId: "eventbrite-public", workflowId: "collect_events", url: reference,
+    maxPages: Math.min(3, context.collectionLimits?.maxRequests ?? 3), dryRun, parentJobId,
+  });
+  try {
+    const parsed = eventbriteExtractionSchema.safeParse(capture.extracted);
+    if (!parsed.success) throw new AdapterError("PARSING_ERROR", "Eventbrite browser result failed its bounded raw contract", false);
+    return eventbriteArgusRawRecords(parsed.data, reference, context.collectionRange, context.collectionLimits?.maxRecords ?? 500);
+  } catch (error) {
+    if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, capture.traceId);
+    throw error;
+  }
+}
+
 export async function executePriorityArgusEventTask(this: WorkerContext, input: {
-  sourceId: ArgusEventSourceId | "christchurch_council_events";
+  sourceId: ArgusEventSourceId | "christchurch_council_events" | "eventbrite_events";
   dataSourceId: string;
   collectionRunId: string;
-  connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "christchurch-council-events";
+  connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "christchurch-council-events" | "eventbrite-public";
   workflowId: "collect_events" | "collect_listing" | "collect_detail";
   url: string;
   entryUrl?: string;

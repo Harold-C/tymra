@@ -79,7 +79,9 @@ describe("direct-public production pilot", () => {
   });
   it("admits only registered direct public sources with exact weekly bounds", () => {
     expect(PUBLIC_PILOT_SOURCE_KEYS).toContain("linz");
-    expect(PUBLIC_PILOT_SOURCE_KEYS).toEqual(expect.arrayContaining(["school_holidays_nz", "eventbrite_events", "humanitix_events"]));
+    expect(PUBLIC_PILOT_SOURCE_KEYS).toEqual(expect.arrayContaining(["school_holidays_nz", "humanitix_events"]));
+    expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("eventbrite_events");
+    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("eventbrite_events");
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("eventfinda");
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("fx_rates");
     expect(PUBLIC_PILOT_SOURCE_KEYS).not.toContain("booking");
@@ -93,7 +95,7 @@ describe("direct-public production pilot", () => {
     expect(isProductionPublicPilotSchedule({ ...valid, payload: { ...valid.payload, extra: true } })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, cronExpression: "daily" })).toBe(false);
     expect(isProductionPublicPilotSchedule({ ...valid, key: "pilot-public-booking-weekly" })).toBe(false);
-    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toHaveLength(32);
+    expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toHaveLength(33);
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("christchurch_council_events");
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("fx_rates");
     expect(ARGUS_MARKET_PILOT_SOURCE_KEYS).toContain("council_calendars");

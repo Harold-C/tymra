@@ -9,6 +9,7 @@ import {
 } from "../collection/school-sport-ticketek";
 import { regionalArgusEventExtractionSchema } from "../collection/regional-argus-events";
 import { christchurchCouncilExtractionSchema } from "../collection/christchurch-council-argus";
+import { eventbriteExtractionSchema } from "../collection/eventbrite-argus";
 import {
   officialVenueEventsExtractionSchema,
   officialVenueResolveExtractionSchema,
@@ -43,7 +44,7 @@ export type ArgusEvidencePointer = ArgusEvidencePointerBase & (
     }
 );
 
-export type ArgusConnectorId = "nz-ski-season-public" | "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public" | "eden-park-public" | "nzicc-public" | "sky-stadium-public" | "forsyth-barr-stadium-public" | "takina-public" | "claudelands-public" | "port-tauranga-cruise-public" | "centreport-cruise-public" | "port-otago-cruise-public" | "dunedin-airport-public" | "rotorua-airport-public" | "hamilton-airport-public" | "hawkes-bay-airport-public" | "new-plymouth-airport-public" | "palmerston-north-airport-public" | "otago-university-key-dates-public" | "victoria-university-key-dates-public" | "waikato-university-key-dates-public" | "massey-university-key-dates-public" | "aut-university-key-dates-public" | "christchurch-council-events";
+export type ArgusConnectorId = "nz-ski-season-public" | "ticketmaster-public" | "eventfinda-public" | "ourauckland-public" | "rbnz-fx" | "lincoln-university-key-dates" | "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "auckland-airport-monthly" | "mot-airline-performance" | "booking-public" | "airbnb-public" | "expedia-public" | "wotif-public" | "hotels-public" | "bookabach-public" | "vrbo-public" | "agoda-public" | "trip-public" | "eden-park-public" | "nzicc-public" | "sky-stadium-public" | "forsyth-barr-stadium-public" | "takina-public" | "claudelands-public" | "port-tauranga-cruise-public" | "centreport-cruise-public" | "port-otago-cruise-public" | "dunedin-airport-public" | "rotorua-airport-public" | "hamilton-airport-public" | "hawkes-bay-airport-public" | "new-plymouth-airport-public" | "palmerston-north-airport-public" | "otago-university-key-dates-public" | "victoria-university-key-dates-public" | "waikato-university-key-dates-public" | "massey-university-key-dates-public" | "aut-university-key-dates-public" | "christchurch-council-events" | "eventbrite-public";
 export type ArgusWorkflowId = "collect_season" | "collect_listing" | "collect_detail" | "collect_exchange_rates" | "collect_key_dates" | "collect_events" | "collect_monthly_traffic" | "collect_monthly_performance" | "resolve_listing" | "discover_listings" | "collect_rates" | "resolve_venue" | "collect_cruise_schedule" | "collect_flights";
 
 type ArgusDataContract = {
@@ -106,6 +107,10 @@ const argusDataContracts = {
   },
   "christchurch-council-events:collect_events": {
     dataSchema: "christchurch-council-events.collect_events",
+    schemaVersion: "1.0.0",
+  },
+  "eventbrite-public:collect_events": {
+    dataSchema: "eventbrite-public.collect_events",
     schemaVersion: "1.0.0",
   },
   "auckland-airport-monthly:collect_monthly_traffic": {
@@ -807,6 +812,8 @@ function assertArgusDataContract(
           ? regionalArgusEventExtractionSchema
           : connectorId === "christchurch-council-events" && workflowId === "collect_events"
             ? christchurchCouncilExtractionSchema
+          : connectorId === "eventbrite-public" && workflowId === "collect_events"
+            ? eventbriteExtractionSchema
           : connectorId === "auckland-airport-monthly" && workflowId === "collect_monthly_traffic"
             ? aucklandAirportMonthlyExtractionSchema
             : connectorId === "mot-airline-performance" && workflowId === "collect_monthly_performance"

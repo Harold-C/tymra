@@ -347,6 +347,32 @@ describe("Argus async Job client", () => {
     assert.equal(capture.max_pages, 3);
   });
 
+  it.each(["valid", "bad-count", "bad-json"])("submits a bounded Eventbrite task and validates its %s raw contract", async scenario => {
+    const url = "https://www.eventbrite.co.nz/d/new-zealand/events/";
+    let requestBody: Record<string, unknown> | undefined;
+    server = jobServer(async request => {
+      requestBody = JSON.parse(await body(request));
+      return {
+        ...baseResult("eventbrite-test", "collect_events", "eventbrite-public"),
+        data: {
+          data_schema: "eventbrite-public.collect_events", schema_version: "1.0.0", canonicalUrl: url,
+          jsonLdPages: [{ url, blocks: [scenario === "bad-json" ? "not-json" : '{"@type":"Event"}'] }],
+          pageCount: scenario === "bad-count" ? 2 : 1, requestCount: 1, truncated: false,
+        },
+      };
+    });
+    const response = await captureBrowserTaskWithArgus(await listenEnvironment(), {
+      traceId: "eventbrite-test", connectorId: "eventbrite-public", workflowId: "collect_events", url, maxPages: 3,
+    });
+    assert.equal(response.ok, scenario === "valid");
+    const capture = (requestBody?.captures as Array<Record<string, unknown>>)[0]!;
+    assert.equal(capture.connector_id, "eventbrite-public");
+    assert.equal(capture.url, url);
+    assert.equal(capture.max_pages, 3);
+    assert.equal(Object.hasOwn(capture, "max_records"), false, "The raw browser contract does not accept business record limits");
+    assert.equal((requestBody?.retry as { max_attempts: number }).max_attempts, 1);
+  });
+
   it("accepts the Auckland Airport monthly passenger contract", async () => {
     server = jobServer(async () => aucklandAirportMonthlyResult());
     const environment = await listenEnvironment();

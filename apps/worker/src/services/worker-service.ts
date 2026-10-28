@@ -78,6 +78,7 @@ export class WorkerService {
       executePublicMarketArgusTask: (...args) => this.executePublicMarketArgusTask(...args),
       executeLincolnKeyDatesBrowserTask: (...args) => this.executeLincolnKeyDatesBrowserTask(...args),
       executeCouncilArgusTask: (...args) => this.executeCouncilArgusTask(...args),
+      executeEventbriteArgusTask: (...args) => this.executeEventbriteArgusTask(...args),
       executePriorityArgusEventTask: (...args) => this.executePriorityArgusEventTask(...args),
       persistArgusConnectorPayload: (...args) => this.persistArgusConnectorPayload(...args),
       persistArgusEvidence: (...args) => this.persistArgusEvidence(...args),
@@ -386,11 +387,18 @@ export class WorkerService {
     return collection_browser_connectors.executeCouncilArgusTask.call(this.context, dataSourceId, collectionRunId, reference, context, dryRun, parentJobId);
   }
 
+  private async executeEventbriteArgusTask(
+    dataSourceId: string, collectionRunId: string, reference: string,
+    context: AdapterContext, dryRun: boolean, parentJobId?: string,
+  ): Promise<PublicRawRecord[]> {
+    return collection_browser_connectors.executeEventbriteArgusTask.call(this.context, dataSourceId, collectionRunId, reference, context, dryRun, parentJobId);
+  }
+
   private async executePriorityArgusEventTask(input: {
-    sourceId: ArgusEventSourceId | "christchurch_council_events";
+    sourceId: ArgusEventSourceId | "christchurch_council_events" | "eventbrite_events";
     dataSourceId: string;
     collectionRunId: string;
-    connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "christchurch-council-events";
+    connectorId: "sporty-school-sport-public" | "ticketek-public" | "dunedinnz-public" | "christchurch-council-events" | "eventbrite-public";
     workflowId: "collect_events" | "collect_listing" | "collect_detail";
     url: string;
     entryUrl?: string;

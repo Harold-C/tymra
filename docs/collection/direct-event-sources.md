@@ -1,9 +1,10 @@
 # Direct event and transport sources
 
-Last reviewed: 2026-10-06. Current operating evidence is in [traceability](../traceability.md).
+Last reviewed: 2026-10-29. Current operating evidence is in [traceability](../traceability.md).
 
-Tymra directly collects Eventbrite New Zealand, Humanitix New Zealand and Christchurch Airport
-without Argus. All development schedules are seeded disabled.
+Humanitix New Zealand and Christchurch Airport use direct HTTP. The Eventbrite repair routes its
+existing public listing through Argus; its actual deployment and acceptance remain separately
+recorded in traceability. All development schedules are seeded disabled.
 
 ## Eventbrite and Humanitix
 
@@ -11,11 +12,22 @@ without Argus. All development schedules are seeded disabled.
 - Bounded pagination deduplicates stable occurrence IDs and stops as soon as the next page adds no
   records. This is important because both platforms may ignore or partially repeat a `page` query.
 - Listing requests read browser-visible schema.org JSON-LD.
+- Eventbrite uses the fixed `eventbrite-public.collect_events` browser contract, version 1.0.0:
+  only the existing NZ and Christchurch listing roots, at most three sequential pages, no private
+  Profile reuse or challenge solving. A production HTTP 405 carrying AWS WAF `captcha` and a
+  Human Verification page is an access challenge, not evidence that GET is the wrong method.
+  Argus supplies bounded raw JSON-LD; Tymra retains existing event identity, date/range, location
+  and promotion rules. Request count includes a terminal duplicate page and is distinct from
+  retained unique pages. Budget 24 and concurrency 1 are unchanged. First browser enablement
+  requires two fresh successful runs with persisted evidence/ACK. Pause this plan before reverting
+  Tymra to a version that only supports its old HTTP adapter. Argus rollback must use a validated
+  reader for Eventbrite request/result/lineage history, including ACKed records; the earlier image
+  cannot decode that history. The compatible rollback reader rejects new, unregistered execution.
 - Complete listing records are normalized without opening one detail page per event.
 - Stable source series and occurrence IDs include the canonical source URL and start time.
 - Venue, address, status, offers, organizer, performers, images and description are retained when
   present. Impact remains `PENDING_EVIDENCE` until attendance or capacity evidence exists.
-- Each accepted listing record reports one avoided detail request for collection-efficiency metrics.
+- Eventbrite records measured listing requests; it does not invent an avoided-detail request count.
 
 ## Airport and port transport flow
 

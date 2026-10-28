@@ -19,6 +19,9 @@ class JsonLdEventPlatformAdapter implements PublicDataAdapter {
   }
 
   async fetch(reference: string, context: AdapterContext): Promise<PublicRawRecord[]> {
+    if (this.metadata.sourceId === "eventbrite_events") {
+      throw new AdapterError("CONFIGURATION_ERROR", "Eventbrite collection is orchestrated by the public Argus browser connector", false);
+    }
     assertHost(reference, this.metadata.supportedDomains);
     const maxRequests = Math.max(1, context.collectionLimits?.maxRequests ?? 3);
     const collected = new Map<string, PublicEvent>();
@@ -58,7 +61,12 @@ class JsonLdEventPlatformAdapter implements PublicDataAdapter {
   async normaliseEvents(records: PublicRawRecord[]): Promise<PublicEvent[]> {
     return records.flatMap((record) => isRecord(record.payload) && record.payload.kind === "event" && isPublicEvent(record.payload.event) ? [record.payload.event] : []);
   }
-  async healthCheck(context: AdapterContext): Promise<AdapterHealth> { return endpointHealth(this.listingUrl, this.metadata.sourceName, context); }
+  async healthCheck(context: AdapterContext): Promise<AdapterHealth> {
+    if (this.metadata.sourceId === "eventbrite_events") {
+      return { status: "DEGRADED", checkedAt: new Date(), message: "Argus browser readiness is authoritative", latencyMs: 0, mode: context.mode };
+    }
+    return endpointHealth(this.listingUrl, this.metadata.sourceName, context);
+  }
 }
 
 class ChristchurchAirportAdapter implements PublicDataAdapter {
@@ -135,9 +143,14 @@ class ChristchurchAirportAdapter implements PublicDataAdapter {
 
 export function parsePlatformJsonLdEvents(html: string, finalUrl: string, sourceId: string): PublicEvent[] {
   const { document } = parseHTML(html);
+  return parsePlatformJsonLdBlocks([...document.querySelectorAll("script[type='application/ld+json']")]
+    .map(script => script.textContent), finalUrl, sourceId);
+}
+
+export function parsePlatformJsonLdBlocks(blocks: readonly string[], finalUrl: string, sourceId: string): PublicEvent[] {
   const values: JsonRecord[] = [];
-  for (const script of document.querySelectorAll("script[type='application/ld+json']")) {
-    try { flatten(JSON.parse(script.textContent), values); } catch { /* Ignore malformed unrelated blocks. */ }
+  for (const block of blocks) {
+    try { flatten(JSON.parse(block), values); } catch { /* Ignore malformed unrelated blocks. */ }
   }
   const seen = new Set<string>();
   return values.flatMap((value) => {
@@ -187,7 +200,7 @@ export function parseFlightTime(value: string, now: Date): Date | null {
 }
 
 export const publicEventPlatformAdapters: Record<string, PublicDataAdapter> = {
-  eventbrite_events: new JsonLdEventPlatformAdapter({ sourceId: "eventbrite_events", sourceName: "Eventbrite New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["www.eventbrite.co.nz", "eventbrite.co.nz"], adapterKey: "public:eventbrite:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "eventbrite-http-v2", parserVersion: "platform-jsonld-listing-v1" }, EVENTBRITE_URL, EVENTBRITE_CHRISTCHURCH_URL),
+  eventbrite_events: new JsonLdEventPlatformAdapter({ sourceId: "eventbrite_events", sourceName: "Eventbrite New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["www.eventbrite.co.nz", "eventbrite.co.nz"], adapterKey: "public:eventbrite:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "eventbrite-argus-v1", parserVersion: "platform-jsonld-listing-v1" }, EVENTBRITE_URL, EVENTBRITE_CHRISTCHURCH_URL),
   humanitix_events: new JsonLdEventPlatformAdapter({ sourceId: "humanitix_events", sourceName: "Humanitix New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["humanitix.com", "events.humanitix.com"], adapterKey: "public:humanitix:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "humanitix-http-v2", parserVersion: "platform-jsonld-listing-v1" }, HUMANITIX_URL, HUMANITIX_CHRISTCHURCH_URL),
   christchurch_airport: new ChristchurchAirportAdapter(),
 };

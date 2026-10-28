@@ -21,7 +21,7 @@ export const ARGUS_MARKET_PILOT_SOURCE_KEYS: string[] = [
   ...ARGUS_PUBLIC_MARKET_SOURCES.map((source) => source.sourceId),
   "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events",
   "auckland_airport_monthly", "mot_airline_performance", "fx_rates", "eventfinda", "ticketmaster", "council_calendars", "christchurch_council_events",
-  "ski_seasons_nz",
+  "ski_seasons_nz", "eventbrite_events",
 ];
 const browserPilotKeys = new Set(ARGUS_MARKET_PILOT_SOURCE_KEYS);
 export const PUBLIC_PILOT_SOURCE_KEYS: string[] = registrySourceSeedRecords()

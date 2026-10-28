@@ -210,6 +210,8 @@ export async function collectSource(this: WorkerContext, sourceId: string, marke
               ? await this.executeAviationArgusTask(sourceId, source.id, run.id, reference, context, options.dryRun === true, options.jobId)
             : sourceId === "christchurch_council_events"
               ? await this.executeCouncilArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
+            : sourceId === "eventbrite_events"
+              ? await this.executeEventbriteArgusTask(source.id, run.id, reference, context, options.dryRun === true, options.jobId)
             : argusPublicMarketSource(sourceId)
               ? await this.executePublicMarketArgusTask(sourceId, source.id, run.id, context, options.dryRun === true, options.jobId)
             : await adapter.fetch(reference, boundedPublicSchedule && sourceId === "geonet"

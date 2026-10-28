@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -1187,6 +1187,63 @@ describe("Worker baseline pipeline", () => {
         await prisma.sourceCrawlTarget.deleteMany({ where: { dataSourceId: source.id, url: ticketekUrl } });
       }
       await prisma.rawArtifact.deleteMany({ where: { collectionRunId: { in: runIds } } });
+    }
+  });
+
+  it("persists Eventbrite raw browser events idempotently and ACKs only saved evidence", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "eventbrite_events" } });
+    const suffix = randomUUID();
+    const url = "https://www.eventbrite.co.nz/d/new-zealand--christchurch/events/";
+    let challenge = false, acknowledgements = 0;
+    const captures: TestArgusCapture[] = [];
+    const argusServer = createArgusServer(capture => {
+      captures.push(capture);
+      if (challenge) return argusChallenge(capture, "Human Verification", "d");
+      return argusSuccess(capture, {
+        data_schema: "eventbrite-public.collect_events", schema_version: "1.0.0", canonicalUrl: url,
+        pageCount: 1, requestCount: 2, truncated: false,
+        jsonLdPages: [{ url, blocks: [JSON.stringify({ "@type": "Event", name: `Public fixture ${suffix}`,
+          url: `https://www.eventbrite.co.nz/e/fixture-${suffix}`, startDate: "2026-08-21T10:00:00+12:00",
+          endDate: "2026-08-21T18:00:00+12:00", location: { "@type": "Place", name: `Fixture Venue ${suffix}`,
+            address: { streetAddress: "1 Fixture Street", addressLocality: "Christchurch", addressRegion: "Canterbury", addressCountry: "NZ" } } })] }],
+      }, "Public fixture", "d");
+    }, () => { acknowledgements++; });
+    await new Promise<void>(resolve => argusServer.listen(0, "127.0.0.1", resolve));
+    const address = argusServer.address();
+    if (!address || typeof address === "string") throw new Error("Eventbrite test server did not bind");
+    const root = await mkdtemp(path.join(tmpdir(), "tymra-eventbrite-integration-"));
+    const acceptanceService = new WorkerService({ ...environment, NODE_ENV: "development", SCHEDULER_ENABLED: false,
+      ARGUS_API_BASE_URL: `http://127.0.0.1:${address.port}`, ARGUS_EVIDENCE_ROOT: root,
+      ARGUS_API_TOKEN: "integration-argus-token-with-thirty-two-characters" });
+    const options = { from: new Date("2026-08-01T00:00:00Z"), to: new Date("2026-09-01T00:00:00Z"), localAcceptance: true };
+    const count = () => prisma.sourceEventOccurrence.count({ where: { dataSourceId: source.id,
+      externalId: { contains: suffix } } });
+    try {
+      for (let pass = 0; pass < 2; pass++) {
+        const result = await acceptanceService.collectSource("eventbrite_events", "christchurch", undefined, options);
+        expect(result.events).toBe(1);
+        expect(result.counters.requests).toBe(2);
+        expect(await count()).toBe(1);
+        const artifacts = await prisma.rawArtifact.findMany({ where: { collectionRunId: result.runId,
+          storageRef: { startsWith: "tymra-evidence:" } } });
+        expect(artifacts).toHaveLength(2);
+        for (const artifact of artifacts) {
+          const bytes = await readFile(path.join(root, artifact.storageRef.slice("tymra-evidence:".length)));
+          expect(createHash("sha256").update(bytes).digest("hex")).toBe(artifact.contentHash);
+        }
+        expect(acknowledgements).toBe(pass + 1);
+      }
+      expect(captures).toHaveLength(2);
+      expect(captures.every(capture => capture.connector_id === "eventbrite-public" && capture.workflow_id === "collect_events" && capture.url === url)).toBe(true);
+      challenge = true;
+      await expect(acceptanceService.collectSource("eventbrite_events", "christchurch", undefined, options)).rejects.toMatchObject({ code: "RATE_LIMITED" });
+      expect(await count()).toBe(1);
+      expect(captures).toHaveLength(3);
+      expect(acknowledgements).toBe(3);
+    } finally {
+      argusServer.closeAllConnections();
+      await new Promise<void>(resolve => argusServer.close(() => resolve()));
+      await rm(root, { recursive: true, force: true });
     }
   });
 

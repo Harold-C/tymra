@@ -112,13 +112,13 @@ export function registrySourceSeedRecords() {
     ...publicSources.map(([key, name, supportedDomains]) => {
       const liveTransportImplemented = argusPublicMarketSourceKeys.has(key) || ["public_holidays_nz", "school_holidays_nz", "ski_seasons_nz", "geonet", "doc_alerts", "interislander_alerts", "eventfinda", "ticketmaster", "eventbrite_events", "humanitix_events", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "mbie", "stats_nz", "mbie_tourism_flows", "mbie_mrte", "mbie_ivs", "metservice", "nzta", "fx_rates", "linz", "venue_calendars", "council_calendars", "university_calendars", "rto_calendars", "wellingtonnz_events", "waikatonz_events", "queenstownnz_events", "tauponz_events", "southlandnz_events", "hawkesbaynz_events", "taranakienz_events", "nelsontasman_events", "tauranga_events", "manawatunz_events", "northland_events", "rotoruanz_events", "dunedinnz_events", "te_pae_events", "venues_otautahi_events", "isaac_theatre_royal_events", "christchurch_council_events", "ara_academic_dates", "canterbury_major_annual_events", "airport_data", "queenstown_airport_monthly", "auckland_airport_monthly", "mot_airline_performance", "wellington_airport", "wellington_airport_monthly", "christchurch_airport", "christchurch_sports", "christchurch_university_dates", "christchurch_racing", "christchurch_cruise", "christchurch_airport_monthly", "port_and_cruise"].includes(key);
       const locallyVerified = ["public_holidays_nz", "school_holidays_nz", "geonet"].includes(key);
-      const browserSource = argusPublicMarketSourceKeys.has(key) || ["eventfinda", "ticketmaster", "fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key);
+      const browserSource = argusPublicMarketSourceKeys.has(key) || ["eventfinda", "ticketmaster", "fx_rates", "school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "auckland_airport_monthly", "mot_airline_performance", "eventbrite_events"].includes(key);
       const adapterKey = argusPublicMarketSourceKeys.has(key) ? `public:${key}:argus-v1`
         : key === "public_holidays_nz" ? "public:public_holidays_nz:calendar-v1"
         : key === "school_holidays_nz" ? "public:school_holidays_nz:calendar-v1"
         : key === "ticketmaster" ? "public:ticketmaster:argus-v1"
         : key === "eventfinda" ? "public:eventfinda:argus-v1"
-          : key === "eventbrite_events" ? "public:eventbrite:jsonld-listing-v2"
+          : key === "eventbrite_events" ? "public:eventbrite:argus-v1"
             : key === "humanitix_events" ? "public:humanitix:jsonld-listing-v2"
               : key === "school_sport_nz" || key === "school_sport_canterbury" ? `public:${key}:argus-v1`
                 : key === "ticketek_events" ? "public:ticketek_events:argus-v1"
@@ -174,7 +174,8 @@ export function registrySourceSeedRecords() {
               : `public:${key}:v1`;
       const accessMethod = argusPublicMarketSourceKeys.has(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
         : key === "ticketmaster" || key === "eventfinda" ? "PUBLIC_WEB_ARGUS_READ_ONLY"
-          : ["eventbrite_events", "humanitix_events"].includes(key) ? "PUBLIC_HTML_JSONLD_PAGINATED"
+          : key === "eventbrite_events" ? "PUBLIC_WEB_ARGUS_READ_ONLY"
+          : key === "humanitix_events" ? "PUBLIC_HTML_JSONLD_PAGINATED"
             : ["school_sport_nz", "school_sport_canterbury", "ticketek_events", "dunedinnz_events", "christchurch_council_events", "auckland_airport_monthly", "mot_airline_performance"].includes(key) ? "PUBLIC_WEB_ARGUS_READ_ONLY"
       : key === "fx_rates" ? "OFFICIAL_PUBLIC_HTML_BROWSER"
         : key === "mbie" ? "OFFICIAL_PUBLIC_CSV_RANGE"
