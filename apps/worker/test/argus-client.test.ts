@@ -390,6 +390,26 @@ describe("Argus async Job client", () => {
     assert.equal(publicSkiSeasonExtractionSchema.safeParse(response.payload.extracted).success, true);
   });
 
+  it("requests the latest complete ski season and retains the returned explicit year", async () => {
+    const sourceUrl = "https://www.mthutt.co.nz/mountain-info";
+    let submitted: Record<string, unknown> | undefined;
+    server = jobServer(async request => {
+      submitted = JSON.parse(await body(request)) as Record<string, unknown>;
+      return { ...baseResult("latest-ski", "collect_season", "nz-ski-season-public"), data: {
+        data_schema: "public-ski-season.collect_season", schema_version: "1.0.0", resortId: "mt-hutt",
+        resortName: "Mt Hutt", sourceUrl, seasonYear: 2027, opensOn: "2027-06-18", closesOn: "2027-10-10",
+        timezone: "Pacific/Auckland", observedAt: "2026-10-29T00:00:00.000Z", quality: "complete", warnings: [],
+      } };
+    });
+    const response = await captureBrowserTaskWithArgus(await listenEnvironment(), {
+      traceId: "latest-ski", connectorId: "nz-ski-season-public", workflowId: "collect_season",
+      url: sourceUrl, seasonYear: 2026, seasonSelection: "latest_complete",
+    });
+    assert.equal(response.ok, true);
+    assert.equal((submitted?.captures as Array<Record<string, unknown>>)?.[0]?.season_selection, "latest_complete");
+    if (response.ok) assert.equal((response.payload.extracted as { seasonYear: number }).seasonYear, 2027);
+  });
+
   it("rejects a ski result attributed to a different official resort", async () => {
     server = jobServer(async () => ({
       ...baseResult("nz-ski-season-test", "collect_season", "nz-ski-season-public"),

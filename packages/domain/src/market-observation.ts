@@ -47,13 +47,15 @@ export const observationQuoteSchema = z.object({
   adults: z.number().int().positive(), children: z.number().int().nonnegative(), units: z.number().int().positive(),
   currency: text, collectionProfile: z.record(z.unknown()).nullable(),
   bookingMode: z.enum(["INSTANT", "REQUEST_TO_BOOK", "UNKNOWN"]),
-  outcome: z.enum(["QUOTED", "MEMBER_REFERENCE", "UNAVAILABLE", "MIN_STAY_RESTRICTION", "SOURCE_FAILURE", "IDENTITY_CHANGED"]),
+  outcome: z.enum(["QUOTED", "MEMBER_REFERENCE", "PUBLIC_PRICE_UNVERIFIED", "UNAVAILABLE", "MIN_STAY_RESTRICTION", "SOURCE_FAILURE", "IDENTITY_CHANGED"]),
   totalMinor: z.number().int().positive().safe().nullable(),
   mandatoryFees: z.enum(["COMPLETE", "UNKNOWN", "CONFLICT"]),
   mealPlan: text.nullable(), cancellationPolicy: text.nullable(), paymentTerms: text.nullable(),
   rateFence: text.nullable(), qualityFlags: z.array(text),
 }).strict().refine(value => addNzCalendarDays(value.checkIn, value.nights) === value.checkOut,
-  "Checkout must match the actual stay length");
+  "Checkout must match the actual stay length")
+  .refine(value => value.outcome !== "PUBLIC_PRICE_UNVERIFIED" || value.totalMinor === null,
+    "An unverified public price gap cannot contain a price");
 export type ObservationQuote = z.infer<typeof observationQuoteSchema>;
 
 /** Retain every raw outcome. Only matched, all-in, attributable quotes get a comparison key. */

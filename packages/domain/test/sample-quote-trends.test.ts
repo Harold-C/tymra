@@ -123,6 +123,15 @@ describe("sample source-quote trends (separate from formal market comparability)
     const missing = alterRaw(run("b", "2026-10-17"), { outcome: "UNAVAILABLE", totalMinor: null });
     const result = build([run("a", "2026-10-16"), missing]); expect(result.series).toHaveLength(0); expect(result.noPriceWindows).toBe(1);
   });
+  it("keeps an original-only price gap out of both public and member series and does not carry prices forward", () => {
+    const gap = alterRaw(run("gap", "2026-10-17"), { outcome: "PUBLIC_PRICE_UNVERIFIED", totalMinor: null,
+      rateFence: "REFERENCE_ONLY", mandatoryFees: "UNKNOWN", qualityFlags: ["ORIGINAL_PRICE_ONLY", "PUBLIC_PRICE_NOT_VERIFIED"] });
+    const result = build([run("earlier", "2026-10-16"), gap]);
+    expect(result.series).toHaveLength(0);
+    expect(result.noPriceWindows).toBe(1);
+    expect(result.failedWindows).toBe(0);
+    expect(result.rejectedOffers).toBe(0);
+  });
   it("changed terms, source executor and missing periods do not produce false pairs", () => {
     const a = run("a", "2026-10-16"), b = alterRate(alterRaw(run("b", "2026-10-23"), { mealPlan: "ROOM_ONLY" }), { mealPlan: "ROOM_ONLY" });
     expect(build([a, b]).series.every(s => s.points.every(p => p.changePct === null))).toBe(true);

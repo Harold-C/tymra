@@ -35,10 +35,11 @@ describe("direct-public production pilot", () => {
   });
   it("requires three distinct hashed resort results and the full three-request budget in each ski pass", () => {
     const artifacts = SKI_SEASON_SOURCES.map((source) => {
+      const year = source.resortId === "whakapapa" ? 2026 : 2027;
       const extraction = publicSkiSeasonExtractionSchema.parse({
         data_schema: "public-ski-season.collect_season", schema_version: "1.0.0",
         resortId: source.resortId, resortName: source.resort, sourceUrl: source.url,
-        seasonYear: 2026, opensOn: "2026-06-27", closesOn: "2026-10-11",
+        seasonYear: year, opensOn: `${year}-06-27`, closesOn: `${year}-10-11`,
         timezone: "Pacific/Auckland", observedAt: "2026-09-27T00:00:00.000Z",
         quality: "complete", warnings: [],
       });

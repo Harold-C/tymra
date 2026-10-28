@@ -13,13 +13,15 @@ describe("three-resort Argus ski-season delivery", () => {
       const data = {
         data_schema: "public-ski-season.collect_season", schema_version: "1.0.0",
         resortId: source.resortId, resortName: source.resort, sourceUrl: source.url,
-        seasonYear: 2026, opensOn: "2026-06-27", closesOn: "2026-10-11",
+        seasonYear: source.resortId === "whakapapa" ? 2026 : 2027,
+        opensOn: source.resortId === "whakapapa" ? "2026-06-27" : "2027-06-27",
+        closesOn: source.resortId === "whakapapa" ? "2026-10-11" : "2027-10-11",
         timezone: "Pacific/Auckland", observedAt: "2026-09-27T00:00:00.000Z",
         quality: "complete", warnings: [],
       } as const;
       const parsed = publicSkiSeasonExtractionSchema.parse(data);
       const raw = skiSeasonArgusRawRecord(parsed);
-      expect(raw.externalId).toBe(`ski-season:${source.resortId}:2026`);
+      expect(raw.externalId).toBe(`ski-season:${source.resortId}:${data.seasonYear}`);
       expect(raw.networkRequestCount).toBe(1);
       const signals = await publicDataAdapters.ski_seasons_nz.normalise([raw], context);
       expect(signals).toHaveLength(1);
@@ -28,6 +30,8 @@ describe("three-resort Argus ski-season delivery", () => {
         marketKey: source.marketKey,
         type: "TOURISM_DEMAND",
         direction: "POSITIVE",
+        title: `${source.resort} ${data.seasonYear} ski season`,
+        metadata: { seasonYear: data.seasonYear },
       });
     }
   });

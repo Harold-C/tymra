@@ -225,7 +225,6 @@ export function verifiedThreeResortSkiRun(
   if (records.some((record) => record === null)) return false;
   const valid = records.filter((record): record is NonNullable<typeof record> => record !== null);
   return new Set(valid.map((record) => record.resortId)).size === SKI_SEASON_SOURCES.length
-    && new Set(valid.map((record) => record.seasonYear)).size === 1
     && SKI_SEASON_SOURCES.every((source) => valid.some((record) => record.resortId === source.resortId && record.sourceUrl === source.url));
 }
 

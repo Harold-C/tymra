@@ -231,7 +231,7 @@ export async function executeSkiSeasonArgusTask(this: WorkerContext, dataSourceI
   const traceId = parentJobId
     ? durableArgusTraceId(parentJobId, connectorId, workflowId, url)
     : `nz-ski-season-${randomUUID()}`;
-  const input: ArgusCaptureInput = { traceId, url, connectorId, workflowId, seasonYear, maxAttempts: 1 };
+  const input: ArgusCaptureInput = { traceId, url, connectorId, workflowId, seasonYear, seasonSelection: "latest_complete", maxAttempts: 1 };
   const response = parentJobId
     ? await captureBrowserTaskWithDurableArgus(this.environment, input, { parentJobId, collectionRunId, dataSourceId })
     : await captureBrowserTaskWithArgus(this.environment, input);
@@ -251,7 +251,7 @@ export async function executeSkiSeasonArgusTask(this: WorkerContext, dataSourceI
       result.error?.message ?? "Argus ski season capture failed", result.error?.retryable ?? true);
   }
   const parsed = publicSkiSeasonExtractionSchema.safeParse(result.extracted);
-  if (!parsed.success || parsed.data.sourceUrl !== url || parsed.data.seasonYear !== seasonYear) {
+  if (!parsed.success || parsed.data.sourceUrl !== url) {
     if (!dryRun) await this.markArgusEvidenceParserFailure(collectionRunId, result.traceId);
     throw new AdapterError("PARSING_ERROR", "Argus ski season result failed its fixed source and year contract", false);
   }

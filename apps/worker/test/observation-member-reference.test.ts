@@ -56,9 +56,23 @@ describe("visible member prices as separate observation references", () => {
     data.rates[0].checkIn = "2026-12-01"; data.rates[0].unitExternalId = "10002";
     expect(() => evaluate(data)).toThrow("EXACT_UNIT_NOT_RETURNED");
   });
-  it("rejects original-only, unlabelled, non-Booking and mismatched guest references", () => {
+  it("records original-only Booking results as a price gap without inventing availability or an amount", () => {
     const original = fixture(); original.rates[0].referencePrices = original.rates[0].referencePrices.slice(0, 1);
+    const before = structuredClone(original), result = evaluate(original);
+    expect(original).toEqual(before);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ status: "RAW_ONLY", comparisonKey: null, totalMinor: null,
+      nightlyEquivalentMinor: null, raw: { outcome: "PUBLIC_PRICE_UNVERIFIED", totalMinor: null,
+        checkIn: "2026-12-01", checkOut: "2026-12-02", sourceUnitKey: "10001", rateFence: "REFERENCE_ONLY" } });
+    expect(result[0].raw.qualityFlags).toContain("ORIGINAL_PRICE_ONLY");
+    expect(result[0]).not.toHaveProperty("referencePrice");
+    original.rates[0].referencePrices = [];
+    expect(() => evaluate(original)).toThrow();
+    original.rates[0].referencePrices = before.rates[0].referencePrices;
+    original.rates[0].rateFence = "PUBLIC";
     expect(() => evaluate(original)).toThrow("AVAILABILITY_OUTCOME_UNCLASSIFIED");
+  });
+  it("rejects unlabelled, non-Booking and mismatched guest references", () => {
     const unlabelled = fixture(); unlabelled.rates[0].referencePrices[1].sourceText = "Unattributed price";
     expect(() => evaluate(unlabelled)).toThrow("AVAILABILITY_OUTCOME_UNCLASSIFIED");
     const wrongGuests = fixture(); wrongGuests.rates[0].adults = 1;

@@ -40,8 +40,12 @@ export function evaluateCapturedObservation(candidate: ObservationCandidate, uni
     && (rate.availabilityStatus !== "UNKNOWN" || rate.rateFence === "REFERENCE_ONLY")
     ? (rate.referencePrices ?? []).filter(reference => reference.kind === "MEMBER_ONLY"
       && /^Members-only price\b/i.test(reference.sourceText)) : [];
+  const originalOnly = (rate: typeof data.rates[number]) => data.provider === "booking"
+    && rate.availabilityStatus === "UNKNOWN" && rate.rateFence === "REFERENCE_ONLY"
+    && rate.totalPriceMinor === null && !!rate.referencePrices?.length
+    && rate.referencePrices.every(reference => reference.kind === "ORIGINAL");
   if (data.rates.some(rate => !["AVAILABLE", "MINIMUM_STAY_RESTRICTION", "UNAVAILABLE", "SOLD_OUT", "NOT_LISTED"].includes(rate.availabilityStatus)
-    && !(rate.availabilityStatus === "UNKNOWN" && memberReferences(rate).length))) throw new Error("AVAILABILITY_OUTCOME_UNCLASSIFIED");
+    && !(rate.availabilityStatus === "UNKNOWN" && memberReferences(rate).length) && !originalOnly(rate))) throw new Error("AVAILABILITY_OUTCOME_UNCLASSIFIED");
   // Preserve each offer independently; a refundable and non-refundable offer are not one price.
   const publicObservations = data.rates.filter(rate => rate.availabilityStatus !== "UNKNOWN").map(rate => evaluateObservationQuote(candidate, {
     candidateId: candidate.id, sourceUnitKey: candidate.unit.key, evidenceRef, observedAt: rate.collectedAt,
@@ -75,5 +79,13 @@ export function evaluateCapturedObservation(candidate: ObservationCandidate, uni
     }), referencePrice: { ...reference, sourceAvailability: rate.availabilityStatus,
       priceBasis: "DISPLAYED_MEMBER_REFERENCE" as const } }];
   }));
-  return [...publicObservations, ...references];
+  const priceGaps = data.rates.filter(originalOnly).map(rate => evaluateObservationQuote(candidate, {
+    candidateId: candidate.id, sourceUnitKey: candidate.unit.key, evidenceRef, observedAt: rate.collectedAt,
+    checkIn, checkOut, nights: candidate.nights, adults: 2, children: 0, units: 1, currency: "NZD",
+    collectionProfile: null, bookingMode: "UNKNOWN", outcome: "PUBLIC_PRICE_UNVERIFIED",
+    totalMinor: null, mandatoryFees: "UNKNOWN", mealPlan: "UNKNOWN", cancellationPolicy: "UNKNOWN",
+    paymentTerms: "UNKNOWN", rateFence: "REFERENCE_ONLY",
+    qualityFlags: [...new Set([...rate.qualityFlags, "PUBLIC_PRICE_NOT_VERIFIED", "ORIGINAL_PRICE_ONLY"])],
+  }));
+  return [...publicObservations, ...references, ...priceGaps];
 }

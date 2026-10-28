@@ -48,16 +48,12 @@ export async function persistFailedArgusEvidence(environment: Environment, paren
         await tx.rawArtifact.upsert({ where: { id }, update: {}, create: {
           id, collectionRunId: run.id, dataSourceId: execution.dataSourceId, artifactType: pointer.kind.toUpperCase(),
           storageRef: pointer.storageRef, contentHash: pointer.sha256, parserFailure: true, containsSensitiveData: false,
-          payload: { pointer, failedArgusExecutionId: execution.id } as unknown as Prisma.InputJsonValue,
+          payload: { pointer, failedArgusExecutionId: execution.id, verifiedWire: proof } as unknown as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 168 * 3600_000),
         } });
       }
-      const scope = run.scope as Prisma.JsonObject;
-      const previous = scope.failedArgusWireProofs && typeof scope.failedArgusWireProofs === "object" && !Array.isArray(scope.failedArgusWireProofs)
-        ? scope.failedArgusWireProofs : {};
-      await tx.collectionRun.update({ where: { id: run.id }, data: { scope: {
-        ...scope, failedArgusWireProofs: { ...previous, [execution.id]: proof } as unknown as Prisma.InputJsonValue,
-      } } });
+      // Terminal CollectionRun rows are immutable. Keep the receipt with the new
+      // diagnostic artifacts instead of rewriting the original failed history.
     });
   }
 }

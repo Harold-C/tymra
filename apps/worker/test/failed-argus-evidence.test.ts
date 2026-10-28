@@ -47,10 +47,10 @@ describe("failed Argus diagnostic evidence registration", () => {
       expect(input.create).toMatchObject({ collectionRunId: "run-1", dataSourceId: "source-1", parserFailure: true, containsSensitiveData: false });
       expect(input.create.expiresAt.getTime()).toBeGreaterThan(Date.now() + 167 * 3600_000);
     }
-    const update = mocks.update.mock.calls[0]![0].data;
-    expect(update).not.toHaveProperty("status");
-    expect(update.scope.originalFailure).toBe("TIMEOUT");
-    expect(verifiedObservationWire(fixture().wire, update.scope.failedArgusWireProofs["execution-1"])).toEqual(fixture().wire);
+    expect(mocks.update).not.toHaveBeenCalled();
+    for (const [input] of mocks.upsert.mock.calls) {
+      expect(verifiedObservationWire(fixture().wire, input.create.payload.verifiedWire)).toEqual(fixture().wire);
+    }
     expect(mocks.result.mock.invocationCallOrder[0]).toBeLessThan(mocks.upsert.mock.invocationCallOrder[0]!);
   });
   it("does not refetch evidence already registered for this exact trace and hash", async () => {

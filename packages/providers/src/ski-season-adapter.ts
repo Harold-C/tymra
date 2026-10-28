@@ -59,11 +59,12 @@ class SkiSeasonAdapter implements PublicDataAdapter {
       if (Number.isNaN(opensAt.getTime()) || Number.isNaN(closingDay.getTime())) return [];
       const closesAt = nzStartOfDay(addNzCalendarDays(closingDay, 1));
       const resort = stringValue(raw.payload.resort);
+      const seasonYear = Number(nzDateKey(opensAt).slice(0, 4));
       return [{
         sourceId: "ski_seasons_nz", externalId: raw.externalId, marketKey: stringValue(raw.payload.marketKey), type: "TOURISM_DEMAND",
-        title: `${resort} ski season`, region: stringValue(raw.payload.region), startsAt: opensAt, endsAt: closesAt,
+        title: `${resort} ${seasonYear} ski season`, region: stringValue(raw.payload.region), startsAt: opensAt, endsAt: closesAt,
         direction: "POSITIVE", confidence: 0.8, evidenceRef: stringValue(raw.payload.sourceUrl),
-        metadata: { contextSeriesKey: `ski-season:${slug(resort)}`, temporalUse: "DETERMINISTIC_SEASON_WINDOW", resort, sourceTimezone: "Pacific/Auckland", weatherDependent: true }, fixture: false,
+        metadata: { contextSeriesKey: `ski-season:${slug(resort)}`, temporalUse: "DETERMINISTIC_SEASON_WINDOW", resort, seasonYear, sourceTimezone: "Pacific/Auckland", weatherDependent: true }, fixture: false,
       }];
     });
   }

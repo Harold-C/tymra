@@ -274,6 +274,7 @@ export type ArgusCaptureInput = {
   to?: string;
   academicYear?: number;
   seasonYear?: number;
+  seasonSelection?: "latest_complete";
   maxRecords?: number;
   maxPages?: number;
   searchQuery?: string;
@@ -886,6 +887,7 @@ function argusJobRequest(environment: Environment, input: ArgusCaptureInput) {
       ...(input.to === undefined ? {} : { to: input.to }),
       ...(input.academicYear === undefined ? {} : { academic_year: input.academicYear }),
       ...(input.seasonYear === undefined ? {} : { season_year: input.seasonYear }),
+      ...(input.seasonSelection === undefined ? {} : { season_selection: input.seasonSelection }),
       ...(input.searchQuery === undefined ? {} : { search_query: input.searchQuery }),
       ...(input.checkIn === undefined ? {} : { check_in: input.checkIn }),
       ...(input.checkOut === undefined ? {} : { check_out: input.checkOut }),
