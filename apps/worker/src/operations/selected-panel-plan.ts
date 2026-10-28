@@ -122,34 +122,44 @@ export function selectedDailyLimit(_state: z.infer<typeof selectedStateSchema>, 
 }
 /** Least recently priced first, stable manifest order for ties; no all-members preflight barrier. */
 export function nextSelectedTasks(state: z.infer<typeof selectedStateSchema>, progress: MemberProgress[], used: Set<string>, now: Date): SelectedTask[] {
-  if (nzDate(now) < state.manifest.start) return [];
+  const today = nzDate(now);
+  if (today < state.manifest.start) return [];
   const cycle = selectedCycle(state, now), { round } = cycle;
+  // Rebuild these lookups each call so the next tick sees fresh identity and window progress.
+  const byMember = new Map<string, MemberProgress>();
+  for (const item of progress) if (!byMember.has(item.memberId)) byMember.set(item.memberId, item);
+  const lastWindows = new Map<string, Map<string, number>>();
+  const last = (task: SelectedTask) => {
+    let windows = lastWindows.get(task.memberId);
+    if (!windows) { windows = new Map(); lastWindows.set(task.memberId, windows); }
+    if (!windows.has(task.checkIn)) windows.set(task.checkIn, byMember.get(task.memberId)?.windows
+      ?.filter(w => w.checkIn === task.checkIn).reduce((n, w) => Math.max(n, w.finishedAt.getTime()), 0) ?? 0);
+    return windows.get(task.checkIn)!;
+  };
   const members = state.manifest.members.filter(c => c.enabled && !state.held.some(h => h.memberId === c.id) && !state.stoppedSources.includes(c.source));
-  members.sort((a, b) => (progress.find(p => p.memberId === a.id)?.lastQuoteAt?.getTime() ?? 0) - (progress.find(p => p.memberId === b.id)?.lastQuoteAt?.getTime() ?? 0));
+  members.sort((a, b) => (byMember.get(a.id)?.lastQuoteAt?.getTime() ?? 0) - (byMember.get(b.id)?.lastQuoteAt?.getTime() ?? 0));
   return members.flatMap(c => {
-    const anchors = selectedMemberAnchors(c, cycle).filter(day => day > nzDate(now));
+    const anchors = selectedMemberAnchors(c, cycle).filter(day => day > today);
     if (!anchors.length) return [];
-    const p = progress.find(p => p.memberId === c.id);
+    const p = byMember.get(c.id);
     const common = { selectedPanel: SELECTED_PANEL_KEY as typeof SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, c), memberId: c.id, sourceId: c.source };
     const fresh = p?.identityAt && p.unitExternalId && now.getTime() - p.identityAt.getTime() < state.manifest.identityTtlDays * 86_400_000;
     const tasks: SelectedTask[] = fresh
       ? anchors.filter(checkIn => !state.cadence || !p.windows?.some(w => w.checkIn === checkIn && nzDate(w.finishedAt) >= round))
         .map(checkIn => ({ ...common, phase: "quote", checkIn, unitExternalId: p.unitExternalId, round }))
-      : [{ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: nzDate(now) }];
+      : [{ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: today }];
     // Renew in spare capacity during the final valid week; avoid a synchronized 28-day spike.
     if (state.cadence && fresh && !tasks.length && now.getTime() - p.identityAt!.getTime() >= 21 * 86_400_000)
-      tasks.push({ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: nzDate(now) });
+      tasks.push({ ...common, phase: "identity", checkIn: anchors[0], unitExternalId: null, round: today });
     return tasks.filter(t => !used.has(selectedTaskKey(t)));
   }).sort((a, b) => {
     if (!state.cadence) return 0;
-    const renewal = (t: SelectedTask) => { const p = progress.find(p => p.memberId === t.memberId);
+    const renewal = (t: SelectedTask) => { const p = byMember.get(t.memberId);
       return t.phase === "identity" && p?.identityAt && now.getTime() - p.identityAt.getTime() < 28 * 86_400_000; };
     if (!!renewal(a) !== !!renewal(b)) return renewal(a) ? 1 : -1;
-    if (renewal(a) && renewal(b)) return progress.find(p => p.memberId === a.memberId)!.identityAt!.getTime()
-      - progress.find(p => p.memberId === b.memberId)!.identityAt!.getTime();
+    if (renewal(a) && renewal(b)) return byMember.get(a.memberId)!.identityAt!.getTime()
+      - byMember.get(b.memberId)!.identityAt!.getTime();
     // Fairness is per exact stay window, not per member's most recent other-window price.
-    const last = (t: SelectedTask) => progress.find(p => p.memberId === t.memberId)?.windows
-      ?.filter(w => w.checkIn === t.checkIn).reduce((n, w) => Math.max(n, w.finishedAt.getTime()), 0) ?? 0;
     return last(a) - last(b);
   });
 }

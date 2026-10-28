@@ -79,6 +79,23 @@ describe("selected sample formal collection", () => {
     }
     expect([...byCycle.values()].map(s => s.size)).toEqual(Array(8).fill(136));
   });
+  it("preserves first progress-row precedence and refreshes scheduling inputs between calls", () => {
+    const state = upgraded(1), memberId = state.manifest.members[0].id;
+    const first = { memberId, identityAt: now, unitExternalId: "first-unit", lastQuoteAt: null, windows: [] };
+    const progress: MemberProgress[] = [first, { ...first, unitExternalId: "other-unit" }];
+    const used = new Set<string>();
+    const initial = nextSelectedTasks(state, progress, used, now);
+    expect(initial).toHaveLength(2);
+    expect(initial.every(task => task.unitExternalId === "first-unit")).toBe(true);
+    progress[0] = { ...first, unitExternalId: "updated-unit" };
+    const refreshed = nextSelectedTasks(state, progress, used, now);
+    expect(refreshed).toHaveLength(2);
+    expect(refreshed.every(task => task.unitExternalId === "updated-unit")).toBe(true);
+    used.add(selectedTaskKey(refreshed[0]));
+    expect(nextSelectedTasks(state, progress, used, now)).toEqual([refreshed[1]]);
+    state.held.push({ memberId, reason: "NEW_HOLD" });
+    expect(nextSelectedTasks(state, progress, used, now)).toEqual([]);
+  });
   it("accepts the full roster without the legacy 195 ceiling, but rejects any retry or total-limit change", () => {
     const s = selectedFixture(68); expect(s.manifest.members).toHaveLength(68);
     expect(() => selectedManifestSchema.parse({ ...s.manifest, totalExecutionLimit: 195 })).toThrow();
