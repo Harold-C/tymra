@@ -302,7 +302,7 @@ Choose checks for the actual change; documentation-only work checks facts, links
 | Check | Coverage / prerequisites |
 | --- | --- |
 | `pnpm lint`, `pnpm typecheck`, `pnpm test` | Dependency boundaries, Web lint, every workspace's types and unit coverage; live fixtures remain separately gated |
-| `pnpm test:integration` | Database/API/Worker; explicit disposable isolated PostgreSQL and Redis targets required |
+| `pnpm test:integration` | Database/API/Worker; disposable isolated PostgreSQL/Redis, explicit public HTTP fixtures and loopback test servers; unmocked external HTTP fails the suite |
 | `pnpm test:integration:ota-offline` | Six OTA delivery contracts against local synthetic HTTP; fresh `_offline_test` database with migrations and no seed required |
 | `pnpm build` | Web production build and Worker entrypoints |
 | `pnpm build:isolated` | Production-shaped build with synthetic configuration and disabled external services; requires isolated test targets |

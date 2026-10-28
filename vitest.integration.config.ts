@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./apps/web", import.meta.url)) } },
   test: {
     environment: "node",
-    setupFiles: ["./test/setup-env.ts"],
+    setupFiles: ["./test/setup-env.ts", "./test/public-http-fixtures.ts"],
     include: ["packages/**/test/**/*.integration.test.ts", "apps/**/test/**/*.integration.test.ts", "apps/web/app/**/*.integration.test.ts"],
     exclude: ["**/node_modules/**", "**/.next/**", "**/.next-build/**", "**/dist/**", "data/**"],
     testTimeout: 30_000,
