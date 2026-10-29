@@ -4,6 +4,7 @@ import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate, otaH
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isSourceScopedRentalIdentity } from "./ota-catalog-identity";
 import { positiveOtaListingEvidenceWhere } from "./ota-listing-evidence";
+import { BOOKING_NATIONAL_PRICE_GAP_POLICY, bookingNationalPriceGapApproved, verifiedBookingNationalPriceGap } from "./booking-national-price-gap";
 import type { otaListingIdentitySchema } from "@tymra/providers/ota-argus-contracts";
 import type { z } from "zod";
 
@@ -162,6 +163,8 @@ export async function enableProductionOtaScheduleTransaction(tx: Prisma.Transact
     if (!otaSourceApproved(source)) throw new Error("Source is not an approved enabled public OTA pilot");
     const now = new Date();
     const cutoff = otaHealthEvidenceWindowStart(source.metadata, new Date(now.getTime() - 30 * 86_400_000), now);
+    const allowBookingPriceGaps = bookingNationalPriceGapApproved(sourceId, source.metadata, now);
+    const priceGapJobs: string[] = [];
     const recentRuns = await tx.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false, createdAt: { gte: cutoff } } });
     const recentExecutions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: cutoff } } });
     const parserArtifactFailures = await tx.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } });
@@ -177,10 +180,10 @@ export async function enableProductionOtaScheduleTransaction(tx: Prisma.Transact
     if (jobs.length !== 2 || jobs.some((job) => !isProductionOtaPayload(job.payload) || job.status !== "SUCCEEDED" || job.attemptCount !== 1 || job.maxAttempts !== 1 || job.createdAt < cutoff || job.createdAt.getTime() < Date.now() - 7 * 86_400_000)) throw new Error("The latest two exact bounded OTA jobs must have succeeded once within seven days and inside the acceptance window");
     for (const job of jobs) {
       const runs = await tx.collectionRun.findMany({ where: { jobId: job.id, dataSourceId: source.id, isDemo: false } });
-      if (runs.length !== 2 || runs.some((r) => r.status !== "SUCCEEDED" || r.successCount < 1 || r.failureCount !== 0 || !r.finishedAt)) throw new Error("Both discovery and exact-unit rate must succeed in each trial");
+      if (runs.length !== 2 || runs.some((r) => r.status !== "SUCCEEDED" || r.failureCount !== 0 || !r.finishedAt
+        || (r.successCount < 1 && !(allowBookingPriceGaps && r.successCount === 0 && (r.scope as Record<string, unknown>).operation === "OTA_PANEL_RATE")))) throw new Error("Both discovery and exact-unit rate must succeed in each trial");
       if (runs.filter((r) => (r.scope as Record<string, unknown>).operation === "NATIONAL_CATALOG_DISCOVERY").length !== 1 || runs.filter((r) => (r.scope as Record<string, unknown>).operation === "OTA_PANEL_RATE").length !== 1) throw new Error("Each exact trial requires one discovery run and one unit-rate run");
-      const rate = await tx.rateObservation.count({ where: { collectionRunId: { in: runs.map((r) => r.id) }, dataSourceId: source.id, isDemo: false, collectedAt: { gte: new Date(Date.now() - 7 * 86_400_000), lte: new Date() }, checkIn: { gte: new Date() }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
-      if (!rate) throw new Error("Each trial requires an available positive public total with complete mandatory fees");
+      const rate = await tx.rateObservation.count({ where: { quarantine: null, collectionRunId: { in: runs.map((r) => r.id) }, dataSourceId: source.id, isDemo: false, collectedAt: { gte: new Date(Date.now() - 7 * 86_400_000), lte: new Date() }, checkIn: { gte: new Date() }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
       const executions = await tx.argusExecution.findMany({ where: { parentJobId: job.id } });
       if (executions.length < 2 || executions.length > 3 || executions.some((e) => e.status !== "COMPLETED" || !e.completedAt || !e.deliveryVerifiedAt
         || e.deliveryVerifiedAt < e.completedAt || e.deliveryVerifiedAt > new Date()
@@ -188,13 +191,20 @@ export async function enableProductionOtaScheduleTransaction(tx: Prisma.Transact
         || runs.some((run) => !executions.some((execution) => execution.collectionRunId === run.id))) {
         throw new Error("All bounded executions require successful persisted results and verified delivery after Argus ACK/purge");
       }
+      if (!rate) {
+        const rateRun = runs.find(run => (run.scope as Record<string, unknown>).operation === "OTA_PANEL_RATE")!;
+        if (!allowBookingPriceGaps || !await verifiedBookingNationalPriceGap(tx, source.id, rateRun, executions, now)) {
+          throw new Error("Each trial requires an available positive public total with complete mandatory fees or an explicitly approved verified Booking price gap");
+        }
+        priceGapJobs.push(job.id);
+      }
       const artifacts = await tx.rawArtifact.findMany({ where: { collectionRunId: { in: runs.map((r) => r.id) }, deletedAt: null } });
       if (!artifacts.some((a) => a.storageRef.startsWith("tymra-evidence:")) || artifacts.some((a) => a.parserFailure || a.storageRef.startsWith("argus-evidence:"))) throw new Error("Local evidence retention is incomplete");
     }
     const schedule = await tx.scheduleDefinition.findUniqueOrThrow({ where: { key: `pilot-ota-${sourceId}-daily` } });
     if (!isProductionOtaSchedule(schedule)) throw new Error("OTA schedule contract differs from approved bounds");
     const nextRunAt = nextCollectionOutsideOfficeHours(new Date(Date.now() + 86_400_000 + ACTIVE_OTA_SOURCE_KEYS.indexOf(sourceId as typeof ACTIVE_OTA_SOURCE_KEYS[number]) * 30 * 60_000));
-    await tx.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "HEALTHY", healthStatus: "HEALTHY", lastSuccessAt: new Date(), healthSummary: { approvedJobs: jobs.map((job) => job.id), policyVersion: OTA_PILOT_VERSION, acceptanceWindow: otaRepairAcceptanceWindow(source.metadata, now), evidenceWindowStartedAt: cutoff.toISOString() } } });
+    await tx.dataSource.update({ where: { id: source.id }, data: { operationalStatus: "HEALTHY", healthStatus: "HEALTHY", lastSuccessAt: new Date(), healthSummary: { approvedJobs: jobs.map((job) => job.id), policyVersion: OTA_PILOT_VERSION, acceptanceWindow: otaRepairAcceptanceWindow(source.metadata, now), evidenceWindowStartedAt: cutoff.toISOString(), positiveRateCount, priceGapJobs, ...(allowBookingPriceGaps ? { priceGapPolicyVersion: BOOKING_NATIONAL_PRICE_GAP_POLICY, publicPriceCoverageComplete: priceGapJobs.length === 0 } : {}) } } });
     await tx.scheduleDefinition.update({ where: { id: schedule.id }, data: { enabled: true, nextRunAt } });
     return { sourceId, nextRunAt, acceptedJobs: jobs.map((job) => job.id), mutationPerformed: true };
 }

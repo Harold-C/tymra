@@ -323,11 +323,20 @@ health status `DEGRADED` as well as suspending the named source/plan.
 This change needs no migration and keeps required fields and request versions unchanged. Deploy
 the receiving Tymra update before the Argus extractor. Older extractor results remain readable;
 older receivers see null public prices/unknown availability but omit optional reference metadata.
-Historical failed results are preserved. Re-enabling Booking still requires its normal exact-job,
-positive anonymous all-in price, retained evidence and delivery acceptance, after an authorized release.
+Historical failed results are preserved. Re-enabling Booking requires its exact-job,
+retained evidence and delivery acceptance after an authorized release. The explicitly approved
+`booking-national-price-gap-v1` policy (2026-10-29) also permits an exact round with retained
+original/member references and no verified public total. It revalidates the stored wire result
+against the persisted anonymous stay, source, listing and physical unit; an empty result or scope
+counter cannot satisfy this exception. Such a round remains `REFERENCE_ONLY`, creates no public
+observation and is listed separately in the source health summary. D-039 still requires at least
+one real complete positive public price within the preserved evidence window. Other five sources
+retain their per-round public-price requirement. Enabling this policy requires a dated, source-scoped
+approval in `productionOtaPriceGapPolicy`; it never moves the frozen acceptance boundary.
 
 `ota:production:enable` requires the latest two exact, single-attempt successful Jobs within seven
-days, positive physical-unit discovery and complete available price in each, retained evidence and
+days, positive physical-unit discovery and complete available price in each (or the explicitly
+approved Booking exception above), retained evidence and
 verified Argus ACK/purge. D-039 rolling health thresholds also apply. Plans are daily and staggered
 by source outside office hours. `ota:production:pause` disables only the named OTA plan/source.
 All four mutation commands require production and the explicit confirmation string above.

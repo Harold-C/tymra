@@ -8,7 +8,8 @@ import { prisma } from "@tymra/db";
 import { getEnvironment, type Environment } from "@tymra/config";
 import { addNzCalendarDays, nzDateKey } from "@tymra/domain";
 import { closeRedis } from "@tymra/queue";
-import { prepareProductionOta, productionOtaPayload } from "../src/operations/production-ota";
+import { prepareProductionOta, productionOtaPayload, enableProductionOtaSchedule } from "../src/operations/production-ota";
+import { BOOKING_NATIONAL_PRICE_GAP_POLICY } from "../src/operations/booking-national-price-gap";
 import { handleJob } from "../src/jobs/job-handlers";
 import { WorkerService } from "../src/services/worker-service";
 import { DeferredJobError } from "../src/jobs/deferred-job";
@@ -191,6 +192,21 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
         expect(createHash("sha256").update(bytes).digest("hex")).toBe(artifact.contentHash);
       }
       await prisma.job.update({where: {id: job.id}, data: {status: "SUCCEEDED", completedAt: new Date()}});
+      if (sourceKey === "booking" && round === 1) {
+        const priorEvidence = await prisma.collectionRun.findMany({ where: { dataSourceId: source.id }, orderBy: { id: "asc" } });
+        await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("must succeed");
+        await prisma.dataSource.update({ where: { id: source.id }, data: { metadata: { ...(source.metadata as object), productionOtaPriceGapPolicy: {
+          version: BOOKING_NATIONAL_PRICE_GAP_POLICY, authorizationId: "synthetic-booking-gap-policy-test", authorizedAt: new Date().toISOString(),
+        } } } });
+        const accepted = await enableProductionOtaSchedule("booking", "production");
+        expect(accepted.acceptedJobs).toHaveLength(2);
+        expect(await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: "pilot-ota-booking-daily" } })).toMatchObject({ enabled: true });
+        expect((await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } })).healthSummary).toMatchObject({ positiveRateCount: 1, publicPriceCoverageComplete: false, priceGapJobs: [expect.any(String)] });
+        expect(await prisma.rateObservation.count({ where: { dataSourceId: source.id } })).toBe(1);
+        expect(await prisma.collectionRun.findMany({ where: { dataSourceId: source.id }, orderBy: { id: "asc" } })).toEqual(priorEvidence);
+        expect(jobs.size).toBe(submissions);
+        await prisma.scheduleDefinition.update({ where: { key: "pilot-ota-booking-daily" }, data: { enabled: false } });
+      }
     }
     expect(amounts).toEqual(sourceKey === "booking" ? [23200, 23300] : [23100, 23200]);
     const observations = await prisma.rateObservation.findMany({where: {dataSourceId: source.id}, orderBy: {createdAt: "asc"}});

@@ -525,6 +525,16 @@ a user-submitted target identity. Positive rate evidence counts only non-demo `A
 observations with a complete fee breakdown and a positive total; unavailable, unknown, zero-price
 or partial-fee observations remain diagnostic evidence and cannot satisfy the release gate.
 
+**Booking national continuation (2026-10-29):** Harold explicitly extended the sample price-gap
+policy to Booking's national daily plan. With a dated `booking-national-price-gap-v1` approval,
+an exact single-attempt round may retain validated original/member references while the public
+total is unknown. Both real discovery and exact anonymous unit/stay evidence, local retention and
+verified delivery remain required. The gap creates no `RateObservation` or positive-price count;
+health records the gap Job separately. D-039's source-level positive public-price evidence and
+other thresholds remain required; the other five sources' per-round price requirements remain.
+The existing two successful Jobs may be re-evaluated under this approved policy without fetching
+again, rewriting old failures or moving their fixed version-bound acceptance window.
+
 **Reason:** A reachable browser process or a schema-valid empty response does not prove that an OTA
 can supply a usable market quote. Evidence-derived health prevents placeholder timestamps and
 fixture checks from being mistaken for production readiness.

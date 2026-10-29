@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mock = vi.hoisted(() => ({ source: vi.fn(), jobs: vi.fn(), startingJob: vi.fn(), runs: vi.fn(), rates: vi.fn(), executions: vi.fn(), artifacts: vi.fn(), parserCount: vi.fn(), listingCount: vi.fn(), schedule: vi.fn(), updateSource: vi.fn(), updateSchedule: vi.fn(), pauseSource: vi.fn(), pauseSchedule: vi.fn() }));
+const mock = vi.hoisted(() => ({ source: vi.fn(), jobs: vi.fn(), startingJob: vi.fn(), runs: vi.fn(), rates: vi.fn(), executions: vi.fn(), artifacts: vi.fn(), parserCount: vi.fn(), listingCount: vi.fn(), schedule: vi.fn(), updateSource: vi.fn(), updateSchedule: vi.fn(), pauseSource: vi.fn(), pauseSchedule: vi.fn(), verifiedGap: vi.fn() }));
+vi.mock("../src/operations/booking-national-price-gap", async original => ({ ...await original<typeof import("../src/operations/booking-national-price-gap")>(), verifiedBookingNationalPriceGap: mock.verifiedGap }));
 vi.mock("@tymra/db", async (original) => ({ ...await original<typeof import("@tymra/db")>(), prisma: { dataSource: { updateMany: mock.pauseSource }, scheduleDefinition: { updateMany: mock.pauseSchedule }, $transaction: async (fn: ((tx: unknown) => unknown) | Promise<unknown>[]) => Array.isArray(fn) ? Promise.all(fn) : fn({ dataSource: { findUniqueOrThrow: mock.source, update: mock.updateSource }, job: { findMany: mock.jobs, findUniqueOrThrow: mock.startingJob }, collectionRun: { findMany: mock.runs }, listing: { count: mock.listingCount }, rateObservation: { count: mock.rates }, argusExecution: { findMany: mock.executions }, rawArtifact: { findMany: mock.artifacts, count: mock.parserCount }, scheduleDefinition: { findUniqueOrThrow: mock.schedule, update: mock.updateSchedule } }) } }));
 import { enableProductionOtaSchedule, beginProductionOtaRepairAcceptance, pauseProductionOta, isProductionOtaSchedule, otaIdentityRequiresDetail, otaSourceApproved, productionOtaPayload, OTA_PILOT_VERSION } from "../src/operations/production-ota";
 import { OTA_REPAIR_ACCEPTANCE_VERSION } from "../src/operations/ota-health";
+import { BOOKING_NATIONAL_PRICE_GAP_POLICY } from "../src/operations/booking-national-price-gap";
 
 const source = { id: "booking-source", key: "booking", providerType: "OTA", sourceType: "OTA", enabled: true, isDemo: false, environments: ["PRODUCTION"], concurrencyLimit: 1, dailyBudget: 6, metadata: { productionOta: OTA_PILOT_VERSION }, accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY" };
 const schedule = { key: "pilot-ota-booking-daily", jobType: "CATALOG_DISCOVERY", queueName: "ota-production", cronExpression: "daily", payload: productionOtaPayload("booking") };
@@ -145,6 +147,43 @@ describe("production OTA pilot acceptance", () => {
     expect(mock.updateSchedule).toHaveBeenCalledOnce();
     expect(mock.source).toHaveBeenCalledWith({ where: { key: "booking" } });
     expect(mock.updateSource.mock.calls[0][0].where).toEqual({ id: source.id });
+  });
+  function approveGap() {
+    mock.source.mockResolvedValue({ ...source, metadata: { ...source.metadata, productionOtaPriceGapPolicy: { version: BOOKING_NATIONAL_PRICE_GAP_POLICY, authorizationId: "booking-national-price-gap-20261029", authorizedAt: new Date(Date.now() - 1_000).toISOString() } } });
+    // D-039 has one actual positive public rate; only the second exact round is a gap.
+    mock.rates.mockResolvedValueOnce(1).mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+    const discovery = { id: "run-1", status: "SUCCEEDED", successCount: 1, failureCount: 0, finishedAt: new Date(), scope: { operation: "NATIONAL_CATALOG_DISCOVERY" } };
+    const price = { ...discovery, id: "run-2", scope: { operation: "OTA_PANEL_RATE" } };
+    mock.runs.mockResolvedValueOnce([discovery, price]).mockResolvedValueOnce([discovery, price])
+      .mockResolvedValueOnce([discovery, { ...price, successCount: 0, scope: { ...price.scope, rateOutcome: "REFERENCE_ONLY" } }]);
+    mock.verifiedGap.mockResolvedValue(true);
+  }
+  it("admits a verified second-round Booking gap and records it separately from real public prices", async () => {
+    approveGap();
+    await enableProductionOtaSchedule("booking", "production");
+    expect(mock.verifiedGap).toHaveBeenCalledOnce();
+    expect(mock.updateSource.mock.calls[0][0].data.healthSummary).toMatchObject({ positiveRateCount: 1, priceGapJobs: ["job-2"], publicPriceCoverageComplete: false, priceGapPolicyVersion: BOOKING_NATIONAL_PRICE_GAP_POLICY });
+    expect(mock.rates.mock.calls[2][0].where.quarantine).toBeNull();
+    expect(mock.updateSchedule).toHaveBeenCalledOnce();
+  });
+  it("keeps the gap policy fail-closed when durable identity/reference validation fails", async () => {
+    approveGap(); mock.verifiedGap.mockResolvedValue(false);
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("verified Booking price gap");
+    expect(mock.updateSchedule).not.toHaveBeenCalled();
+    expect(mock.updateSource).not.toHaveBeenCalled();
+  });
+  it("still requires actual D-039 positive-rate history and never substitutes reference counts", async () => {
+    approveGap(); mock.rates.mockReset().mockResolvedValue(0);
+    await expect(enableProductionOtaSchedule("booking", "production")).rejects.toThrow("no positive rate evidence");
+    expect(mock.updateSchedule).not.toHaveBeenCalled();
+  });
+  it.each(["airbnb", "expedia", "bookabach", "agoda", "trip"])("does not relax the exact-round price requirement for %s", async key => {
+    approveGap();
+    mock.source.mockResolvedValue({ ...source, key, metadata: { ...source.metadata, productionOtaPriceGapPolicy: { version: BOOKING_NATIONAL_PRICE_GAP_POLICY, authorizationId: "booking-national-price-gap-20261029", authorizedAt: new Date(Date.now() - 1_000).toISOString() } } });
+    mock.runs.mockReset().mockResolvedValue([1, 2].map(i => ({ id: `run-${i}`, status: "SUCCEEDED", successCount: 1, failureCount: 0, finishedAt: new Date(), scope: { operation: i === 1 ? "NATIONAL_CATALOG_DISCOVERY" : "OTA_PANEL_RATE" } })));
+    mock.jobs.mockResolvedValue([1, 2].map(i => ({ id: `job-${i}`, payload: productionOtaPayload(key), status: "SUCCEEDED", attemptCount: 1, maxAttempts: 1, createdAt: new Date() })));
+    await expect(enableProductionOtaSchedule(key, "production")).rejects.toThrow("public total");
+    expect(mock.verifiedGap).not.toHaveBeenCalled(); expect(mock.updateSchedule).not.toHaveBeenCalled();
   });
   it("uses the fresh discovery association for cached identities and rejects an unrelated association", async () => {
     const runs = await mock.runs();
