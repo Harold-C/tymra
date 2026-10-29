@@ -1,6 +1,34 @@
 # Tymra 实现与验收追踪
 
-## 2026-10-29 全量采集修复与恢复：补充两端已发布，来源验收继续
+## 2026-10-29 全量采集修复与恢复：已批准计划恢复，发布收尾完成
+
+NZ21:50最终复核：Tymra仍release5／b04edaa／ddbfb772，Argus仍release6／fb74af1／3b88fc2b，
+本次共享Docker维护没有应用发布、业务配置或预算变更。82/84现行计划启用；
+仅Trip／Expedia为Harold接受的暂停，两退役入口不作为恢复对象。68样本及Trip原held／stoppedSources保持。
+Worker／Scheduler均RUNNING，心跳年龄约3／11秒；维护开始以来新增FAILED／PARTIAL Run为0。
+最新自然证据维护NZ21:28:13审计cmvta6s2c0000p807whpqems3 ready=true／PASSED，
+空闲约62.96GB；尚未到下一小时维护轮次，不主动调用维护或补采。
+
+Harold明确授权继续共享平台维护。首轮冻结后发现Synix事务／锁而中止，68秒恢复；
+第二轮排空通过后，备份只读事务的命令状态文字被误当表名，147秒恢复。
+两次原失败和恢复收据保留，Argus均未停止。修正安静只读输出并先在线验证后，第三轮
+正常停止／启动Docker Desktop，释放旧release4归档句柄。Docker仅将浏览器HostConfig.DnsSearch
+由null序列化为空数组；只重建这一空值表示即可完整匹配原指纹，未豁免其他字段。
+原数据库和17711保留文件逐字摘要一致后恢复浏览器及调用方，538秒完成，小于原900秒；
+原5个Argus服务健康，3个历史Jarvis服务仍关闭，Synix原17项hold／通知设置一致。
+
+新鲜Argus加密恢复集同时由当前3b88和兼容回退6d48实际恢复16538任务及原账号／Cookie／generation，
+异机副本只读重开8内容／3配置通过，SHA
+0d3090614db9cec4c19c40ffd802ead04a5cb3bb3e6335368ebbc88039c9efd7。
+Argus生产正式finalizer现已通过：移除3旧归档共2255339802字节及5无引用旧镜像，
+当前6／兼容回退5、其他容器／卷／镜像保持，共享缓存未清理；新恢复集验证后退役两端旧备份载荷。
+两端产品正式收尾均完成，原共享句柄阻塞关闭。受保护收据在Argus
+runtime/production-releases/argus-release-20261029-6/host-maintenance-20261029/attempt-3，
+正式平台记录留在Spicy Maggie基础设施现有operations register。
+后续自然采集尚未因此验收：Booking仍下一次NZ10-30 20:26，不增加第三次试采，
+RAW_ONLY、参考价及公开价格缺口保持原语义；本次未恢复旧tymra heartbeat。
+
+以下20:39及较早段落为此前发布／启用阶段，旧共享阻塞状态由上述实际恢复及收尾结果取代。
 
 NZ20:39最终回读：Harold批准的Booking全国价格缺口规则已实际发布并启用。
 固定源码 b04edaa1888c1f2c50f4b7ca65220e026cc75615／tymra-release-20261029-5，
