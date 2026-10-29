@@ -153,6 +153,10 @@ timeout or shutdown failure must resume the original applications without cancel
 reordering or rewriting jobs. If shared Argus work overlaps the caller's snapshot, bind it
 to the live caller hold and leave recovery time before the caller's original maintenance
 deadline. Switch Argus before the new Tymra applications; keep source/schedule controls intact.
+Keep the new Scheduler stopped through the post-startup business/evidence comparison.
+After that exact comparison passes, resume dispatch and verify current versions, configuration
+and both runtime heartbeats. Bind this final receipt to the held comparison; do not describe
+legitimate later collection/retention writes as an unchanged whole-database snapshot.
 
 ### Release package retention and required finalization
 
