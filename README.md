@@ -145,6 +145,15 @@ Deploy a fixed candidate, verify recovery material and read back the actual imag
 health and affected business result. Do not infer production acceptance from a build or local
 test. Bootstrap only the selected administrator in a fresh production database, without demo seed.
 
+For a paired maintenance snapshot, stop the Scheduler producer first, allow existing Worker
+jobs and external captures to finish, then stop the remaining applications. A single idle
+queue observation does not close intake. Confirm that public/internal on-demand collection
+is already closed; do not silently change those controls to make maintenance pass. Drain
+timeout or shutdown failure must resume the original applications without cancelling,
+reordering or rewriting jobs. If shared Argus work overlaps the caller's snapshot, bind it
+to the live caller hold and leave recovery time before the caller's original maintenance
+deadline. Switch Argus before the new Tymra applications; keep source/schedule controls intact.
+
 ### Release package retention and required finalization
 
 After production deployment and affected-business acceptance pass, keep only the **current
