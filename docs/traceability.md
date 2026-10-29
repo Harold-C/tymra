@@ -2,6 +2,46 @@
 
 ## 2026-10-29 全量采集修复与恢复：补充两端已发布，来源验收继续
 
+NZ20:39最终回读：Harold批准的Booking全国价格缺口规则已实际发布并启用。
+固定源码 b04edaa1888c1f2c50f4b7ca65220e026cc75615／tymra-release-20261029-5，
+原生镜像c10f3140，生产经典镜像ddbfb772；完整归档651,392,304字节，SHA
+1bfcb4bc96196082784efd616a71264a56a88ff418e35ce42229ab27b9685bed，22层及执行配置逐一匹配。
+本次仅切换Tymra，798.35秒通过原900秒门槛；Argus仍fb74af1／3b88fc2b，未再次重启。
+数据库无迁移；新鲜数据库及证据备份在候选／回滚release4镜像均实际恢复89模型、2333文件／4604条目，
+独立副本8文件全SHA通过。先保持新Scheduler停止、逐字核对原行／证据／来源／计划，再恢复派发，
+两角色新版本心跳与配置／其他服务保持均通过，不声称自然派发后的全库不变。
+
+Booking启用审计 cmvt7yss80000s13g0qzllfit，授权 booking-national-price-gap-20261029：
+复用原 cmvsp8duk0000jv9wyny11qsd／cmvt0xffu0000jvjp0ip82g3y 两轮，首轮1条完整公开正价，
+第二轮原价17200／会员参考15476分且公开价为空；6次交付、12份证据SHA通过。
+原Job／Run／Execution、全部原窗口及失败逐字保持，无第三轮、补采、额度豁免或历史改写。
+旧暂停审计原因参数错误的具体解释已在新审计关联，旧审计保留。
+新政策仅允许Booking按实际原始结果和精确匿名房型／入住身份保留REFERENCE_ONLY缺口；
+不创建RateObservation、不提升参考价，D-039来源级真实正价与其他五OTA逐轮正价门槛保持。
+当前healthSummary单列positiveRateCount=1、priceGapJobs及publicPriceCoverageComplete=false。
+来源／原日计划已回读启用、预算6／并发1／一次尝试；下一轮NZ10-30 20:26，后续自然轮次尚未验证。
+
+原生固定候选lint／全类型／生产构建、407根／643 Worker／252数据库集成及6独立空库OTA通过，
+5个既有外部条件项跳过单列。新增数据库回归实际验证批准前拒绝、批准后启用、旧行不变、无新抓取／价格。
+四版本组合、依赖503／恢复200、Worker心跳、真实合成PG／证据恢复、45迁移文件一致、
+英中桌面／手机4流程均通过且截图已检查。回滚release4又以实际新政策和启用状态断网读取通过，
+仍将本轮原价／会员参考映射为空公开价；无DB查询或来源请求。Git main／修复分支／发布标签已推送。
+
+现行84计划中82启用；仅Trip／Expedia按Harold明确答复暂停，两退役入口仍关闭。
+68样本只保留Trip对象3598691 ACCESS_CHALLENGE的原held及stoppedSources=[trip]，周期未改。
+截至20:39，今日样本94 QUOTED／32 UNAVAILABLE／25 MEMBER_REFERENCE／1 PUBLIC_PRICE_UNVERIFIED／
+1 MIN_STAY_RESTRICTION，全部RAW_ONLY、正式价格0；它们与Booking全国首轮的1条正式价格分开统计。
+本版自然证据维护20:27:49审计cmvt813nq0001p807bu5r79p7 ready=true，切换后未见新增FAILED／PARTIAL Run。
+
+Tymra本机及生产正式complete-release均通过，保留release5／release4完整镜像和最新配对备份；
+旧release2镜像包、旧canonical备份、11份本批重复临时备份及分块／传输delta已按原SHA／文件占用／挂载检查整理，
+小配置、原失败和审计收据保持。低带宽单流240秒超时与中止记录保留，最终按精确前缀及四分块SHA组装后再次
+验证完整原生归档，未因此延长维护预算。材料位于runtime/release-candidates/collection-recovery-20261029/
+booking-national-price-gap-20261029，最新本机备份位于runtime/backups/tymra-release-20261029-5-cutover-attempt-1。
+Argus旧release4包被共享macOS虚拟机占用的生产收尾阻塞仍保留，待共享维护窗口释放句柄；未绕过保护或重启Docker。
+
+以下19:40等段落保留为此前阶段记录，当前状态以上述为准。
+
 NZ19:40 当前：Argus release6（fb74af1／3b88fc2b）已于17:41实际切换，154.2秒；
 Tymra release4（360a9e5／b540978e）第三次维护于18:09完成，641.83秒，小于原900秒。
 前两次失败与恢复原应用的记录保留：第一次配对余量不足，第二次传输停滞耗时后在切换前超时，
