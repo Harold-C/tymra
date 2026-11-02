@@ -17,6 +17,20 @@ vi.mock("../src/services/argus-orchestrator", () => ({ captureBrowserTaskWithDur
 vi.mock("../src/operations/observation-production", async importOriginal => ({ ...(await importOriginal<typeof import("../src/operations/observation-production")>()), persistObservationEvidence: vi.fn() }));
 vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@tymra/db")>("@tymra/db")), prisma, retainSampleReferencePackages: vi.fn() }));
 const { handleSelectedPanelJob } = await import("../src/operations/selected-panel-production");
+async function verifyPreacceptanceDiagnostics() {
+  const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+  const state = selectedFixture();
+  await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+  const task = nextSelectedTasks(state, [], new Set(), new Date("2026-10-20T06:00:00Z"))[0]!;
+  const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "RUNNING", queueName: SELECTED_PANEL_QUEUE, sourceId: source.key, payload: task, maxAttempts: 1, idempotencyKey: "isolated-preaccept-http" } });
+  capture.mockResolvedValueOnce({ ok: false, httpStatus: 503, message: "private upstream body must not be retained" });
+  await expect(handleSelectedPanelJob(job, { ...getEnvironment(), NODE_ENV: "production", ARGUS_API_BASE_URL: "https://api.argus.nz" })).rejects.toThrow("SELECTED_CAPTURE_HTTP_503");
+  const run = await prisma.collectionRun.findFirstOrThrow({ where: { jobId: job.id } });
+  expect(run.errorCode).toBe("SELECTED_CAPTURE_HTTP_503");
+  expect(JSON.stringify(run)).not.toContain("private upstream body");
+  expect(await prisma.argusExecution.count({ where: { parentJobId: job.id } })).toBe(0);
+  expect((await prisma.job.findUniqueOrThrow({ where: { id: job.id } })).maxAttempts).toBe(1);
+}
 beforeAll(async () => {
   if (!/^tymra_test_[a-z0-9_]+$/.test(databaseName)) throw Error("Unsafe test database");
   await adminPrisma.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
@@ -59,6 +73,7 @@ it("persists real failed runs while applying only the bounded window/member/sour
   }
   expect(capture).toHaveBeenCalledTimes(cases.length);
 });
+it("retains pre-acceptance HTTP diagnostics without storing an upstream response body or retrying", verifyPreacceptanceDiagnostics);
 it("persists a normal no-availability observation without a member hold, retry or public price", async () => {
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
   const state = selectedFixture();state.held.push({ memberId: "sample2", reason: "EXISTING_IDENTITY_HOLD" });

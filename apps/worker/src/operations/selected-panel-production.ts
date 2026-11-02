@@ -181,7 +181,10 @@ export async function handleSelectedPanelJob(job: Job, environment: Environment)
         if (!(current.scope as { captureReserved?: boolean }).captureReserved) throw new DeferredJobError("Waiting for shared execution capacity", new Date(Date.now() + 60_000));
         throw Error("SOURCE_RATE_LIMIT");
       }
-      throw Error("SELECTED_CAPTURE_FAILED");
+      // Preserve a bounded diagnostic without persisting upstream bodies or credentials.
+      const code = Number.isInteger(response.httpStatus) && response.httpStatus >= 400 && response.httpStatus <= 599
+        ? `SELECTED_CAPTURE_HTTP_${response.httpStatus}` : "SELECTED_CAPTURE_FAILED";
+      throw Error(code);
     }
     if (!response.payload.ok) throw Error("SELECTED_CAPTURE_FAILED");
     let evaluated: unknown;
