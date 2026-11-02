@@ -1,5 +1,76 @@
 # Tymra 实现与验收追踪
 
+## 2026-11-03 主线发布与有条件恢复
+
+Harold明确授权两仓合入main、清理本次冗余材料、按发布门禁部署并仅恢复通过的采集，
+取代下方此前只推分支及仅本地保留的限制。Tymra发布源码为
+`2aab4764818bd6843feec08cca509ffeb6c04be6`，标签`tymra-release-20261102-1`；
+Argus为`0b76e497a7e2f731bec1ef099a708aea8921f0a2`，标签`argus-release-20261102-1`。
+原逻辑提交均已合入main，本次两条修复分支在核对祖先关系后删除；原工作树及无关工作保留。
+
+固定候选的正式发布门禁通过：Tymra Actions 41430688988包含源码、独立数据库、
+六OTA离线交付及浏览器门禁；Argus 41430683884包含完整源码/PG、正式镜像Chrome及
+运行/恢复门禁，41435760664导出同一不可变镜像。不能把此前局部测试或条件跳过代替这些结果。
+生产Argus已为`6a119c92`，Tymra四服务为`2d0781b2`；OCI导出ID与实际执行配置ID分别核对。
+新鲜数据库/证据及Argus Profile/Cookie均实际隔离恢复，并由当前/兼容回退镜像读取；
+独立副本完整哈希核验通过。Tymra恢复89模型，未向Live数据库恢复旧快照。
+
+Tymra前三次受控尝试均未完成，旧应用自动恢复健康；分别保留空闲门槛、备份传输及配套
+就绪等待超时的原回执。第四次预先准备完整独立传输基底，按实测公布1500秒窗口，实际
+887.61秒完成：先验证业务/证据/原计划控制，再恢复Scheduler并核对新版本心跳。
+没有在运行中的旧窗口延长截止时间。原始失败、每次快照及恢复的小回执保留在既有受保护
+runtime；冗余备份载荷仅在最新完整恢复集与独立副本验收后按正式收尾清单退役。
+
+生产复查与控制结果：
+
+- Booking全国两轮`cmvzapa510000qjavarb2y6dn`、`cmvzawjry0000qjiqkrxwdqlf`均单次成功，
+  六执行交付完成，12份HTML/截图实际哈希核对；Tasman与Nelson原计划对象、11-10/11、
+  2成人/0儿童/1间/NZD保持，含税费总价195/156与原页一致。正式启用门槛通过，日计划恢复，
+  nextRunAt为2026-11-03T13:40:51.206Z。此项不代替后续自然周期或完整可比条款验收。
+- Hotel Give身份及12-01/02、12-05/06三次单次复核、交付和六份证据通过。房型17989917 /
+  Executive Studio Apartment保持；12-01公开原始报价254/267/320，12-05目标房型未显示，
+  正确保存PUBLIC_PRICE_UNVERIFIED/null及REQUESTED_UNIT_NOT_DISPLAYED，不认定售罄。
+  实页Genius登录邀请未再误判为已应用折扣；所有样本观察仍为RAW_ONLY。仅本项hold已解除。
+- MBIE两轮`cmvzakmw20000qj5a4njix2dv`、`cmvzandsg0000qj9qpma15q2w`均读取21条
+  2026-09原记录、生成22地区信号、一次请求、零失败；原始JSON及事实版本摘要核对通过，
+  第二轮22条未变数据不重复造事实版本。原周计划持续启用，未重建或改期。
+- Chateau、Carnmore各身份+两日期三次复核、完整交付与六份证据通过，本身hold已解除。
+  Chateau为24㎡/1 King/2人，12-01报价403；12-05相同房卡明确We are sold out，保存空价。
+  Carnmore为King Studio 22㎡/1 King/2人，两个日期334/385；不替换为32㎡Executive。
+  这两项均保留来源名称键partial及RAW_ONLY，不升级正式可比价格。
+
+最新未通过对象与保护优先于上述短暂恢复：
+
+- Southwark按既有审核偏移使用12-08/09、12-12/13，不改成其他可用日期。第一次通用
+  前置检查因日期偏移被拒，未创建采集；核对原配置后身份复核成功，12-08报价访问返回
+  HTTP429 / Bot or Not?。Job `cmvzbjglt0000qj2cha9ldz3e`失败，未继续第二报价。
+  Expedia selected来源自动重闭，冷却至2026-11-02T14:53:18.298Z（NZ11-03 03:53）；
+  因而BreakFree、Chateau、Carnmore目前也有效暂停，不能称持续恢复。未清除保护或重试。
+  该取消执行的生产交付/ACK尚未验证；原挑战HTML/截图另已独立复制并完整核对，未伪造ACK。
+- Aalton本次身份Job `cmvzatsdm0000qjga2u4r5dix`为SELECTED_ROOM_NOT_RETURNED：
+  正确日期的页面仅列Standard Studio及两种Standard Apartment，没有目标Large Studio /
+  200398438，保留原hold。允许缺价不等于允许建立未经验证的新房型身份。
+- Quest身份Job `cmvzbhzze0000qjyezz0zyi2w`为SELECTED_CAPTURE_FAILED，未形成Tymra
+  ArgusExecution回执；原因尚未确认，未自动重试。Beachlife原访问hold保留，新挑战后未再请求。
+- Sudima沿用下方已实际复核的独立登录跳转与来源熔断；未登录、未绕过验证或提前重试。
+- GeoNet两轮`cmvzah5l20000qj2rx6qwdmea`、`cmvzajoq30000qj3xe5o72j01`均按原预算
+  两请求/16原记录/11信号完成，原记录摘要通过；原始16→21地区展开的失败重放及固定候选门禁
+  也通过。但附加事实完整性检查发现一条magnitude的持久读回值与摘要对应值相差一个浮点ULP
+  （2.402429533837315与2.4024295338373154），不把该检查算通过，日计划保持暂停。
+  persistence/helpers与上一生产版本无差异；归因和修复仍需独立调查，未改写不可变历史记录。
+
+最终控制读回仅解除Hotel Give、Chateau、Carnmore三个已复核hold；其余五hold保留，
+stoppedSources为trip/expedia，manifest、bindings、cadence及其他成员定义逐项保持。
+上述是固定修复行为与有条件恢复的验收，不代表全部来源已恢复或长期运行已验收。
+受保护证据沿用`runtime/release-candidates/collection-recovery-20261102`。Tymra两端正式
+complete-release均通过（retention-completion-local/remote.json），清理前后容器身份、
+镜像、配置及运行状态保持；当前11-02与兼容回退10-29-5完整压缩包保留，旧10-29-4包退役。
+最新唯一完整恢复集为两端`tymra-release-20261102-1-cutover-attempt-4`，完整独立副本及
+当前/回退实际恢复均通过；旧10-29-5、尝试2/3冗余载荷按摘要退役，小回执与配置保留。
+本次镜像传输分块及三个重复硬链接已清除，保留的包及元数据重新核对完整。
+Argus本机清理已通过，Mini仍有两个展开包被虚拟机持有，未强删或重启共享Docker；
+不能将该未完成项描述为两端清理全部通过。
+
 ## 2026-11-02 已验证修复的分组Git交付
 
 Harold随后明确要求将已经解决的问题按逻辑push，取代此前仅本地保留的Git限制。
