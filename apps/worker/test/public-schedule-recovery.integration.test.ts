@@ -4,6 +4,7 @@ import { afterAll, expect, it } from "vitest";
 import { PUBLIC_RECOVERY_SOURCES, preparePublicScheduleRecoveryTransaction, enqueuePublicRecoveryTrialTransaction, enableRecoveredPublicScheduleTransaction } from "../src/operations/public-schedule-recovery";
 import { progressSchedulePayload } from "../src/operations/production-progress-schedules";
 import { publicPilotSchedulePayload, publicPilotRequestLimit } from "../src/operations/production-public-pilot";
+import { firstPublicSchedule, firstPublicSchedulePayload } from "../src/operations/production-public-schedules";
 
 afterAll(() => prisma.$disconnect());
 
@@ -14,8 +15,9 @@ it.each(PUBLIC_RECOVERY_SOURCES)("recovers only the existing %s plan after two e
     const source = await tx.dataSource.upsert({ where: { key: sourceKey }, create: { key: sourceKey, name: sourceKey, providerType: "PUBLIC", acquisitionMethod: "TEST", environments: ["PRODUCTION"], enabled: false, lifecycle: "SUSPENDED", operationalStatus: "HEALTHY", metadata: { boundedProductionCanary: true, marker } }, update: { providerType: "PUBLIC", isDemo: false, environments: ["PRODUCTION"], enabled: false, lifecycle: "SUSPENDED", operationalStatus: "HEALTHY", metadata: { boundedProductionCanary: true, marker } } });
     await tx.scheduleDefinition.deleteMany({ where: { payload: { path: ["sourceId"], equals: sourceKey } } });
     const progress = ["eventfinda", "ticketmaster"].includes(sourceKey);
-    const payload = progress ? progressSchedulePayload(sourceKey) : publicPilotSchedulePayload(sourceKey);
-    const plan = await tx.scheduleDefinition.create({ data: { key: progress ? `progress-${sourceKey}-daily` : `pilot-public-${sourceKey}-weekly`, jobType: progress ? "EVENT_COLLECTION" : "PUBLIC_DATA_COLLECTION", queueName: progress ? "event-collection" : "public-data-collection", cronExpression: progress ? "daily" : "weekly", payload, enabled: false } });
+    const first = firstPublicSchedule(sourceKey);
+    const payload = first ? firstPublicSchedulePayload(sourceKey) : progress ? progressSchedulePayload(sourceKey) : publicPilotSchedulePayload(sourceKey);
+    const plan = await tx.scheduleDefinition.create({ data: { key: first?.key ?? (progress ? `progress-${sourceKey}-daily` : `pilot-public-${sourceKey}-weekly`), jobType: first?.jobType ?? (progress ? "EVENT_COLLECTION" : "PUBLIC_DATA_COLLECTION"), queueName: first?.queueName ?? (progress ? "event-collection" : "public-data-collection"), cronExpression: first?.cronExpression ?? (progress ? "daily" : "weekly"), payload, enabled: false } });
     const oldFailure = await tx.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", failureCount: 1, errorCode: "PARSING_ERROR", scope: {}, createdAt: new Date(Date.now() - 86_400_000), isDemo: false } });
     const otherPlans = await tx.scheduleDefinition.findMany({ where: { id: { not: plan.id } }, orderBy: { id: "asc" } });
     const prepared = await preparePublicScheduleRecoveryTransaction(tx, sourceKey, "production", revision);
@@ -28,7 +30,7 @@ it.each(PUBLIC_RECOVERY_SOURCES)("recovers only the existing %s plan after two e
       await tx.job.update({ where: { id: trial.jobId }, data: { status: "SUCCEEDED", attemptCount: 1, completedAt: new Date() } });
       const scope = sourceKey === "eventfinda" ? { phase: "full", maxPages: 3, maxDetails: 1, maxRecords: 500, requests: 4, failureCount: 0 }
         : sourceKey === "ticketmaster" ? { requestedPhase: "full", phase: "full", limits: { maxPages: 3, maxDetails: 2, maxRecords: 100 }, counters: { requests: 3, failures: 0 } }
-          : { productionCanary: true, configurationUnchanged: true, schedulesUnchanged: true, counters: { requests: publicPilotRequestLimit(sourceKey), failures: 0 } };
+          : { ...(first ? { boundedPublicSchedule: true, sourceId: sourceKey } : { productionCanary: true }), configurationUnchanged: true, schedulesUnchanged: true, counters: { requests: first?.maxRequests ?? publicPilotRequestLimit(sourceKey), failures: 0 } };
       const run = await tx.collectionRun.create({ data: { dataSourceId: source.id, jobId: trial.jobId, mode: "MARKET_COVERAGE", status: "SUCCEEDED", successCount: 2, failureCount: 0, scope, isDemo: false, createdAt: new Date(Date.now() + pass), finishedAt: new Date() } });
       const artifact = await tx.rawArtifact.create({ data: { dataSourceId: source.id, collectionRunId: run.id, artifactType: "NETWORK_RESPONSE", storageRef: progress || sourceKey === "school_sport_nz" ? `tymra-evidence:results/${marker}/${pass}.json` : `postgres:RawArtifact:${marker}:${pass}`, payload: { marker }, contentHash: createHash("sha256").update(marker).digest("hex"), expiresAt: new Date(Date.now() + 86_400_000) } });
       if (progress || sourceKey === "school_sport_nz") {
@@ -52,6 +54,16 @@ it.each(PUBLIC_RECOVERY_SOURCES)("recovers only the existing %s plan after two e
     expect(after.lifecycle).toBe("PRODUCTION");
     expect((after.metadata as Prisma.JsonObject).marker).toBe(marker);
     if (sourceKey === "queenstown_airport_monthly") expect(after.dailyBudget).toBeGreaterThanOrEqual(12);
+    if (first) {
+      const accepted = await tx.collectionRun.findFirstOrThrow({ where: { dataSourceId: source.id, status: "SUCCEEDED" }, orderBy: { createdAt: "desc" } });
+      for (const [index, changed] of [{ boundedPublicSchedule: false }, { sourceId: "another-source" }, { configurationUnchanged: false }, { counters: { requests: first.maxRequests + 1, failures: 0 } }].entries()) {
+        // Terminal evidence is immutable, including in the isolated test database.
+        await tx.collectionRun.create({ data: { dataSourceId: source.id, jobId: accepted.jobId, mode: "MARKET_COVERAGE",
+          status: "SUCCEEDED", successCount: 2, scope: { ...(accepted.scope as Prisma.JsonObject), ...changed },
+          finishedAt: new Date(), createdAt: new Date(Date.now() + 100 + index) } });
+        await expect(enableRecoveredPublicScheduleTransaction(tx, sourceKey, "production", revision)).rejects.toThrow("latest two exact recovery trials");
+      }
+    }
     throw new Error("ROLLBACK_PUBLIC_RECOVERY_TEST");
   }, { timeout: 20_000 })).rejects.toThrow("ROLLBACK_PUBLIC_RECOVERY_TEST");
 });

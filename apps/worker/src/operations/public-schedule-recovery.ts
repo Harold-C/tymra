@@ -2,8 +2,9 @@ import { prisma, type Prisma } from "@tymra/db";
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isProductionPublicPilotSchedule, publicPilotRequestLimit } from "./production-public-pilot";
 import { isProductionProgressSchedule, isSuccessfulProgressTrial } from "./production-progress-schedules";
+import { firstPublicSchedule, isFirstPublicSchedule } from "./production-public-schedules";
 
-export const PUBLIC_RECOVERY_SOURCES = ["eventfinda", "ticketmaster", "school_sport_nz", "queenstownnz_events", "southlandnz_events", "wellington_airport_monthly", "queenstown_airport_monthly", "christchurch_sports"] as const;
+export const PUBLIC_RECOVERY_SOURCES = ["eventfinda", "ticketmaster", "school_sport_nz", "queenstownnz_events", "southlandnz_events", "wellington_airport_monthly", "queenstown_airport_monthly", "christchurch_sports", "geonet", "mbie"] as const;
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -18,7 +19,7 @@ async function recoveryState(tx: Prisma.TransactionClient, sourceKey: string, no
   const plans = await tx.scheduleDefinition.findMany({ where: { payload: { path: ["sourceId"], equals: sourceKey } } });
   if (source.providerType !== "PUBLIC" || source.isDemo || !source.environments.includes("PRODUCTION")
     || source.operationalStatus !== "HEALTHY" || record(source.metadata).boundedProductionCanary !== true
-    || plans.length !== 1 || (!isProductionProgressSchedule(plans[0]!) && !isProductionPublicPilotSchedule(plans[0]!))) {
+    || plans.length !== 1 || (!isProductionProgressSchedule(plans[0]!) && !isProductionPublicPilotSchedule(plans[0]!) && !isFirstPublicSchedule(plans[0]!))) {
     throw new Error("Public recovery source or existing schedule is not approved");
   }
   return { source, plan: plans[0]!, metadata: record(source.metadata) };
@@ -75,6 +76,9 @@ export async function enableRecoveredPublicScheduleTransaction(tx: Prisma.Transa
         || !run.job.idempotencyKey.startsWith(`schedule:${plan.key}:recovery:${revision}:`)
         || !samePayload(run.job.payload, plan.payload)
         || (isProductionProgressSchedule(plan) ? !isSuccessfulProgressTrial(sourceKey, run)
+          : isFirstPublicSchedule(plan) ? scope.boundedPublicSchedule !== true || scope.sourceId !== sourceKey
+            || scope.configurationUnchanged !== true || scope.schedulesUnchanged !== true || counters.failures !== 0
+            || counters.requests !== firstPublicSchedule(sourceKey)?.maxRequests
           : scope.productionCanary !== true || scope.configurationUnchanged !== true || scope.schedulesUnchanged !== true
             || counters.failures !== 0 || typeof counters.requests !== "number" || counters.requests < 1 || counters.requests > publicPilotRequestLimit(sourceKey));
     })) throw new Error("The latest two exact recovery trials must finish fully in one attempt");
