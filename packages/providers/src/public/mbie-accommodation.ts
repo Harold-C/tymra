@@ -84,7 +84,7 @@ export class MbieAccommodationAdapter implements PublicDataAdapter {
     concurrencyLimit: 1,
     dailyBudget: 4,
     collectorVersion: "mbie-adp-range-fetch-v1",
-    parserVersion: "mbie-adp-canonical-markets-v2",
+    parserVersion: "mbie-adp-canonical-markets-v3",
   };
 
   async discover(_request: PublicDiscoveryRequest, _context: AdapterContext): Promise<string[]> {
@@ -166,10 +166,17 @@ export class MbieAccommodationAdapter implements PublicDataAdapter {
 }
 
 export function parseMbieMonth(value: string | undefined): Date | null {
-  const match = value?.match(/^(\d{1,2})\/(\d{1,2})\/(20\d{2})$/);
-  if (!match) return null;
-  const date = new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
-  return Number.isNaN(date.getTime()) ? null : date;
+  const numeric = value?.match(/^(\d{1,2})\/(\d{1,2})\/(20\d{2})$/);
+  // The official CSV now uses English month abbreviations (e.g. Sep-26).
+  // Keep the previous date format readable without locale-dependent Date parsing.
+  const named = value?.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-(\d{2}|20\d{2})$/);
+  if (!numeric && !named) return null;
+  const day = numeric ? Number(numeric[1]) : 1;
+  const month = numeric ? Number(numeric[2]) - 1
+    : ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].indexOf(named![1]);
+  const year = numeric ? Number(numeric[3]) : named![2].length === 2 ? 2000 + Number(named![2]) : Number(named![2]);
+  const date = new Date(Date.UTC(year, month, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month && date.getUTCDate() === day ? date : null;
 }
 
 export function numericMeasure(measures: Record<string, MbieMeasure>, name: string): number | null {
