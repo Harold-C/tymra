@@ -1,6 +1,58 @@
 # Tymra 实现与验收追踪
 
-## 2026-11-03 主线发布与有条件恢复
+## 2026-11-03 GeoNet已恢复，Quest保留暂停（当前）
+
+用户授权继续定位两项、修复、验证后恢复。GeoNet已在独立数据库复现：Prisma6.19.0
+JSON字段create将2.4024295338373154写成2.402429533837315；参数绑定JSON文本的路径保持
+原值。8631374对新信号事实以JSON文本绑定写入并在事务内验证摘要；旧事实不改写，
+同内容的既有事实摘要不符时不走unchanged捷径，下次采集追加新版本。隔离PG真实写入、
+重复幂等、错误摘要拒绝及旧记录保留测试通过，Worker类型检查通过。
+Quest原失败未形成ArgusExecution，原处理丢弃了上游状态；现有记录不足以恢复当时确切
+原因。cc5489f保留有界HTTP状态码，不保存上游响应体/秘密、不增加重试，失败持久化
+集成测试通过。两逻辑提交已推main，固定标签tymra-release-20261103-1的完整发布门禁
+Actions41518456495源码/数据库/构建门禁通过；首次浏览器门禁在会员mobile EN最后一次GET
+报socket hang up，同组25项及随后对应ZH项通过。原始失败日志保留，未改代码/断言，已对
+同一候选仅重跑一次失败门禁；attempt2浏览器及镜像导出全部通过。正式镜像原生标识
+e71a1f56、生产执行配置158025cb，完整压缩包摘要38757467e48e35801eda6052559697b9daded2f5450f88437c1710ebb9d2a79b；
+逐层验证及实际镜像精度/幂等/拒绝错摘要/隔离回滚检查通过。两种Docker镜像表示按相同
+配置摘要与rootfs核对，未用原生OCI索引替代classic执行配置。生产主机27项隔离发布适配器
+检查通过。生产切换实际967.34秒，89模型及2577证据文件由当前/兼容回退实际隔离恢复，
+完整独立副本8文件大小/摘要核验通过；启动前既有业务、证据与控制逐项比较后恢复调度，
+新Worker/Scheduler心跳及四服务版本/健康通过。未向Live恢复旧数据库，其他服务保持。
+
+GeoNet两轮Job cmvzscrnr0000rs2rvdph3vs9 / cmvzsduf80000rs3wvfnlem6d均单次成功，
+每轮2请求、16原记录、10信号、0失败；原始JSON及第一轮3个新事实版本摘要全部一致，
+第二轮10条未变数据不重复追加版本。正式恢复门槛通过，日计划已启用，下一轮为
+2026-11-04T04:00:00Z（NZ11-04 17:00）。原异常事实cmvzah6o3000jqj07yw0i3t2t
+仍保留原值及不匹配摘要，endsAt为11-02T16:22:13.682Z；未改写不可变历史或认证旧摘要有效。
+本次通过的是原缺陷回归、新写入路径及当前两轮采集，不代表全部历史摘要已修复。
+
+Quest新批次quest-recovery-20261103-0925身份Job cmvzsjlab0000rsaft7qtnt5m失败，
+Run cmvzsjlwb000irs07ja8c39e5为SELECTED_ROOM_NOT_RETURNED。Argus执行COMPLETED、
+证据持久保存/ACK及410清除核验通过（deliveryVerifiedAt非空）；HTML与PNG实际复制/哈希，
+原页与截图均确认正确房产22274374、12-01/02、2成人/0儿童/1间/NZD，明确显示该住宿
+在所选日期无可用房，整个页面没有Studio或Comfort Studio房型。不是解析遗漏或登录阻挡；
+附近酒店广告价格不属于Quest。没有可复用房型绑定，未执行两次quote、未换日期或重试失败
+批次，Quest继续held。此项说明本轮当前阻碍，不能反推此前未保存的提交响应具体原因。
+截图SHA db10b9e56c390fc14aa37e63e12d597cb932794fdb991268837f6b04f54250e4，
+HTML SHA 3ae7bd89b9b0c39e08b68e480d059c60f6adc7eb0b8d40bcd3d5626464d7b6f6。
+
+为只开放Quest受控验证，原Expedia来源暂停转成全部7成员的hold，实际有效暂停保持；
+仅补入BreakFree/Chateau/Carnmore三个继承hold，原5个hold均保留。stoppedSources现为
+trip；manifest、bindings、cadence及其他定义与本轮切换前逐项相同。Booking全国、Hotel Give、
+MBIE既有启用状态保留，未恢复其他未通过对象；自然周期与本轮有界验收分开。
+
+证据在受保护runtime/release-candidates/collection-recovery-20261103，原始精度复现与
+定向测试证据沿用collection-recovery-20261102。两端正式complete-release回执均passed，
+保留当前11-03与兼容回退11-02完整压缩包，以及两端唯一逻辑恢复集
+tymra-release-20261103-1-cutover-attempt-1；旧10-29-5包及11-02尝试4备份载荷已退役，
+配置/小回执/失败证据保留。已校验并清理本次11个本机、4个生产主机传输临时文件；
+清理前后运行配置保持，完整镜像再次核对。最终读回GeoNet enabled、Expedia全部7成员
+（含Quest）held、trip暂停，Booking/Hotel Give/MBIE原状态保持，未将本轮部分恢复称全部正常。
+本次兼容回退选2aab476/2d0781b2；切换前两项原本暂停，验收恢复后若再降级旧版本，
+须先暂停GeoNet日计划并hold Quest，保留已追加事实与证据，避免旧写入器再次引入精度问题。
+
+## 2026-11-03 前一轮主线发布与有条件恢复（历史）
 
 Harold明确授权两仓合入main、清理本次冗余材料、按发布门禁部署并仅恢复通过的采集，
 取代下方此前只推分支及仅本地保留的限制。Tymra发布源码为
