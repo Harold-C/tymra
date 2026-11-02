@@ -249,6 +249,7 @@ describe("selected collection isolated persistence", () => {
   });
   it("releases only the reviewed member after identity and both exact-window deliveries, while normal members remain schedulable", async () => {
     vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-selected-review-signing-secret");
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now);
     try {
       const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "PARSING_ERROR" }, { memberId: "sample1", reason: "OTHER_HOLD" }];
       await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
@@ -269,9 +270,12 @@ describe("selected collection isolated persistence", () => {
         if (phase === "identity") await expect(closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).rejects.toThrow("MANUAL_REVIEW_INCOMPLETE_KEEP_HELD");
       }
       const normal = await enqueueSelectedPanel(now); expect((normal!.payload as { memberId: string }).memberId).toBe("sample2");
+      vi.setSystemTime(new Date("2026-11-02T06:00:00Z"));
+      await expect(closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).rejects.toThrow("MANUAL_REVIEW_INCOMPLETE_KEEP_HELD");
+      vi.setSystemTime(now);
       expect(await closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).toEqual({ released: true });
       expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload).held).toEqual([{ memberId: "sample1", reason: "OTHER_HOLD" }]);
-    } finally { vi.unstubAllEnvs(); }
+    } finally { vi.useRealTimers(); vi.unstubAllEnvs(); }
   });
   it("requires a signed exact-task operator grant, keeps the held roster isolated and never repeats a failed review", async () => {
     vi.stubEnv("NODE_ENV", "production");
