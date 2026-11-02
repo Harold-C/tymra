@@ -1,5 +1,131 @@
 # Tymra 实现与验收追踪
 
+## 2026-11-02 已验证修复的分组Git交付
+
+Harold随后明确要求将已经解决的问题按逻辑push，取代此前仅本地保留的Git限制。
+本次按MBIE月份格式、GeoNet区域展开上限、公开计划恢复门禁、Booking/Expedia缺价业务
+处理及复核测试日期隔离分组提交，Argus对应提交HTTP 5xx分类、房型缺席证据及Genius误判。
+原隔离修复分支用于本次推送；不合并main、不打发布标签或部署。源码指纹与已通过验证
+一致，复用下述相关类型、回归、独立数据库集成及构建结果；仅状态文档随后更新。
+未解决的Sudima登录跳转、Southwark日期丢失及其他待生产复核项不声称已修复或已恢复。
+
+## 2026-11-02 Sudima 未登录复查：仍保持暂停
+
+Harold明确要求再用未登录访问、如有普通登录弹窗则关闭，验证通过后仅恢复Sudima。
+按既有人工复核入口创建新批次`sudima-anonymous-review-20261102-1030`；准备审计
+`cmvz48b6a0000s1ew376busmx`仅打开唯一Trip成员的复核入口，原成员hold及其他暂停保持。
+身份Job `cmvz48jhf0000s1g7azj2jals`单次访问失败，Run
+`cmvz48k4e03eus1077xl5zunk`为ACCESS_CHALLENGE。NZ23:28页面从原Sudima房源
+跳转`/account/signin`，回跳地址仍含2197376、12-01/02、2成人/0儿童/1间及NZD。
+原始截图和HTML实际SHA核对通过：是独立登录页，未见关闭、跳过或游客继续按钮，
+没有酒店房型或价格；未输入账号、未移除页面元素，未继续两个报价窗口。
+HTML SHA `e3542116830e754d49f31fbea13978dfdd5f3e75fa937696225c1fa4fdab1fb9`；
+截图SHA `ced03375b3b4948997b01307631dd9ca1faa2b74748baf38d21b0bbb24b21ebd`。
+Trip selected来源保护已自动重闭，Sudima hold保留，未恢复采集。Argus返回
+LOGIN_REQUIRED、冷却至11-03 00:28 NZ、连续两次阻挡触发来源熔断至11-03 05:28 NZ；
+未清除冷却/熔断或重试。此结果只证明本次生产访问被导向登录，不能断言该酒店永久必须登录。
+证据保存在既有受保护runtime目录的`sudima-anonymous-*`文件；生产应用版本未变。
+
+## 2026-11-02 Booking Genius本地修复与BreakFree恢复
+
+Harold当前限定为Booking误判仅本地修复、不推送；BreakFree补验通过后恢复采集。
+旧全量恢复目标已清除，本段不恢复此前全部暂停对象的执行范围。
+Booking全国复查cmvz136we0000s1v1xhhnszx6的搜索/身份成功，价格因普通Genius登录促销提示
+误判已应用优惠而CONTEXT_DRIFT。Argus本地修复、59项相关Chrome/解析回归和类型检查通过；
+原失败HTML断网重放通过，日期/人数/币种/匿名状态保持。未部署，Booking全国计划仍暂停。
+
+BreakFree原Double Interior Room身份cmvz2nxdi0000s12vyuzblce2、12-01/02报价
+cmvz2pgmq0000s15h7cnhagcb、12-05/06报价cmvz2ruyx0000s18334w9udh1均单次成功。
+同一房型10㎡/住2人/1 Double Bed，两个窗口含税费总价分别NZD161/142；三次业务结果/交付
+完成，六份HTML/截图实际SHA和原文/画面复核通过。来源房型ID仍是名称键partial，餐食/付款
+未知及RAW_ONLY保持，不升级为正式可比价格。受保护breakfree-source-review.json的SHA为
+3a6ae437e065e8773e89895cc8c677c8690fb8aabcf877d0a3f04ad971833c7d。
+
+恢复审计cmvz2v3vi0000s1aq1numl7aq已解除BreakFree单项hold。由于Expedia原为来源级暂停，
+准备审计cmvz2nq1g0000s11kfjz1xf0s先把原仅继承来源暂停的Southwark/10019780保留为个别
+SOURCE_PAUSE_PRESERVED_PENDING_VALIDATION，再打开来源复核路径；其他原hold未解除。
+NZ22:50独立读回验证：只有BreakFree从有效暂停集合移出，其他成员有效暂停、manifest、
+bindings及cadence逐项保持；每日采集入口已恢复。本日两窗口已完成，后续自然周期尚未观察。
+两端生产镜像及应用版本未变，没有commit/push或发布。本地修复和运行证据仍保留在原工作树
+与runtime/release-candidates/collection-recovery-20261102。
+
+## 2026-11-02 生产采集异常修复与恢复的前期记录（全量目标已停止）
+
+Harold此前要求排查修复抓取异常，验证通过后恢复全部相应生产采集计划；随后已停止全量目标。
+范围含GeoNet、MBIE ADP、Bookabach/Expedia/Trip全国计划、六个held样本与Southwark超时；
+原退役入口不属于异常暂停计划。Trip、Bookabach及Expedia全国日计划已恢复；本段不代表全部完成。
+Harold当时选择“仅保留本地修复，暂不推送”；最新授权见上方分组Git交付。
+依赖候选代码的生产恢复仍保留待发布，不以当前旧镜像声称已修复。
+
+现场Tymra为release5/b04edaa/ddbfb772；Argus已于11-01升级为a46547b2/
+argus-release-20261101-1/c3d7f793，旧10-29 Argus版本不能作为本次发布基线。
+隔离工作树为Tymra `worktrees/production-collection-recovery-20261102`（基于5fb7917）
+和Argus `worktrees/tymra-collection-recovery-20261102`（从实际a46547b2建立，后快进到
+仅更新正式记录的259ca8c主线基线）；原工作区未修改。
+
+已保存当前官方MBIE 2MB范围响应：月份已改为Sep-26，旧解析器仅支持数字日期。
+本地兼容两种格式并拒绝无效日期；实际保存响应离线得到2026-09、21条RTO Total原记录、
+22地区信号，无缺失Occupancy rate。77项provider测试通过，5项旧外部条件跳过；
+provider及Worker类型检查通过。GeoNet原失败cmvoysokf05xxmr075o4ky337的16条原始记录
+离线映射21条信号，超过旧20结果限制；已分开原始记录限额与有限地区展开上限，保留
+两次请求及4地震/16火山分配，9项相关测试通过（含实际normalizer展开超过20条）。
+本地数据库集成已通过；最终发布门禁、真实两轮与计划启用验证尚未完成。
+
+运行材料在既有runtime/release-candidates/collection-recovery-20261102：
+failed-source-evidence.protected.json保存18失败Run及49条原始证据元数据；source-evidence
+保存并校验33份原文件，public-parser-replay.json记录上述离线结果。
+原Expedia Chateau/Carnmore失败HTML均为Chrome HTTP ERROR 502页，Argus候选已按临时
+NAVIGATION_ERROR分类，两份原页重放通过。Aalton/Hotel Give为目标房型确实未返回，
+Harold于11-02明确批准保留价格未知并继续后续采集；Argus缺席证据与Tymra
+PUBLIC_PRICE_UNVERIFIED处理已补齐，两份原页重放通过，8项业务结果回归通过。
+Bookabach全国身份已由下述两轮实采确认；Southwark原日期就绪超时仍未通过新实采确认。
+Southwark原HTML（SHA 5fc6474b）在隔离Chrome断网重放：请求12-12/13的URL构造正确，
+但保存页面的最终URL没有日期、可见控件为11-16/17、房型表为空。快照与解析器明确拒绝
+EXPEDIA_STAY_CONTEXT_CHANGED，没有生成错误日期报价。无法从该快照确定日期丢失的原因；
+不以延长等待或修改目标日期冒充修复。受保护southwark-date-context-replay.json保存复核结果，
+该结果不是新实站成功，Expedia selected访问保护保持。
+Trip Sudima原页为Sign in to Trip.com，BreakFree ACCESS_CHALLENGE无HTML声明；
+须当前有界实采与来源准入，不可仅清除保护来宣称恢复。
+
+最终验收仍须：各修复固定候选门禁及必要备份实际恢复、受影响生产发布、完整业务/证据/ACK
+两轮、当前held逐项解除、对应现行全国/公开计划启用并读回，保护历史失败及样本身份/入住条件。
+Tymra最终常规lint/类型、409根测试和646 Worker测试已通过（5项旧外部条件跳过）；
+最终252项数据库集成及构建、类型通过。首轮人工恢复集成测试因固定10月任务与真实11月
+验收日期混用失败，已仅固定该测试的Date，并增加跨月必须拒绝的断言；生产日期门禁未弱化。
+6项离线OTA交付已在空白独立库全部通过，不以常规集成中的条件跳过代替通过。
+GeoNet/MBIE加入既有受控公开计划恢复入口，仅接受原计划和固定版本的两轮一次成功、
+精确请求预算、配置不变及完整原始证据；11项恢复集成及最终类型检查通过，生产未调用。
+
+生产Trip两轮单次任务cmvyxoikz0000s1c3lwv6gchq、cmvyxuqrd0000s1esc9a8rmbz均成功，
+各发现/身份/价格三执行，六份deliveryVerifiedAt已确认；原b04edaa/a46547b2版本。
+通过正式启用门禁后全国日计划已恢复，nextRunAt=2026-11-03T10:02:53.938Z；
+selected stoppedSources/held仍保持待逐项验收。受保护trip-plan-enable-1保存接受的两个Job。
+此期间Booking自然日计划cmvyxri4p004kp807oj9tyh07于07:27 UTC遇ACCESS_CHALLENGE自动暂停，
+已纳入本次恢复范围，不隐瞒新增故障；原wire确认冷却至2026-11-02T08:27:21.241Z，未绕过。
+Bookabach两轮cmvyxz79k0000s1h3w7xxmsm3、cmvyy3zh70000s1jh1xj2ikgl均成功，六执行交付完成，
+原失败后的新验收版本已追加保留历史；通过正式正价/证据门禁恢复全国日计划，
+nextRunAt=2026-11-03T09:11:10.458Z，实际enabled读回通过。
+Trip全国门禁通过后，仅为仍held的唯一Trip成员恢复复核准入（审计cmvyy8s8m0000s1ku629l9cnt），
+未清除成员hold；Sudima身份复核cmvyya7q50000s1nj3k316z4g再次ACCESS_CHALLENGE，
+原held保留，selected Trip保护自动重新关闭，未重复提交。全国成功不代表该样本可访问。
+Expedia两轮cmvyyc9p70000s1ongvneq402、cmvyyh5gs0000s1r1k1wi1yy8均单次成功，
+六执行交付完成；通过正式启用门禁后全国日计划已恢复，
+nextRunAt=2026-11-03T08:50:17.311Z。独立复核两条完整费用NZD正价及12份实际证据SHA通过；
+Trip/Bookabach四条正价及24份证据的独立核验也已通过，三来源共六轮不代表长期自然稳定。
+Expedia全国通过后仅解除selected来源闸门，保留原六held（审计cmvyyp1us0000s1tjsv28qjv8）；
+自然报价Run cmvyypi36031ss1073qwg4vs2在07:53 UTC再次ACCESS_CHALLENGE，
+对象research:chch:extra-beachlife、入住12-01。保护自动重新停止selected Expedia，
+该成员新增held；未再次清除或重试。最终selected stoppedSources=[trip,expedia]、held共7，
+其余两名原非held Expedia成员并未因此完成自然采集验收。
+07:58 UTC（NZ20:58）只读回读86条计划中83启用；关闭项为GeoNet、Booking全国和
+christchurch-three-observations-20261016旧入口。该计数不等于83条均健康，MBIE ADP周计划
+仍启用但生产旧解析器未修复，下次2026-11-06T07:56:35.244Z。近7天CollectionRun为
+1065成功/23失败（含本次人工验收，不等于报价覆盖率）；GeoNet旧失败在该窗口外。
+首次按全部执行统计Bookabach为6次，进一步核对均属独立selected队列；全国预算须按
+legacyOtaDailyWhere排除selected执行计算，不把总执行数直接当全国额度耗尽。
+无commit/push或应用发布；已验全国计划恢复与本地代码修复分别记录，未将两轮有界成功
+扩大为长期自然调度稳定性证明。
+
 ## 2026-10-29 全量采集修复与恢复：已批准计划恢复，发布收尾完成
 
 NZ21:50最终复核：Tymra仍release5／b04edaa／ddbfb772，Argus仍release6／fb74af1／3b88fc2b，
