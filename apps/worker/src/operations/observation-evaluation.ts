@@ -53,7 +53,9 @@ export function evaluateCapturedObservation(candidate: ObservationCandidate, uni
     // The current v1 connector does not attest the actual browser login/region/profile or booking mode.
     // Never manufacture public-profile evidence from configured intent or a historical screenshot.
     collectionProfile: null, bookingMode: "UNKNOWN",
-    outcome: rate.availabilityStatus === "AVAILABLE" ? "QUOTED" : rate.availabilityStatus === "MINIMUM_STAY_RESTRICTION" ? "MIN_STAY_RESTRICTION"
+    outcome: ["booking", "expedia"].includes(data.provider) && rate.availabilityStatus === "NOT_LISTED"
+      && rate.qualityFlags.includes("REQUESTED_UNIT_NOT_DISPLAYED") && rate.totalPriceMinor === null ? "PUBLIC_PRICE_UNVERIFIED"
+      : rate.availabilityStatus === "AVAILABLE" ? "QUOTED" : rate.availabilityStatus === "MINIMUM_STAY_RESTRICTION" ? "MIN_STAY_RESTRICTION"
       : ["UNAVAILABLE", "SOLD_OUT", "NOT_LISTED"].includes(rate.availabilityStatus) ? "UNAVAILABLE" : "SOURCE_FAILURE",
     totalMinor: rate.totalPriceMinor && rate.totalPriceMinor > 0 ? rate.totalPriceMinor : null,
     mandatoryFees: rate.totalIncludesMandatoryFees === true ? "COMPLETE" : "UNKNOWN",

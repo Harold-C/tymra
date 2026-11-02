@@ -295,6 +295,13 @@ New manual acceptance still verifies identity and both original stay windows, pr
 terminal failures, and closes only the individually reviewed member. Exact duplicate reference
 metadata repeated across public rows is shown once; original wire evidence remains intact.
 
+For selected Booking/Expedia members, the 2026-11-02 approved absence policy maps an exact
+`NOT_LISTED`/null rate carrying `REQUESTED_UNIT_NOT_DISPLAYED` to `PUBLIC_PRICE_UNVERIFIED`.
+This records absence from the verified dated property table, not confirmed unavailability.
+Other visible rooms establish table readiness only; their occupancy, inventory and prices cannot
+be assigned to the target. Retain all evidence and null amounts; identity and delivery gates remain.
+This does not change nationwide positive-price acceptance or automatically release existing holds.
+
 Trip resolution can add optional `sourceRoomGroupExternalId=trip:<hotel>:room-group:<card>`
 without replacing the legacy supplier `externalId`. In the selected roster, an expected-name
 target without a pinned supplier/signature may resolve to this explicit own-property visible

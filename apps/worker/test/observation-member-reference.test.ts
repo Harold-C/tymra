@@ -72,6 +72,24 @@ describe("visible member prices as separate observation references", () => {
     original.rates[0].rateFence = "PUBLIC";
     expect(() => evaluate(original)).toThrow("AVAILABILITY_OUTCOME_UNCLASSIFIED");
   });
+  it("keeps an absent requested Booking or Expedia unit as unknown price, not unavailability", () => {
+    for (const provider of ["booking", "expedia"] as const) {
+      const data = fixture(); data.provider = provider;
+      const c = provider === "booking" ? candidate : { ...candidate, source: "EXPEDIA" as const,
+        sourceUrl: "https://www.expedia.co.nz/Fixture.h100.Hotel-Information" };
+      if (provider === "expedia") data.sourceListingId = data.rates[0].sourceListingId = "expedia:100";
+      const rate = data.rates[0]; rate.availabilityStatus = "NOT_LISTED";
+      rate.rateFence = provider === "booking" ? "PUBLIC" : "PUBLIC_SIGNED_OUT";
+      rate.referencePrices = []; rate.qualityFlags = ["REQUESTED_UNIT_NOT_DISPLAYED", "NO_PRICE_FOR_REQUESTED_CONTEXT"];
+      const evaluateGap = () => evaluateCapturedObservation(c, "10001", "2026-12-01", data, "retained-wire-proof");
+      expect(evaluateGap()).toMatchObject([{ status: "RAW_ONLY", totalMinor: null, nightlyEquivalentMinor: null,
+        raw: { outcome: "PUBLIC_PRICE_UNVERIFIED", totalMinor: null, evidenceRef: "retained-wire-proof" } }]);
+      rate.qualityFlags = [];
+      expect(evaluateGap()[0].raw.outcome).toBe("UNAVAILABLE");
+      rate.unitExternalId = "other-room";
+      expect(evaluateGap).toThrow("EXACT_UNIT_NOT_RETURNED");
+    }
+  });
   it("rejects unlabelled, non-Booking and mismatched guest references", () => {
     const unlabelled = fixture(); unlabelled.rates[0].referencePrices[1].sourceText = "Unattributed price";
     expect(() => evaluate(unlabelled)).toThrow("AVAILABILITY_OUTCOME_UNCLASSIFIED");
