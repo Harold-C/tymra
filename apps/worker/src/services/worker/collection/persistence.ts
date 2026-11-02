@@ -12,6 +12,7 @@ import { type ArgusBrowserTaskResult } from "../../../clients/argus-client";
 import { EventPersistenceCache } from "../contracts";
 import { inferredTimePrecision, impactEvidenceForHash, withEventImpact, createEventPersistenceCache, eventSeriesRepresentative, stableId, stableHash, jsonRecord, eventSignal } from "../helpers";
 import type { WorkerContext } from "../context";
+import { insertExactSignalFact } from "./exact-signal-fact";
 
 export async function persistNormalisedSignal(this: WorkerContext, signal: PublicSignal, dataSourceId: string, collectionRunId: string, defaultMarketKey: string, eventOccurrenceId?: string) {
   const seenAt = new Date();
@@ -29,7 +30,10 @@ export async function persistNormalisedSignal(this: WorkerContext, signal: Publi
     where: { dataSourceId_externalId: { dataSourceId, externalId: signal.externalId } },
     include: { canonicalLink: { include: { marketSignal: true } } },
   });
-  if (existing?.contentHash === contentHash && existing.canonicalLink && existing.canonicalLink.marketSignal.eventOccurrenceId === (eventOccurrenceId ?? null)) {
+  const retainedFact = existing?.contentHash === contentHash ? await prisma.publicFactVersion.findFirst({
+    where: { dataSourceId, factKind: "MARKET_SIGNAL", externalId: signal.externalId, contentHash }, orderBy: { createdAt: "desc" },
+  }) : null;
+  if (existing?.contentHash === contentHash && retainedFact && stableHash(retainedFact.payload) === contentHash && existing.canonicalLink && existing.canonicalLink.marketSignal.eventOccurrenceId === (eventOccurrenceId ?? null)) {
     const sourceSignal = await prisma.sourceMarketSignal.update({
       where: { id: existing.id },
       data: { lastCollectionRunId: collectionRunId, lastSeenAt: seenAt },
@@ -76,15 +80,11 @@ export async function persistNormalisedSignal(this: WorkerContext, signal: Publi
         contentHash, metadata: { canonicalisationVersion: "source-isolated-signal-v1", signal: signalMetadata }, lastSeenAt: seenAt,
       },
     });
-    await tx.publicFactVersion.upsert({
-      where: { idempotencyKey: stableId("public-fact-version", `${collectionRunId}:MARKET_SIGNAL:${dataSourceId}:${signal.externalId}:${contentHash}`) },
-      create: {
+    await insertExactSignalFact(tx, {
         idempotencyKey: stableId("public-fact-version", `${collectionRunId}:MARKET_SIGNAL:${dataSourceId}:${signal.externalId}:${contentHash}`),
-        dataSourceId, collectionRunId, factKind: "MARKET_SIGNAL", externalId: signal.externalId,
+        dataSourceId, collectionRunId, externalId: signal.externalId,
         contentHash, observedAt: seenAt, startsAt: signal.startsAt, endsAt: signal.endsAt,
         payload: sourceContent as Prisma.InputJsonValue, isDemo: signal.fixture || this.environment.NODE_ENV === "test",
-      },
-      update: {},
     });
   const existingLink = await tx.marketSignalSourceLink.findUnique({ where: { sourceMarketSignalId: sourceSignal.id }, select: { marketSignalId: true } });
   const canonicalId = existingLink?.marketSignalId
