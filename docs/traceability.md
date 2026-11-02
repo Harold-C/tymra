@@ -1,6 +1,53 @@
 # Tymra 实现与验收追踪
 
-## 2026-11-03 GeoNet已恢复，Quest保留暂停（当前）
+## 2026-11-03 Quest换日期验证通过并恢复每日采集（当前）
+
+Harold明确允许Quest在有房的其他日期验证原指定房型，报价仍使用原日期；原日期无房或
+指定房型未返回时保留无房/缺价并继续每日采集。6e4590a仅给人工identity许可增加显式
+alternateIdentityDate及绑定精确任务/日期的HMAC回执；quote、过期/篡改回执与普通调度
+不能借用该例外。原任务/state schema、房型身份TTL、报价窗口、访问保护和单次执行保持。
+隔离PG验证换日期身份+原两窗口关闭、错误/过期许可拒绝，以及Booking/Expedia无房、
+Expedia房型未显示的空价持久化、无新增hold及次日两窗口继续，相关类型检查通过。
+
+修复已合入main，固定标签tymra-release-20261103-2的Actions41539131673源码/数据库/
+构建、完整浏览器与生产镜像导出均首次通过。镜像原生标识16efc6bb，生产执行配置b7d93185，
+归档SHA-256为6129bbfa13798a380e360c6bbc7c9d9649a84b1e8f62c0f3660bdf08cae41e56。
+完整包/逐层核验、实际镜像精度/幂等/拒绝错摘要与事务回滚、生产主机27项隔离发布工具
+检查通过。受控切换实际855.83秒，新鲜备份及异机8文件完整副本核验通过；当前/兼容回退
+实际隔离恢复89模型、2579证据文件。未向Live恢复旧数据库，无新增migration；启动前
+业务、证据与控制核对通过后恢复调度。四应用版本/就绪及Worker/Scheduler心跳通过，零重启。
+Argus仍0b76e49/6a119c92，未发布或重启共享平台。
+
+批次quest-alternate-20261103-1145三次均maxAttempts=1/attemptCount=1、Job/Run成功：
+
+- 身份Job cmvzw4rqz0000lw1j7g8avfhs，Run cmvzw4sjx0002lw0645xg7hw3：11-08/09实际
+  有房，原页与截图确认Quest on Manchester/22274374、Comfort Studio, Kitchen、30㎡、
+  Sleeps2、1 Queen Bed OR 2 Single Beds。保留来源名称键
+  expedia:22274374:unit:comfort-studio-kitchen及partial身份，未改变原定报价日期。
+- 12-01/02 Job cmvzw7io40000lw4ev7ckmbx6，Run cmvzw7j160006lw06kooiq7hp：
+  该住宿明确无可用房，成功保存UNAVAILABLE/null；不是技术失败或正式报价。
+- 12-05/06 Job cmvzw9g5w0000lw7211ti7wvc，Run cmvzw9ga1000alw064akhsq3d：
+  同一30㎡/2人房卡显示NZD294、includes taxes & fees、所选Non-refundable；另一个
+  refundable +NZD15选项保留在原页证据，未混入所选价格。raw总额29400，仍RAW_ONLY、comparisonKey=null，
+  未升级为可比价格或RateObservation，未知付款/细条款/实际浏览器证明保持未知。
+
+三页均核对原房源、日期、2成人/0儿童/1间/1晚/NZD及未登录页面；六份HTML/截图实际复制
+并核验SHA，三次证据持久化、ACK/410交付通过。人工源页复核回执SHA为
+9d5b15f1bf9ff06f23bd09e0ec780e908a1b33de5bfe2dbf634d467108b5b0b4，恢复后读回通过。
+仅Quest的hold已解除；其余7项hold及trip停止保持，manifest/bindings/cadence逐项相同。
+GeoNet、Booking全国、Hotel Give及MBIE原启用保持；旧失败批次与原始记录不改写或重试。
+本轮验证不代替恢复后的自然每日周期。证据位于受保护runtime/release-candidates/quest-recovery-20261103。
+当前兼容回退为cc5489f/158025cb，仍包含GeoNet精度修复；回退前须在selected计划空闲时
+先hold Quest并核对无在途人工任务，保留身份、报价、失败及证据历史。
+
+两端complete-release正式收尾通过，保留当前11-03-2与兼容回退11-03-1完整包，以及两端
+唯一逻辑恢复集tymra-release-20261103-2-cutover-attempt-1。旧11-02完整包、前一份11-03-1
+备份载荷已按大小/摘要/独立恢复/无占用检查退役，配置及失败小回执保留。本机9个、生产
+主机4个传输临时文件均核验清理，当前完整镜像保留并再次验SHA。生产临时清理首次缺少
+传输清单而在写清理计划前停止，未删文件；补齐原封存清单并重新核验后完成，原准备失败
+与最终回执均保留。无共享Docker重启、无无关工作树清理。
+
+## 2026-11-03 前一轮GeoNet恢复与Quest暂停（历史）
 
 用户授权继续定位两项、修复、验证后恢复。GeoNet已在独立数据库复现：Prisma6.19.0
 JSON字段create将2.4024295338373154写成2.402429533837315；参数绑定JSON文本的路径保持
