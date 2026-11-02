@@ -37,6 +37,12 @@ not followed by a detail request when it already contains the fields needed by t
 
 Eventfinda and Ticketmaster have source-specific collection strategies documented separately.
 
+GeoNet's existing daily plan retains a maximum of four earthquake records and sixteen volcanic
+alert records across those two requests. One hazard may map to several supported markets. Its
+derived signal ceiling is therefore the actual raw record count multiplied by the finite number
+of supported major markets and official regions; it emits no events. This separate expansion
+bound preserves regional coverage without increasing source requests or raw record allocation.
+
 Source escalation remains source-specific. OurAuckland, RBNZ B1, DunedinNZ, Auckland Airport
 monthly traffic and Ministry of Transport airline on-time performance use registered Argus
 connectors. Their authoritative pages or report assets do not provide the required structured

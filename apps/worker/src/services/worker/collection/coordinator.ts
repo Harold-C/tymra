@@ -261,7 +261,7 @@ export async function collectSource(this: WorkerContext, sourceId: string, marke
           throw new AdapterError("PARSING_ERROR", "MBIE ADP signals exceed the approved result ceiling", false);
         }
         const bounded = productionCanary ? boundProductionCanaryResults(uniqueEvents, uniqueSignals, options.limit!)
-          : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit, sourceId)
+          : boundedPublicSchedule ? boundFirstPublicResults(uniqueEvents, uniqueSignals, scheduleSpec!.limit, sourceId, raw.length)
           : { events: uniqueEvents, signals: uniqueSignals };
         events = bounded.events;
         signals = bounded.signals;

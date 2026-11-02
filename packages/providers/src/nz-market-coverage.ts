@@ -68,6 +68,11 @@ const NZ_REGIONS = [
   "Tasman", "Waikato", "Wellington", "West Coast",
 ] as const;
 
+/** Finite regional fan-out for one source fact: major markets plus official regions. */
+export function nzSignalMarketCapacity() {
+  return NZ_MAJOR_ACCOMMODATION_MARKETS.length + NZ_REGIONS.length;
+}
+
 const REGION_ALIASES: Readonly<Record<string, (typeof NZ_REGIONS)[number]>> = {
   auckland: "Auckland",
   "bay of plenty": "Bay of Plenty",

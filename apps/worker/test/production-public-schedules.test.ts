@@ -50,6 +50,29 @@ describe("first production public schedules", () => {
     expect(() => assertFirstPublicGeoNetReferences(["https://api.geonet.org.nz/quake?MMI=3"])).toThrow("both approved feeds");
   });
 
+  it("retains GeoNet regional expansion while enforcing raw and derived ceilings separately", () => {
+    const signals = Array.from({ length: 21 }, (_, i) => `regional-signal-${i}`);
+    expect(boundFirstPublicResults([], signals, 20, "geonet", 16).signals).toEqual(signals);
+    expect(() => boundFirstPublicResults([], signals, 20, "geonet")).toThrow("regional expansion budget");
+    expect(() => boundFirstPublicResults([], signals, 20, "geonet", 21)).toThrow("regional expansion budget");
+    expect(() => boundFirstPublicResults([], signals, 20, "geonet", 0)).toThrow("regional expansion budget");
+    expect(() => boundFirstPublicResults(["unexpected-event"], [], 20, "geonet", 16)).toThrow("regional expansion budget");
+    expect(() => boundFirstPublicResults([], Array(641).fill("signal"), 20, "geonet", 20)).toThrow("regional expansion budget");
+    expect(() => boundFirstPublicResults([], signals, 20, "mbie", 16)).toThrow("approved result budget");
+  });
+
+  it("accepts real GeoNet normalisation when four hazards affect more than twenty market rows", async () => {
+    const raw = Array.from({ length: 4 }, (_, index) => ({
+      sourceId: "geonet", externalId: `quake-${index}`, fixture: false,
+      fetchedAt: new Date("2026-11-02T00:00:00Z"),
+      payload: { properties: { time: "2026-11-02T00:00:00Z", locality: "Rotorua", mmi: 6 },
+        geometry: { coordinates: [176.25, -38.31] } },
+    }));
+    const signals = await publicDataAdapters.geonet.normalise(raw, { mode: "fixture", correlationId: "regional-expansion", locale: "en", currency: "NZD" });
+    expect(signals.length).toBeGreaterThan(20);
+    expect(boundFirstPublicResults([], signals, 20, "geonet", raw.length).signals).toEqual(signals);
+  });
+
   it("keeps the formal source registry aligned with all five deployed adapters", () => {
     const records = registrySourceSeedRecords();
     for (const schedule of FIRST_PUBLIC_SCHEDULES) {

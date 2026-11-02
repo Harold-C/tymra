@@ -1,4 +1,5 @@
 import { prisma } from "@tymra/db";
+import { nzSignalMarketCapacity } from "@tymra/providers/nz-market-coverage";
 
 export const FIRST_PUBLIC_SCHEDULES = [
   { sourceId: "public_holidays_nz", key: "first-public-holidays-weekly", jobType: "PUBLIC_DATA_COLLECTION", queueName: "public-data-collection", cronExpression: "weekly", marketScope: "new-zealand", limit: 20, maxRequests: 1 },
@@ -49,8 +50,17 @@ export function isPreviousChristchurchPublicSchedule(schedule: Parameters<typeof
     && (payload as Record<string, unknown>).limit === 30;
 }
 
-export function boundFirstPublicResults<Event, Signal>(events: Event[], signals: Signal[], limit: number, sourceId?: string) {
+export function boundFirstPublicResults<Event, Signal>(events: Event[], signals: Signal[], limit: number, sourceId?: string, rawRecordCount?: number) {
   if (!Number.isInteger(limit) || limit < 1 || limit > (sourceId === "rto_calendars" ? 1_000 : 30)) throw new Error("First public schedule result limit is invalid");
+  if (sourceId === "geonet") {
+    // One observed hazard can affect several existing markets. The source request
+    // and 4-quake/16-volcano allocations remain bounded independently of that fan-out.
+    if (limit !== 20 || !Number.isInteger(rawRecordCount) || rawRecordCount! < 0 || rawRecordCount! > limit
+      || events.length !== 0 || signals.length > rawRecordCount! * nzSignalMarketCapacity()) {
+      throw new Error("GeoNet results exceed the approved record or regional expansion budget");
+    }
+    return { events, signals };
+  }
   if (events.length + signals.length > limit) throw new Error(`${sourceId ?? "Public source"} results exceed the approved result budget`);
   return { events, signals };
 }
