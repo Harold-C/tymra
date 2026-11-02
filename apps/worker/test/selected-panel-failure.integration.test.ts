@@ -74,27 +74,37 @@ it("persists real failed runs while applying only the bounded window/member/sour
   expect(capture).toHaveBeenCalledTimes(cases.length);
 });
 it("retains pre-acceptance HTTP diagnostics without storing an upstream response body or retrying", verifyPreacceptanceDiagnostics);
-it("persists a normal no-availability observation without a member hold, retry or public price", async () => {
-  const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+it.each([["booking", false], ["expedia", false], ["expedia", true]] as const)("persists %s no-availability/missing room=%s without a hold, retry or public price", async (provider, missingRoom) => {
+  const source = await prisma.dataSource.upsert({ where: { key: provider }, update: {}, create: { key: provider, name: provider, providerType: "OTA", sourceType: "OTA", acquisitionMethod: "ISOLATED_FIXTURE", enabled: false, lifecycle: "SUSPENDED", operationalStatus: "DEGRADED", dailyBudget: 6, concurrencyLimit: 1, environments: ["PRODUCTION"] } });
   const state = selectedFixture();state.held.push({ memberId: "sample2", reason: "EXISTING_IDENTITY_HOLD" });
+  if (provider === "expedia") {
+    state.manifest.members[0]!.source = provider;
+    state.manifest.members[0]!.sourceUrl = "https://www.expedia.co.nz/Fixture.h100.Hotel-Information";
+    state.manifestHash = selectedHash(state.manifest);
+  }
+  const listingId = provider === "expedia" ? "expedia:100" : "selected-0";
   await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
   const at = new Date("2026-10-20T06:00:00Z");
   const task = nextSelectedTasks(state, [{ memberId: "sample0", identityAt: at, unitExternalId: "unit0", lastQuoteAt: null }], new Set(), at).find(t => t.memberId === "sample0" && t.phase === "quote")!;
-  const rate = { sourceListingId: "selected-0", unitExternalId: "unit0", checkIn: task.checkIn, checkOut: "2026-12-02", currency: "NZD", adults: 2, children: 0, units: 1,
-    basePriceMinor: null, mandatoryFeesMinor: null, taxesMinor: null, optionalFeesMinor: null, totalPriceMinor: null, referencePrices: [], availabilityStatus: "UNAVAILABLE", minimumStay: null,
+  const rate = { sourceListingId: listingId, unitExternalId: "unit0", checkIn: task.checkIn, checkOut: "2026-12-02", currency: "NZD", adults: 2, children: 0, units: 1,
+    basePriceMinor: null, mandatoryFeesMinor: null, taxesMinor: null, optionalFeesMinor: null, totalPriceMinor: null, referencePrices: [], availabilityStatus: missingRoom ? "NOT_LISTED" : "UNAVAILABLE", minimumStay: null,
     restrictionReason: "Property-wide no availability for the exact requested stay", mealPlan: "UNKNOWN", cancellationPolicy: "UNKNOWN", paymentTerms: "UNKNOWN", rateFence: "PUBLIC",
-    sourceUrl: state.manifest.members[0]!.sourceUrl, collectedAt: at.toISOString(), qualityFlags: ["PROPERTY_LEVEL_UNAVAILABILITY", "UNIT_IDENTITY_NOT_REVERIFIED"], fieldSources: {} };
-  capture.mockResolvedValueOnce({ ok: true, payload: { ok: true, extracted: { data_schema: "ota-public.collect_rates", schema_version: "1.0.0", provider: "booking",
-    sourceListingId: "selected-0", rates: [rate], observedAt: at.toISOString(), warnings: ["NO_PRICE_FOR_REQUESTED_CONTEXT"], quality: "partial" } } });
-  const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "RUNNING", queueName: SELECTED_PANEL_QUEUE, sourceId: source.key, payload: task, maxAttempts: 1, idempotencyKey: "isolated-normal-unavailable" } });
+    sourceUrl: state.manifest.members[0]!.sourceUrl, collectedAt: at.toISOString(), qualityFlags: [missingRoom ? "REQUESTED_UNIT_NOT_DISPLAYED" : "PROPERTY_LEVEL_UNAVAILABILITY", "UNIT_IDENTITY_NOT_REVERIFIED"], fieldSources: {} };
+  capture.mockResolvedValueOnce({ ok: true, payload: { ok: true, extracted: { data_schema: "ota-public.collect_rates", schema_version: "1.0.0", provider,
+    sourceListingId: listingId, rates: [rate], observedAt: at.toISOString(), warnings: ["NO_PRICE_FOR_REQUESTED_CONTEXT"], quality: "partial" } } });
+  const job = await prisma.job.create({ data: { type: "RATE_COLLECTION", status: "RUNNING", queueName: SELECTED_PANEL_QUEUE, sourceId: source.key, payload: task, maxAttempts: 1, idempotencyKey: `isolated-normal-unavailable-${provider}-${missingRoom}` } });
   await expect(handleSelectedPanelJob(job, { ...getEnvironment(), NODE_ENV: "production", ARGUS_API_BASE_URL: "https://api.argus.nz" })).resolves.toBeUndefined();
   const run = await prisma.collectionRun.findFirstOrThrow({ where: { jobId: job.id } });
   expect(run).toMatchObject({ status: "SUCCEEDED", successCount: 1, failureCount: 0 });
-  expect(run.scope).toMatchObject({ evaluated: [{ status: "RAW_ONLY", totalMinor: null, comparisonKey: null, raw: { outcome: "UNAVAILABLE", totalMinor: null } }] });
+  expect(run.scope).toMatchObject({ evaluated: [{ status: "RAW_ONLY", totalMinor: null, comparisonKey: null, raw: { outcome: missingRoom ? "PUBLIC_PRICE_UNVERIFIED" : "UNAVAILABLE", totalMinor: null } }] });
   expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload)).toEqual(state);
   expect(await prisma.rateObservation.count()).toBe(0);
   expect(await prisma.dataSource.findUniqueOrThrow({ where: { id: source.id } })).toEqual(source);
   expect(acknowledge).toHaveBeenCalledWith(expect.anything(), job.id);
+  const tomorrow = new Date(at.getTime() + 86_400_000);
+  const daily = selectedStateSchema.parse({ ...state, cadence: { version: "dual-window-daily-v1", startsOn: "2026-10-16", dailyStartsOn: "2026-10-19", bookingBootstrapDaily: 24, bookingSteadyDaily: 20 } });
+  expect(nextSelectedTasks(daily, [{ memberId: "sample0", identityAt: at, unitExternalId: "unit0", lastQuoteAt: at, windows: [{ checkIn: task.checkIn, finishedAt: at }] }], new Set(), tomorrow)
+    .filter(t => t.memberId === "sample0" && t.phase === "quote")).toHaveLength(2);
 });
 
 it("keeps classified DNS and Booking/Trip readiness failures within the consumed daily window", async () => {

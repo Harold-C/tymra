@@ -82,6 +82,16 @@ expiring, HMAC-audited one-attempt jobs. The marker is in the idempotency key, l
 schemas unchanged. The scheduler never creates these jobs; failed members remain held. Only successful
 identity/window deliveries plus original-source review release that member, preserving other members.
 
+2026-11-03 Quest on Manchester: Harold permits a different available stay date for manual verification
+of the existing exact room. The operator must explicitly request `alternateIdentityDate`; the signed
+receipt binds the exact identity task and future date. This exception never authorizes a quote date,
+changes the frozen stay windows, substitutes a room, or refreshes identity without source room evidence.
+Once that identity and both original quote windows pass delivery/source review, release only Quest.
+An explicit property-wide no-rooms statement on an original window is a retained UNAVAILABLE/null
+observation; an absent requested room in an otherwise loaded room table remains
+PUBLIC_PRICE_UNVERIFIED/null. Both continue daily collection without a member hold. Blank pages,
+wrong context, ambiguous identity and access challenges retain their existing protections.
+
 ## Bounded OTA production pilots
 
 ### Public OTA room-area compatibility (2026-10-16 production release)

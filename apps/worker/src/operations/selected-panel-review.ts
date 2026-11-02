@@ -17,6 +17,8 @@ export function selectedManualBatch(parent: Pick<Job, "payload" | "idempotencyKe
 export async function authorizeSelectedManualReview(input: {
   batch: string; memberId: string; phase: "identity" | "quote"; checkIn: string;
   unitExternalId: string | null; manifestHash: string; expiresAt: string;
+  /** Explicit operator permission for identity only; never changes quote anchors. */
+  alternateIdentityDate?: boolean;
 }, now = new Date()) {
   const expiresAt = new Date(input.expiresAt);
   if (process.env.NODE_ENV !== "production" || !/^[a-z0-9-]{1,64}$/.test(input.batch)
@@ -27,8 +29,13 @@ export async function authorizeSelectedManualReview(input: {
     const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(m => m.id === input.memberId);
     const held = state.held.find(h => h.memberId === input.memberId);
     const cycle = selectedCycle(state, now);
+    const alternateIdentityDate = input.alternateIdentityDate === true;
     if (!control.enabled || state.manifestHash !== input.manifestHash || !member?.enabled || !held
-      || state.stoppedSources.includes(member.source) || !selectedMemberAnchors(member, cycle).includes(input.checkIn)) throw Error("MANUAL_REVIEW_SCOPE_CHANGED");
+      || state.stoppedSources.includes(member.source)
+      || (alternateIdentityDate && (input.phase !== "identity" || !/^\d{4}-\d{2}-\d{2}$/.test(input.checkIn)
+        || !Number.isFinite(Date.parse(input.checkIn)) || new Date(input.checkIn).toISOString().slice(0, 10) !== input.checkIn
+        || input.checkIn <= nzDateKey(now)))
+      || (!alternateIdentityDate && !selectedMemberAnchors(member, cycle).includes(input.checkIn))) throw Error("MANUAL_REVIEW_SCOPE_CHANGED");
     const task = selectedJobSchema.parse({ selectedPanel: SELECTED_PANEL_KEY, manifestHash: selectedMemberExecutionHash(state, member),
       memberId: member.id, sourceId: member.source, phase: input.phase, checkIn: input.checkIn,
       unitExternalId: input.unitExternalId, round: input.phase === "identity" ? nzDateKey(now) : cycle.round });
@@ -52,7 +59,8 @@ export async function authorizeSelectedManualReview(input: {
     const job = await tx.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: member.source,
       maxAttempts: 1, payload: json(task), idempotencyKey: key, createdAt: now, runAt: now } });
     const payload = { controlId: control.id, batch: input.batch, memberId: member.id, manifestHash: task.manifestHash, controlManifestHash: state.manifestHash,
-      taskHash: selectedHash(task), expiresAt: input.expiresAt, originalHold: held.reason, maxAttempts: 1, automaticRetry: false };
+      taskHash: selectedHash(task), expiresAt: input.expiresAt, originalHold: held.reason, maxAttempts: 1, automaticRetry: false,
+      ...(alternateIdentityDate ? { alternateIdentityDate: input.checkIn } : {}) };
     await tx.auditEvent.create({ data: { eventType, entityType: "Job", entityId: job.id, payload: json(payload),
       eventHash: createHmac("sha256", process.env.ACCESS_KEY_SECRET!).update(selectedHash(payload)).digest("hex") } });
     return { status: "queued" as const, jobId: job.id };
@@ -62,7 +70,7 @@ export async function authorizeSelectedManualReview(input: {
 export async function assertSelectedManualReview(parent: Job, task: SelectedTask, controlId: string, now: Date) {
   const record = await prisma.auditEvent.findFirst({ where: { eventType, entityType: "Job", entityId: parent.id } });
   if (!record || !process.env.ACCESS_KEY_SECRET || record.eventHash !== createHmac("sha256", process.env.ACCESS_KEY_SECRET).update(selectedHash(record.payload)).digest("hex")) throw Error("MANUAL_REVIEW_PERMISSION_CLOSED");
-  const proof = record?.payload as { controlId?: string; batch?: string; memberId?: string; manifestHash?: string; taskHash?: string; expiresAt?: string; maxAttempts?: number; automaticRetry?: boolean } | undefined;
+  const proof = record?.payload as { controlId?: string; batch?: string; memberId?: string; manifestHash?: string; taskHash?: string; expiresAt?: string; maxAttempts?: number; automaticRetry?: boolean; alternateIdentityDate?: string } | undefined;
   const batch = selectedManualBatch(parent);
   if (!batch || !proof || proof.controlId !== controlId || proof.batch !== batch || proof.memberId !== task.memberId
     || proof.manifestHash !== task.manifestHash || proof.taskHash !== selectedHash(task) || proof.maxAttempts !== 1
@@ -70,6 +78,7 @@ export async function assertSelectedManualReview(parent: Job, task: SelectedTask
   const siblings = await prisma.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, idempotencyKey: { endsWith: marker + batch } } });
   if (siblings.some(j => (j.payload as { memberId?: string }).memberId === task.memberId && j.id !== parent.id
     && ["FAILED", "DEAD_LETTER", "CANCELLED"].includes(j.status))) throw Error("MANUAL_REVIEW_FAILED_NO_RETRY");
+  return { alternateIdentityDate: task.phase === "identity" && proof.alternateIdentityDate === task.checkIn };
 }
 
 /** Called only after the operator reviews saved HTML, exact windows and fees/terms. */

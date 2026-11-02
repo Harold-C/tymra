@@ -121,14 +121,14 @@ export async function selectedCapturePermission(parent: Job, input: ArgusCapture
   const control = await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } });
   const state = selectedStateSchema.parse(control.payload), member = state.manifest.members.find(c => c.id === task.memberId);
   const manualBatch = selectedManualBatch(parent);
-  if (manualBatch) await assertSelectedManualReview(parent, task, control.id, now);
+  const manualReview = manualBatch ? await assertSelectedManualReview(parent, task, control.id, now) : null;
   if (!manualBatch && state.cadence?.version === "dual-window-daily-v1" && task.phase === "quote"
     && task.round >= state.cadence.dailyStartsOn! && task.round !== nzDateKey(now)) throw Error("SELECTED_DAILY_WINDOW_EXPIRED");
   if (!control.enabled || !selectedTaskMatchesState(state, task) || !member?.enabled || (!manualBatch && state.held.some(h => h.memberId === member.id))
     || state.stoppedSources.includes(member.source) || parent.queueName !== SELECTED_PANEL_QUEUE || parent.type !== "RATE_COLLECTION"
     || parent.maxAttempts !== 1 || (!manualBatch && parent.idempotencyKey !== selectedTaskKey(task)) || task.sourceId !== member.source || parent.sourceId !== member.source
     || nzDateKey(now) < state.manifest.start || task.checkIn <= nzDateKey(now)
-    || !selectedMemberAnchors(member, selectedCycle(state, parent.createdAt)).includes(task.checkIn)
+    || (!manualReview?.alternateIdentityDate && !selectedMemberAnchors(member, selectedCycle(state, parent.createdAt)).includes(task.checkIn))
     || task.round !== (task.phase === "quote" ? selectedCycle(state, parent.createdAt).round : nzDateKey(parent.createdAt))) throw Error("SELECTED_PANEL_PERMISSION_CLOSED");
   const source = await prisma.dataSource.findUniqueOrThrow({ where: { id: dataSourceId } });
   if (source.key !== member.source || source.isDemo || !source.environments.includes("PRODUCTION") || source.concurrencyLimit !== 1

@@ -255,8 +255,9 @@ describe("selected collection isolated persistence", () => {
       await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
       const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
       const common = { batch: "held-review-complete", memberId: "sample0", manifestHash: state.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() };
-      for (const [phase, checkIn] of [["identity", "2026-12-01"], ["quote", "2026-12-01"], ["quote", "2026-12-05"]] as const) {
-        const q = await authorizeSelectedManualReview({ ...common, phase, checkIn, unitExternalId: phase === "identity" ? null : "unit0" }, now);
+      for (const [phase, checkIn] of [["identity", "2026-11-08"], ["quote", "2026-12-01"], ["quote", "2026-12-05"]] as const) {
+        const q = await authorizeSelectedManualReview({ ...common, phase, checkIn, unitExternalId: phase === "identity" ? null : "unit0",
+          ...(phase === "identity" ? { alternateIdentityDate: true } : {}) }, now);
         expect(q.status).toBe("queued");
         const job = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in q ? q.jobId : "" } });
         const task = selectedJobSchema.parse(job.payload);
@@ -276,6 +277,33 @@ describe("selected collection isolated persistence", () => {
       expect(await closeSelectedManualReview(common.batch, "sample0", "b".repeat(64))).toEqual({ released: true });
       expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload).held).toEqual([{ memberId: "sample1", reason: "OTHER_HOLD" }]);
     } finally { vi.useRealTimers(); vi.unstubAllEnvs(); }
+  });
+  it("allows an explicitly signed alternate identity date without changing quote windows or ordinary permissions", async () => {
+    vi.stubEnv("NODE_ENV", "production"); vi.stubEnv("ACCESS_KEY_SECRET", "isolated-alternate-date-secret");
+    try {
+      const state = selectedFixture(); state.held = [{ memberId: "sample0", reason: "SELECTED_ROOM_NOT_RETURNED" }];
+      await prisma.scheduleDefinition.update({ where: { key: SELECTED_PANEL_KEY }, data: { payload: state } });
+      const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+      const input = { batch: "alternate-identity", memberId: "sample0", phase: "identity" as const, checkIn: "2026-11-08",
+        unitExternalId: null, manifestHash: state.manifestHash, expiresAt: new Date(now.getTime() + 3600_000).toISOString() };
+      await expect(authorizeSelectedManualReview(input, now)).rejects.toThrow("MANUAL_REVIEW_SCOPE_CHANGED");
+      for (const checkIn of ["2026-10-15", "2026-11-31", "invalid"]) await expect(authorizeSelectedManualReview({ ...input, checkIn, alternateIdentityDate: true }, now)).rejects.toThrow("MANUAL_REVIEW_SCOPE_CHANGED");
+      await expect(authorizeSelectedManualReview({ ...input, phase: "quote", unitExternalId: "unit0", alternateIdentityDate: true }, now)).rejects.toThrow("MANUAL_REVIEW_SCOPE_CHANGED");
+      const grant = await authorizeSelectedManualReview({ ...input, alternateIdentityDate: true }, now);
+      const job = await prisma.job.findUniqueOrThrow({ where: { id: "jobId" in grant ? grant.jobId : "" } });
+      const task = selectedJobSchema.parse(job.payload), member = state.manifest.members[0];
+      await expect(selectedCapturePermission(job, selectedInput(member, task, job.id), source.id, now)).resolves.toBeUndefined();
+      const changed = { ...task, checkIn: "2026-11-09" };
+      await expect(selectedCapturePermission({ ...job, payload: changed, idempotencyKey: selectedTaskKey(changed) + ":manual-review:" + input.batch }, selectedInput(member, changed, job.id), source.id, now)).rejects.toThrow("MANUAL_REVIEW_PERMISSION_CLOSED");
+      await expect(selectedCapturePermission(job, selectedInput(member, task, job.id), source.id, new Date(now.getTime() + 3601_000))).rejects.toThrow("MANUAL_REVIEW_PERMISSION_CLOSED");
+      const receipt = await prisma.auditEvent.findFirstOrThrow({ where: { entityId: job.id, eventType: "selected_manual_acceptance_authorized" } });
+      const forged = await prisma.job.create({ data: { type: "RATE_COLLECTION", queueName: SELECTED_PANEL_QUEUE, sourceId: "booking", payload: task, maxAttempts: 1, createdAt: now,
+        idempotencyKey: selectedTaskKey(task) + ":manual-review:forged-alternate" } });
+      await prisma.auditEvent.create({ data: { eventType: receipt.eventType, entityType: "Job", entityId: forged.id,
+        payload: { ...(receipt.payload as object), batch: "forged-alternate", alternateIdentityDate: "2026-11-09" }, eventHash: "0".repeat(64) } });
+      await expect(selectedCapturePermission(forged, selectedInput(member, task, forged.id), source.id, now)).rejects.toThrow("MANUAL_REVIEW_PERMISSION_CLOSED");
+      expect(selectedStateSchema.parse((await prisma.scheduleDefinition.findUniqueOrThrow({ where: { key: SELECTED_PANEL_KEY } })).payload)).toEqual(state);
+    } finally { vi.unstubAllEnvs(); }
   });
   it("requires a signed exact-task operator grant, keeps the held roster isolated and never repeats a failed review", async () => {
     vi.stubEnv("NODE_ENV", "production");
