@@ -12,6 +12,7 @@ import { enqueueObservationTask } from "./operations/observation-production";
 import { SELECTED_PANEL_KEY } from "./operations/selected-panel-plan";
 import { enqueueSelectedPanel } from "./operations/selected-panel-production";
 import { maintainSelectedEvidence } from "./operations/selected-panel-retention";
+import { runControlCycle } from "./operations/control-cycle";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -23,8 +24,11 @@ const schedulingAllowed = automaticSchedulingAllowed(environment.NODE_ENV, envir
 process.stdout.write(`${JSON.stringify({ service: "tymra-scheduler", event: "scheduler_started", enabled: schedulingAllowed, configuredEnabled: environment.SCHEDULER_ENABLED, environment: environment.NODE_ENV })}\n`);
 
 while (!stopping) {
-  await recordRuntimeHeartbeat("scheduler", environment, schedulingAllowed ? "RUNNING" : "DISABLED_BY_POLICY");
-  if (schedulingAllowed) await enqueueDueSchedules();
+  await runControlCycle("scheduler", async () => {
+    if (schedulingAllowed) await enqueueDueSchedules();
+    // A fresh healthy heartbeat means the dispatch check actually completed.
+    await recordRuntimeHeartbeat("scheduler", environment, schedulingAllowed ? "RUNNING" : "DISABLED_BY_POLICY");
+  });
   await wait(30_000);
 }
 

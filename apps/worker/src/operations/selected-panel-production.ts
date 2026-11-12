@@ -12,15 +12,18 @@ import { SELECTED_PANEL_KEY, SELECTED_PANEL_QUEUE, selectedStateSchema, selected
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const activeStatuses = ["SUBMITTED", "RUNNING", "WAITING_FOR_MANUAL", "CANCEL_REQUESTED"] as const;
-// Daily history grows quickly. Do not load retained wire/HTML for progress or identity checks.
-async function selectedProgressRuns(client: Pick<Prisma.TransactionClient, "$queryRaw">, now = new Date()) {
+// Decode each retained scope once; repeated JSON operators repeatedly decompress
+// its large wire/HTML fields even when those fields are not returned.
+export async function selectedProgressRuns(client: Pick<Prisma.TransactionClient, "$queryRaw">, now = new Date()) {
   return client.$queryRaw<Pick<CollectionRun, "id" | "jobId" | "dataSourceId" | "finishedAt" | "scope">[]>(Prisma.sql`
-    SELECT id, "jobId", "dataSourceId", "finishedAt", jsonb_build_object(
-      'selectedPanel', scope->'selectedPanel', 'manifestHash', scope->'manifestHash', 'memberId', scope->'memberId',
-      'phase', scope->'phase', 'task', scope->'task', 'observedAt', scope#>'{evaluated,0,raw,observedAt}',
-      'evaluated', CASE WHEN scope->>'phase' = 'identity' THEN scope->'evaluated' ELSE NULL END) AS scope
-    FROM "CollectionRun" WHERE status = 'SUCCEEDED' AND scope->>'selectedPanel' = ${SELECTED_PANEL_KEY}
-      AND "finishedAt" >= ${new Date(now.getTime() - 28 * 86_400_000)} ORDER BY "finishedAt" DESC`);
+    SELECT r.id, r."jobId", r."dataSourceId", r."finishedAt", jsonb_build_object(
+      'selectedPanel', s."selectedPanel", 'manifestHash', s."manifestHash", 'memberId', s."memberId",
+      'phase', s.phase, 'task', s.task, 'observedAt', s.evaluated#>'{0,raw,observedAt}',
+      'evaluated', CASE WHEN s.phase = '"identity"'::jsonb THEN s.evaluated ELSE NULL END) AS scope
+    FROM "CollectionRun" r CROSS JOIN LATERAL jsonb_to_record(r.scope) AS s(
+      "selectedPanel" jsonb, "manifestHash" jsonb, "memberId" jsonb, phase jsonb, task jsonb, evaluated jsonb)
+    WHERE r.status = 'SUCCEEDED' AND s."selectedPanel" = to_jsonb(${SELECTED_PANEL_KEY}::text)
+      AND r."finishedAt" >= ${new Date(now.getTime() - 28 * 86_400_000)} ORDER BY r."finishedAt" DESC`);
 }
 export function selectedInput(member: SelectedMember, task: SelectedTask, parentId: string): ArgusCaptureInput {
   const stay = { checkIn: task.checkIn, checkOut: addNzCalendarDays(task.checkIn, member.nights), adults: 2, children: 0 as const, units: 1, currency: "NZD" as const };
@@ -84,7 +87,8 @@ export async function enqueueSelectedPanel(now = new Date()) {
       { status: "RUNNING" }, { status: "PENDING", OR: [{ queueName: SELECTED_PANEL_QUEUE }, { runAt: { lte: now } }] },
     ] } })) return null;
     if (await tx.argusExecution.count({ where: { status: { in: [...activeStatuses] } } })) return null;
-    const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } }, orderBy: { createdAt: "desc" } });
+    const jobs = await tx.job.findMany({ where: { queueName: SELECTED_PANEL_QUEUE, createdAt: { gte: new Date(now.getTime() - 28 * 86_400_000) } },
+      select: { id: true, payload: true, idempotencyKey: true, sourceId: true, createdAt: true }, orderBy: { createdAt: "desc" } });
     const matching = jobs.filter(j => selectedTaskMatchesState(state, selectedJobSchema.parse(j.payload)));
     const matchingIds = new Set(matching.map(j => j.id));
     const runs = (await selectedProgressRuns(tx, now)).filter(r => !!r.jobId && matchingIds.has(r.jobId));

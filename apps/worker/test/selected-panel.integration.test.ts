@@ -18,7 +18,7 @@ const databaseName = `${isolated.databaseName}_selected${process.pid}`;
 const databaseUrl = new URL(process.env.DATABASE_URL!); databaseUrl.pathname = `/${databaseName}`;
 const prisma = new PrismaClient({ datasourceUrl: databaseUrl.toString() });
 vi.doMock("@tymra/db", async () => ({ ...(await vi.importActual<typeof import("@tymra/db")>("@tymra/db")), prisma }));
-const { enqueueSelectedPanel, selectedCapturePermission, selectedInput } = await import("../src/operations/selected-panel-production");
+const { enqueueSelectedPanel, selectedCapturePermission, selectedInput, selectedProgressRuns } = await import("../src/operations/selected-panel-production");
 const { authorizeSelectedManualReview, closeSelectedManualReview } = await import("../src/operations/selected-panel-review");
 const { applySelectedReplacement, rollbackSelectedReplacement } = await import("../src/operations/selected-panel-replacement-production");
 const { applySelectedWindowUpgrade, rollbackSelectedWindowUpgrade } = await import("../src/operations/selected-panel-window-upgrade-production");
@@ -56,6 +56,29 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it("projects exact progress across midnight from large retained scopes without returning raw wire or quote arrays", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    const state = selectedFixture(), at = new Date("2026-10-20T11:02:00Z");
+    const retainedWire = "PRIVATE_RAW_MUST_NOT_BE_RETURNED:" + (await import("node:crypto")).randomBytes(64_000).toString("hex").repeat(4);
+    const common = { selectedPanel: SELECTED_PANEL_KEY, manifestHash: state.manifestHash, memberId: "sample0" };
+    const unit = { externalId: "unit0", unit: { officialName: "Studio", capacity: 2, bedTypes: ["1 Queen Bed"] } };
+    const task = { checkIn: "2026-12-01" };
+    const observedAt = "2026-10-20T10:59:59.000Z";
+    const identity = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: new Date("2026-10-20T10:55:00Z"),
+      scope: { ...common, phase: "identity", task, evaluated: unit, retainedWire } } });
+    const quote = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: new Date("2026-10-20T11:01:00Z"),
+      scope: { ...common, phase: "quote", task, evaluated: [{ raw: { observedAt, totalMinor: 12345 } }], retainedWire } } });
+    await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: at, scope: { otherPlan: true, retainedWire } } });
+    await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "SUCCEEDED", finishedAt: new Date(at.getTime() - 29 * 86_400_000), scope: { ...common, phase: "identity", evaluated: unit } } });
+    await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", finishedAt: at, scope: { ...common, phase: "identity", evaluated: unit } } });
+    const result = await selectedProgressRuns(prisma, at);
+    expect(result).toEqual([
+      { id: quote.id, jobId: null, dataSourceId: source.id, finishedAt: quote.finishedAt, scope: { ...common, phase: "quote", task, observedAt, evaluated: null } },
+      { id: identity.id, jobId: null, dataSourceId: source.id, finishedAt: identity.finishedAt, scope: { ...common, phase: "identity", task, observedAt: null, evaluated: unit } },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_RAW_MUST_NOT_BE_RETURNED");
+    expect((await prisma.collectionRun.findUniqueOrThrow({ where: { id: quote.id } })).scope).toMatchObject({ retainedWire });
+  });
   it("physically expires only this plan's delivered 72h/168h files and preserves prices, histories and protected evidence", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "tymra-selected-ttl-"));
     const environment = { ...getEnvironment(), NODE_ENV: "production" as const, ARGUS_API_BASE_URL: "https://api.argus.nz", ARGUS_EVIDENCE_ROOT: root };

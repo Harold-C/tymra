@@ -4,6 +4,7 @@ import { DeferredJobError } from "./jobs/deferred-job";
 import { classifyJobFailure } from "./jobs/job-failure";
 import { handleJob } from "./jobs/job-handlers";
 import { recordRuntimeHeartbeat } from "./operations/runtime-heartbeat";
+import { runControlCycle } from "./operations/control-cycle";
 
 const environment = getEnvironment();
 let stopping = false;
@@ -30,7 +31,13 @@ let lastLeaseRecoveryAt = Date.now();
 let lastRuntimeHeartbeatAt = 0;
 
 while (!stopping) {
-  if (Date.now() - lastRuntimeHeartbeatAt > 30000) { await recordRuntimeHeartbeat("worker", environment); lastRuntimeHeartbeatAt = Date.now(); }
+  if (Date.now() - lastRuntimeHeartbeatAt > 30000) {
+    if (!await runControlCycle("worker", () => recordRuntimeHeartbeat("worker", environment))) {
+      await wait(30_000);
+      continue;
+    }
+    lastRuntimeHeartbeatAt = Date.now();
+  }
   if (Date.now() - lastLeaseRecoveryAt >= Math.max(30_000, environment.WORKER_LEASE_SECONDS * 1_000)) {
     await recoverExpiredJobs();
     lastLeaseRecoveryAt = Date.now();
