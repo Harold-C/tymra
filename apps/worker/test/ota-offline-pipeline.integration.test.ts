@@ -60,6 +60,14 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
           listings: [candidate], observedAt: stamp, warnings: [], quality: "partial" };
       } else if (capture.workflow_id === "resolve_listing") {
         data = { ...identity(), data_schema: "ota-public.resolve_listing", schema_version: "1.0.0" };
+        if (sourceKey === "booking") {
+          const discovery = [...jobs.values()].reverse().find(item => item.capture.workflow_id === "discover_listings")!.capture;
+          const stay = capture.identity_stay;
+          // The real failed Booking page named its room but disclosed no capacity
+          // without the original dated availability context. Never invent one.
+          if (!stay || stay.check_in !== discovery.check_in || stay.check_out !== discovery.check_out
+            || stay.adults !== 2 || stay.children !== 0 || stay.units !== 1 || stay.currency !== "NZD") data.units[0].capacity = null;
+        }
       } else {
         quoteCount++;
         data = { data_schema: "ota-public.collect_rates", schema_version: "1.0.0", provider: sourceKey, sourceListingId, observedAt: stamp,

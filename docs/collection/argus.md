@@ -67,6 +67,11 @@ change only after shared Argus supports dated Booking identity. Anonymous partne
 `PARTNER_OFFER` and `BOOKING_PARTNER_OFFER`; they remain RAW_ONLY with null comparison keys and
 unknown fee components preserved, never merged with direct PUBLIC products.
 
+National Booking detail resolution also carries its discovery run's original stay, occupancy and
+NZD context. Its versioned identity-cache key includes that stay so an undated room response is
+not reused for a dated request. This uses the same deployed Argus dated-identity support; request
+occupancy never establishes physical capacity, and national public-price/identity gates remain.
+
 The latest user authorization removes Argus daily/lifetime count ceilings and this selected roster's
 Tymra daily count gate on every OTA channel. Other plans' DataSource settings remain unchanged;
 selected-roster executions do not spend their legacy counters. The 24/20/6 and 195/143 numbers below

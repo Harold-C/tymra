@@ -98,14 +98,14 @@ export async function refreshCatalog(this: WorkerContext, marketScope: string, p
       for (let candidate of extraction.listings.slice(0, bounded ? 1 : 10)) {
         if (candidate.provider !== target.dataSource.key) throw new WorkerRequestError("LISTING_IDENTITY_MISMATCH", "Discovery returned another provider", 422);
         const { observedAt: _observedAt, fieldSources: _fieldSources, ...identityInput } = candidate;
-        const identityStay = ["trip-public", "expedia-public", "agoda-public"].includes(connectorId)
+        const identityStay = ["booking-public", "trip-public", "expedia-public", "agoda-public"].includes(connectorId)
           ? { checkIn, checkOut, adults: 2, children: 0, units: 1, currency: "NZD" } as const : undefined;
         const parserVersion = candidate.provider === "agoda" ? `${OTA_IDENTITY_PARSER_VERSION}-agoda-dated-rooms-3`
-          : candidate.provider === "booking" ? `${OTA_IDENTITY_PARSER_VERSION}-booking-room-state-2`
+          : candidate.provider === "booking" ? `${OTA_IDENTITY_PARSER_VERSION}-booking-dated-rooms-3`
           : candidate.provider === "trip" ? `${OTA_IDENTITY_PARSER_VERSION}-trip-city-1`
             : candidate.provider === "expedia" ? `${OTA_IDENTITY_PARSER_VERSION}-expedia-headline-1` : OTA_IDENTITY_PARSER_VERSION;
         const inputHash = stableHash(JSON.stringify({ parserVersion, identity: identityInput,
-          ...(candidate.provider === "agoda" ? { identityStay } : {}) }));
+          ...(["agoda", "booking"].includes(candidate.provider) ? { identityStay } : {}) }));
         let resolvedAt: string | null = null;
         if (bounded && otaIdentityRequiresDetail(candidate)) {
           const existing = await prisma.listing.findFirst({ where: { dataSourceId: target.dataSourceId, sourceListingId: candidate.sourceListingId, isDemo: false, listingStatus: "ACTIVE" }, orderBy: { lastConfirmedAt: "desc" } });

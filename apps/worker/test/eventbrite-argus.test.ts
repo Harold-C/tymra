@@ -19,6 +19,13 @@ function result(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Eventbrite raw browser handoff", () => {
+  it("keeps a date-only event inside its NZ day with date precision and its existing external ID", () => {
+    const data = result({ jsonLdPages: [{ url: base, blocks: [JSON.stringify({ ...event, startDate: "2026-11-21", endDate: "2026-11-21" })] }] });
+    const records = eventbriteArgusRawRecords(data, base, { from: new Date("2026-11-20T11:00:00Z"), to: new Date("2026-11-20T12:00:00Z") }, 1);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ externalId: "eventbrite_events:community-expo-tickets-123:2026-11-21T00:00:00.000Z", payload: { event: { timePrecision: "DATE", startsAt: new Date("2026-11-20T11:00:00Z"), endsAt: new Date("2026-11-21T10:59:59.999Z") } } });
+  });
+
   it("preserves event identity, actual dates/location and pending promotion, accounting for the duplicate request", () => {
     const records = eventbriteArgusRawRecords(result(), base, range, 500);
     expect(records).toHaveLength(1);

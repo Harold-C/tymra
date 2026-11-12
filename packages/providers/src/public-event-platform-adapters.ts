@@ -1,4 +1,5 @@
 import { parseHTML } from "linkedom";
+import { nzStartOfDay, nzEndOfDay, nzDateStorageValue } from "@tymra/domain";
 
 import type { AdapterContext, AdapterHealth, AdapterMetadata, PublicDataAdapter, PublicDiscoveryRequest, PublicEvent, PublicRawRecord, PublicSignal } from "./adapter-types";
 import { AdapterError } from "./adapter-types";
@@ -156,13 +157,17 @@ export function parsePlatformJsonLdBlocks(blocks: readonly string[], finalUrl: s
   return values.flatMap((value) => {
     if (!isSchemaEvent(value)) return [];
     const title = stringValue(value.name);
-    const start = parseDate(value.startDate);
+    const sourceStartDate = stringValue(value.startDate);
+    const start = parseDate(sourceStartDate);
     const sourceUrl = safeUrl(stringValue(value.url), finalUrl);
-    if (!title || !start || !sourceUrl) return [];
+    if (!title || !start || !sourceUrl || !sourceStartDate) return [];
     const location = recordValue(value.location);
     const address = recordValue(location.address);
-    const end = parseDate(value.endDate) ?? start;
-    const id = schemaEventId(sourceId, sourceUrl, start);
+    const dateOnlyStart = isDateOnly(sourceStartDate);
+    const end = parseDate(value.endDate, true) ?? (dateOnlyStart ? nzEndOfDay(sourceStartDate) : start);
+    // Keep the existing source date token while correcting its local-day interval.
+    // Persistence versions the changed fact and supersedes its former canonical interval.
+    const id = schemaEventId(sourceId, sourceUrl, dateOnlyStart ? nzDateStorageValue(sourceStartDate) : start);
     if (seen.has(id)) return [];
     seen.add(id);
     const statusName = schemaName(value.eventStatus);
@@ -173,11 +178,11 @@ export function parsePlatformJsonLdBlocks(blocks: readonly string[], finalUrl: s
       address: [stringValue(address.streetAddress), stringValue(address.addressLocality), stringValue(address.postalCode)].filter(Boolean).join(", ") || null,
       city: stringValue(address.addressLocality), region: stringValue(address.addressRegion), territorialAuthority: null,
       postcode: stringValue(address.postalCode), countryCode: "NZ", latitude: numberValue(recordValue(location.geo).latitude), longitude: numberValue(recordValue(location.geo).longitude),
-      timezone: "Pacific/Auckland", startsAt: start, endsAt: end >= start ? end : start,
+      timezone: "Pacific/Auckland", timePrecision: dateOnlyStart ? "DATE" : "DATETIME", startsAt: start, endsAt: end >= start ? end : start,
       status: statusName === "EventCancelled" ? "CANCELLED" : statusName === "EventPostponed" ? "POSTPONED" : statusName === "EventRescheduled" ? "RESCHEDULED" : "SCHEDULED",
       ticketStatus: offers.some((offer) => schemaName(offer.availability) === "SoldOut") ? "SOLD_OUT" : offers.length ? "ONSALE" : null,
       impactStatus: "PENDING_EVIDENCE", impactScore: null, impactConfidence: null, impactEvidence: { reason: "VENUE_CAPACITY_OR_ATTENDANCE_REQUIRED" }, sourceUpdatedAt: null,
-      metadata: { description: stringValue(value.description), imageUrls: imageUrls(value.image), offers, organizer: value.organizer ?? null, performers: value.performer ?? null, extractionVersion: "platform-jsonld-listing-v1" }, fixture: false,
+      metadata: { description: stringValue(value.description), imageUrls: imageUrls(value.image), offers, organizer: value.organizer ?? null, performers: value.performer ?? null, extractionVersion: "platform-jsonld-listing-v2", sourceStartDate, sourceEndDate: value.endDate ?? null }, fixture: false,
     } satisfies PublicEvent];
   });
 }
@@ -200,8 +205,8 @@ export function parseFlightTime(value: string, now: Date): Date | null {
 }
 
 export const publicEventPlatformAdapters: Record<string, PublicDataAdapter> = {
-  eventbrite_events: new JsonLdEventPlatformAdapter({ sourceId: "eventbrite_events", sourceName: "Eventbrite New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["www.eventbrite.co.nz", "eventbrite.co.nz"], adapterKey: "public:eventbrite:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "eventbrite-argus-v1", parserVersion: "platform-jsonld-listing-v1" }, EVENTBRITE_URL, EVENTBRITE_CHRISTCHURCH_URL),
-  humanitix_events: new JsonLdEventPlatformAdapter({ sourceId: "humanitix_events", sourceName: "Humanitix New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["humanitix.com", "events.humanitix.com"], adapterKey: "public:humanitix:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "humanitix-http-v2", parserVersion: "platform-jsonld-listing-v1" }, HUMANITIX_URL, HUMANITIX_CHRISTCHURCH_URL),
+  eventbrite_events: new JsonLdEventPlatformAdapter({ sourceId: "eventbrite_events", sourceName: "Eventbrite New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["www.eventbrite.co.nz", "eventbrite.co.nz"], adapterKey: "public:eventbrite:argus-v1", accessMethod: "PUBLIC_WEB_ARGUS_READ_ONLY", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "eventbrite-argus-v1", parserVersion: "platform-jsonld-listing-v2" }, EVENTBRITE_URL, EVENTBRITE_CHRISTCHURCH_URL),
+  humanitix_events: new JsonLdEventPlatformAdapter({ sourceId: "humanitix_events", sourceName: "Humanitix New Zealand events", sourceType: "PUBLIC_DATA", supportedDomains: ["humanitix.com", "events.humanitix.com"], adapterKey: "public:humanitix:jsonld-listing-v2", accessMethod: "PUBLIC_HTML_JSONLD_PAGINATED", concurrencyLimit: 1, dailyBudget: 24, collectorVersion: "humanitix-http-v2", parserVersion: "platform-jsonld-listing-v2" }, HUMANITIX_URL, HUMANITIX_CHRISTCHURCH_URL),
   christchurch_airport: new ChristchurchAirportAdapter(),
 };
 
@@ -210,7 +215,14 @@ function isSchemaEvent(value: JsonRecord) { return asArray(value["@type"]).some(
 function schemaEventId(sourceId: string, url: string, start: Date) { const slug = new URL(url).pathname.replace(/\/+$/, "").split("/").filter(Boolean).pop() ?? url; return `${sourceId}:${slug}:${start.toISOString()}`; }
 function isPublicEvent(value: unknown): value is PublicEvent { return isRecord(value) && typeof value.externalId === "string" && value.startsAt instanceof Date; }
 function overlaps(start: Date, end: Date, context: AdapterContext) { const range = context.collectionRange; return !range || (end >= range.from && start <= range.to); }
-function parseDate(value: unknown) { const text = stringValue(value); if (!text) return null; const date = new Date(text); return Number.isNaN(date.getTime()) ? null : date; }
+function isDateOnly(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value); }
+function parseDate(value: unknown, endOfDay = false) {
+  const text = stringValue(value); if (!text) return null;
+  if (isDateOnly(text)) {
+    try { return endOfDay ? nzEndOfDay(text) : nzStartOfDay(text); } catch { return null; }
+  }
+  const date = new Date(text); return Number.isNaN(date.getTime()) ? null : date;
+}
 function safeUrl(value: string | null, base: string) { try { return new URL(value ?? base, base).href; } catch { return null; } }
 function imageUrls(value: unknown) { return asArray(value).flatMap((item) => typeof item === "string" ? [item] : isRecord(item) && typeof item.url === "string" ? [item.url] : []); }
 function asArray(value: unknown): unknown[] { return value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]; }

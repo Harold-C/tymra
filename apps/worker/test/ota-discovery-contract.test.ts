@@ -13,7 +13,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 describe("OTA discovery request contract", () => {
-  it.each(["trip", "agoda", "booking"])("uses the original stay for dated room providers and keeps Booking dateless (%s)", async (key) => {
+  it.each(["trip", "agoda", "booking"])("uses the original stay when resolving the exact physical rooms (%s)", async (key) => {
     const source = { id: "source", key, enabled: true };
     mock.sources.mockResolvedValue([source]);
     mock.target.mockResolvedValue([{ id: "target", dataSourceId: source.id, dataSource: source, url: otaDiscoveryUrlForSource(key, "Canterbury, New Zealand"), metadata: { query: "Canterbury, New Zealand", regionKey: "canterbury" } }]);
@@ -25,8 +25,7 @@ describe("OTA discovery request contract", () => {
     await expect(service.refreshCatalog("new-zealand", "job", { sourceId: source.id })).rejects.toBeInstanceOf(DeferredJobError);
     const detail = mock.capture.mock.lastCall?.[1];
     expect(detail).toMatchObject({ connectorId: `${key}-public`, workflowId: "resolve_listing", maxRecords: 1 });
-    if (["trip", "agoda"].includes(key)) expect(detail.identityStay).toEqual({ checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
-    else expect(detail.identityStay).toBeUndefined();
+    expect(detail.identityStay).toEqual({ checkIn: "2026-10-08", checkOut: "2026-10-09", adults: 2, children: 0, units: 1, currency: "NZD" });
   });
   it.each(["PARSING_ERROR", "RATE_LIMITED", "TIMEOUT", "CAPTCHA_REQUIRED"])("keeps %s evidence without labelling every failed capture a parser failure", async (category) => {
     const service = new WorkerService({ NODE_ENV: "production", RAW_ARTIFACT_TTL_HOURS: 72, RAW_ARTIFACT_FAILURE_TTL_HOURS: 168 } as Environment);

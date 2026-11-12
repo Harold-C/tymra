@@ -167,7 +167,19 @@ describe("public data adapter contract", () => {
   it("normalises platform JSON-LD and Christchurch Airport local flight times", () => {
     const events = parsePlatformJsonLdEvents(`<script type="application/ld+json">${JSON.stringify({ "@type": "Event", name: "Community Expo", startDate: "2026-08-20T10:00:00+12:00", endDate: "2026-08-20T16:00:00+12:00", url: "https://www.eventbrite.co.nz/e/community-expo-tickets-123", location: { "@type": "Place", name: "Convention Centre", address: { streetAddress: "1 Main Street", addressLocality: "Christchurch", addressRegion: "Canterbury", postalCode: "8011" } } })}</script>`, "https://www.eventbrite.co.nz/d/new-zealand/events/", "eventbrite_events");
     expect(events[0]).toMatchObject({ title: "Community Expo", city: "Christchurch", countryCode: "NZ", status: "SCHEDULED" });
+    expect(events[0]).toMatchObject({ timePrecision: "DATETIME", startsAt: new Date("2026-08-19T22:00:00Z"), endsAt: new Date("2026-08-20T04:00:00Z") });
     expect(parseFlightTime("Tue 7:10 AM", new Date("2026-08-03T10:00:00.000Z"))?.toISOString()).toBe("2026-08-03T19:10:00.000Z");
+  });
+
+  it.each([
+    ["2026-11-21", "2026-11-20T11:00:00.000Z", "2026-11-21T10:59:59.999Z", 24],
+    ["2026-09-27", "2026-09-26T12:00:00.000Z", "2026-09-27T10:59:59.999Z", 23],
+    ["2026-04-05", "2026-04-04T11:00:00.000Z", "2026-04-05T11:59:59.999Z", 25],
+  ])("retains a date-only event's stable source identity and full NZ day on %s", (date, start, end, hours) => {
+    const events = parsePlatformJsonLdEvents(`<script type="application/ld+json">${JSON.stringify({ "@type": "Event", name: "Date-only source event", startDate: date, endDate: date, url: "https://www.eventbrite.co.nz/e/date-only-tickets-123" })}</script>`, "https://www.eventbrite.co.nz/", "eventbrite_events");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ externalId: `eventbrite_events:date-only-tickets-123:${date}T00:00:00.000Z`, timePrecision: "DATE", startsAt: new Date(start), endsAt: new Date(end), metadata: { sourceStartDate: date, sourceEndDate: date } });
+    expect(events[0].endsAt.getTime() - events[0].startsAt.getTime() + 1).toBe(Number(hours) * 3_600_000);
   });
 
   it("uses Christchurch-specific platform routes and bounded pagination metadata", async () => {
