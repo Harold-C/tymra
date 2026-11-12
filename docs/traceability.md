@@ -1,6 +1,20 @@
 # Tymra 实现与验收追踪
 
-## 2026-11-12 调度事务修复与逐项恢复（进行中）
+## 2026-11-12/13 调度修复已发布，本轮有界恢复及正式收尾完成
+
+当前生产Tymra为84aaa23e/运行配置1d6dfc03，Argus为公开候选1e07360b/c860eaf6；
+两边均已通过固定候选完整发布门禁、实际数据库/Profile恢复、生产切换及两端正式发布收尾。
+最终读回82/86计划启用、64/68固定样本可执行；本轮恢复23个原受阻成员和6个独立计划。
+未通过项及退役入口保持关闭，不代表全部来源正常。Argus的main包含
+尚未授权部署的私有Booking电话取证，生产使用独立公开标签，未带入该变更。Tymra四应用及
+午夜后普通派发心跳正常，最新受控切换后日志未出现P2028；自然采集与人工复核串行交替。
+当前逐项恢复结果、原始证据及交付证明保存在既有受保护的
+runtime/release-candidates/paused-source-recovery-20261112，Argus证据在其
+runtime/production-releases/argus-release-20261112-1及-2。Mini共享Docker正常重启已获
+Harold单独授权并完成，新鲜实际恢复/异机重开、原服务/调用方恢复、旧占用释放和Mini正式
+收尾均通过；原失败收据保留，另以production-finalization-resolution.json记录解除阻塞。
+
+### 初始状态与事务修复
 
 Harold授权先修复调度超时，再逐项排查暂停采集，按完整发布流程部署并仅恢复验证通过的
 对应计划。11-12 NZ19:29只读生产检查：仍为6e4590a/b7d93185，调度累计重启63次、Worker
@@ -26,7 +40,8 @@ Job handler，其他错误仍失败。Scheduler成功完成派发检查后才更
 归档SHA-256为1ee0cf12f607f073998efc2f2cfcf6448f2cc31ab3b5ec3a982659da5e9a1ece。
 新鲜备份及异机8文件SHA、当前/回退实际恢复89模型/2575证据文件通过，873.1秒受控切换，
 未向Live恢复旧数据库。调度保持原五秒事务；启动前业务/证据/控制比对及四应用、心跳通过，
-后续四个普通派发周期均有新心跳，无P2028或重启。Argus仍0b76e49/6a119c92，未变更共享平台。
+后续四个普通派发周期均有新心跳，无P2028或重启。该次切换时Argus仍0b76e49/6a119c92；
+后续公开采集修复按下述独立候选发布。
 两端正式complete-release及传输临时包退役通过；当前完整包、兼容回退6e4590a/b7d93185与
 新鲜已实际恢复的备份保留。原工程未提交发布工具修改保留。
 
@@ -36,22 +51,103 @@ Remarkables为2027-06-19/10-10、Mt Hutt为2027-06-11/10-10；Whakapapa仍为明
 独立汇总、第二轮稳定键、六文件及ACK/410通过，恢复原航空周计划；保留自愿参与航司而非
 全市场覆盖说明。其余来源仍逐项复核，不能把这两项恢复扩大为全部正常。
 
-随后实采发现两个Tymra调用/规范化缺口，继续保持相应计划关闭：Booking全国详情没有携带
+### 后续日期上下文、日期精度与公开房型修复
+
+随后实采发现两个Tymra调用/规范化缺口，调查时保留相应计划关闭：Booking全国详情没有携带
 发现轮次原入住上下文；实际756903401只返回名称、capacity=null，未通过身份门槛，原失败
 保留。局部修复给Booking详情携带同一checkIn/checkOut、人数/房数/NZD，并把日期写入新版
-身份缓存键，不放宽公开容量准入。Bookabach全国本次目标12072564也缺公开容量/卧室，
-另行调查原页，不借用其他房源信息。
+身份缓存键，不放宽公开容量准入。Bookabach全国此前目标12072564未解析出容量/卧室，
+未通过单元准入；不能把解析空值直接等同来源未公开，后续继续按原页核查。
 
-Eventbrite两轮成功交付暴露只有日期的JSON-LD被当UTC精确时刻的问题，未恢复周计划。
+Eventbrite两轮交付暴露只有日期的JSON-LD被当UTC精确时刻的问题，修正前未恢复周计划。
 局部修复按D-045保留DATE精度、NZ当地整日及夏令时边界；保留既有来源日期token身份，
 正常持久化以新PublicFactVersion保存修正并将旧canonical区间标SUPERSEDED，不修改原Run
 或历史版本。同一JSON-LD解析器的Humanitix消费者同步采用新精度，未变更该来源生产控制。
 原始失败Booking上下文契约、两份真实Eventbrite原页重放、独立测试库的历史版本/幂等与六OTA
 离线交付回归、相关类型检查通过；原有五项真实HTTP测试仍为显式跳过，不算通过。
-这两项后续候选的完整门禁、生产部署及新真实来源验收仍待完成。
+两项修复84aaa23e已合入main，以tymra-release-20261112-2发布；Actions43184581543
+全部门禁通过，原生镜像f021ee3e、生产运行配置1d6dfc03、归档SHA为
+d038bb224dca98bc1feb9ed74fc88b8bfad1e0bc0d53fe280ef81a81cec12b69。
+新鲜配对备份、89模型/证据实际恢复、完整异机副本及914.87秒受控切换通过；未向Live
+恢复旧数据库。四个后续普通周期及午夜后的自然派发继续正常，原五秒事务/串行和失败保护保持。
+Eventbrite两轮新实采、原HTML日期和NZ整日范围、稳定来源ID、原始证据及ACK/410通过后
+恢复原周计划。两条旧Run及两条旧PublicFactVersion所有列与切换前备份字节一致；旧错误
+canonical区间以SUPERSEDED保留，新版本为DATE，不把源页面排序变化当身份变化。
+Tymra两端正式收尾通过；SPM旧备份payload受已安装的主机relay保留保护，本次未绕过或
+直接删除。当前完整包、唯一兼容回退2cc55e1/2194095e和最新实际恢复备份保留。
+
+Argus公开修复86ea61e3/4251ca46处理本房源最少晚数提示，完整门禁及145.42秒生产切换、
+实际配对恢复与异机重开通过。Latimer原两晚窗口分别返回当前最少3晚和不可订；未沿用旧
+失败页的4晚数字，也未延长停留或替换房型，验证后恢复该样本。
+随后1e07360b/c860eaf6修复Booking把自身双人报价人数误当物理容量冲突、漏读房型自身
+Bedroom 1/2的问题。原失败页断网前后对照和48项隔离Linux/Chrome回归通过；完整
+Actions43196941400及导出43202107365通过，134.47秒切换、真实DB/Profile/Cookie的
+当前/兼容回退恢复、异机8文件/3配置重开及HTTPS/权限边界验证通过。Cosy生产实采确认
+756903401整套、2卧室、最大6人；原2027-01-05/07总额NZD667、01-02/04明确无可订，
+三次单次执行、六文件SHA及ACK/410通过后恢复，未知条款/费用拆分仍保留未知。
+
+Expedia全国两轮原计划实采分别为Rydges Latimer的Premier Exclusive/NZD425及
+Distinction Invercargill的Studio/NZD267；Agoda两轮为Bealey Quarter的Garden Court
+King Studio/NZD197及Blenheim Bridges Holiday Park的Deluxe Two-Bedroom Apartment/
+NZD159。每来源六次捕获、十二文件SHA、原房型自身公开含税总价及ACK/410通过，原全国
+日计划已分别恢复；Airbnb两轮为Kaikōura的1st Floor Apartment和Picton的Karma Waters，
+原11-20/21窗口原生Price details的精确公开总额为NZD318.55/172.50，卡片取整显示319/173
+未替代精确总额，六次捕获/十二文件SHA及ACK/410通过后恢复原全国日计划。地址/坐标仍
+只保留公开大概位置，费用拆分未知保持null。这些是有界pilot验收，不代表全国覆盖完整，
+名称型房型键仍partial，未升级
+为可比价格。Eventbrite、航空表现、雪季三个原周计划已恢复，GeoNet/MBIE原计划保持启用。
+GeoNet最新自然轮8条成功，MBIE最新22条成功；不改旧异常摘要或历史Run来制造通过。
+
+固定样本按原manifest/bindings/cadence、原两入住锚点、原晚数和精确房型逐项验证；
+Cranford、Dyers House、Hotel Elms在第二个原锚点找到指定房型，另一原日期仅保留
+REQUESTED_UNIT_NOT_DISPLAYED/null，不认定售罄。Quest唯一获准的外部身份日期为
+11-15/16，两个原报价日期仍为01-05/06和01-02/03；舒适厨房Studio的30㎡/2人身份及
+原窗口NZD233/257已独立复核并恢复。BreakFree、Aalton、Southwark、Carnmore、Chateau、
+Akaroa、Tasman等各自通过后恢复，未统一清除hold。Karen匿名页确认整套1卧室/最大3人，
+原两晚数为1晚的日期各限制最少3/4晚，空价和限制正常保留，恢复每日采集。
+其余原先受Airbnb来源停止间接阻挡的9个成员，先全部加精确保留hold才移除来源停止，
+逐项三次单次实采、原页和交付通过才解除各自hold。9个成员全部完成27次单次捕获、54份
+原始HTML/PNG及ACK/410并逐一恢复；Character Home仅显示16+ guests，最大人数保留null，
+原整套5卧室/11床/3.5浴室身份及两个原两晚窗口最少3晚限制均由原页验证，不将16当精确
+最大容量。原18个hold中14个及这9个间接受阻成员共23个恢复；当前64/68可执行，仅下述
+4个hold及Trip来源停止保留。原manifest、bindings、cadence及除hold/source stop外所有
+计划payload字段与初始快照完整指纹一致，不只抽查个别字段。
+
+仍保留未通过项：Sudima/Trip匿名访问挑战；Pavilions及The George两个原锚点均未返回
+指定房型；Beachlife原数字房型ID与当前名称型键不能证明相同身份。Booking全国当前修复
+轮已通过房型身份，但11-20/21页明确无可订，未满足全国计划正价验收。Bookabach新轮
+Greymouth目标20264474公开写sleeps two guests及shared bathroom；当前适配器只解析数字
+Sleeps并构造entire-home单位，未能核实该单间符合整套单位合同，仍以UNIT_IDENTITY_NOT_PUBLIC
+失败并保留全国计划关闭。不能仅将two转成2就接受错误的整套身份；单间单位身份/英文数词
+支持是未完成的适配缺口，不再归因为来源未公开容量。来源挑战及身份/容量门槛均未放宽。
+午夜后South Brighton Holiday Park一个自然窗口以TIMEOUT失败；原页明确提示目前不接受
+预订，等待报价表的readiness尚未识别这条一般性下架文案。原Run、HTML/PNG和失败均保留，
+未生成报价、未重试失败窗口，实际读回该成员及Booking来源未暂停，后续每日窗口继续。
+此独立页面识别限制不混入调度P2028修复的通过结论。
+
+### 共享维护与最终业务读回
+
+获准的Mini共享维护完成333.72秒，正常Docker Desktop stop/start为70秒；两调用方分别
+301.30/298.27秒恢复，均在原900秒边界内，独立provider恢复保护不超过600秒。原五运行
+服务及三停止Jarvis的ID/镜像/配置/挂载保持；只有浏览器空DnsSearch由null显示为[]，重建
+该单值后完整原指纹相同，其他字段仍严格比对。未重启两Linux宿主机、未改应用版本、密钥
+或向Live恢复旧库。19302条Argus Job合同、17932份保留私有文件、PG全行/模式及账号/
+Profile/Cookie恢复通过；异机加密副本实际只读重开8文件/3配置，两个原隧道各重新连通4条连接。
+维护未发送测试短信或创建来源Job；HTTPS与原客户端/账号归属边界再次通过。
+
+Argus两端正式finalizer已通过；Mini退役6个旧压缩/展开包、8658198908逻辑字节和4个
+无引用旧镜像，当前/兼容回退完整包保留，不执行共享Docker prune。最新唯一逻辑数据备份为
+argus-host-maintenance-20261113.sparseimage，973204992字节，两端SHA均为
+c6bcfd30dc8ea30e4823e002c672ec38c81de12df3884a6bb9fa2df43c795277；新鲜当前/回退实际
+恢复、两份副本和服务恢复通过后，才退役旧数据payload，密钥及小收据保留。
+维护后首笔普通Booking Job cmwdiuyad0002n707r2rr4zrp成功，原始证据SHA及ACK/410通过，
+未人工重放。12:25:44–12:39:09 UTC自然固定样本17成功、0失败；四应用及Worker/Scheduler
+心跳健康，维护后日志无P2028。最终原manifest/bindings/cadence及其余非hold/source-stop
+payload完整指纹仍与初始相同；82/86计划和64/68成员状态为实际读回，不从恢复数量推算。
 
 代码在独立scheduler-collection-recovery-20261112工作树，正式运维证据使用受保护
-runtime/release-candidates/scheduler-recovery-20261112；不改旧运行记录、不统一清除hold。
+runtime/release-candidates/scheduler-recovery-20261112及paused-source-recovery-20261112；
+不改旧运行记录、不统一清除hold。
 
 ## 2026-11-03 Quest换日期验证通过并恢复每日采集（历史）
 
