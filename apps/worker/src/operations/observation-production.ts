@@ -8,6 +8,7 @@ import { DeferredJobError } from "../jobs/deferred-job";
 import { isSelectedPanelJob } from "./selected-panel-plan";
 import { legacyOtaDailyWhere } from "./selected-panel-budget";
 import { verifiedObservationWire, type ObservationWireProof } from "./observation-wire";
+import { otaArtifactIsParserFailure, selectedIdentityDiagnosticIsNotParserFailure } from "./ota-health";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
@@ -21,11 +22,14 @@ export async function persistObservationEvidence(parentJobId: string, runId: str
   if (wire.job_id !== execution.argusJobId || wire.items.length !== 1 || wire.items[0].trace_id !== traceId) throw new Error("RESULT_IDENTITY_OR_HASH_MISMATCH");
   const result = wire.items[0].result;
   if (result && (result.trace_id !== traceId || result.readonly_only !== true || result.external_side_effects_performed !== false)) throw new Error("UNSAFE_CAPTURE");
+  const parserFailure = failure && (execution.errorCategory
+    ? otaArtifactIsParserFailure(execution.errorCategory)
+    : !selectedIdentityDiagnosticIsNotParserFailure(run));
   for (const pointer of wire.items.flatMap(item => item.result?.evidence ?? [])) {
     if (pointer.containsSensitiveData !== false || pointer.traceId !== traceId) throw new Error("UNSAFE_EVIDENCE");
     const id = `observation-${pilotHash([runId, pointer.storageRef]).slice(0,32)}`;
     await prisma.rawArtifact.upsert({ where: { id }, update: {}, create: { id, dataSourceId: sourceId, collectionRunId: runId, artifactType: pointer.kind.toUpperCase(), storageRef: pointer.storageRef, contentHash: pointer.sha256,
-      payload: json({ pointer, observationPilot: evidenceOwner }), parserFailure: failure, expiresAt: new Date(Date.now() + (failure ? 168 : 72) * 3600_000) } });
+      payload: json({ pointer, observationPilot: evidenceOwner }), parserFailure, expiresAt: new Date(Date.now() + (failure ? 168 : 72) * 3600_000) } });
   }
   if (!failure && !result?.evidence.some(e => e.kind === "html")) throw new Error("REQUIRED_EVIDENCE_MISSING");
 }

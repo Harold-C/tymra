@@ -25,6 +25,8 @@ const { applySelectedWindowUpgrade, rollbackSelectedWindowUpgrade } = await impo
 const { applySelectedDaily, rollbackSelectedDaily } = await import("../src/operations/selected-panel-daily");
 const { maintainSelectedEvidence } = await import("../src/operations/selected-panel-retention");
 const { observationWireProof, verifiedObservationWire } = await import("../src/operations/observation-wire");
+const { persistObservationEvidence } = await import("../src/operations/observation-production");
+const { otaParserFailureArtifactsWhere } = await import("../src/operations/ota-health");
 async function createIsolatedDatabase() {
   if (!/^tymra_(test|e2e)(_[a-z0-9]+)*$/.test(databaseName)) throw Error("Unsafe test database");
   await adminPrisma.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`);
@@ -56,6 +58,48 @@ afterAll(async () => {
   await adminPrisma.$disconnect();
 });
 describe("selected collection isolated persistence", () => {
+  it.each([
+    ["SELECTED_ROOM_NOT_RETURNED", null, false], ["REVIEWED_UNIT_CHANGED", null, false],
+    ["ACCESS_CHALLENGE", "ACCESS_CHALLENGE", false], ["PARSING_ERROR", "PARSING_ERROR", true],
+    ["UNKNOWN_FAILURE", null, true],
+  ] as const)("retains %s diagnostics for seven days with parser classification %s/%s", async (reason, category, parserFailure) => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    const payload = { contract_version: "1.0", job_id: "diagnostic-wire", status: "COMPLETED", items: [{ trace_id: "diagnostic-trace", result: {
+      trace_id: "diagnostic-trace", readonly_only: true, external_side_effects_performed: false, evidence: [{ kind: "html", traceId: "diagnostic-trace", containsSensitiveData: false, storageRef: "argus-evidence:diagnostic/page.html", sha256: "a".repeat(64) }],
+    } }] };
+    const wire = { ...payload, result_sha256: createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+    const proof = observationWireProof(wire as never, wire);
+    const run = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", failureCount: 1, errorCode: reason, scope: { selectedPanel: SELECTED_PANEL_KEY, phase: "identity", verifiedWire: proof } } });
+    await prisma.argusExecution.create({ data: { orchestrationKey: "diagnostic", parentJobId: "diagnostic", collectionRunId: run.id, dataSourceId: source.id, argusJobId: "diagnostic-wire", traceId: "diagnostic-trace", connectorId: "booking-public", workflowId: "resolve_listing", requestedUrl: "https://www.booking.com/hotel/nz/fixture.html", status: category ? "FAILED" : "COMPLETED", errorCategory: category, deadlineAt: now, result: wire } });
+    const before = Date.now();
+    await persistObservationEvidence("diagnostic", run.id, source.id, "diagnostic-trace", true, SELECTED_PANEL_KEY);
+    const artifact = await prisma.rawArtifact.findFirstOrThrow({ where: { collectionRunId: run.id } });
+    expect(artifact.parserFailure).toBe(parserFailure);
+    expect(artifact.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 168 * 3600_000);
+    expect(await prisma.collectionRun.findUniqueOrThrow({ where: { id: run.id } })).toEqual(run);
+    expect(artifact.contentHash).toBe("a".repeat(64));
+  });
+  it("reads legacy selected identity diagnostics without rewriting flags or hiding real parser failures", async () => {
+    const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
+    for (const [errorCode, panel, phase, owner] of [
+      ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "identity", SELECTED_PANEL_KEY],
+      ["REVIEWED_UNIT_CHANGED", SELECTED_PANEL_KEY, "identity", SELECTED_PANEL_KEY],
+      ["PARSING_ERROR", SELECTED_PANEL_KEY, "identity", SELECTED_PANEL_KEY],
+      ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "quote", SELECTED_PANEL_KEY],
+      ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "identity", "other-owner"],
+      ["UNKNOWN_FAILURE", SELECTED_PANEL_KEY, "identity", SELECTED_PANEL_KEY],
+      ["SELECTED_ROOM_NOT_RETURNED", "other-panel", "identity", SELECTED_PANEL_KEY],
+    ]) {
+      const run = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", failureCount: 1, errorCode, scope: { selectedPanel: panel, phase } } });
+      await prisma.rawArtifact.create({ data: { dataSourceId: source.id, collectionRunId: run.id, artifactType: "HTML", storageRef: "retained-original:" + run.id, contentHash: "b".repeat(64), parserFailure: true, expiresAt: new Date(Date.now() + 168 * 3600_000), payload: { observationPilot: owner } } });
+    }
+    const before = await prisma.rawArtifact.findMany({ orderBy: { id: "asc" } });
+    const runs = await prisma.collectionRun.findMany();
+    expect(await prisma.rawArtifact.count({ where: otaParserFailureArtifactsWhere(source.id, new Date(0), runs) })).toBe(5);
+    expect(await prisma.rawArtifact.findMany({ orderBy: { id: "asc" } })).toEqual(before);
+    expect(await prisma.collectionRun.findMany()).toEqual(runs);
+    expect(await prisma.rawArtifact.count({ where: { parserFailure: true } })).toBe(7);
+  });
   it("projects exact progress across midnight from large retained scopes without returning raw wire or quote arrays", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });
     const state = selectedFixture(), at = new Date("2026-10-20T11:02:00Z");

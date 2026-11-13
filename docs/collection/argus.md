@@ -295,6 +295,14 @@ even when the search card states capacity. Detail and quote identities still req
 verified rental type; no unknown summary is promoted to an entire home or private room.
 Unchanged discovery identity with retained resolution is reused for seven days; changed identity or
 expired resolution requires another bounded detail. Search occupancy is not physical-unit capacity.
+
+Selected identity outcomes `SELECTED_ROOM_NOT_RETURNED` and `REVIEWED_UNIT_CHANGED` are
+business diagnostics, rather than parser failures. Their failed Runs, holds, original evidence and
+seven-day failure retention remain. Older selected artifacts used `parserFailure` for all failed
+diagnostics; health and activation interpret only those two identity outcomes with the matching
+selected evidence owner as business failures, without updating stored flags or moving the frozen
+acceptance window. Explicit parsing errors, unknown diagnostic failures and other evidence owners
+retain the parser gate. New evidence separates the parser flag from its failure retention period.
 The rate request carries optional `unitExternalId`; results must match provider, listing, physical
 unit, dates, NZD and occupancy. Available positive all-in totals require either explicit components
 or `totalIncludesMandatoryFees=true` with `fieldSources.totalIncludesMandatoryFees` evidence.

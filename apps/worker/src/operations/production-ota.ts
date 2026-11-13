@@ -1,6 +1,6 @@
 import { prisma, Prisma } from "@tymra/db";
 import { registrySourceSeedRecords } from "../../../../packages/db/prisma/seed-sources";
-import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow, OTA_REPAIR_ACCEPTANCE_VERSION } from "./ota-health";
+import { ACTIVE_OTA_SOURCE_KEYS, calculateOtaHealthMetrics, otaReleaseGate, otaHealthEvidenceWindowStart, otaRepairAcceptanceWindow, OTA_REPAIR_ACCEPTANCE_VERSION, otaParserFailureArtifactsWhere } from "./ota-health";
 import { nextCollectionOutsideOfficeHours } from "./collection-office-hours";
 import { isSourceScopedRentalIdentity } from "./ota-catalog-identity";
 import { positiveOtaListingEvidenceWhere } from "./ota-listing-evidence";
@@ -167,7 +167,7 @@ export async function enableProductionOtaScheduleTransaction(tx: Prisma.Transact
     const priceGapJobs: string[] = [];
     const recentRuns = await tx.collectionRun.findMany({ where: { dataSourceId: source.id, isDemo: false, createdAt: { gte: cutoff } } });
     const recentExecutions = await tx.argusExecution.findMany({ where: { dataSourceId: source.id, submittedAt: { gte: cutoff } } });
-    const parserArtifactFailures = await tx.rawArtifact.count({ where: { dataSourceId: source.id, parserFailure: true, createdAt: { gte: cutoff } } });
+    const parserArtifactFailures = await tx.rawArtifact.count({ where: otaParserFailureArtifactsWhere(source.id, cutoff, recentRuns) });
     const positiveListingCount = await tx.listing.count({ where: positiveOtaListingEvidenceWhere(source.id, cutoff, recentRuns, now) });
     const positiveRateCount = await tx.rateObservation.count({ where: { quarantine: null, dataSourceId: source.id, isDemo: false, collectedAt: { gte: cutoff }, availabilityStatus: "AVAILABLE", feeCompleteness: "COMPLETE", totalAmountMinor: { gt: 0 } } });
     const metrics = calculateOtaHealthMetrics({ key: source.key, enabled: true, lifecycle: "PILOT", operationalStatus: "HEALTHY", runs: recentRuns, executions: recentExecutions, positiveListingCount, positiveRateCount, parserArtifactFailures, latestListingAt: null, latestRateAt: null });

@@ -138,6 +138,24 @@ export function otaArtifactIsParserFailure(errorCategory?: string | null) {
   return errorCategory?.toUpperCase() === "PARSING_ERROR";
 }
 
+export function selectedIdentityDiagnosticIsNotParserFailure(run: { errorCode: string | null; scope: unknown }) {
+  const scope = run.scope as { selectedPanel?: unknown; phase?: unknown } | null;
+  return scope?.selectedPanel === "christchurch-selected-samples" && scope.phase === "identity"
+    && ["SELECTED_ROOM_NOT_RETURNED", "REVIEWED_UNIT_CHANGED"].includes(run.errorCode ?? "");
+}
+
+/** Older selected diagnostics used parserFailure for their longer failure retention. */
+export function otaParserFailureArtifactsWhere(dataSourceId: string, cutoff: Date, runs: Array<{ id: string; errorCode: string | null; scope: unknown }>) {
+  const semanticRuns = runs.filter(selectedIdentityDiagnosticIsNotParserFailure).map(run => run.id);
+  return {
+    dataSourceId, parserFailure: true, createdAt: { gte: cutoff },
+    NOT: { AND: [
+      { collectionRunId: { in: semanticRuns } },
+      { payload: { path: ["observationPilot"], equals: "christchurch-selected-samples" } },
+    ] },
+  };
+}
+
 export function calculateOtaHealthMetrics(input: OtaHealthInput) {
   const discoveryRuns = input.runs.filter((run) => ["OTA_COMPARABLE_DISCOVERY", "NATIONAL_CATALOG_DISCOVERY"].includes(scopeOperation(run.scope) ?? ""));
   const completedDiscoveryRuns = discoveryRuns.filter((run) => ["SUCCEEDED", "PARTIAL", "FAILED"].includes(run.status));
