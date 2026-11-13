@@ -1,5 +1,26 @@
 # Tymra 实现与验收追踪
 
+## 2026-11-14 单间与下架提示修复（消费方已切换，联合业务验收进行中）
+
+Harold授权修复Bookabach单间、South Brighton下架提示，并逐项复查剩余暂停项，完整发布
+后只恢复验证通过项。Tymra固定源码91a847b6511b4fd41e980088adfe87fec0616f08，
+标签tymra-release-20261113-1，Actions43412678988完整源码/数据库/浏览器/镜像导出通过。
+源作用域身份现在要求Bookabach的entire-home/private-room/shared-room后缀与公开隐私类型
+一致；提升身份缓存解析版本，不复用旧的全部整套假设，不重写已有绑定或历史失败。
+本地37项相关单测及类型检查、固定镜像断网业务检查通过。1166.31秒受控切换后实际运行
+镜像为c6b06dd861687a43d761b520bb2560d83283f2853a7a431776687f5b13ac68b2；新鲜89模型/
+证据实际恢复、完整8文件异机副本、派发前原业务及控制比对通过；四个自然周期无P2028或重启。
+
+Argus实际仍为1e07360b/c860eaf6。公开最终候选28ad463/argus-release-20261114-4尚未
+切换；原失败单间及South Brighton页面断网重放、现有三个Bookabach样本原页的房型/容量/
+卧室数/报价单位/原日期保持回归通过。2ca4361等中间候选已撤回且从未部署，不能当作生产
+基线。Argus另有独立Booking私有会话修复进行中，本轮公开候选不带入该代码。
+
+当前仍64/68样本可执行，Sudima/Trip、Beachlife、Pavilions、George四个hold及Trip来源
+停止保留；Booking/Bookabach/Trip全国计划和原退役入口未开启。双方切换后的真实来源
+验证、条件恢复及两端正式收尾尚未完成，不把当前运行门禁当作完整业务完成。当前证据使用
+既有runtime/release-candidates/remaining-source-recovery-20261113，不改原Run/原页或放宽预算。
+
 ## 2026-11-12/13 调度修复已发布，本轮有界恢复及正式收尾完成
 
 当前生产Tymra为84aaa23e/运行配置1d6dfc03，Argus为公开候选1e07360b/c860eaf6；
