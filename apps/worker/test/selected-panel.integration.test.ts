@@ -89,16 +89,18 @@ describe("selected collection isolated persistence", () => {
       ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "identity", "other-owner"],
       ["UNKNOWN_FAILURE", SELECTED_PANEL_KEY, "identity", SELECTED_PANEL_KEY],
       ["SELECTED_ROOM_NOT_RETURNED", "other-panel", "identity", SELECTED_PANEL_KEY],
+      ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "identity", "missing-owner"],
+      ["SELECTED_ROOM_NOT_RETURNED", SELECTED_PANEL_KEY, "identity", "null-owner"],
     ]) {
       const run = await prisma.collectionRun.create({ data: { dataSourceId: source.id, mode: "MARKET_COVERAGE", status: "FAILED", failureCount: 1, errorCode, scope: { selectedPanel: panel, phase } } });
-      await prisma.rawArtifact.create({ data: { dataSourceId: source.id, collectionRunId: run.id, artifactType: "HTML", storageRef: "retained-original:" + run.id, contentHash: "b".repeat(64), parserFailure: true, expiresAt: new Date(Date.now() + 168 * 3600_000), payload: { observationPilot: owner } } });
+      await prisma.rawArtifact.create({ data: { dataSourceId: source.id, collectionRunId: run.id, artifactType: "HTML", storageRef: "retained-original:" + run.id, contentHash: "b".repeat(64), parserFailure: true, expiresAt: new Date(Date.now() + 168 * 3600_000), payload: owner === "missing-owner" ? {} : { observationPilot: owner === "null-owner" ? null : owner } } });
     }
     const before = await prisma.rawArtifact.findMany({ orderBy: { id: "asc" } });
     const runs = await prisma.collectionRun.findMany();
-    expect(await prisma.rawArtifact.count({ where: otaParserFailureArtifactsWhere(source.id, new Date(0), runs) })).toBe(5);
+    expect(await prisma.rawArtifact.count({ where: otaParserFailureArtifactsWhere(source.id, new Date(0), runs) })).toBe(7);
     expect(await prisma.rawArtifact.findMany({ orderBy: { id: "asc" } })).toEqual(before);
     expect(await prisma.collectionRun.findMany()).toEqual(runs);
-    expect(await prisma.rawArtifact.count({ where: { parserFailure: true } })).toBe(7);
+    expect(await prisma.rawArtifact.count({ where: { parserFailure: true } })).toBe(9);
   });
   it("projects exact progress across midnight from large retained scopes without returning raw wire or quote arrays", async () => {
     const source = await prisma.dataSource.findUniqueOrThrow({ where: { key: "booking" } });

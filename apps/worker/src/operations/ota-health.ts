@@ -1,3 +1,5 @@
+import { Prisma } from "@tymra/db";
+
 export const OTA_SOURCE_KEYS = [
   "booking",
   "airbnb",
@@ -152,6 +154,8 @@ export function otaParserFailureArtifactsWhere(dataSourceId: string, cutoff: Dat
     NOT: { AND: [
       { collectionRunId: { in: semanticRuns } },
       { payload: { path: ["observationPilot"], equals: "christchurch-selected-samples" } },
+      // A missing JSON path must remain a counted failure, not SQL NOT(NULL).
+      { payload: { path: ["observationPilot"], not: Prisma.AnyNull } },
     ] },
   };
 }
