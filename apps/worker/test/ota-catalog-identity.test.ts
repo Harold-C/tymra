@@ -28,6 +28,14 @@ it("selects a fitting physical unit consistently rather than the first larger ro
   expect(units[0]?.externalId).toBe("family");
 });
 
+it("requires detail for a Bookabach search summary even when the card publishes capacity", () => {
+  const value = identity("bookabach");
+  const summary = { ...value, units: [{ ...value.units[0]!, externalId: `${value.sourceListingId}:search-unit`,
+    entireOrShared: null, unitType: "Search summary (not sellable)" }] };
+  expect(isSourceScopedRentalIdentity(summary)).toBe(false);
+  expect(otaIdentityRequiresDetail(summary)).toBe(true);
+});
+
 it.each(["airbnb", "bookabach"] as const)("supports a stable %s source identity without manufacturing an exact address", provider => {
   const value = identity(provider);
   expect(isSourceScopedRentalIdentity(value)).toBe(true);

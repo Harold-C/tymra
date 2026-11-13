@@ -789,7 +789,8 @@ function assertArgusDataContract(
   }
   const record = data as Record<string, unknown>;
   const optedInBookingVersion = includeUnknownSharing && connectorId === "booking-public" && workflowId === "resolve_listing" && record.schema_version === "1.1.0";
-  if (record.data_schema !== expected.dataSchema || (record.schema_version !== expected.schemaVersion && !optedInBookingVersion)) {
+  const bookabachSummaryVersion = connectorId === "bookabach-public" && workflowId === "discover_listings" && record.schema_version === "1.1.0";
+  if (record.data_schema !== expected.dataSchema || (record.schema_version !== expected.schemaVersion && !optedInBookingVersion && !bookabachSummaryVersion)) {
     throw new Error(
       `Argus returned unexpected data contract; expected ${expected.dataSchema}@${expected.schemaVersion}`,
     );

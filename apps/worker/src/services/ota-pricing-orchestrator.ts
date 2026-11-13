@@ -158,7 +158,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
       let candidateFieldSources = candidate.fieldSources;
       let candidateUnits = candidate.units;
 
-      if (!candidateUnits.some((unit) => unit.capacity !== null)) {
+      if (!candidateUnits.some((unit) => unit.capacity !== null) || candidateUnits.some(unit => unit.entireOrShared === null)) {
         const resolveTraceId = durableArgusTraceId(input.parentJobId, connectorId, "resolve_listing", candidate.canonicalUrl);
         const resolvedResponse = await captureBrowserTaskWithDurableArgus(input.environment, {
           traceId: resolveTraceId,
@@ -246,7 +246,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           status: "ACTIVE",
         },
       });
-      await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { discoveredFor: check.propertyId, sourceListingId: candidate.sourceListingId } });
+      await recordIdentityEntityVersion("PROPERTY", property.id, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: `ota-public.discover_listings@${extraction.schema_version}`, identityEvidence: { discoveredFor: check.propertyId, sourceListingId: candidate.sourceListingId } });
       const comparableUnits = candidateUnits
         .filter((unit): unit is typeof unit & { capacity: number; entireOrShared: "ENTIRE" | "PRIVATE" | "SHARED" } => unit.capacity !== null && unit.entireOrShared !== null)
         .filter(unit => !locationScope || unit.capacity >= check.stayQuery!.adults + check.stayQuery!.children && (accommodationType === "ANY" || accommodationType === "ENTIRE" && unit.entireOrShared === "ENTIRE" || accommodationType === "PRIVATE" && unit.entireOrShared === "PRIVATE"))
@@ -265,7 +265,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           create: { id: unitId, propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE", isDemo: false },
           update: { propertyId: property.id, canonicalName: unit.officialName, officialName: unit.officialName, capacity: unit.capacity, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms, bedTypes: unit.bedTypes, amenities: unit.amenities, unitType: unit.unitType, entireOrShared: unit.entireOrShared, status: "ACTIVE" },
         });
-        await recordIdentityEntityVersion("SELLABLE_UNIT", unitId, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: "ota-public.discover_listings@1.0.0", identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId } });
+        await recordIdentityEntityVersion("SELLABLE_UNIT", unitId, { collectedAt: new Date(candidate.observedAt), collectionRunId: run.id, collectorVersion: "argus-ota-v1", parserVersion: `ota-public.discover_listings@${extraction.schema_version}`, identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId } });
         const externalId = `${candidate.sourceListingId}:${unit.externalId}`;
         const metadata = {
           discoveredFor: check.propertyId,
@@ -283,7 +283,7 @@ export async function discoverAndCollectAddressOtaComparables(input: AddressOtaP
           collectedAt: new Date(candidate.observedAt),
           collectionRunId: run.id,
           collectorVersion: "argus-ota-v1",
-          parserVersion: "ota-public.discover_listings@1.0.0",
+          parserVersion: `ota-public.discover_listings@${extraction.schema_version}`,
           identityEvidence: { sourceListingId: candidate.sourceListingId, unitExternalId: unit.externalId, fieldSources: candidateFieldSources },
         });
         if (listing.propertyId === check.propertyId && listing.unitId === check.unitId) continue;

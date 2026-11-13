@@ -56,7 +56,8 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
       if (capture.workflow_id === "discover_listings") {
         const candidate = identity();
         candidate.units = [{ ...candidate.units[0], externalId: `${sourceListingId}:visible-card`, unitType: "Search summary (not sellable)" }];
-        data = { data_schema: "ota-public.discover_listings", schema_version: "1.0.0", provider: sourceKey, query: capture.search_query,
+        if (sourceKey === "bookabach") Object.assign(candidate.units[0]!, { externalId: `${sourceListingId}:search-unit`, entireOrShared: null });
+        data = { data_schema: "ota-public.discover_listings", schema_version: sourceKey === "bookabach" ? "1.1.0" : "1.0.0", provider: sourceKey, query: capture.search_query,
           listings: [candidate], observedAt: stamp, warnings: [], quality: "partial" };
       } else if (capture.workflow_id === "resolve_listing") {
         data = { ...identity(), data_schema: "ota-public.resolve_listing", schema_version: "1.0.0" };
@@ -153,6 +154,10 @@ it.skipIf(!isolated).each(sources)("persists %s catalog and bundled prices throu
       const catalog = await pump(job.id, () => worker.refreshCatalog("new-zealand", job.id, {sourceId: source.id}));
       expect(catalog.discovered).toBe(1);
       const listing = await prisma.listing.findFirstOrThrow({where: {dataSourceId: source.id, sourceListingId}, include: {property: true}});
+      if (sourceKey === "bookabach") {
+        expect(await prisma.sellableUnit.findUniqueOrThrow({where: {id: listing.unitId!}})).toMatchObject({entireOrShared: "ENTIRE", unitType: "Holiday home"});
+        expect([...jobs.values()].filter(item => item.capture.workflow_id === "resolve_listing")).toHaveLength(1);
+      }
       if (!round) { originalProperty = listing.property; expect(listing.property.status).toBe(rental ? "SOURCE_SCOPED" : "ACTIVE"); }
       else expect(listing.propertyId).toBe(originalProperty.id);
       if (rental && !(round && sourceKey === "airbnb")) expect(listing.property).toMatchObject({address: "", latitude: null, longitude: null});

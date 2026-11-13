@@ -108,7 +108,7 @@ export const otaResolveListingExtractionSchema = otaListingIdentitySchema.extend
 
 export const otaDiscoverListingsExtractionSchema = z.object({
   data_schema: z.literal("ota-public.discover_listings"),
-  schema_version: z.literal("1.0.0"),
+  schema_version: z.enum(["1.0.0", "1.1.0"]),
   provider: otaProviderSchema,
   query: z.string().min(1),
   listings: z.array(otaListingIdentitySchema).max(20),
@@ -116,9 +116,16 @@ export const otaDiscoverListingsExtractionSchema = z.object({
   warnings: z.array(z.string()),
   quality: qualitySchema,
 }).superRefine((value, context) => {
+  if (value.schema_version === "1.1.0" && (value.provider !== "bookabach" || value.quality !== "partial"
+    || value.listings.some(listing => listing.provider !== "bookabach" || listing.quality !== "partial"))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["schema_version"], message: "Discovery 1.1.0 is a partial Bookabach search summary" });
+  }
   value.listings.forEach((listing, index) => {
-    if (listing.units.some(unit => unit.entireOrShared === null)) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Discovery 1.0.0 requires known unit sharing" });
+    if (listing.units.some(unit => unit.entireOrShared === null && !(value.schema_version === "1.1.0"
+      && value.provider === "bookabach" && listing.provider === "bookabach" && listing.quality === "partial"
+      && /^bookabach:[1-9]\d*(?:vb|ha)?$/u.test(listing.sourceListingId)
+      && unit.unitType === "Search summary (not sellable)" && unit.externalId === `${listing.sourceListingId}:search-unit`))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Unknown sharing requires a partial Bookabach discovery 1.1.0 search-unit summary" });
     }
     if (listing.units.length === 0) context.addIssue({ code: z.ZodIssueCode.custom, path: ["listings", index, "units"], message: "Discovery listings require a summary unit" });
   });

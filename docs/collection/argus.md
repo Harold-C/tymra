@@ -287,6 +287,12 @@ An access challenge cancels only the bounded pilot's own Argus Job and waits for
 cancellation to release shared browser capacity; customer/manual workflows retain their existing handling.
 
 List identities are reused when complete; unresolved/search-summary identities require details.
+Bookabach discovery 1.1.0 may retain unknown sharing only on a partial, source-bound
+`Search summary (not sellable)` with ID `<sourceListingId>:search-unit`. Legacy 1.0.0
+still requires known sharing; other providers cannot use this exception. Both national
+catalog and comparable discovery resolve such summaries before using a physical unit,
+even when the search card states capacity. Detail and quote identities still require a
+verified rental type; no unknown summary is promoted to an entire home or private room.
 Unchanged discovery identity with retained resolution is reused for seven days; changed identity or
 expired resolution requires another bounded detail. Search occupancy is not physical-unit capacity.
 The rate request carries optional `unitExternalId`; results must match provider, listing, physical
