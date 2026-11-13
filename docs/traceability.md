@@ -1,25 +1,102 @@
 # Tymra 实现与验收追踪
 
-## 2026-11-14 单间与下架提示修复（消费方已切换，联合业务验收进行中）
+## 2026-11-14 公开采集修复（已部署并恢复通过项，剩余保留保护）
 
 Harold授权修复Bookabach单间、South Brighton下架提示，并逐项复查剩余暂停项，完整发布
-后只恢复验证通过项。Tymra固定源码91a847b6511b4fd41e980088adfe87fec0616f08，
-标签tymra-release-20261113-1，Actions43412678988完整源码/数据库/浏览器/镜像导出通过。
-源作用域身份现在要求Bookabach的entire-home/private-room/shared-room后缀与公开隐私类型
-一致；提升身份缓存解析版本，不复用旧的全部整套假设，不重写已有绑定或历史失败。
-本地37项相关单测及类型检查、固定镜像断网业务检查通过。1166.31秒受控切换后实际运行
-镜像为c6b06dd861687a43d761b520bb2560d83283f2853a7a431776687f5b13ac68b2；新鲜89模型/
-证据实际恢复、完整8文件异机副本、派发前原业务及控制比对通过；四个自然周期无P2028或重启。
+后只恢复验证通过项。当前Tymra源码df8d0648ff1d42b53cda176b3e382ee12e234b60，
+标签tymra-release-20261114-3，实际镜像09eebc60d28039b47ac178d0bf1cd818f1dae985b367e78362bf81c65208efda；
+兼容回退为44e6b1b/14-1、c5229ea0。以下先记录14-1基础修复，再记录本轮补充切换。
+前版91a847b已支持Bookabach公开隐私类型与entire-home/private-room/shared-room单位后缀
+互证及新版身份缓存；本版额外接收严格限定的Bookabach partial discovery 1.1搜索摘要，
+未知sharing不提升为物理单位，即使摘要容量已知仍须详情解析。其他来源/旧版未知sharing、
+resolve_listing未知身份继续拒绝；持久化记录实际schema版本，不改旧绑定、失败或原始证据。
 
-Argus实际仍为1e07360b/c860eaf6。公开最终候选28ad463/argus-release-20261114-4尚未
-切换；原失败单间及South Brighton页面断网重放、现有三个Bookabach样本原页的房型/容量/
-卧室数/报价单位/原日期保持回归通过。2ca4361等中间候选已撤回且从未部署，不能当作生产
-基线。Argus另有独立Booking私有会话修复进行中，本轮公开候选不带入该代码。
+固定Actions43436424414源码/数据库/浏览器/镜像门禁通过；原生镜像对真实失败页新wire的
+1.1接收、详情必需和未知sharing不提升检查通过，六来源HTTP/持久化/缓存管线通过。
+attempt-1在派发前readiness非200时回退，约同时另有Argus外部530，因原body未留不能
+认定两者因果。attempt-2因隔离数据库67字符单标签地址不能连接而在第0模型前失败；同一
+恢复库仅换短DNS别名后，新旧镜像均在原60000ms只读事务内读回89模型，全部行/模式及证据
+仍与冻结备份一致。短前缀和停机前DNS长度拒绝的29项生产host隔离回归通过，原失败未改写。
+attempt-3于15:40 UTC完成914.50秒切换，新鲜89模型/证据实际恢复、8文件独立副本、派发前
+业务及控制不变、恢复派发均通过；15:41独立核对四应用44/c522、0重启、readiness/Argus依赖200。
+证据在runtime/release-candidates/public-discovery-summary-20261114/attempt-3；原两轮保留。
 
-当前仍64/68样本可执行，Sudima/Trip、Beachlife、Pavilions、George四个hold及Trip来源
-停止保留；Booking/Bookabach/Trip全国计划和原退役入口未开启。双方切换后的真实来源
-验证、条件恢复及两端正式收尾尚未完成，不把当前运行门禁当作完整业务完成。当前证据使用
-既有runtime/release-candidates/remaining-source-recovery-20261113，不改原Run/原页或放宽预算。
+恢复中补查到健康分类缺陷：Booking全国两个单次完整父任务均成功，Denton Park Motel/
+177744004公开含税NZD240、Beachfront Hokitika/27431706公开含税NZD236，12份证据与实际
+ACK/410共6次通过；正式enable却因The George身份缺失的两份诊断误标parserFailure被拒。
+补充修复区分已验证的身份业务失败与解析错误，保留七天失败证据、全部旧flags/Run/hold和
+冻结窗口；健康报告与启用使用同一只读分类，真实解析/未知错误和归属缺失仍拦截。30项实际
+隔离数据库及49项单元、类型/边界检查通过，生产只读重放确认仅原George两份标记被正确
+解释、所有原值/哈希/期限不变。早期9d2ef96/14-2因额外缺失owner反例暴露SQL空值边界，
+已在暂存/部署前撤回；修正候选df8d064/tymra-release-20261114-3已合入main，固定完整门禁
+Actions43465864197全部通过，17:29 UTC于1109.77秒内完成Tymra单端切换。新鲜89模型及
+3031证据文件实际恢复、8文件完整独立副本及派发前不变检查通过，未覆盖live数据库。
+四应用均为df8/09ee、零重启，readiness 200；17:34自然Worker/Scheduler心跳均为本版。
+十个实际采集/身份/价格/交付路径逐字节未变，原正向任务仍绑定实际44/9df抓取版本，未声称
+新采集或移动窗口。17:34正式enable采用原两个成功Job并恢复Booking全国日计划；随后再次
+实际读回6次410、12份原证据SHA及固定样本manifest/bindings/cadence不变。
+补充证据位于runtime/release-candidates/selected-diagnostic-health-20261114/revised-candidate。
+Tymra两端mandatory complete-release均通过，运行容器/配置不变；保留当前、44/c522兼容
+回退完整包和最新实际恢复集。本机两个旧备份payload及两端各一个已取代完整包按清单退役，
+服务器24项恢复/主机relay保护引用保持，未绕过保护、未重启共享Docker。后续四个自然心跳
+快照均为df8，切换后没有新增失败Run，Worker/Scheduler日志未再出现P2028或事务过期。
+
+Argus前次于15:47 UTC完成136.653秒切换。该次producer为9df1edc/
+argus-release-20261114-7、976a7a86，兼容reader为daf14a38/14-6、f89d0cec；原2a无法
+读取未来AVAILABLE 1.1，不能当作该格式的回退。两候选完整固定门禁43445566824/43443566012
+及导出、完整归档层/config、同一AVAILABLE/PURGED新格式PG快照原生恢复均通过。producer
+7份原页断网回放通过；263项源依赖及全部236个编译运行模块核对，仅预期4个公开模块变化，
+232个相同，未带入main未授权部署的私有电话截图诊断。私有真实认证/补抓仍待人工MFA，
+不从离线回归推定其成功；共享Provider由获准协调的另一会话单一控制器完成切换、两调用方
+原容器恢复及新鲜加密备份/独立只读重开。15:50 Tymra再次独立核对当前44/c522与Argus
+readiness均200。私有认证及联合正式清理仍未完成，不以公开业务结果替代。
+
+South Brighton一次原日期/原242350804的实采现为公开AVAILABLE/NZD180，当前页没有下架
+提示；旧下架页的NOT_LISTED/null断网回放另行通过，不推定永久删除。原HTML/PNG及wire
+持久保存、SHA/ACK/410通过，未重试或改写普通失败窗口。Bookabach全国另一次旧1.0搜索
+暴露未知sharing校验失败，Expedia旧自然运行漏识别Chatham Islands原日期明确零房源页；
+两失败保留，补充producer分别修正版本化摘要和来源表单日期/人数/零结果识别。新Bookabach
+全国Otago原范围实采已通过1.1摘要及强制详情，但房源12245158同时声明整套出租与共用
+厨房/客厅，详情身份仍未知；保持失败和全国暂停，不强行推断单间或整套。两次原始交付均
+保存HTML/截图并实际读回410；该交付证明不算业务通过。
+
+另按既有下一地区Southland单次复查，发现p20202623自身Guest access明确说整栋房屋提供给
+住客，容量8/3卧室却被旧解析器保留未知sharing。新Argus9bb0b74/14-8仅补识别房源自身
+明确whole house/apartment等声明，保留私人/共用冲突拒绝；14项定向及9原页本地回放通过，
+Southland修正为ENTIRE/8/3，Otago冲突仍拒绝，不创建价格。已合入main，生产标签固定独立
+公开提交9bb而非含私有诊断的main；Actions43471635624完整发布及43477858402导出全部
+通过。完整663244080字节归档5bd44870、全部层/config、同一1.1 AVAILABLE/PURGED快照
+原生恢复和9原页均通过，235个其他编译模块字节不变，私有电话诊断模块不存在。
+18:13 UTC由另一会话单一控制器完成137.38秒切换，当前Argus9bb0b744/14-8、实际镜像
+ebce9df1784458928ebd2ab087078be931f98d553e1ad70133aeb3aaac826b47，直接兼容回退为
+9df1edc/14-7、976a7a86。Synix/Tymra分别172.86/171.49秒恢复原容器、原镜像/env/mounts。
+新鲜备份实际恢复及异机只读重开8文件/3配置通过，1,013,050,880字节加密包SHA为
+0655fa1d99e1573a17085ec4260ae1a3d37208eb725d067c91b88714a33d3eda，root再次独立读完整包
+及实际恢复收据哈希通过。18:16独立复查Tymra四应用原ID/df8/09ee/配置hash保持、零重启，
+恢复后自然心跳新鲜，readiness/Argus依赖均200、无新增失败/P2028。Booking既有两成功父任务
+的12文件SHA及实际410共6次再次通过，原样本manifest/bindings/cadence和四hold保持。
+这些是新镜像离线原页回放、实际部署及现有交付复查，没有新增真实来源抓取或私有认证。
+Southland原失败、4文件SHA及两次实际410保持。Bookabach今日已用5/6次，Expedia4/6次，
+均不足以保证新三步完整父任务，未为检查突破预算或重复失败任务。
+
+Merivale原40424401/Small Studio新身份及两个原窗口均单次成功、公开NZD274，六份原证据
+哈希及实际ACK/410通过后，按正式关闭审核入口解除hold。餐食/条款仍RAW_ONLY，不提升
+可比报价。原503失败保留。Pavilions两个原窗口均未返回4311301；The George两个原窗口
+均未返回4320405，仅有其他房型。原页仍保留目标的静态RoomDetails，不等于当前可售房型。
+Beachlife已可匿名访问，但旧数字房型200945645在原HTML中缺失，同名/同面积/床型仍只返回
+名称键，本轮失败为REVIEWED_UNIT_CHANGED；原hold的ACCESS_CHALLENGE记录仍保留，不自动
+重绑或解除hold。Sudima原日期匿名访问直接跳至完整
+account/signin，没有可关闭的登录弹窗；保存HTML/截图及实际410后，Trip来源保护重新停止。
+这不证明所有用户都必须登录。六次失败复核各一次，无失败重试、历史改写或hold解除。
+Expedia全国首轮Northland/Continental Motel原日期完整成功，房型326218104公开含税NZD160，
+六份证据及实际ACK/410三次通过，尚缺第二个完整正向父任务，未恢复全国计划。
+当前82/86计划启用、64/68固定样本可执行；Sudima/Trip、Beachlife、Pavilions、George
+四个hold及Trip来源停止保留；Bookabach/Expedia/Trip全国及原退役入口未开启。
+本轮新增恢复1个样本、1个全国计划；Tymra补充发布收尾完成，Argus8已部署，Bookabach/
+Expedia全国完整实采仍待正常预算窗口，Pavilions/George换日期核验规则待答复；这些计划未
+恢复。私有MFA仍未通过，联合acceptance/finalize未运行，不标记整体任务完成。
+已删除本轮干净且合入main的Argus临时整合工作树和分支，
+保留发布标签、源码工作树及其他会话仍使用的依赖工作树。
 
 ## 2026-11-12/13 调度修复已发布，本轮有界恢复及正式收尾完成
 
