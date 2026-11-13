@@ -5,7 +5,7 @@ type Identity = z.infer<typeof otaListingIdentitySchema>;
 
 // Bump when identity extraction or validation changes so unchanged list cards
 // cannot reuse details produced by the superseded parser.
-export const OTA_IDENTITY_PARSER_VERSION = "ota-public-identity-20261003";
+export const OTA_IDENTITY_PARSER_VERSION = "ota-public-identity-20261113";
 
 /** Pick the smallest physical unit that fits the bounded public stay. */
 export function selectBoundedOtaUnits(units: Identity["units"], adults: number): Identity["units"] {
@@ -28,7 +28,11 @@ export function isSourceScopedRentalIdentity(identity: Identity): boolean {
   try { url = new URL(identity.canonicalUrl); } catch { return false; }
   const expectedPath = identity.provider === "airbnb" ? `/rooms/${match[1]}` : `/holiday-accommodation/p${match[1]}`;
   const hosts = identity.provider === "airbnb" ? ["www.airbnb.co.nz", "www.airbnb.com"] : ["www.bookabach.co.nz"];
-  const unitId = identity.provider === "airbnb" ? identity.sourceListingId : `${identity.sourceListingId}:entire-home`;
+  const unit = identity.units[0];
+  const bookabachSuffix = unit?.entireOrShared === "ENTIRE" ? "entire-home"
+    : unit?.entireOrShared === "PRIVATE" ? "private-room" : unit?.entireOrShared === "SHARED" ? "shared-room" : null;
+  const unitId = identity.provider === "airbnb" ? identity.sourceListingId
+    : bookabachSuffix ? `${identity.sourceListingId}:${bookabachSuffix}` : null;
   return hosts.includes(url.hostname) && url.pathname === expectedPath
     && identity.units.length === 1 && identity.units[0]?.externalId === unitId
     && identity.units[0].capacity !== null && identity.units[0].capacity > 0

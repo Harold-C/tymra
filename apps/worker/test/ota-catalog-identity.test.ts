@@ -42,6 +42,18 @@ it.each(["airbnb", "bookabach"] as const)("supports a stable %s source identity 
   expect(isSourceScopedRentalIdentity({ ...value, address: "1 Street", latitude: -43.5, longitude: 172.6 })).toBe(false);
 });
 
+it.each([["PRIVATE", "private-room"], ["SHARED", "shared-room"]] as const)("accepts a source-bound Bookabach %s identity without relabelling an entire home", (privacy, suffix) => {
+  const value = identity("bookabach");
+  const unit = { ...value.units[0]!, externalId: `${value.sourceListingId}:${suffix}`, entireOrShared: privacy };
+  const resolved = { ...value, units: [unit] };
+  expect(isSourceScopedRentalIdentity(resolved)).toBe(true);
+  expect(otaIdentityRequiresDetail(resolved)).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...resolved, units: [{ ...unit, entireOrShared: "ENTIRE" }] })).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...resolved, units: [{ ...unit, externalId: `${value.sourceListingId}:entire-home` }] })).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...resolved, units: [{ ...unit, entireOrShared: null }] })).toBe(false);
+  expect(isSourceScopedRentalIdentity({ ...resolved, units: [{ ...unit, capacity: null }] })).toBe(false);
+});
+
 it("keeps city frontier scope explicit and never maps Northland to Christchurch", () => {
   for (const source of ["agoda", "trip"]) {
     expect(otaDiscoveryGeography(source, { key: "northland", name: "Northland" })).toEqual({ query: "Whangarei, New Zealand", queryScope: "CITY", searchCity: "Whangarei" });

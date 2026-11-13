@@ -99,6 +99,14 @@ wrong context, ambiguous identity and access challenges retain their existing pr
 
 ## Bounded OTA production pilots
 
+Bookabach rental identities bind their source property and public sleeping-space privacy:
+`:entire-home` must be ENTIRE, `:private-room` PRIVATE and `:shared-room` SHARED. Unknown
+privacy or a suffix/privacy mismatch fails the source-scoped identity gate. A private room
+does not reuse an entire-home identity or rewrite an existing selected binding. The dated
+identity-cache parser version changes with this adapter contract so old all-home details
+cannot mask newly verified private-room facts. Missing exact addresses remain unknown;
+public own-property locality is still required, and public-price pilot gates remain.
+
 ### Public OTA room-area compatibility (2026-10-16 production release)
 
 The consumer preserves optional positive `areaSquareMetres` on extracted units so a room's
